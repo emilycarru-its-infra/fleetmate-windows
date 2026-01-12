@@ -1,0 +1,78 @@
+# FleetMate Configuration Sample
+# Copy to ~/.fleetmate/config.yaml and customize
+#
+# IMPORTANT: All sensitive values should come from environment variables or .env file
+# See .env.sample for the required environment variables
+#
+# Configuration precedence (highest to lowest):
+# 1. Environment variables
+# 2. .env file (~/.fleetmate/.env or local .env)
+# 3. This config file
+
+# ReportMate API (fleet monitoring) - Set via environment variables:
+# - REPORTMATE_URL: ReportMate API base URL
+# - REPORTMATE_PASSPHRASE: ReportMate API passphrase
+
+# Snipe-IT API (asset management) - Set via environment variables:
+# - SNIPE_URL: Snipe-IT instance URL
+# - SNIPE_API_KEY: Snipe-IT API key
+
+# SSH Configuration (remote command execution)
+ssh:
+  privateKeyPath: ~/.ssh/id_rsa           # Path to SSH private key
+  privateKeyEnvVar: SECURE_SHELL_PRIVATE_KEY  # Env var with key content (from Key Vault)
+  keyVaultName:                           # Azure Key Vault to load SecureShellPrivateKey from
+  defaultUsername:                        # Default SSH username (set via SSH_USER env var)
+  connectionTimeoutSeconds: 30            # Connection timeout
+  commandTimeoutSeconds: 120              # Command execution timeout
+  maxConcurrentConnections: 10            # Max parallel SSH connections for batch operations
+  port: 22                                # SSH port
+
+# Azure DevOps Configuration - Set via environment variables:
+# - DEVOPS_ORGANIZATION: Azure DevOps organization name
+# - DEVOPS_PROJECT: Azure DevOps project name
+# - DEVOPS_PAT: Azure DevOps personal access token (optional, uses Azure CLI SSO if not set)
+azureDevOps:
+  defaultWorkItemType: Bug                # Default type for created items
+  defaultIterationPath:                   # Optional: default iteration (empty = current)
+  cacheMinutes: 30                        # Cache duration for boards/sprints
+
+# Microsoft Graph Configuration (Intune/Entra) - Set via environment variables:
+# - GRAPH_TENANT_ID: Azure AD tenant ID
+# - GRAPH_CLIENT_ID: Azure AD application client ID
+# - GRAPH_CLIENT_SECRET: Azure AD client secret (optional, uses Azure CLI SSO if not set)
+graph:
+  useAzureCliAuth: true                   # Use Azure CLI for authentication
+  cacheMinutes: 10                        # Cache duration for user/group lookups
+  pageSize: 100                           # Max results per API page
+
+# TeamDynamix Configuration - Set via environment variables:
+# - TDX_BASE_URL: TDX Web API base URL
+# - TDX_APP_ID: TDX application ID
+# Authentication (choose one):
+#   Admin: TDX_BEID + TDX_WEB_SERVICES_KEY
+#   User:  TDX_USERNAME + TDX_PASSWORD
+tdx:
+  defaultTypeId:                          # Default ticket type ID
+  defaultPriorityId:                      # Default priority ID
+  defaultStatusId:                        # Default status ID
+  defaultSourceId:                        # Default source ID
+  defaultAccountId:                       # Default account/department ID
+  cacheMinutes: 30                        # Cache duration for reference data
+
+# Cache settings
+cacheMinutes: 5
+
+# Logging
+logPath: C:\ProgramData\Cimian\Logs
+logLevel: Information  # Debug, Information, Warning, Error
+
+# Deployment paths (relative to repo root)
+deploymentPath: deployment
+pkgsinfoPath: deployment/pkgsinfo
+pkgsPath: deployment/pkgs
+manifestsPath: deployment/manifests
+catalogsPath: deployment/catalogs
+qualityPath: quality
+packagesPath: packages
+installersPath: installers

@@ -1,0 +1,85 @@
+# .NET build outputs
+bin/
+obj/
+publish/
+out/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Visual Studio Code
+.vscode/
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Test results
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+
+# NCrunch
+*.ncrunch*
+_NCrunch_*
+.*crunch*.local.xml
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Secrets and credentials
+.env
+*.env.local
+.env.*.local
+appsettings.Development.json
+appsettings.Local.json
+secrets.json
+
+# Local config overrides
+config.yaml
+config.local.yaml
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*~
+tmpclaude-*
+
+# Logs
+*.log
+logs/
+
+# IntuneWin packages (build output)
+*.intunewin

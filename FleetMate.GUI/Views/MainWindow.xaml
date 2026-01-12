@@ -1,0 +1,94 @@
+<Window x:Class="FleetMate.GUI.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        xmlns:vm="clr-namespace:FleetMate.GUI.ViewModels"
+        ui:WindowHelper.UseModernWindowStyle="True"
+        ui:TitleBar.ExtendViewIntoTitleBar="True"
+        Title="FleetMate"
+        Height="700"
+        Width="1100"
+        MinHeight="500"
+        MinWidth="800"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.DataContext>
+        <vm:MainViewModel />
+    </Window.DataContext>
+
+    <Grid>
+        <ui:NavigationView x:Name="NavView"
+                          IsBackButtonVisible="Collapsed"
+                          IsSettingsVisible="True"
+                          PaneDisplayMode="Left"
+                          SelectionChanged="NavView_SelectionChanged">
+
+            <ui:NavigationView.MenuItems>
+                <ui:NavigationViewItem Content="Dashboard" Tag="Dashboard" IsSelected="True">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="Home" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+
+                <ui:NavigationViewItemSeparator />
+
+                <ui:NavigationViewItemHeader Content="Device Management" />
+
+                <ui:NavigationViewItem Content="Intune Devices" Tag="Intune">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="CellPhone" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+
+                <ui:NavigationViewItem Content="Assets" Tag="Assets">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="Library" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+
+                <ui:NavigationViewItem Content="Errors" Tag="Errors">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="ReportHacked" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+
+                <ui:NavigationViewItemSeparator />
+
+                <ui:NavigationViewItemHeader Content="Identity" />
+
+                <ui:NavigationViewItem Content="Users" Tag="Users">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="Contact" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+
+                <ui:NavigationViewItem Content="Groups" Tag="Groups">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="People" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+
+                <ui:NavigationViewItemSeparator />
+
+                <ui:NavigationViewItemHeader Content="Ticketing" />
+
+                <ui:NavigationViewItem Content="Tickets" Tag="Tickets">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="Comment" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+
+                <ui:NavigationViewItem Content="Work Items" Tag="WorkItems">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="List" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+            </ui:NavigationView.MenuItems>
+
+            <ui:NavigationView.Content>
+                <Frame x:Name="ContentFrame" />
+            </ui:NavigationView.Content>
+
+        </ui:NavigationView>
+    </Grid>
+</Window>

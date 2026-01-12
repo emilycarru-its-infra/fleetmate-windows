@@ -1,0 +1,60 @@
+<Page x:Class="FleetMate.GUI.Views.DashboardPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.modernwpf.com/2019">
+
+    <ScrollViewer Padding="24">
+        <StackPanel>
+            <TextBlock Text="Dashboard" Style="{StaticResource TitleTextStyle}" />
+            <TextBlock Text="Fleet overview and quick actions" Style="{StaticResource SubtitleTextStyle}" />
+
+            <TextBlock Text="Quick Stats" Style="{StaticResource SectionHeaderStyle}" />
+
+            <ui:SimpleStackPanel Orientation="Horizontal" Spacing="16">
+                <!-- Devices Card -->
+                <Border Style="{StaticResource CardStyle}" Width="200">
+                    <StackPanel>
+                        <TextBlock Text="Devices" FontSize="14" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBlock Text="--" FontSize="36" FontWeight="SemiBold" Margin="0,8,0,0" />
+                        <TextBlock Text="managed devices" FontSize="12" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Assets Card -->
+                <Border Style="{StaticResource CardStyle}" Width="200">
+                    <StackPanel>
+                        <TextBlock Text="Assets" FontSize="14" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBlock Text="--" FontSize="36" FontWeight="SemiBold" Margin="0,8,0,0" />
+                        <TextBlock Text="in inventory" FontSize="12" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Errors Card -->
+                <Border Style="{StaticResource CardStyle}" Width="200">
+                    <StackPanel>
+                        <TextBlock Text="Errors" FontSize="14" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBlock Text="--" FontSize="36" FontWeight="SemiBold" Foreground="OrangeRed" Margin="0,8,0,0" />
+                        <TextBlock Text="install failures" FontSize="12" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Tickets Card -->
+                <Border Style="{StaticResource CardStyle}" Width="200">
+                    <StackPanel>
+                        <TextBlock Text="Open Tickets" FontSize="14" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBlock Text="--" FontSize="36" FontWeight="SemiBold" Margin="0,8,0,0" />
+                        <TextBlock Text="in queue" FontSize="12" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+                </Border>
+            </ui:SimpleStackPanel>
+
+            <TextBlock Text="Recent Activity" Style="{StaticResource SectionHeaderStyle}" />
+
+            <Border Style="{StaticResource CardStyle}">
+                <TextBlock Text="Activity feed will appear here once connected to services."
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</Page>

@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <NoWarn>$(NoWarn);NU1900</NoWarn>
+    <AssemblyName>fleetmate-gui</AssemblyName>
+    <AssemblyTitle>FleetMate</AssemblyTitle>
+    <AssemblyDescription>FleetMate Fleet Management</AssemblyDescription>
+    <AssemblyCompany>Emily Carr University</AssemblyCompany>
+    <AssemblyProduct>FleetMate</AssemblyProduct>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <StartupObject>FleetMate.GUI.Program</StartupObject>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <PublishTrimmed>false</PublishTrimmed>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <WindowsSdkPackageVersion>10.0.19041.38</WindowsSdkPackageVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageReference Include="ModernWpfUI" Version="0.9.6" />
+    <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.122" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FleetMate.Core\FleetMate.Core.csproj" />
+  </ItemGroup>
+
+</Project>
