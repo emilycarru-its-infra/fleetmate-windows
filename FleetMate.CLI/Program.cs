@@ -45,7 +45,47 @@ class Program
             {
                 snipeService = new SnipeService(config.SnipeUrl, config.SnipeApiKey);
             }
-            
+
+            // Create SSH service if configured
+            SshService? sshService = null;
+            if (config.Ssh != null)
+            {
+                var keyPath = config.Ssh.ResolvedKeyPath;
+                if (File.Exists(keyPath))
+                {
+                    try
+                    {
+                        sshService = new SshService(config.Ssh, reportMate);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex, "Failed to initialize SSH service");
+                    }
+                }
+            }
+
+            // Create Azure DevOps service if configured
+            AzureDevOpsService? adoService = null;
+            if (!string.IsNullOrEmpty(config.AzureDevOps?.Organization) &&
+                !string.IsNullOrEmpty(config.AzureDevOps?.Project))
+            {
+                adoService = new AzureDevOpsService(config.AzureDevOps);
+            }
+
+            // Create Microsoft Graph service if configured
+            GraphService? graphService = null;
+            if (config.Graph?.UseAzureCliAuth == true)
+            {
+                graphService = new GraphService(config.Graph);
+            }
+
+            // Create TeamDynamix service if configured
+            TdxService? tdxService = null;
+            if (config.Tdx != null && config.Tdx.AppId > 0)
+            {
+                tdxService = new TdxService(config.Tdx);
+            }
+
             // Build command tree
             var rootCommand = new RootCommand("FleetMate - Fleet orchestration, inventory, deployment monitoring, and troubleshooting")
             {
@@ -78,12 +118,30 @@ class Program
             
             // Snipe-IT asset management
             rootCommand.AddCommand(SnipeCommand.Create(snipeService));
-            
+
+            // SSH remote execution
+            rootCommand.AddCommand(SshCommand.Create(sshService, reportMate));
+
+            // Azure DevOps integration
+            rootCommand.AddCommand(DevOpsCommand.Create(adoService, reportMate));
+
+            // Intune device management
+            rootCommand.AddCommand(IntuneCommand.Create(graphService, reportMate));
+            // Entra ID (Azure AD) user/group management
+            rootCommand.AddCommand(EntraCommand.Create(graphService, reportMate));
+
+            // TeamDynamix (Ticketing)
+            rootCommand.AddCommand(TdxCommand.Create(tdxService, reportMate));
+
             var result = await rootCommand.InvokeAsync(args);
             
-            // Dispose Snipe service if created
+            // Dispose services
             snipeService?.Dispose();
-            
+            sshService?.Dispose();
+            adoService?.Dispose();
+            graphService?.Dispose();
+            tdxService?.Dispose();
+
             return result;
         }
         catch (Exception ex)
