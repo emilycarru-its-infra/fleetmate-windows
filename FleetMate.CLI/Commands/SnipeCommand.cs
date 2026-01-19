@@ -1,3 +1,4 @@
+#nullable disable warnings
 using System.CommandLine;
 using FleetMate.Models.Snipe;
 using FleetMate.Services;
