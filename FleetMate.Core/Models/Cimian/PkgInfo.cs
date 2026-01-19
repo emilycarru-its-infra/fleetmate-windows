@@ -1,4 +1,4 @@
-namespace FleetMate.Models;
+namespace FleetMate.Models.Cimian;
 
 /// <summary>
 /// Represents a parsed pkginfo YAML file
@@ -13,7 +13,7 @@ public class PkgInfo
     public List<string> SupportedArchitectures { get; set; } = new();
     
     // Installer info
-    public InstallerInfo? Installer { get; set; }
+    public PkgInstallerInfo? Installer { get; set; }
     
     // Scripts
     public string? PreinstallScript { get; set; }
@@ -22,11 +22,12 @@ public class PkgInfo
     public string? UninstallcheckScript { get; set; }
     
     // Uninstaller
-    public List<UninstallerInfo>? Uninstaller { get; set; }
+    public List<PkgUninstallerInfo>? Uninstaller { get; set; }
     
     // Dependencies
     public List<string>? Requires { get; set; }
     public List<string>? UpdateFor { get; set; }
+    public List<string>? BlockingApplications { get; set; }
     
     // Metadata
     public string? Category { get; set; }
@@ -42,7 +43,7 @@ public class PkgInfo
 /// <summary>
 /// Installer section of pkginfo
 /// </summary>
-public class InstallerInfo
+public class PkgInstallerInfo
 {
     public string Type { get; set; } = string.Empty;  // msi, exe, nupkg, pkg, etc.
     public string? Location { get; set; }
@@ -56,7 +57,7 @@ public class InstallerInfo
 /// <summary>
 /// Uninstaller entry in pkginfo
 /// </summary>
-public class UninstallerInfo
+public class PkgUninstallerInfo
 {
     public string Type { get; set; } = string.Empty;  // msi, exe, script, etc.
     public string? ProductCode { get; set; }
@@ -80,12 +81,30 @@ public class PkgInfoValidation
 /// <summary>
 /// A validation issue found in pkginfo
 /// </summary>
+public class PkgValidationIssue
+{
+    public PkgValidationSeverity Severity { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public string? Field { get; set; }
+    public string? Suggestion { get; set; }
+}
+
+/// <summary>
+/// Validation issue for PkgInfoService compatibility
+/// </summary>
 public class ValidationIssue
 {
     public ValidationSeverity Severity { get; set; }
     public string Message { get; set; } = string.Empty;
     public string? Field { get; set; }
     public string? Suggestion { get; set; }
+}
+
+public enum PkgValidationSeverity
+{
+    Info,
+    Warning,
+    Error
 }
 
 public enum ValidationSeverity

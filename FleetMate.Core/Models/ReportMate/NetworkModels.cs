@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using FleetMate.Converters;
 
-namespace FleetMate.Models;
+namespace FleetMate.Models.ReportMate;
 
 /// <summary>
 /// Device installation log from Cimian client
@@ -28,29 +28,40 @@ public class NetworkInfo
     [JsonPropertyName("hostname")]
     public string? Hostname { get; set; }
     
-    [JsonPropertyName("domainName")]
+    [JsonPropertyName("domain")]
     public string? DomainName { get; set; }
     
-    [JsonPropertyName("dnsServers")]
-    public List<string>? DnsServers { get; set; }
+    [JsonPropertyName("dns")]
+    public DnsInfo? Dns { get; set; }
     
     [JsonPropertyName("interfaces")]
     public List<NetworkInterface>? Interfaces { get; set; }
     
+    [JsonPropertyName("activeConnection")]
+    public ActiveConnection? ActiveConnection { get; set; }
+    
     /// <summary>
-    /// Get the primary IPv4 address (first non-loopback, non-link-local)
+    /// Get the primary IPv4 address from activeConnection or first interface
     /// </summary>
     [JsonIgnore]
-    public string? PrimaryIpv4 => Interfaces?
-        .SelectMany(i => i.Addresses ?? new List<string>())
-        .FirstOrDefault(a => IsValidIpv4(a));
+    public string? PrimaryIpv4 => 
+        // First try activeConnection.ipAddress
+        ActiveConnection?.IpAddress ??
+        // Then try interfaces
+        Interfaces?
+            .Where(i => i.IsActive)
+            .SelectMany(i => i.IpAddresses ?? new List<string>())
+            .FirstOrDefault(a => IsValidIpv4(a)) ??
+        Interfaces?
+            .SelectMany(i => i.IpAddresses ?? new List<string>())
+            .FirstOrDefault(a => IsValidIpv4(a));
     
     /// <summary>
     /// Get all IPv4 addresses
     /// </summary>
     [JsonIgnore]
     public List<string> AllIpv4Addresses => Interfaces?
-        .SelectMany(i => i.Addresses ?? new List<string>())
+        .SelectMany(i => i.IpAddresses ?? new List<string>())
         .Where(a => IsValidIpv4(a))
         .ToList() ?? new List<string>();
     
@@ -65,6 +76,51 @@ public class NetworkInfo
 }
 
 /// <summary>
+/// DNS configuration
+/// </summary>
+public class DnsInfo
+{
+    [JsonPropertyName("servers")]
+    public List<string>? Servers { get; set; }
+    
+    [JsonPropertyName("domain")]
+    public string? Domain { get; set; }
+    
+    [JsonPropertyName("searchDomains")]
+    public List<string>? SearchDomains { get; set; }
+}
+
+/// <summary>
+/// Active network connection details
+/// </summary>
+public class ActiveConnection
+{
+    [JsonPropertyName("ipAddress")]
+    public string? IpAddress { get; set; }
+    
+    [JsonPropertyName("macAddress")]
+    public string? MacAddress { get; set; }
+    
+    [JsonPropertyName("gateway")]
+    public string? Gateway { get; set; }
+    
+    [JsonPropertyName("interfaceName")]
+    public string? InterfaceName { get; set; }
+    
+    [JsonPropertyName("friendlyName")]
+    public string? FriendlyName { get; set; }
+    
+    [JsonPropertyName("connectionType")]
+    public string? ConnectionType { get; set; }
+    
+    [JsonPropertyName("isVpnActive")]
+    public bool IsVpnActive { get; set; }
+    
+    [JsonPropertyName("vpnName")]
+    public string? VpnName { get; set; }
+}
+
+/// <summary>
 /// Network interface information
 /// </summary>
 public class NetworkInterface
@@ -72,20 +128,32 @@ public class NetworkInterface
     [JsonPropertyName("name")]
     public string? Name { get; set; }
     
+    [JsonPropertyName("friendlyName")]
+    public string? FriendlyName { get; set; }
+    
     [JsonPropertyName("description")]
     public string? Description { get; set; }
     
     [JsonPropertyName("macAddress")]
     public string? MacAddress { get; set; }
     
-    [JsonPropertyName("addresses")]
-    public List<string>? Addresses { get; set; }
+    [JsonPropertyName("ipAddresses")]
+    public List<string>? IpAddresses { get; set; }
     
     [JsonPropertyName("status")]
     public string? Status { get; set; }
     
     [JsonPropertyName("type")]
     public string? Type { get; set; }
+    
+    [JsonPropertyName("isActive")]
+    public bool IsActive { get; set; }
+    
+    [JsonPropertyName("mtu")]
+    public int Mtu { get; set; }
+    
+    [JsonPropertyName("linkSpeed")]
+    public string? LinkSpeed { get; set; }
 }
 
 /// <summary>

@@ -1,9 +1,9 @@
-namespace FleetMate.Models.Ssh;
+namespace FleetMate.Models.SecureShell;
 
 /// <summary>
-/// SSH connection configuration
+/// SecureShell connection configuration
 /// </summary>
-public class SshConfig
+public class SecureShellConfig
 {
     /// <summary>
     /// Path to private key file (supports ~ for home directory)
@@ -23,7 +23,7 @@ public class SshConfig
     public string? KeyVaultName { get; set; }
 
     /// <summary>
-    /// Default username for SSH connections (ithelp for devices without user login)
+    /// Default username for SecureShell connections (ithelp for devices without user login)
     /// </summary>
     public string DefaultUsername { get; set; } = "ithelp";
 
@@ -38,12 +38,12 @@ public class SshConfig
     public int CommandTimeoutSeconds { get; set; } = 120;
 
     /// <summary>
-    /// Maximum concurrent SSH connections for batch operations
+    /// Maximum concurrent SecureShell connections for batch operations
     /// </summary>
     public int MaxConcurrentConnections { get; set; } = 10;
 
     /// <summary>
-    /// Default SSH port
+    /// Default SecureShell port
     /// </summary>
     public int Port { get; set; } = 22;
 
