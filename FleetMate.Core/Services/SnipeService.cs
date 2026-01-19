@@ -54,6 +54,8 @@ public class SnipeService : IDisposable
             PropertyNameCaseInsensitive = true,
             PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
         };
+        _jsonOptions.Converters.Add(new SnipeDateConverter());
+        _jsonOptions.Converters.Add(new SnipeDateTimeConverter());
         
         _cacheDuration = TimeSpan.FromMinutes(cacheMinutes);
     }
@@ -111,9 +113,7 @@ public class SnipeService : IDisposable
                     queryParams.Add($"company_id={companyId}");
                 
                 var url = $"/api/v1/hardware?{string.Join("&", queryParams)}";
-                Console.Error.WriteLine($"DEBUG: Fetching from {_client.BaseAddress}{url}");
                 var response = await _client.GetAsync(url);
-                Console.Error.WriteLine($"DEBUG: Response status: {response.StatusCode}");
                 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -123,19 +123,40 @@ public class SnipeService : IDisposable
                 }
                 
                 var rawJson = await response.Content.ReadAsStringAsync();
-                Console.Error.WriteLine($"DEBUG: Response length: {rawJson.Length}, first 200 chars: {rawJson.Substring(0, Math.Min(200, rawJson.Length))}");
-                
-                // Re-read the response
-                SnipeListResponse<SnipeAsset>? wrapper = null;
+                SnipeListResponse<SnipeAsset>? wrapper;
                 try
                 {
-                    wrapper = System.Text.Json.JsonSerializer.Deserialize<SnipeListResponse<SnipeAsset>>(rawJson, _jsonOptions);
-                    Console.Error.WriteLine($"DEBUG: Wrapper.Total={wrapper?.Total}, Rows.Count={wrapper?.Rows?.Count}");
+                    wrapper = JsonSerializer.Deserialize<SnipeListResponse<SnipeAsset>>(rawJson, _jsonOptions);
                 }
-                catch (Exception ex)
+                catch (JsonException)
                 {
-                    Console.Error.WriteLine($"DEBUG: Deserialization failed: {ex.Message}");
-                    break;
+                    wrapper = new SnipeListResponse<SnipeAsset>();
+                    using var doc = JsonDocument.Parse(rawJson);
+                    var root = doc.RootElement;
+
+                    if (root.TryGetProperty("total", out var totalProp) && totalProp.TryGetInt32(out var total))
+                    {
+                        wrapper.Total = total;
+                    }
+
+                    if (root.TryGetProperty("rows", out var rowsProp) && rowsProp.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var row in rowsProp.EnumerateArray())
+                        {
+                            try
+                            {
+                                var asset = row.Deserialize<SnipeAsset>(_jsonOptions);
+                                if (asset != null)
+                                {
+                                    wrapper.Rows.Add(asset);
+                                }
+                            }
+                            catch (JsonException)
+                            {
+                                // Skip invalid rows to avoid failing the entire response
+                            }
+                        }
+                    }
                 }
                 if (wrapper?.Rows == null || wrapper.Rows.Count == 0)
                     break;

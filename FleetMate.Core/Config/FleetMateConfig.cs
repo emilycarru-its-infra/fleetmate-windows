@@ -204,6 +204,20 @@ public class FleetMateConfig
             var graphTenantId = key.GetValue("GraphTenantId") as string;
             if (!string.IsNullOrEmpty(graphTenantId))
                 config.Graph.TenantId = graphTenantId;
+
+            var graphClientId = key.GetValue("GraphClientId") as string;
+            if (!string.IsNullOrEmpty(graphClientId))
+            {
+                config.Graph.ClientId = graphClientId;
+                config.Graph.UseAzureCliAuth = false;
+            }
+
+            var graphClientSecret = key.GetValue("GraphClientSecret") as string;
+            if (!string.IsNullOrEmpty(graphClientSecret))
+            {
+                config.Graph.ClientSecret = graphClientSecret;
+                config.Graph.UseAzureCliAuth = false;
+            }
             
             // TeamDynamix credentials
             config.Tdx ??= new TdxConfig();
@@ -341,6 +355,59 @@ public class FleetMateConfig
                         break;
                     case "SNIPE_API_KEY":
                         config.SnipeApiKey = value;
+                        break;
+                    case "GRAPH_TENANT_ID":
+                        config.Graph ??= new GraphConfig();
+                        config.Graph.TenantId = value;
+                        break;
+                    case "GRAPH_CLIENT_ID":
+                        config.Graph ??= new GraphConfig();
+                        config.Graph.ClientId = value;
+                        config.Graph.UseAzureCliAuth = false;
+                        break;
+                    case "GRAPH_CLIENT_SECRET":
+                        config.Graph ??= new GraphConfig();
+                        config.Graph.ClientSecret = value;
+                        config.Graph.UseAzureCliAuth = false;
+                        break;
+                    case "GRAPH_USE_AZURE_CLI":
+                        config.Graph ??= new GraphConfig();
+                        if (bool.TryParse(value, out var useCli))
+                        {
+                            config.Graph.UseAzureCliAuth = useCli;
+                        }
+                        break;
+                    case "TDX_BASE_URL":
+                        config.Tdx ??= new TdxConfig();
+                        config.Tdx.BaseUrl = value;
+                        break;
+                    case "TDX_APP_ID":
+                        config.Tdx ??= new TdxConfig();
+                        if (int.TryParse(value, out var appId))
+                        {
+                            config.Tdx.AppId = appId;
+                        }
+                        break;
+                    case "TDX_USERNAME":
+                        config.Tdx ??= new TdxConfig();
+                        config.Tdx.Username = value;
+                        break;
+                    case "TDX_PASSWORD":
+                        config.Tdx ??= new TdxConfig();
+                        config.Tdx.Password = value;
+                        break;
+                    case "TDX_BEID":
+                        config.Tdx ??= new TdxConfig();
+                        config.Tdx.Beid = value;
+                        break;
+                    case "TDX_WEB_SERVICES_KEY":
+                        config.Tdx ??= new TdxConfig();
+                        config.Tdx.WebServicesKey = value;
+                        break;
+                    case "SECURE_SHELL_PRIVATE_KEY":
+                        config.SecureShell ??= new SecureShellConfig();
+                        config.SecureShell.PrivateKeyEnvVar = "SECURE_SHELL_PRIVATE_KEY";
+                        Environment.SetEnvironmentVariable("SECURE_SHELL_PRIVATE_KEY", value);
                         break;
                 }
             }

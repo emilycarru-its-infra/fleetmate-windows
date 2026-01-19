@@ -11,6 +11,16 @@ public class GraphConfig
     public string? TenantId { get; set; }
 
     /// <summary>
+    /// Azure application (client) ID for service principal auth
+    /// </summary>
+    public string? ClientId { get; set; }
+
+    /// <summary>
+    /// Azure application client secret for service principal auth
+    /// </summary>
+    public string? ClientSecret { get; set; }
+
+    /// <summary>
     /// Use Azure CLI for authentication (default: true)
     /// </summary>
     public bool UseAzureCliAuth { get; set; } = true;
