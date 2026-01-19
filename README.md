@@ -1,0 +1,469 @@
+# FleetMate
+
+> Enterprise IT fleet orchestration, asset management, and deployment monitoring CLI
+
+FleetMate is a unified command-line interface for managing IT assets across multiple systems including Snipe-IT, TeamDynamix, Microsoft Intune/Entra, ReportMate, and Azure DevOps. Built for Windows with .NET 10, it provides a consistent interface for fleet management tasks.
+
+## Features
+
+- **Fleet Monitoring** - Real-time device status and error tracking via ReportMate
+- **Asset Management** - Complete Snipe-IT integration (assets, users, locations, checkout/checkin)
+- **Ticketing** - TeamDynamix ticket and asset management
+- **Identity & Device** - Microsoft Entra ID and Intune integration
+- **Remote Execution** - SSH-based remote command execution
+- **Rich Output** - Beautiful tables and JSON export support
+- **Flexible Config** - Environment variables, registry, YAML, or .env files
+
+## Quick Start
+
+### Installation
+
+Download the latest release `.pkg` file and install via sbin-installer, or build from source:
+
+```powershell
+git clone https://github.com/fleetmate-qa/fleetmate-windows.git
+cd fleetmate-windows
+.\build.ps1 -Publish -Sign -PkgOnly
+```
+
+### Configuration
+
+FleetMate uses a priority-based configuration system:
+
+1. **Environment Variables** (highest priority)
+2. **Windows Registry** (`HKCU\SOFTWARE\FleetMate`)
+3. **.env file** (in executable directory or parent)
+4. **config.yaml** (in executable directory or `%LOCALAPPDATA%\FleetMate\`)
+
+**Quick Setup:**
+```powershell
+# Run interactive configuration wizard
+fleetmate configure
+
+# Or set environment variables
+$env:SNIPE_URL = "https://snipe.example.com"
+$env:SNIPE_API_KEY = "your-api-key"
+$env:REPORTMATE_URL = "https://reportmate.example.com"
+$env:REPORTMATE_PASSPHRASE = "your-passphrase"
+```
+
+### Verify Installation
+
+```powershell
+fleetmate status
+```
+
+This displays your configuration, available services, and connection status.
+
+## Command Reference
+
+### Fleet Monitoring
+
+Monitor deployment health and troubleshoot installation failures:
+
+```powershell
+# Look up device by serial, hostname, or asset tag
+fleetmate device ASSET-000
+
+# List all installation errors
+fleetmate errors
+
+# List errors for specific package
+fleetmate errors --item "Adobe Creative Cloud"
+
+# Deep-dive troubleshooting for specific package
+fleetmate troubleshoot "Adobe Creative Cloud"
+```
+
+### Asset Management (Snipe-IT)
+
+Comprehensive Snipe-IT integration with 15+ subcommands:
+
+```powershell
+# Search assets
+fleetmate snipe assets --search "laptop"
+fleetmate snipe assets --status 2 --location 5
+
+# Get asset details (by tag, serial, or ID)
+fleetmate snipe asset ASSET-000
+
+# Asset lifecycle
+fleetmate snipe checkout 923 --user 42 --note "Assigned to new hire"
+fleetmate snipe checkin 923 --note "Returned from user"
+fleetmate snipe audit 923 --location 5
+
+# Users and locations
+fleetmate snipe users --search "bryan"
+fleetmate snipe user 42
+fleetmate snipe locations
+
+# Asset metadata
+fleetmate snipe models
+fleetmate snipe categories
+fleetmate snipe manufacturers
+fleetmate snipe statuses
+
+# Licenses and inventory
+fleetmate snipe licenses --search "Adobe"
+fleetmate snipe accessories
+fleetmate snipe consumables
+fleetmate snipe components
+
+# Activity log
+fleetmate snipe activity --limit 50
+```
+
+### TeamDynamix
+
+Asset and ticket management:
+
+```powershell
+# Search assets (returns full field data via JsonExtensionData)
+fleetmate tdx assets --search ASSET-000 --limit 10
+
+# Get asset details with all fields
+fleetmate tdx asset 243576 --json
+
+# Ticket management
+fleetmate tdx tickets --status "New" --priority "High"
+fleetmate tdx ticket 12345
+fleetmate tdx create "Laptop not booting" --description "User reports black screen"
+fleetmate tdx comment 12345 "Troubleshooting steps taken..."
+```
+
+### Remote Execution (SecureShell)
+
+SSH-based remote command execution:
+
+```powershell
+# Execute single command
+fleetmate ssh exec ASSET-000 "hostname"
+fleetmate ssh exec REMOTE-24 "Get-Service Cimian"
+
+# Batch execution
+fleetmate ssh batch "ASSET-000,REMOTE-24,STUDIO-10" "uptime"
+
+# Test connectivity
+fleetmate ssh test ASSET-000
+
+# Retrieve Cimian logs
+fleetmate ssh logs ASSET-000
+```
+
+### Microsoft Graph (Intune/Entra)
+
+Query Intune devices and Entra users:
+
+```powershell
+# Intune devices
+fleetmate intune devices
+fleetmate intune device EXAMPLE4  # by serial
+fleetmate intune compliance <device-id>
+
+# Entra users
+fleetmate entra user first.last@example.edu
+fleetmate entra groups
+fleetmate entra check-group first.last@example.edu "IT Staff"
+```
+
+### Azure DevOps
+
+Work item management:
+
+```powershell
+# List work items
+fleetmate devops items --state Active
+fleetmate devops items --assigned-to "me"
+
+# Work item details
+fleetmate devops item 1234
+
+# Create work items
+fleetmate devops create "Fix deployment error" --type Task
+fleetmate devops from-error "Adobe Creative Cloud"  # auto-create from error
+
+# Update work items
+fleetmate devops update 1234 --state Resolved --comment "Fixed by script update"
+```
+
+### Quality Assurance
+
+Package validation and testing:
+
+```powershell
+# Validate package structure
+fleetmate validate /path/to/package
+
+# Lint pkginfo files
+fleetmate lint /path/to/pkginfo
+
+# Run quality tests
+fleetmate test --suite smoke
+fleetmate qa run --environment staging
+```
+
+## JSON Output
+
+All commands support `--json` for programmatic consumption:
+
+```powershell
+fleetmate snipe asset ASSET-000 --json | ConvertFrom-Json
+fleetmate tdx assets --search ASSET-000 --json | ConvertFrom-Json
+fleetmate intune device EXAMPLE4 --json | ConvertFrom-Json
+```
+
+## System Check Demo
+
+FleetMate includes a comprehensive system check script that tests all integrations:
+
+```powershell
+# Run full system check for an asset
+powershell -File "C:\path\to\fleetmate\scripts\system-check.ps1" -AssetTag ASSET-000
+```
+
+This generates a timestamped log showing:
+- ReportMate device lookup
+- Snipe-IT asset details
+- Entra user lookup (if assigned)
+- Intune device information (if serial available)
+- TeamDynamix asset summary
+- SecureShell command execution
+
+**Sample Output:**
+```
+FleetMate system check for asset tag ASSET-000
+Timestamp: 2026-01-18 23:41:26Z
+
+=== ReportMate: device lookup ===
+Remote Compute 24 (Serial: EXAMPLE4)
+
+=== Snipe: asset detail ===
++-------------------- Asset Details --------------------+
+ID         : 923
+Asset Tag  : ASSET-000
+Name       : Remote Compute 24
+Serial     : EXAMPLE4
+Model      : Dell Precision 3660 Tower
+Status     : Ready to Deploy
+Location   : IT Storage
+...
+
+=== TDX Asset ===
++-------------------- TDX Asset --------------------+
+Name        : Remote Compute 24
+Asset Tag   : ASSET-000
+Serial      : EXAMPLE4
+Model       : Precision 3660 Tower
+Manufacturer: Dell
+Status      : In Use
+...
+
+Log saved to: quality\fleetmate\logs\system-check-ASSET-000-20260118-234126.log
+```
+
+## Build & Package
+
+### Build from Source
+
+```powershell
+# Standard build
+.\build.ps1
+
+# Publish self-contained executable
+.\build.ps1 -Publish
+
+# Build and create .pkg package
+.\build.ps1 -Publish -Sign -PkgOnly
+
+# Clean build
+.\build.ps1 -Clean -Publish
+```
+
+### Output
+
+- **Executable:** `publish\fleetmate.exe` (41.4 MB single-file)
+- **Package:** `release\FleetMate-YYYY.MM.DD.HHMM.pkg` (42 MB)
+- **Logs:** `quality\fleetmate\logs\`
+
+## Configuration Reference
+
+### Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `REPORTMATE_URL` | ReportMate API endpoint | `https://reportmate.example.edu` |
+| `REPORTMATE_PASSPHRASE` | ReportMate authentication token | `your-token` |
+| `SNIPE_URL` | Snipe-IT base URL | `https://snipe.example.edu` |
+| `SNIPE_API_KEY` | Snipe-IT API key | `your-api-key` |
+| `TDX_BASE_URL` | TeamDynamix API endpoint | `https://servicedesk.emilycarru.ca/TDWebApi` |
+| `TDX_APP_ID` | TeamDynamix application ID | `116` |
+| `TDX_BEID` | TeamDynamix BEID | `your-beid` |
+| `TDX_WEB_SERVICES_KEY` | TeamDynamix web services key | `your-key` |
+| `SECURE_SHELL_PRIVATE_KEY` | SSH private key (base64 or PEM) | `-----BEGIN RSA PRIVATE KEY-----...` |
+| `SECURE_SHELL_USERNAME` | SSH username | `administrator` |
+
+### Windows Registry
+
+Registry keys under `HKEY_CURRENT_USER\SOFTWARE\FleetMate`:
+
+- `TdxBaseUrl` (string)
+- `TdxAppId` (string)
+- `TdxBeid` / `TdxWebServicesKey` (string)
+- `SnipeUrl` / `SnipeApiKey` (string)
+- `ReportMateUrl` / `ReportMatePassphrase` (string)
+
+### Config File (config.yaml)
+
+```yaml
+reportmate:
+  url: https://reportmate.example.edu
+  passphrase: your-passphrase
+
+snipe:
+  url: https://snipe.example.edu
+  api_key: your-api-key
+
+tdx:
+  base_url: https://servicedesk.emilycarru.ca/TDWebApi
+  app_id: 116
+  beid: your-beid
+  web_services_key: your-key
+
+secure_shell:
+  username: administrator
+  private_key_path: C:\keys\id_rsa
+
+logging:
+  path: C:\Logs\FleetMate
+  level: Information
+```
+
+## Architecture
+
+```
+FleetMate/
+├── FleetMate.CLI/           # Command-line interface
+│   ├── Commands/            # Command implementations
+│   │   ├── StatusCommand.cs
+│   │   ├── DeviceCommand.cs
+│   │   ├── SnipeCommand.cs
+│   │   ├── TdxCommand.cs
+│   │   ├── IntuneCommand.cs
+│   │   ├── EntraCommand.cs
+│   │   ├── SshCommand.cs
+│   │   └── ...
+│   └── Program.cs           # Entry point
+├── FleetMate.Core/          # Core business logic
+│   ├── Services/            # API clients
+│   │   ├── ReportMateService.cs
+│   │   ├── SnipeService.cs
+│   │   ├── TdxService.cs
+│   │   ├── GraphService.cs
+│   │   ├── SecureShellService.cs
+│   │   └── ...
+│   ├── Models/              # Data models
+│   │   ├── Snipe/
+│   │   ├── Tdx/
+│   │   ├── Graph/
+│   │   └── ...
+│   └── Configuration/       # Config loading
+└── FleetMate.GUI/           # Future WPF UI
+```
+
+### Tech Stack
+
+- **.NET 10** - Modern cross-platform framework
+- **System.CommandLine** - Robust CLI framework
+- **Spectre.Console** - Rich terminal UI
+- **Serilog** - Structured logging
+- **Renci.SshNet** - SSH client
+- **YamlDotNet** - YAML configuration
+- **System.Text.Json** - High-performance JSON
+
+## Troubleshooting
+
+### TDX Authentication Errors
+
+If you see error 487 "unregistered host name":
+
+```powershell
+# Check registry values
+Get-ItemProperty HKCU:\SOFTWARE\FleetMate
+
+# Update if incorrect
+Set-ItemProperty HKCU:\SOFTWARE\FleetMate -Name TdxBaseUrl -Value "https://servicedesk.emilycarru.ca/TDWebApi"
+Set-ItemProperty HKCU:\SOFTWARE\FleetMate -Name TdxAppId -Value "116"
+```
+
+### SSH Connection Failures
+
+```powershell
+# Test connectivity
+fleetmate ssh test ASSET-000
+
+# Verify key permissions and format
+# Key should be PEM format, no passphrase
+# Set via environment variable or config
+```
+
+### Missing Configuration
+
+```powershell
+# Run status to see what's configured
+fleetmate status
+
+# Use interactive wizard
+fleetmate configure
+
+# Or manually set environment variables
+$env:SNIPE_URL = "https://snipe.example.com"
+$env:SNIPE_API_KEY = "your-key"
+```
+
+## Development
+
+### Prerequisites
+
+- .NET 10 SDK
+- Windows 10/11
+- PowerShell 7+
+- Visual Studio 2022 or VS Code
+
+### Build & Test
+
+```powershell
+# Restore dependencies
+dotnet restore
+
+# Build
+dotnet build
+
+# Run
+dotnet run --project FleetMate.CLI -- status
+
+# Publish
+dotnet publish FleetMate.CLI --configuration Release --runtime win-x64 --self-contained
+```
+
+### Testing
+
+```powershell
+# Run system check
+.\scripts\system-check.ps1 -AssetTag ASSET-000
+
+# Manual command testing
+dotnet run --project FleetMate.CLI -- device ASSET-000
+dotnet run --project FleetMate.CLI -- snipe asset ASSET-000
+dotnet run --project FleetMate.CLI -- tdx assets --search ASSET-000
+```
+
+## License
+
+Proprietary - Example Organisation
+
+## Support
+
+For issues or questions:
+- File an issue on GitHub
+- Contact IT Systems team
+- Check logs in `quality\fleetmate\logs\`
