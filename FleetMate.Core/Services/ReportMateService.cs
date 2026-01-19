@@ -229,6 +229,116 @@ public class ReportMateService : IDisposable
             i.ItemName.Equals(itemName, StringComparison.OrdinalIgnoreCase)).ToList();
     }
     
+    /// <summary>
+    /// Get device installation log (Cimian log entries)
+    /// </summary>
+    public async Task<DeviceLog?> GetDeviceLogAsync(string serialNumber)
+    {
+        Log.Debug("Fetching install log for device {Serial}", serialNumber);
+        
+        try
+        {
+            var response = await _client.GetAsync($"/api/device/{serialNumber}/installs/log");
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Warning("Failed to fetch device log: {Status} - {Error}", response.StatusCode, error);
+                return null;
+            }
+            
+            return await response.Content.ReadFromJsonAsync<DeviceLog>(_jsonOptions);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to fetch device log for {Serial}", serialNumber);
+            return null;
+        }
+    }
+    
+    /// <summary>
+    /// Get device network information including IP addresses
+    /// </summary>
+    public async Task<NetworkInfo?> GetDeviceNetworkAsync(string serialNumber)
+    {
+        Log.Debug("Fetching network info for device {Serial}", serialNumber);
+        
+        try
+        {
+            var response = await _client.GetAsync($"/api/device/{serialNumber}/modules/network");
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Warning("Failed to fetch device network: {Status} - {Error}", response.StatusCode, error);
+                return null;
+            }
+            
+            var wrapper = await response.Content.ReadFromJsonAsync<ModuleDataWrapper>(_jsonOptions);
+            return wrapper?.Data?.ToObject<NetworkInfo>(_jsonOptions);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to fetch network info for {Serial}", serialNumber);
+            return null;
+        }
+    }
+    
+    /// <summary>
+    /// Get fleet-wide network data (all devices with network info)
+    /// </summary>
+    public async Task<List<DeviceNetworkInfo>> GetFleetNetworkAsync()
+    {
+        Log.Debug("Fetching fleet network data...");
+        
+        try
+        {
+            var response = await _client.GetAsync("/api/devices/network");
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Warning("Failed to fetch fleet network: {Status} - {Error}", response.StatusCode, error);
+                return new List<DeviceNetworkInfo>();
+            }
+            
+            var devices = await response.Content.ReadFromJsonAsync<List<DeviceNetworkInfo>>(_jsonOptions);
+            return devices ?? new List<DeviceNetworkInfo>();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to fetch fleet network data");
+            return new List<DeviceNetworkInfo>();
+        }
+    }
+    
+    /// <summary>
+    /// Get full device details with all modules
+    /// </summary>
+    public async Task<FullDevice?> GetFullDeviceAsync(string serialNumber)
+    {
+        Log.Debug("Fetching full device data for {Serial}", serialNumber);
+        
+        try
+        {
+            var response = await _client.GetAsync($"/api/device/{serialNumber}");
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Warning("Failed to fetch full device: {Status} - {Error}", response.StatusCode, error);
+                return null;
+            }
+            
+            return await response.Content.ReadFromJsonAsync<FullDevice>(_jsonOptions);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to fetch full device for {Serial}", serialNumber);
+            return null;
+        }
+    }
+    
     private static string NormalizeMac(string? mac)
     {
         if (string.IsNullOrEmpty(mac)) return string.Empty;

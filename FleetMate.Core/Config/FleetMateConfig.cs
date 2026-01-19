@@ -1,3 +1,4 @@
+using Microsoft.Win32;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 using Serilog;
@@ -9,6 +10,12 @@ namespace FleetMate.Config;
 
 /// <summary>
 /// Configuration for FleetMate
+///
+/// Credentials are loaded in order of precedence:
+/// 1. Environment variables (highest priority, for CI/CD)
+/// 2. Windows Registry (HKCU\SOFTWARE\FleetMate) - for developer workstations
+/// 3. .env files (legacy fallback)
+/// 4. Config YAML files (default values)
 ///
 /// Required Environment Variables:
 /// - REPORTMATE_URL: ReportMate API base URL
@@ -33,6 +40,9 @@ namespace FleetMate.Config;
 /// </summary>
 public class FleetMateConfig
 {
+    // Registry path for FleetMate credentials (OMA-URI style CSP path)
+    private const string RegistryPath = @"SOFTWARE\FleetMate";
+    
     // ReportMate API settings (required: REPORTMATE_URL, REPORTMATE_PASSPHRASE)
     public string? ReportMateUrl { get; set; }
     public string? ReportMatePassphrase { get; set; }
@@ -128,7 +138,11 @@ public class FleetMateConfig
             LoadEnvFile(localEnv, config);
         }
         
-        // Environment variables override config file
+        // Load from Windows Registry (CSP OMA-URI style credentials store)
+        // This is the preferred method for developer workstations
+        LoadFromRegistry(config);
+        
+        // Environment variables override everything (for CI/CD and temporary overrides)
         var envUrl = Environment.GetEnvironmentVariable("REPORTMATE_URL");
         if (!string.IsNullOrEmpty(envUrl))
             config.ReportMateUrl = envUrl;
@@ -150,6 +164,119 @@ public class FleetMateConfig
         config.RepoRoot = FindRepoRoot();
         
         return config;
+    }
+    
+    /// <summary>
+    /// Load credentials from Windows Registry (HKCU\SOFTWARE\FleetMate)
+    /// This is the CSP OMA-URI style approach for persistent credential storage
+    /// </summary>
+    private static void LoadFromRegistry(FleetMateConfig config)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RegistryPath);
+            if (key == null)
+            {
+                Log.Debug("Registry key not found: HKCU\\{Path}", RegistryPath);
+                return;
+            }
+            
+            // ReportMate credentials
+            var reportMateUrl = key.GetValue("ReportMateUrl") as string;
+            if (!string.IsNullOrEmpty(reportMateUrl))
+                config.ReportMateUrl = reportMateUrl;
+            
+            var reportMatePassphrase = key.GetValue("ReportMatePassphrase") as string;
+            if (!string.IsNullOrEmpty(reportMatePassphrase))
+                config.ReportMatePassphrase = reportMatePassphrase;
+            
+            // Snipe-IT credentials
+            var snipeUrl = key.GetValue("SnipeUrl") as string;
+            if (!string.IsNullOrEmpty(snipeUrl))
+                config.SnipeUrl = snipeUrl;
+            
+            var snipeApiKey = key.GetValue("SnipeApiKey") as string;
+            if (!string.IsNullOrEmpty(snipeApiKey))
+                config.SnipeApiKey = snipeApiKey;
+            
+            Log.Debug("Loaded credentials from registry: HKCU\\{Path}", RegistryPath);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to load credentials from registry");
+        }
+    }
+    
+    /// <summary>
+    /// Save credentials to Windows Registry
+    /// Called by 'fleetmate configure' command
+    /// </summary>
+    public static void SaveToRegistry(string? reportMateUrl, string? reportMatePassphrase, 
+        string? snipeUrl = null, string? snipeApiKey = null)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(RegistryPath);
+            if (key == null)
+            {
+                Log.Error("Failed to create registry key: HKCU\\{Path}", RegistryPath);
+                return;
+            }
+            
+            if (!string.IsNullOrEmpty(reportMateUrl))
+                key.SetValue("ReportMateUrl", reportMateUrl);
+            
+            if (!string.IsNullOrEmpty(reportMatePassphrase))
+                key.SetValue("ReportMatePassphrase", reportMatePassphrase);
+            
+            if (!string.IsNullOrEmpty(snipeUrl))
+                key.SetValue("SnipeUrl", snipeUrl);
+            
+            if (!string.IsNullOrEmpty(snipeApiKey))
+                key.SetValue("SnipeApiKey", snipeApiKey);
+            
+            Log.Information("Saved credentials to registry: HKCU\\{Path}", RegistryPath);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to save credentials to registry");
+            throw;
+        }
+    }
+    
+    /// <summary>
+    /// Check if registry credentials are configured
+    /// </summary>
+    public static bool HasRegistryCredentials()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RegistryPath);
+            if (key == null) return false;
+            
+            var passphrase = key.GetValue("ReportMatePassphrase") as string;
+            return !string.IsNullOrEmpty(passphrase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+    
+    /// <summary>
+    /// Clear all FleetMate credentials from registry
+    /// </summary>
+    public static void ClearRegistry()
+    {
+        try
+        {
+            Registry.CurrentUser.DeleteSubKeyTree(RegistryPath, false);
+            Log.Information("Cleared registry credentials: HKCU\\{Path}", RegistryPath);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to clear registry credentials");
+        }
     }
     
     private static void LoadEnvFile(string path, FleetMateConfig config)
