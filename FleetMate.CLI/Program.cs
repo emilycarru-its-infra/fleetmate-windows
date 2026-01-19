@@ -31,9 +31,10 @@ class Program
         
         try
         {
-            // Create services
+            // Create services - use default URL if not configured
+            var reportMateUrl = config.ReportMateUrl ?? "https://reportmate-functions-api.blackdune-79551938.canadacentral.azurecontainerapps.io";
             using var reportMate = new ReportMateService(
-                config.ReportMateUrl, 
+                reportMateUrl, 
                 config.ReportMatePassphrase,
                 config.CacheMinutes);
             
@@ -115,6 +116,7 @@ class Program
             
             // Utility commands
             rootCommand.AddCommand(StatusCommand.Create(config, reportMate));
+            rootCommand.AddCommand(ConfigureCommand.Create(config));
             
             // Snipe-IT asset management
             rootCommand.AddCommand(SnipeCommand.Create(snipeService));
