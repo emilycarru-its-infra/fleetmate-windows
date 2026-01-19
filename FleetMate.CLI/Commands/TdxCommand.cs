@@ -24,6 +24,8 @@ public static class TdxCommand
         command.AddCommand(CreateCommentCommand(tdxService));
         command.AddCommand(CreateFromErrorCommand(tdxService, reportMate));
         command.AddCommand(CreateStatusesCommand(tdxService));
+        command.AddCommand(CreateAssetsCommand(tdxService));
+        command.AddCommand(CreateAssetCommand(tdxService));
 
         return command;
     }
@@ -117,6 +119,104 @@ public static class TdxCommand
 
             DisplayTickets(tickets);
         }, statusOption, typeOption, searchOption, openOption, limitOption, jsonOption);
+
+        return command;
+    }
+
+    private static Command CreateAssetsCommand(TdxService? tdxService)
+    {
+        var command = new Command("assets", "Search assets (partial results)");
+
+        var searchOption = new Option<string?>(
+            aliases: ["--search", "-q"],
+            description: "Search text (name, tag, serial, etc.)");
+
+        var limitOption = new Option<int>(
+            aliases: ["--limit", "-n"],
+            getDefaultValue: () => 25,
+            description: "Maximum results (default: 25)");
+
+        var jsonOption = new Option<bool>(
+            aliases: ["--json"],
+            description: "Output as JSON");
+
+        command.AddOption(searchOption);
+        command.AddOption(limitOption);
+        command.AddOption(jsonOption);
+
+        command.SetHandler(async (search, limit, json) =>
+        {
+            if (!EnsureConfigured(tdxService)) return;
+
+            List<TdxAsset> assets = new();
+
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .StartAsync("Searching assets...", async ctx =>
+                {
+                    assets = await tdxService!.SearchAssetsAsync(search, limit);
+                });
+
+            if (json)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(assets, JsonOptions));
+                return;
+            }
+
+            if (assets.Count == 0)
+            {
+                AnsiConsole.MarkupLine("[yellow]No assets found[/]");
+                return;
+            }
+
+            DisplayAssets(assets);
+        }, searchOption, limitOption, jsonOption);
+
+        return command;
+    }
+
+    private static Command CreateAssetCommand(TdxService? tdxService)
+    {
+        var command = new Command("asset", "Get asset details by ID");
+
+        var idArg = new Argument<int>(
+            name: "id",
+            description: "Asset ID");
+
+        var jsonOption = new Option<bool>(
+            aliases: ["--json"],
+            description: "Output as JSON");
+
+        command.AddArgument(idArg);
+        command.AddOption(jsonOption);
+
+        command.SetHandler(async (id, json) =>
+        {
+            if (!EnsureConfigured(tdxService)) return;
+
+            TdxAsset? asset = null;
+
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .StartAsync("Fetching asset...", async ctx =>
+                {
+                    asset = await tdxService!.GetAssetAsync(id);
+                });
+
+            if (asset == null)
+            {
+                AnsiConsole.MarkupLine("[yellow]Asset not found[/]");
+                return;
+            }
+
+            if (json)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(asset, JsonOptions));
+                return;
+            }
+
+            DisplayAsset(asset);
+        }, idArg, jsonOption);
 
         return command;
     }
@@ -628,6 +728,57 @@ public static class TdxCommand
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine($"[dim]URL:[/] {ticket.Uri}");
         }
+    }
+
+    private static void DisplayAssets(List<TdxAsset> assets)
+    {
+        var table = new Table();
+        table.Border = TableBorder.Rounded;
+        table.AddColumn("ID");
+        table.AddColumn("Tag");
+        table.AddColumn("Name");
+        table.AddColumn("Serial");
+        table.AddColumn("Status");
+        table.AddColumn("Location");
+
+        foreach (var asset in assets)
+        {
+            table.AddRow(
+                asset.Id.ToString(),
+                asset.Tag ?? "-",
+                Markup.Escape(TruncateText(asset.Name ?? "-", 30)),
+                Markup.Escape(TruncateText(asset.SerialNumber ?? "-", 20)),
+                asset.Status ?? "-",
+                Markup.Escape(TruncateText(asset.Location ?? "-", 20))
+            );
+        }
+
+        AnsiConsole.Write(table);
+        AnsiConsole.MarkupLine($"[dim]Showing {assets.Count} assets[/]");
+    }
+
+    private static void DisplayAsset(TdxAsset asset)
+    {
+        var panel = new Panel(
+            new Rows(
+                new Markup($"[bold]{Markup.Escape(asset.Name ?? "(no name)")}[/]"),
+                new Text(""),
+                new Markup($"[dim]ID:[/] {asset.Id}"),
+                new Markup($"[dim]Tag:[/] {asset.Tag ?? "-"}"),
+                new Markup($"[dim]Serial:[/] {asset.SerialNumber ?? "-"}"),
+                new Markup($"[dim]Model:[/] {asset.Model ?? "-"}"),
+                new Markup($"[dim]Manufacturer:[/] {asset.Manufacturer ?? "-"}"),
+                new Markup($"[dim]Type:[/] {asset.ProductType ?? "-"}"),
+                new Markup($"[dim]Status:[/] {asset.Status ?? "-"}"),
+                new Markup($"[dim]Location:[/] {asset.Location ?? "-"}"),
+                new Markup($"[dim]External ID:[/] {asset.ExternalId ?? "-"}")
+            ))
+        {
+            Header = new PanelHeader(" TDX Asset "),
+            Border = BoxBorder.Rounded
+        };
+
+        AnsiConsole.Write(panel);
     }
 
     private static void DisplayFeed(List<TdxFeedEntry> feed)

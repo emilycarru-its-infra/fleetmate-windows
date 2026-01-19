@@ -20,6 +20,8 @@ public class GraphService : IDisposable
     private string? _cachedToken;
     private DateTime _tokenExpiry = DateTime.MinValue;
 
+    private const string GraphScope = "https://graph.microsoft.com/.default";
+
     // Caches
     private readonly Dictionary<string, (EntraUser user, DateTime expiry)> _userCache = new();
     private readonly Dictionary<string, (EntraGroup group, DateTime expiry)> _groupCache = new();
@@ -49,7 +51,7 @@ public class GraphService : IDisposable
     #region Authentication
 
     /// <summary>
-    /// Get access token using Azure CLI SSO
+    /// Get access token using service principal or Azure CLI SSO
     /// </summary>
     private async Task<string?> GetAccessTokenAsync()
     {
@@ -60,6 +62,25 @@ public class GraphService : IDisposable
 
         try
         {
+            if (!_config.UseAzureCliAuth &&
+                !string.IsNullOrWhiteSpace(_config.TenantId) &&
+                !string.IsNullOrWhiteSpace(_config.ClientId) &&
+                !string.IsNullOrWhiteSpace(_config.ClientSecret))
+            {
+                var clientToken = await GetClientCredentialTokenAsync(
+                    _config.TenantId,
+                    _config.ClientId,
+                    _config.ClientSecret);
+
+                if (!string.IsNullOrEmpty(clientToken))
+                {
+                    _cachedToken = clientToken;
+                    _tokenExpiry = DateTime.UtcNow.AddMinutes(55);
+                    Log.Debug("Acquired Microsoft Graph access token via client credentials");
+                    return _cachedToken;
+                }
+            }
+
             var azPath = FindAzureCli();
             if (azPath == null)
             {
@@ -104,6 +125,49 @@ public class GraphService : IDisposable
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to get Microsoft Graph access token");
+            return null;
+        }
+    }
+
+    private async Task<string?> GetClientCredentialTokenAsync(string tenantId, string clientId, string clientSecret)
+    {
+        try
+        {
+            using var tokenClient = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(30)
+            };
+
+            var tokenEndpoint = $"https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token";
+            var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["client_id"] = clientId,
+                ["client_secret"] = clientSecret,
+                ["grant_type"] = "client_credentials",
+                ["scope"] = GraphScope
+            });
+
+            var response = await tokenClient.PostAsync(tokenEndpoint, content);
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Error("Graph token request failed: {Status} - {Error}", response.StatusCode, error);
+                return null;
+            }
+
+            using var stream = await response.Content.ReadAsStreamAsync();
+            using var doc = await JsonDocument.ParseAsync(stream);
+            if (doc.RootElement.TryGetProperty("access_token", out var tokenProp))
+            {
+                return tokenProp.GetString();
+            }
+
+            Log.Error("Graph token response missing access_token");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to get Microsoft Graph access token via client credentials");
             return null;
         }
     }

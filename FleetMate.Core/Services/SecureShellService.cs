@@ -48,29 +48,13 @@ public class SecureShellService : IDisposable
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"Failed to load SecureShell private key from {keySource}: {ex.Message}", ex);
+                Log.Warning(ex, "Failed to load SecureShell private key from {Source}. Falling back to file.", keySource);
+                _privateKey = LoadKeyFromFile();
             }
         }
         else
         {
-            // Fall back to file
-            var keyPath = _config.ResolvedKeyPath;
-            if (!File.Exists(keyPath))
-            {
-                throw new FileNotFoundException(
-                    $"SecureShell private key not found. Set SECURE_SHELL_PRIVATE_KEY environment variable, " +
-                    $"configure secureShell.keyVaultName, or ensure key exists at: {keyPath}");
-            }
-
-            try
-            {
-                _privateKey = new PrivateKeyFile(keyPath);
-                Log.Information("Loaded SecureShell private key from {Path}", keyPath);
-            }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException($"Failed to load SecureShell private key from {keyPath}: {ex.Message}", ex);
-            }
+            _privateKey = LoadKeyFromFile();
         }
 
         _connectionThrottle = new SemaphoreSlim(_config.MaxConcurrentConnections);
@@ -113,6 +97,27 @@ public class SecureShellService : IDisposable
             Log.Debug(ex, "Failed to get SecureShell key from Key Vault");
         }
         return null;
+    }
+
+    private PrivateKeyFile LoadKeyFromFile()
+    {
+        var keyPath = _config.ResolvedKeyPath;
+        if (!File.Exists(keyPath))
+        {
+            throw new FileNotFoundException(
+                $"SecureShell private key not found. Set SECURE_SHELL_PRIVATE_KEY environment variable, " +
+                $"configure secureShell.keyVaultName, or ensure key exists at: {keyPath}");
+        }
+
+        try
+        {
+            Log.Information("Loaded SecureShell private key from {Path}", keyPath);
+            return new PrivateKeyFile(keyPath);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Failed to load SecureShell private key from {keyPath}: {ex.Message}", ex);
+        }
     }
 
     /// <summary>

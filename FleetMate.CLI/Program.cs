@@ -75,7 +75,11 @@ class Program
 
             // Create Microsoft Graph service if configured
             GraphService? graphService = null;
-            if (config.Graph?.UseAzureCliAuth == true)
+            if (config.Graph != null &&
+                (config.Graph.UseAzureCliAuth ||
+                 (!string.IsNullOrWhiteSpace(config.Graph.TenantId) &&
+                  !string.IsNullOrWhiteSpace(config.Graph.ClientId) &&
+                  !string.IsNullOrWhiteSpace(config.Graph.ClientSecret))))
             {
                 graphService = new GraphService(config.Graph);
             }
