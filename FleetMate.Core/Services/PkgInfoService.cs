@@ -1,7 +1,7 @@
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 using FleetMate.Config;
-using FleetMate.Models;
+using FleetMate.Models.Cimian;
 using Serilog;
 
 namespace FleetMate.Services;

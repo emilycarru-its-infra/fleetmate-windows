@@ -1,4 +1,4 @@
-namespace FleetMate.Models;
+namespace FleetMate.Models.Cimian;
 
 /// <summary>
 /// Result from running a quality test
@@ -59,30 +59,4 @@ public class TestRunSummary
     public int Warnings { get; set; }
     public TimeSpan TotalDuration { get; set; }
     public List<TestResult> Results { get; set; } = new();
-}
-
-/// <summary>
-/// Package location info
-/// </summary>
-public class PackageLocation
-{
-    public string Name { get; set; } = string.Empty;
-    public string? Version { get; set; }
-    public PackageSource Source { get; set; }
-    public string Path { get; set; } = string.Empty;
-    public string? PkgInfoPath { get; set; }
-    public string? InstallerPath { get; set; }
-    public bool IsVersioned { get; set; }
-    public List<string>? AvailableVersions { get; set; }
-}
-
-/// <summary>
-/// Where a package was found
-/// </summary>
-public enum PackageSource
-{
-    Packages,       // ./packages folder (local dev)
-    Installers,     // ./installers folder (vendor installers)
-    Deployment,     // ./deployment/pkgsinfo (deployed packages)
-    Unknown
 }

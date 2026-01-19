@@ -1,11 +1,11 @@
 using System.Text.Json.Serialization;
 
-namespace FleetMate.Models.Ssh;
+namespace FleetMate.Models.SecureShell;
 
 /// <summary>
-/// Result of an SSH command execution
+/// Result of a SecureShell command execution
 /// </summary>
-public class SshResult
+public class SecureShellResult
 {
     /// <summary>
     /// Target host (IP address or hostname)
@@ -76,14 +76,14 @@ public class SshResult
 }
 
 /// <summary>
-/// Result of batch SSH execution
+/// Result of batch SecureShell execution
 /// </summary>
-public class SshBatchResult
+public class SecureShellBatchResult
 {
     /// <summary>
     /// Individual results for each host
     /// </summary>
-    public List<SshResult> Results { get; set; } = new();
+    public List<SecureShellResult> Results { get; set; } = new();
 
     /// <summary>
     /// Total execution time for all hosts
@@ -107,9 +107,9 @@ public class SshBatchResult
 }
 
 /// <summary>
-/// Result of SSH connection test
+/// Result of SecureShell connection test
 /// </summary>
-public class SshTestResult
+public class SecureShellTestResult
 {
     public string Host { get; set; } = string.Empty;
     public string? DeviceName { get; set; }

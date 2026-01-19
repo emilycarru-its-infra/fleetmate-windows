@@ -1,7 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using FleetMate.Converters;
-using FleetMate.Models;
+using FleetMate.Models.ReportMate;
 using Serilog;
 
 namespace FleetMate.Services;

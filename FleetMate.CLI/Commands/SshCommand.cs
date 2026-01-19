@@ -1,6 +1,6 @@
 using System.CommandLine;
 using System.Text.Json;
-using FleetMate.Models.Ssh;
+using FleetMate.Models.SecureShell;
 using FleetMate.Services;
 using Spectre.Console;
 
@@ -14,19 +14,19 @@ public static class SshCommand
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    public static Command Create(SshService? sshService, ReportMateService? reportMate)
+    public static Command Create(SecureShellService? secureShellService, ReportMateService? reportMate)
     {
-        var command = new Command("ssh", "Remote SSH command execution on fleet devices");
+        var command = new Command("ssh", "Remote SecureShell command execution on fleet devices");
 
-        command.AddCommand(CreateExecCommand(sshService));
-        command.AddCommand(CreateBatchCommand(sshService, reportMate));
-        command.AddCommand(CreateTestCommand(sshService));
-        command.AddCommand(CreateLogsCommand(sshService));
+        command.AddCommand(CreateExecCommand(secureShellService));
+        command.AddCommand(CreateBatchCommand(secureShellService, reportMate));
+        command.AddCommand(CreateTestCommand(secureShellService));
+        command.AddCommand(CreateLogsCommand(secureShellService));
 
         return command;
     }
 
-    private static Command CreateExecCommand(SshService? sshService)
+    private static Command CreateExecCommand(SecureShellService? secureShellService)
     {
         var command = new Command("exec", "Execute command on a single device");
 
@@ -40,7 +40,7 @@ public static class SshCommand
 
         var usernameOption = new Option<string?>(
             aliases: ["--username", "-u"],
-            description: "Override default SSH username");
+            description: "Override default SecureShell username");
 
         var timeoutOption = new Option<int?>(
             aliases: ["--timeout", "-t"],
@@ -58,13 +58,13 @@ public static class SshCommand
 
         command.SetHandler(async (device, cmd, username, timeout, json) =>
         {
-            if (!EnsureConfigured(sshService)) return;
+            if (!EnsureConfigured(secureShellService)) return;
 
             await AnsiConsole.Status()
                 .Spinner(Spinner.Known.Dots)
                 .StartAsync($"Connecting to {device}...", async ctx =>
                 {
-                    var result = await sshService!.ExecuteAsync(device, cmd, username);
+                    var result = await secureShellService!.ExecuteAsync(device, cmd, username);
 
                     ctx.Status("Command completed");
 
@@ -81,7 +81,7 @@ public static class SshCommand
         return command;
     }
 
-    private static Command CreateBatchCommand(SshService? sshService, ReportMateService? reportMate)
+    private static Command CreateBatchCommand(SecureShellService? secureShellService, ReportMateService? reportMate)
     {
         var command = new Command("batch", "Execute command on multiple devices");
 
@@ -104,7 +104,7 @@ public static class SshCommand
 
         var usernameOption = new Option<string?>(
             aliases: ["--username", "-u"],
-            description: "Override default SSH username");
+            description: "Override default SecureShell username");
 
         var concurrentOption = new Option<int?>(
             aliases: ["--concurrent", "-n"],
@@ -129,7 +129,7 @@ public static class SshCommand
 
         command.SetHandler(async (cmd, devices, location, catalog, username, concurrent, stopOnError, json) =>
         {
-            if (!EnsureConfigured(sshService)) return;
+            if (!EnsureConfigured(secureShellService)) return;
 
             // Get target devices
             var targets = new List<string>();
@@ -161,7 +161,7 @@ public static class SshCommand
 
             AnsiConsole.MarkupLine($"[cyan]Executing on {targets.Count} device(s)...[/]");
 
-            var result = await sshService!.ExecuteBatchAsync(
+            var result = await secureShellService!.ExecuteBatchAsync(
                 targets, cmd, username, stopOnError);
 
             if (json)
@@ -178,9 +178,9 @@ public static class SshCommand
         return command;
     }
 
-    private static Command CreateTestCommand(SshService? sshService)
+    private static Command CreateTestCommand(SecureShellService? secureShellService)
     {
-        var command = new Command("test", "Test SSH connectivity to a device");
+        var command = new Command("test", "Test SecureShell connectivity to a device");
 
         var deviceArg = new Argument<string>(
             name: "device",
@@ -188,7 +188,7 @@ public static class SshCommand
 
         var usernameOption = new Option<string?>(
             aliases: ["--username", "-u"],
-            description: "Override default SSH username");
+            description: "Override default SecureShell username");
 
         var jsonOption = new Option<bool>(
             aliases: ["--json"],
@@ -200,13 +200,13 @@ public static class SshCommand
 
         command.SetHandler(async (device, username, json) =>
         {
-            if (!EnsureConfigured(sshService)) return;
+            if (!EnsureConfigured(secureShellService)) return;
 
             await AnsiConsole.Status()
                 .Spinner(Spinner.Known.Dots)
                 .StartAsync($"Testing connection to {device}...", async ctx =>
                 {
-                    var result = await sshService!.TestConnectionAsync(device, username);
+                    var result = await secureShellService!.TestConnectionAsync(device, username);
 
                     if (json)
                     {
@@ -244,7 +244,7 @@ public static class SshCommand
         return command;
     }
 
-    private static Command CreateLogsCommand(SshService? sshService)
+    private static Command CreateLogsCommand(SecureShellService? secureShellService)
     {
         var command = new Command("logs", "Fetch Cimian logs from a remote device");
 
@@ -263,7 +263,7 @@ public static class SshCommand
 
         var usernameOption = new Option<string?>(
             aliases: ["--username", "-u"],
-            description: "Override default SSH username");
+            description: "Override default SecureShell username");
 
         var jsonOption = new Option<bool>(
             aliases: ["--json"],
@@ -277,13 +277,13 @@ public static class SshCommand
 
         command.SetHandler(async (device, tail, errorsOnly, username, json) =>
         {
-            if (!EnsureConfigured(sshService)) return;
+            if (!EnsureConfigured(secureShellService)) return;
 
             await AnsiConsole.Status()
                 .Spinner(Spinner.Known.Dots)
                 .StartAsync($"Fetching logs from {device}...", async ctx =>
                 {
-                    var result = await sshService!.GetLogsAsync(device, tail, errorsOnly, username);
+                    var result = await secureShellService!.GetLogsAsync(device, tail, errorsOnly, username);
 
                     if (json)
                     {
@@ -323,19 +323,19 @@ public static class SshCommand
         return command;
     }
 
-    private static bool EnsureConfigured(SshService? ssh)
+    private static bool EnsureConfigured(SecureShellService? ssh)
     {
         if (ssh != null) return true;
 
-        AnsiConsole.MarkupLine("[red]SSH is not configured.[/]");
-        AnsiConsole.MarkupLine("Add SSH configuration to your config file (~/.fleetmate/config.yaml):");
-        AnsiConsole.MarkupLine("  [cyan]ssh:[/]");
+        AnsiConsole.MarkupLine("[red]SecureShell is not configured.[/]");
+        AnsiConsole.MarkupLine("Add SecureShell configuration to your config file (~/.fleetmate/config.yaml):");
+        AnsiConsole.MarkupLine("  [cyan]secureShell:[/]");
         AnsiConsole.MarkupLine("    [cyan]privateKeyPath:[/] ~/.ssh/id_rsa");
         AnsiConsole.MarkupLine("    [cyan]defaultUsername:[/] ithelp");
         return false;
     }
 
-    private static void DisplayResult(SshResult result)
+    private static void DisplayResult(SecureShellResult result)
     {
         var deviceName = result.DeviceName ?? result.Host;
         var statusColor = result.Success ? "green" : "red";
@@ -375,7 +375,7 @@ public static class SshCommand
         }
     }
 
-    private static void DisplayBatchResult(SshBatchResult result)
+    private static void DisplayBatchResult(SecureShellBatchResult result)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule("[cyan]Batch Execution Results[/]").LeftJustified());
@@ -410,3 +410,5 @@ public static class SshCommand
             $"[dim]Duration:[/] {result.TotalDuration.TotalSeconds:F2}s");
     }
 }
+
+

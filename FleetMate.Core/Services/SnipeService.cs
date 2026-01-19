@@ -111,7 +111,9 @@ public class SnipeService : IDisposable
                     queryParams.Add($"company_id={companyId}");
                 
                 var url = $"/api/v1/hardware?{string.Join("&", queryParams)}";
+                Console.Error.WriteLine($"DEBUG: Fetching from {_client.BaseAddress}{url}");
                 var response = await _client.GetAsync(url);
+                Console.Error.WriteLine($"DEBUG: Response status: {response.StatusCode}");
                 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -120,7 +122,21 @@ public class SnipeService : IDisposable
                     break;
                 }
                 
-                var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeAsset>>(_jsonOptions);
+                var rawJson = await response.Content.ReadAsStringAsync();
+                Console.Error.WriteLine($"DEBUG: Response length: {rawJson.Length}, first 200 chars: {rawJson.Substring(0, Math.Min(200, rawJson.Length))}");
+                
+                // Re-read the response
+                SnipeListResponse<SnipeAsset>? wrapper = null;
+                try
+                {
+                    wrapper = System.Text.Json.JsonSerializer.Deserialize<SnipeListResponse<SnipeAsset>>(rawJson, _jsonOptions);
+                    Console.Error.WriteLine($"DEBUG: Wrapper.Total={wrapper?.Total}, Rows.Count={wrapper?.Rows?.Count}");
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"DEBUG: Deserialization failed: {ex.Message}");
+                    break;
+                }
                 if (wrapper?.Rows == null || wrapper.Rows.Count == 0)
                     break;
                 

@@ -1,5 +1,5 @@
 using System.CommandLine;
-using FleetMate.Models;
+using FleetMate.Models.ReportMate;
 using FleetMate.Services;
 using Spectre.Console;
 

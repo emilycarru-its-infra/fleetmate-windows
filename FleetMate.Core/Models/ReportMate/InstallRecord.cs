@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
 using FleetMate.Converters;
 
-namespace FleetMate.Models;
+namespace FleetMate.Models.ReportMate;
 
 /// <summary>
 /// Represents an installation record from ReportMate /api/devices/installs endpoint

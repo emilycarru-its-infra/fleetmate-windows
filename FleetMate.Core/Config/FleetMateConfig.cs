@@ -2,7 +2,7 @@ using Microsoft.Win32;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 using Serilog;
-using FleetMate.Models.Ssh;
+using FleetMate.Models.SecureShell;
 using FleetMate.Models.Graph;
 using FleetMate.Models.Tdx;
 
@@ -70,8 +70,8 @@ public class FleetMateConfig
     // Cache settings
     public int CacheMinutes { get; set; } = 5;
 
-    // SSH Configuration
-    public SshConfig? Ssh { get; set; }
+    // SecureShell Configuration
+    public SecureShellConfig? SecureShell { get; set; }
 
     // Azure DevOps Configuration
     public AzureDevOpsConfig? AzureDevOps { get; set; }
@@ -198,6 +198,38 @@ public class FleetMateConfig
             var snipeApiKey = key.GetValue("SnipeApiKey") as string;
             if (!string.IsNullOrEmpty(snipeApiKey))
                 config.SnipeApiKey = snipeApiKey;
+            
+            // Graph/Entra ID credentials
+            config.Graph ??= new GraphConfig();
+            var graphTenantId = key.GetValue("GraphTenantId") as string;
+            if (!string.IsNullOrEmpty(graphTenantId))
+                config.Graph.TenantId = graphTenantId;
+            
+            // TeamDynamix credentials
+            config.Tdx ??= new TdxConfig();
+            var tdxBaseUrl = key.GetValue("TdxBaseUrl") as string;
+            if (!string.IsNullOrEmpty(tdxBaseUrl))
+                config.Tdx.BaseUrl = tdxBaseUrl;
+            
+            var tdxAppId = key.GetValue("TdxAppId") as string;
+            if (!string.IsNullOrEmpty(tdxAppId) && int.TryParse(tdxAppId, out var appId))
+                config.Tdx.AppId = appId;
+            
+            var tdxUsername = key.GetValue("TdxUsername") as string;
+            if (!string.IsNullOrEmpty(tdxUsername))
+                config.Tdx.Username = tdxUsername;
+            
+            var tdxPassword = key.GetValue("TdxPassword") as string;
+            if (!string.IsNullOrEmpty(tdxPassword))
+                config.Tdx.Password = tdxPassword;
+            
+            var tdxBeid = key.GetValue("TdxBeid") as string;
+            if (!string.IsNullOrEmpty(tdxBeid))
+                config.Tdx.Beid = tdxBeid;
+            
+            var tdxWebServicesKey = key.GetValue("TdxWebServicesKey") as string;
+            if (!string.IsNullOrEmpty(tdxWebServicesKey))
+                config.Tdx.WebServicesKey = tdxWebServicesKey;
             
             Log.Debug("Loaded credentials from registry: HKCU\\{Path}", RegistryPath);
         }
