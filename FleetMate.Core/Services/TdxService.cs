@@ -37,6 +37,8 @@ public class TdxService : IDisposable
             Timeout = TimeSpan.FromSeconds(60)
         };
 
+        Log.Information("TDX configuration: BaseUrl={BaseUrl} AppId={AppId}", config.BaseUrl, config.AppId);
+
         _jsonOptions = new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true
@@ -133,6 +135,158 @@ public class TdxService : IDisposable
 
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return true;
+    }
+
+    #endregion
+
+    #region Assets
+
+    /// <summary>
+    /// Search for assets (partial results)
+    /// </summary>
+    public async Task<List<TdxAsset>> SearchAssetsAsync(string? searchText = null, int maxResults = 50)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            return new List<TdxAsset>();
+        }
+
+        try
+        {
+            var externalIdSearch = new TdxAssetSearchRequest
+            {
+                ExternalIds = string.IsNullOrWhiteSpace(searchText)
+                    ? null
+                    : new List<string> { searchText },
+                MaxResults = maxResults
+            };
+
+            var assets = await PostAssetSearchAsync(externalIdSearch);
+            if (assets.Count == 0 && !string.IsNullOrWhiteSpace(searchText))
+            {
+                var textSearch = new TdxAssetSearchRequest
+                {
+                    SearchText = searchText,
+                    MaxResults = maxResults
+                };
+
+                assets = await PostAssetSearchAsync(textSearch);
+            }
+
+            return assets;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to search TDX assets");
+            return new List<TdxAsset>();
+        }
+    }
+
+    private async Task<List<TdxAsset>> PostAssetSearchAsync(TdxAssetSearchRequest request)
+    {
+        var url = _config.GetAssetsUrl("search");
+        var content = new StringContent(JsonSerializer.Serialize(request, _jsonOptions), Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync(url, content);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            Log.Warning("TDX asset search failed: {Status} - {Error}", response.StatusCode, error);
+            return new List<TdxAsset>();
+        }
+
+        var rawJson = await response.Content.ReadAsStringAsync();
+        var assets = ParseAssetResponse(rawJson);
+        if (assets.Count == 0)
+        {
+            var requestJson = JsonSerializer.Serialize(request, _jsonOptions);
+            Log.Warning("TDX asset search returned no results. Request: {Request} Response: {Response}", requestJson, rawJson);
+        }
+
+        return assets;
+    }
+
+    private List<TdxAsset> ParseAssetResponse(string rawJson)
+    {
+        if (string.IsNullOrWhiteSpace(rawJson))
+        {
+            return new List<TdxAsset>();
+        }
+
+        using var doc = JsonDocument.Parse(rawJson);
+        var root = doc.RootElement;
+
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            var assets = JsonSerializer.Deserialize<List<TdxAsset>>(rawJson, _jsonOptions);
+            return assets ?? new List<TdxAsset>();
+        }
+
+        if (root.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var propertyName in new[] { "Items", "Assets", "Results", "Data", "Value" })
+            {
+                if (root.TryGetProperty(propertyName, out var property))
+                {
+                    if (property.ValueKind == JsonValueKind.Array)
+                    {
+                        var assets = JsonSerializer.Deserialize<List<TdxAsset>>(property.GetRawText(), _jsonOptions);
+                        if (assets != null)
+                        {
+                            return assets;
+                        }
+                    }
+
+                    if (property.ValueKind == JsonValueKind.Object)
+                    {
+                        var asset = JsonSerializer.Deserialize<TdxAsset>(property.GetRawText(), _jsonOptions);
+                        if (asset != null)
+                        {
+                            return new List<TdxAsset> { asset };
+                        }
+                    }
+                }
+            }
+
+            var singleAsset = JsonSerializer.Deserialize<TdxAsset>(rawJson, _jsonOptions);
+            if (singleAsset != null)
+            {
+                return new List<TdxAsset> { singleAsset };
+            }
+        }
+
+        return new List<TdxAsset>();
+    }
+
+    /// <summary>
+    /// Get an asset by ID
+    /// </summary>
+    public async Task<TdxAsset?> GetAssetAsync(int assetId)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            return null;
+        }
+
+        try
+        {
+            var url = _config.GetAssetsUrl(assetId.ToString());
+            var response = await _client.GetAsync(url);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Warning("TDX asset lookup failed: {Status} - {Error}", response.StatusCode, error);
+                return null;
+            }
+
+            return await response.Content.ReadFromJsonAsync<TdxAsset>(_jsonOptions);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to get TDX asset");
+            return null;
+        }
     }
 
     #endregion

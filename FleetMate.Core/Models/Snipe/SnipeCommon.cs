@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace FleetMate.Models.Snipe;
@@ -49,6 +50,57 @@ public class SnipeDate
 }
 
 /// <summary>
+/// Handles Snipe date fields that can be either an object or a string.
+/// </summary>
+public class SnipeDateConverter : JsonConverter<SnipeDate?>
+{
+    public override SnipeDate? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+        {
+            return null;
+        }
+
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            var value = reader.GetString();
+            return new SnipeDate
+            {
+                Date = value,
+                Formatted = value
+            };
+        }
+
+        if (reader.TokenType == JsonTokenType.StartObject)
+        {
+            using var doc = JsonDocument.ParseValue(ref reader);
+            var root = doc.RootElement;
+            return new SnipeDate
+            {
+                Date = root.TryGetProperty("date", out var dateProp) ? dateProp.GetString() : null,
+                Formatted = root.TryGetProperty("formatted", out var formattedProp) ? formattedProp.GetString() : null
+            };
+        }
+
+        throw new JsonException("Unsupported SnipeDate JSON token.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, SnipeDate? value, JsonSerializerOptions options)
+    {
+        if (value == null)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        writer.WriteStartObject();
+        writer.WriteString("date", value.Date);
+        writer.WriteString("formatted", value.Formatted ?? value.Date);
+        writer.WriteEndObject();
+    }
+}
+
+/// <summary>
 /// Full datetime representation
 /// </summary>
 public class SnipeDateTime
@@ -58,6 +110,57 @@ public class SnipeDateTime
     
     [JsonPropertyName("formatted")]
     public string? Formatted { get; set; }
+}
+
+/// <summary>
+/// Handles Snipe datetime fields that can be either an object or a string.
+/// </summary>
+public class SnipeDateTimeConverter : JsonConverter<SnipeDateTime?>
+{
+    public override SnipeDateTime? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+        {
+            return null;
+        }
+
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            var value = reader.GetString();
+            return new SnipeDateTime
+            {
+                DateTime = value,
+                Formatted = value
+            };
+        }
+
+        if (reader.TokenType == JsonTokenType.StartObject)
+        {
+            using var doc = JsonDocument.ParseValue(ref reader);
+            var root = doc.RootElement;
+            return new SnipeDateTime
+            {
+                DateTime = root.TryGetProperty("datetime", out var dateTimeProp) ? dateTimeProp.GetString() : null,
+                Formatted = root.TryGetProperty("formatted", out var formattedProp) ? formattedProp.GetString() : null
+            };
+        }
+
+        throw new JsonException("Unsupported SnipeDateTime JSON token.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, SnipeDateTime? value, JsonSerializerOptions options)
+    {
+        if (value == null)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        writer.WriteStartObject();
+        writer.WriteString("datetime", value.DateTime);
+        writer.WriteString("formatted", value.Formatted ?? value.DateTime);
+        writer.WriteEndObject();
+    }
 }
 
 /// <summary>

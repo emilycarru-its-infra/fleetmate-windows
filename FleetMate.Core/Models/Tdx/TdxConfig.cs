@@ -267,6 +267,20 @@ public class TdxConfig
     }
 
     /// <summary>
+    /// Get the assets API URL
+    /// </summary>
+    public string GetAssetsUrl(string? path = null)
+    {
+        if (string.IsNullOrEmpty(BaseUrl))
+            throw new InvalidOperationException("TDX BaseUrl is not configured. Set TDX_BASE_URL environment variable.");
+
+        var baseUrl = BaseUrl.TrimEnd('/');
+        return string.IsNullOrEmpty(path)
+            ? $"{baseUrl}/api/{AppId}/assets"
+            : $"{baseUrl}/api/{AppId}/assets/{path}";
+    }
+
+    /// <summary>
     /// Check if TDX is configured (has required settings)
     /// </summary>
     public bool IsConfigured => !string.IsNullOrEmpty(BaseUrl) && AppId > 0;

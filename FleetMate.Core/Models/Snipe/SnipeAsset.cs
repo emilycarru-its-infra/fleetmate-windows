@@ -25,8 +25,17 @@ public class SnipeAsset
     [JsonPropertyName("model_number")]
     public string? ModelNumber { get; set; }
     
+    /// <summary>
+    /// End of life period (e.g., "48 months" - returned as string, not object)
+    /// </summary>
     [JsonPropertyName("eol")]
-    public SnipeDate? Eol { get; set; }
+    public string? Eol { get; set; }
+    
+    /// <summary>
+    /// Computed asset end of life date
+    /// </summary>
+    [JsonPropertyName("asset_eol_date")]
+    public SnipeDate? AssetEolDate { get; set; }
     
     [JsonPropertyName("status_label")]
     public SnipeStatusLabel? StatusLabel { get; set; }
