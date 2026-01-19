@@ -1,24 +1,24 @@
 using System.Diagnostics;
 using System.Text;
-using FleetMate.Models;
-using FleetMate.Models.Ssh;
+using FleetMate.Models.ReportMate;
+using FleetMate.Models.SecureShell;
 using Renci.SshNet;
 using Serilog;
 
 namespace FleetMate.Services;
 
 /// <summary>
-/// SSH service for remote command execution on fleet devices
+/// SecureShell service for remote command execution on fleet devices
 /// Uses SSH.NET library with private key authentication
 /// </summary>
-public class SshService : IDisposable
+public class SecureShellService : IDisposable
 {
-    private readonly SshConfig _config;
+    private readonly SecureShellConfig _config;
     private readonly ReportMateService? _reportMate;
     private readonly PrivateKeyFile _privateKey;
     private readonly SemaphoreSlim _connectionThrottle;
 
-    public SshService(SshConfig config, ReportMateService? reportMate = null)
+    public SecureShellService(SecureShellConfig config, ReportMateService? reportMate = null)
     {
         _config = config;
         _reportMate = reportMate;
@@ -44,11 +44,11 @@ public class SshService : IDisposable
                 // Load key from content (handles OpenSSH format)
                 using var stream = new MemoryStream(Encoding.UTF8.GetBytes(keyContent));
                 _privateKey = new PrivateKeyFile(stream);
-                Log.Information("Loaded SSH private key from {Source}", keySource);
+                Log.Information("Loaded SecureShell private key from {Source}", keySource);
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"Failed to load SSH private key from {keySource}: {ex.Message}", ex);
+                throw new InvalidOperationException($"Failed to load SecureShell private key from {keySource}: {ex.Message}", ex);
             }
         }
         else
@@ -58,18 +58,18 @@ public class SshService : IDisposable
             if (!File.Exists(keyPath))
             {
                 throw new FileNotFoundException(
-                    $"SSH private key not found. Set SECURE_SHELL_PRIVATE_KEY environment variable, " +
-                    $"configure ssh.keyVaultName, or ensure key exists at: {keyPath}");
+                    $"SecureShell private key not found. Set SECURE_SHELL_PRIVATE_KEY environment variable, " +
+                    $"configure secureShell.keyVaultName, or ensure key exists at: {keyPath}");
             }
 
             try
             {
                 _privateKey = new PrivateKeyFile(keyPath);
-                Log.Information("Loaded SSH private key from {Path}", keyPath);
+                Log.Information("Loaded SecureShell private key from {Path}", keyPath);
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"Failed to load SSH private key from {keyPath}: {ex.Message}", ex);
+                throw new InvalidOperationException($"Failed to load SecureShell private key from {keyPath}: {ex.Message}", ex);
             }
         }
 
@@ -77,7 +77,7 @@ public class SshService : IDisposable
     }
 
     /// <summary>
-    /// Attempt to retrieve SSH key from Azure Key Vault using az CLI
+    /// Attempt to retrieve SecureShell key from Azure Key Vault using az CLI
     /// </summary>
     private static string? GetKeyFromKeyVault(string vaultName)
     {
@@ -104,13 +104,13 @@ public class SshService : IDisposable
 
             if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
             {
-                Log.Debug("Retrieved SSH key from Key Vault {Vault}", vaultName);
+                Log.Debug("Retrieved SecureShell key from Key Vault {Vault}", vaultName);
                 return output.Trim();
             }
         }
         catch (Exception ex)
         {
-            Log.Debug(ex, "Failed to get SSH key from Key Vault");
+            Log.Debug(ex, "Failed to get SecureShell key from Key Vault");
         }
         return null;
     }
@@ -164,11 +164,32 @@ public class SshService : IDisposable
         if (_reportMate != null)
         {
             var device = await _reportMate.FindDeviceAsync(hostOrDevice);
-            if (device != null && !string.IsNullOrEmpty(device.IpAddress))
+            if (device != null)
             {
-                Log.Debug("Resolved {Query} to IP {Ip} ({DeviceName})",
-                    hostOrDevice, device.IpAddress, device.DisplayName);
-                return (device.IpAddress, device);
+                // Device found - try to get IP from device, or fetch network module
+                if (!string.IsNullOrEmpty(device.IpAddress))
+                {
+                    Log.Debug("Resolved {Query} to IP {Ip} ({DeviceName})",
+                        hostOrDevice, device.IpAddress, device.DisplayName);
+                    return (device.IpAddress, device);
+                }
+                
+                // Fetch network module to get IP address
+                var networkInfo = await _reportMate.GetDeviceNetworkAsync(device.SerialNumber);
+                if (networkInfo?.PrimaryIpv4 != null)
+                {
+                    Log.Debug("Resolved {Query} to IP {Ip} ({DeviceName}) via network module",
+                        hostOrDevice, networkInfo.PrimaryIpv4, device.DisplayName);
+                    return (networkInfo.PrimaryIpv4, device);
+                }
+                
+                // Fall back to hostname if available
+                if (!string.IsNullOrEmpty(device.Hostname))
+                {
+                    Log.Debug("Resolved {Query} to hostname {Hostname} ({DeviceName})",
+                        hostOrDevice, device.Hostname, device.DisplayName);
+                    return (device.Hostname, device);
+                }
             }
         }
 
@@ -180,9 +201,9 @@ public class SshService : IDisposable
     /// <summary>
     /// Execute a command on a single host
     /// </summary>
-    public async Task<SshResult> ExecuteAsync(string hostOrDevice, string command, string? username = null)
+    public async Task<SecureShellResult> ExecuteAsync(string hostOrDevice, string command, string? username = null)
     {
-        var result = new SshResult
+        var result = new SecureShellResult
         {
             Command = command,
             Username = username ?? _config.DefaultUsername,
@@ -224,7 +245,7 @@ public class SshService : IDisposable
         catch (Exception ex)
         {
             result.Error = ex;
-            Log.Warning(ex, "SSH command failed on {Host}", result.Host);
+            Log.Warning(ex, "SecureShell command failed on {Host}", result.Host);
         }
         finally
         {
@@ -238,20 +259,20 @@ public class SshService : IDisposable
     /// <summary>
     /// Execute a command on multiple hosts in parallel
     /// </summary>
-    public async Task<SshBatchResult> ExecuteBatchAsync(
+    public async Task<SecureShellBatchResult> ExecuteBatchAsync(
         IEnumerable<string> hostsOrDevices,
         string command,
         string? username = null,
         bool stopOnError = false)
     {
-        var batchResult = new SshBatchResult();
+        var batchResult = new SecureShellBatchResult();
         var sw = Stopwatch.StartNew();
         var hosts = hostsOrDevices.ToList();
 
         Log.Information("Starting batch execution on {Count} hosts", hosts.Count);
 
         var tasks = new List<Task>();
-        var results = new System.Collections.Concurrent.ConcurrentBag<SshResult>();
+        var results = new System.Collections.Concurrent.ConcurrentBag<SecureShellResult>();
 
         using var cts = new CancellationTokenSource();
 
@@ -302,11 +323,11 @@ public class SshService : IDisposable
     }
 
     /// <summary>
-    /// Test SSH connectivity to a host
+    /// Test SecureShell connectivity to a host
     /// </summary>
-    public async Task<SshTestResult> TestConnectionAsync(string hostOrDevice, string? username = null)
+    public async Task<SecureShellTestResult> TestConnectionAsync(string hostOrDevice, string? username = null)
     {
-        var result = new SshTestResult
+        var result = new SecureShellTestResult
         {
             Username = username ?? _config.DefaultUsername
         };
@@ -334,14 +355,14 @@ public class SshService : IDisposable
 
             client.Disconnect();
 
-            Log.Information("SSH test to {Host} ({Device}): Success - {Version}",
+            Log.Information("SecureShell test to {Host} ({Device}): Success - {Version}",
                 ip, result.DeviceName ?? "unknown", result.ServerVersion);
         }
         catch (Exception ex)
         {
             result.Success = false;
             result.ErrorMessage = ex.Message;
-            Log.Warning("SSH test to {Host} failed: {Error}", result.Host, ex.Message);
+            Log.Warning("SecureShell test to {Host} failed: {Error}", result.Host, ex.Message);
         }
         finally
         {
@@ -355,7 +376,7 @@ public class SshService : IDisposable
     /// <summary>
     /// Get Cimian logs from a remote device
     /// </summary>
-    public async Task<SshResult> GetLogsAsync(string hostOrDevice, int tailLines = 50, bool errorsOnly = false, string? username = null)
+    public async Task<SecureShellResult> GetLogsAsync(string hostOrDevice, int tailLines = 50, bool errorsOnly = false, string? username = null)
     {
         var logPath = @"C:\ProgramData\ManagedInstalls\Logs\ManagedSoftwareUpdate.log";
         var command = errorsOnly

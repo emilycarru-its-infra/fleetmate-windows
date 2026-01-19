@@ -47,20 +47,20 @@ class Program
                 snipeService = new SnipeService(config.SnipeUrl, config.SnipeApiKey);
             }
 
-            // Create SSH service if configured
-            SshService? sshService = null;
-            if (config.Ssh != null)
+            // Create SecureShell service if configured
+            SecureShellService? secureShellService = null;
+            if (config.SecureShell != null)
             {
-                var keyPath = config.Ssh.ResolvedKeyPath;
-                if (File.Exists(keyPath))
+                var keyPath = config.SecureShell.ResolvedKeyPath;
+                if (File.Exists(keyPath) || !string.IsNullOrEmpty(config.SecureShell.GetPrivateKeyFromEnv()))
                 {
                     try
                     {
-                        sshService = new SshService(config.Ssh, reportMate);
+                        secureShellService = new SecureShellService(config.SecureShell, reportMate);
                     }
                     catch (Exception ex)
                     {
-                        Log.Warning(ex, "Failed to initialize SSH service");
+                        Log.Warning(ex, "Failed to initialize SecureShell service");
                     }
                 }
             }
@@ -114,6 +114,9 @@ class Program
             rootCommand.AddCommand(LintCommand.Create(config, pkgInfoService));
             rootCommand.AddCommand(ValidateCommand.Create(config, pkgInfoService));
             
+            // Quality control (port of quality/control.ps1)
+            rootCommand.AddCommand(QaCommand.Create(config));
+            
             // Utility commands
             rootCommand.AddCommand(StatusCommand.Create(config, reportMate));
             rootCommand.AddCommand(ConfigureCommand.Create(config));
@@ -121,8 +124,8 @@ class Program
             // Snipe-IT asset management
             rootCommand.AddCommand(SnipeCommand.Create(snipeService));
 
-            // SSH remote execution
-            rootCommand.AddCommand(SshCommand.Create(sshService, reportMate));
+            // SecureShell remote execution
+            rootCommand.AddCommand(SshCommand.Create(secureShellService, reportMate));
 
             // Azure DevOps integration
             rootCommand.AddCommand(DevOpsCommand.Create(adoService, reportMate));
@@ -139,7 +142,7 @@ class Program
             
             // Dispose services
             snipeService?.Dispose();
-            sshService?.Dispose();
+            secureShellService?.Dispose();
             adoService?.Dispose();
             graphService?.Dispose();
             tdxService?.Dispose();

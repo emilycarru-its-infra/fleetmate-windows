@@ -17,16 +17,16 @@
 # - SNIPE_URL: Snipe-IT instance URL
 # - SNIPE_API_KEY: Snipe-IT API key
 
-# SSH Configuration (remote command execution)
-ssh:
-  privateKeyPath: ~/.ssh/id_rsa           # Path to SSH private key
+# SecureShell Configuration (remote command execution)
+secureShell:
+  privateKeyPath: ~/.ssh/id_rsa           # Path to SecureShell private key
   privateKeyEnvVar: SECURE_SHELL_PRIVATE_KEY  # Env var with key content (from Key Vault)
   keyVaultName:                           # Azure Key Vault to load SecureShellPrivateKey from
-  defaultUsername:                        # Default SSH username (set via SSH_USER env var)
+  defaultUsername:                        # Default SecureShell username (set via SSH_USER env var)
   connectionTimeoutSeconds: 30            # Connection timeout
   commandTimeoutSeconds: 120              # Command execution timeout
-  maxConcurrentConnections: 10            # Max parallel SSH connections for batch operations
-  port: 22                                # SSH port
+  maxConcurrentConnections: 10            # Max parallel SecureShell connections for batch operations
+  port: 22                                # SecureShell port
 
 # Azure DevOps Configuration - Set via environment variables:
 # - DEVOPS_ORGANIZATION: Azure DevOps organization name

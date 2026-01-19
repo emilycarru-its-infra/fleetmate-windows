@@ -1,5 +1,6 @@
 using System.CommandLine;
 using FleetMate.Config;
+using FleetMate.Models.Cimian;
 using FleetMate.Services;
 using Spectre.Console;
 
@@ -83,8 +84,8 @@ public static class ValidateCommand
                 {
                     var icon = issue.Severity switch
                     {
-                        Models.ValidationSeverity.Error => "[red]✗[/]",
-                        Models.ValidationSeverity.Warning => "[yellow]⚠[/]",
+                        ValidationSeverity.Error => "[red]✗[/]",
+                        ValidationSeverity.Warning => "[yellow]⚠[/]",
                         _ => "[dim]ℹ[/]"
                     };
                     
@@ -96,7 +97,7 @@ public static class ValidateCommand
         Console.WriteLine();
         
         // Check for build-info.yaml (packages/installers)
-        if (location.Source is Models.PackageSource.Packages or Models.PackageSource.Installers)
+        if (location.Source is PackageSource.Packages or PackageSource.Installers)
         {
             var buildInfoPath = Path.Combine(location.Path, "build-info.yaml");
             if (File.Exists(buildInfoPath))
