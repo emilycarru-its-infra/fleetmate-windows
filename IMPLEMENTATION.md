@@ -17,12 +17,16 @@ This document tracks the implementation progress and roadmap for FleetMate, a cr
 
 ```
 fleetmate/
-├── Commands/           # CLI command implementations (System.CommandLine)
-├── Services/           # API client services (HTTP, SSH)
-├── Models/             # Data models (Codable structs)
-├── Config/             # Configuration loading (YAML + env vars)
-├── Converters/         # JSON/YAML converters
-├── Program.cs          # Entry point and service initialization
+├── FleetMate.CLI/      # CLI command implementations
+│   ├── Commands/       # System.CommandLine command handlers
+│   └── Program.cs      # Entry point and service initialization
+├── FleetMate.Core/     # Core business logic
+│   ├── Services/       # API client services (HTTP, SSH)
+│   ├── Models/         # Data models for APIs
+│   └── Configuration/  # Config loading (YAML + env + registry)
+├── FleetMate.GUI/      # WPF desktop UI (future)
+├── build.ps1           # Build and packaging automation
+├── sign.ps1            # Code signing automation
 └── config.sample.yaml  # Configuration template
 ```
 
@@ -38,60 +42,81 @@ fleetmate/
 
 ## Current Implementation Status
 
-### Services (7 total, all functional)
+### Services (9 total)
 
-| Service | Lines | Status | Description |
-|---------|-------|--------|-------------|
-| ReportMateService | 242 | COMPLETE | Fleet monitoring API (devices, errors) |
-| PkgInfoService | 364 | COMPLETE | Package metadata parsing and validation |
-| SnipeService | 1,195 | COMPLETE | Snipe-IT asset management (full CRUD) |
-| SshService | 373 | COMPLETE | SSH remote execution (single + batch) |
-| AzureDevOpsService | 536 | COMPLETE | ADO work items, sprints, boards |
-| GraphService | 620 | COMPLETE | Intune devices, Entra users/groups |
-| TdxService | 522 | COMPLETE | TeamDynamix tickets (search, create, comment) |
+| Service | Status | Description |
+|---------|--------|-------------|
+| ReportMateService | ✅ COMPLETE | Fleet monitoring API (devices, errors, troubleshooting) |
+| SnipeService | ✅ COMPLETE | Snipe-IT asset management (full CRUD - assets, users, locations, models, categories, licenses, etc.) |
+| TdxService | ✅ COMPLETE | TeamDynamix assets and tickets (search with full field capture via JsonExtensionData) |
+| GraphService | ✅ COMPLETE | Microsoft Graph - Intune devices, Entra users/groups |
+| SecureShellService | ✅ COMPLETE | SSH remote execution with key-based auth |
+| AzureDevOpsService | ✅ COMPLETE | ADO work items, sprints, boards |
+| PkgInfoService | ✅ COMPLETE | Package metadata parsing and validation |
+| QaService | ✅ COMPLETE | Quality assurance test execution |
+| CimianService | ✅ COMPLETE | Internal Cimian utilities |
 
-### Commands (12 total)
+### Commands (15 total)
 
 | Command | Status | Description |
 |---------|--------|-------------|
-| `device` | COMPLETE | Device lookup by serial/hostname/asset |
-| `errors` | COMPLETE | List fleet installation failures |
-| `troubleshoot` | COMPLETE | Diagnose specific installation issues |
-| `status` | COMPLETE | Show config and fleet metrics |
-| `snipe` | COMPLETE | Snipe-IT asset management (15 subcommands) |
-| `ssh` | COMPLETE | Remote SSH execution (exec, batch, test, logs) |
-| `ado` | COMPLETE | Azure DevOps work items (7 subcommands) |
-| `graph` | COMPLETE | Intune/Entra queries (7 subcommands) |
-| `tdx` | COMPLETE | TeamDynamix tickets (6 subcommands) |
-| `test` | PARTIAL | Quality tests (wraps PowerShell) |
-| `lint` | PARTIAL | Pkginfo linting (--fix not implemented) |
-| `validate` | COMPLETE | Package structure validation |
+| `status` | ✅ COMPLETE | Show config, paths, and service status with FigletText banner |
+| `device` | ✅ COMPLETE | ReportMate device lookup by serial/hostname/asset tag |
+| `errors` | ✅ COMPLETE | List fleet installation failures from ReportMate |
+| `troubleshoot` | ✅ COMPLETE | Diagnose specific installation issues |
+| `snipe` | ✅ COMPLETE | Snipe-IT asset management (15+ subcommands: assets, asset, users, user, locations, models, categories, statuses, manufacturers, licenses, accessories, consumables, components, activity, checkout, checkin, audit) |
+| `ssh` | ✅ COMPLETE | SecureShell remote execution (exec, batch, test, logs) |
+| `entra` | ✅ COMPLETE | Microsoft Entra ID queries (users, groups, memberships) |
+| `intune` | ✅ COMPLETE | Intune device management (devices, device, compliance) |
+| `tdx` | ✅ COMPLETE | TeamDynamix integration (assets search with full field capture, asset detail, tickets, ticket, create, comment) |
+| `devops` | ✅ COMPLETE | Azure DevOps work items (items, item, create, update, from-error) |
+| `configure` | ✅ COMPLETE | Interactive configuration wizard |
+| `validate` | ✅ COMPLETE | Package structure validation |
+| `lint` | ⚠️ PARTIAL | Pkginfo linting (--fix not implemented) |
+| `test` | ✅ COMPLETE | Quality test execution |
+| `qa` | ✅ COMPLETE | Quality assurance workflows |
 
 ---
 
-## Remaining Windows Work
+## Current Status
 
-### Phase 1: Testing & Hardening
-- [ ] Manual test each command with --help
-- [ ] Manual test each command with --json output
-- [ ] Test error handling with invalid inputs
-- [ ] Test all authentication flows (Azure CLI, TDX JWT, SSH keys)
-- [ ] Verify pagination in all list commands
-- [ ] Test batch SSH operations
+### ✅ Completed
+- [x] All core services implemented and functional
+- [x] Full Snipe-IT integration with 15+ subcommands
+- [x] TeamDynamix integration with complete field capture (JsonExtensionData)
+- [x] Microsoft Graph integration (Intune + Entra)
+- [x] SecureShell remote execution
+- [x] ReportMate fleet monitoring
+- [x] Azure DevOps work item management
+- [x] System-check integration testing script
+- [x] .pkg packaging with cimipkg
+- [x] Build automation (build.ps1)
+- [x] Zero build warnings (nullable references resolved)
+- [x] Configuration via YAML + environment variables + Windows registry
+- [x] JSON output support across all commands
+- [x] Rich console output with Spectre.Console
 
-### Phase 2: Missing Features
-- [ ] Implement `lint --fix` auto-corrections
+### 🚧 In Progress / Remaining
+- [ ] Complete `lint --fix` auto-corrections
+- [ ] Add code signing to build.ps1 (infrastructure exists, needs cert integration)
+- [ ] Create MSI installer option (currently .pkg only)
+- [ ] Add retry logic for transient API failures
+- [ ] Implement circuit breaker pattern for service unavailability
 - [ ] Add `report` command for combined exports
-- [ ] Add `lookup` command for cross-system correlation
-- [ ] Add retry logic for API failures
-- [ ] Add circuit breaker pattern for service unavailability
+- [ ] Add `lookup` command for cross-system asset correlation
 
-### Phase 3: Documentation & Distribution
-- [ ] Create README.md with command reference
-- [ ] Document configuration options
-- [ ] Build MSI installer
-- [ ] Code sign binaries
-- [ ] Create Chocolatey package
+### 📋 Testing Status
+- [x] TDX authentication and asset search (tested with asset L003461)
+- [x] Snipe-IT asset lookup (tested)
+- [x] Entra user lookup (tested conditionally)
+- [x] Intune device management (tested conditionally)
+- [x] SecureShell command execution (tested with hostname command)
+- [x] Full system-check script with all integrations (logs to quality/fleetmate/logs/)
+- [x] Build and publish pipeline (tested successfully)
+- [x] .pkg package creation (tested, 42MB output)
+- [ ] Comprehensive unit tests
+- [ ] Automated integration test suite
+- [ ] Load testing for batch operations
 
 ---
 
@@ -128,22 +153,35 @@ FleetMate-Swift/
 
 ## Configuration
 
-### Config File Locations (priority order)
-1. `~/.fleetmate/config.yaml`
-2. `%LOCALAPPDATA%\FleetMate\config.yaml` (Windows)
-3. `~/Library/Application Support/FleetMate/config.yaml` (macOS)
-4. `/etc/fleetmate/config.yaml` (system-wide)
+### Configuration Priority (Windows)
+1. **Environment variables** (highest priority)
+2. **Windows Registry** (`HKEY_CURRENT_USER\SOFTWARE\FleetMate`)
+3. **.env file** (in executable directory or parent directories)
+4. **config.yaml** (in executable directory or `%LOCALAPPDATA%\FleetMate\`)
 
 ### Environment Variables
 | Variable | Description |
 |----------|-------------|
 | `REPORTMATE_URL` | ReportMate API endpoint |
-| `REPORTMATE_PASSPHRASE` | ReportMate auth |
+| `REPORTMATE_PASSPHRASE` | ReportMate auth token |
 | `SNIPE_URL` | Snipe-IT base URL |
 | `SNIPE_API_KEY` | Snipe-IT API key |
-| `SECURE_SHELL_PRIVATE_KEY` | SSH private key content |
-| `TDX_BEID` | TeamDynamix BEID |
+| `SECURE_SHELL_PRIVATE_KEY` | SSH private key content (base64 or PEM) |
+| `SECURE_SHELL_USERNAME` | SSH username for remote connections |
+| `TDX_BASE_URL` | TeamDynamix API endpoint (e.g., https://servicedesk.emilycarru.ca/TDWebApi) |
+| `TDX_APP_ID` | TeamDynamix application ID |
+| `TDX_BEID` | TeamDynamix BEID for authentication |
 | `TDX_WEB_SERVICES_KEY` | TeamDynamix web services key |
+| `TDX_USERNAME` | TeamDynamix username (alternative auth) |
+| `TDX_PASSWORD` | TeamDynamix password (alternative auth) |
+
+### Windows Registry Keys
+All keys under `HKEY_CURRENT_USER\SOFTWARE\FleetMate`:
+- `TdxBaseUrl` - TeamDynamix API base URL
+- `TdxAppId` - TeamDynamix application ID  
+- `TdxBeid` / `TdxWebServicesKey` - TDX authentication
+- `SnipeUrl` / `SnipeApiKey` - Snipe-IT configuration
+- `ReportMateUrl` / `ReportMatePassphrase` - ReportMate configuration
 
 ---
 
@@ -151,21 +189,28 @@ FleetMate-Swift/
 
 ### Fleet Monitoring
 ```bash
-fleetmate device <query>           # Look up device by serial/hostname
+fleetmate device <query>           # Look up device by serial/hostname/asset tag
 fleetmate errors [--item <name>]   # List installation failures
 fleetmate troubleshoot <item>      # Diagnose specific failure
-fleetmate status                   # Show config and metrics
+fleetmate status                   # Show config, paths, and service status
 ```
 
-### Asset Management
+### Asset Management (Snipe-IT)
 ```bash
-fleetmate snipe assets [--status]  # List assets
+fleetmate snipe assets [--status] [--location] [--search]  # List assets
 fleetmate snipe asset <tag>        # Get asset details
-fleetmate snipe checkout <id>      # Checkout asset to user
+fleetmate snipe checkout <id> --user <uid>  # Checkout asset to user
 fleetmate snipe checkin <id>       # Check in asset
+fleetmate snipe users              # List users
+fleetmate snipe user <id>          # Get user details
+fleetmate snipe locations          # List locations
+fleetmate snipe models             # List asset models
+fleetmate snipe categories         # List categories
+fleetmate snipe statuses           # List status labels
+fleetmate snipe licenses           # List software licenses
 ```
 
-### Remote Execution
+### Remote Execution (SecureShell)
 ```bash
 fleetmate ssh exec <host> <cmd>    # Run command on host
 fleetmate ssh batch <hosts> <cmd>  # Run command on multiple hosts
@@ -173,30 +218,24 @@ fleetmate ssh test <host>          # Test SSH connectivity
 fleetmate ssh logs <host>          # Get Cimian logs
 ```
 
-### Azure DevOps
-```bash
-fleetmate ado items [--state]      # List work items
-fleetmate ado item <id>            # Get work item details
-fleetmate ado create <title>       # Create work item
-fleetmate ado from-error <item>    # Create work item from error
-```
-
 ### Microsoft Graph
 ```bash
-fleetmate graph devices            # List Intune devices
-fleetmate graph device <serial>    # Get device by serial
-fleetmate graph compliance <id>    # Check compliance status
-fleetmate graph user <upn>         # Get Entra user
-fleetmate graph check-group <user> <group>  # Check membership
+fleetmate intune devices           # List Intune devices
+fleetmate intune device <serial>   # Get device by serial
+fleetmate intune compliance <id>   # Check compliance status
+fleetmate entra user <upn>         # Get Entra user
+fleetmate entra groups             # List groups
+fleetmate entra check-group <user> <group>  # Check membership
 ```
 
 ### TeamDynamix
 ```bash
+fleetmate tdx assets --search <tag>  # Search TDX assets
+fleetmate tdx asset <id>           # Get asset details (full field capture)
 fleetmate tdx tickets [--status]   # Search tickets
 fleetmate tdx ticket <id>          # Get ticket details
 fleetmate tdx create <title>       # Create ticket
 fleetmate tdx comment <id> <text>  # Add comment
-fleetmate tdx from-error <item>    # Create ticket from error
 ```
 
 ---
