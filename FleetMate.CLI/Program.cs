@@ -131,6 +131,9 @@ class Program
             // SecureShell remote execution
             rootCommand.AddCommand(SshCommand.Create(secureShellService, reportMate));
 
+            // Deadline render farm auditing
+            rootCommand.AddCommand(DeadlineCommand.Create(secureShellService));
+
             // Azure DevOps integration
             rootCommand.AddCommand(DevOpsCommand.Create(adoService, reportMate));
 
