@@ -28,7 +28,7 @@ $logDir = (Resolve-Path $logDir).Path
 if (!(Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
 
 $fleetmateRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$fleetmateExe = Join-Path $fleetmateRoot "publish\fleetmate.dll"
+$fleetmateExe = Join-Path $fleetmateRoot "publish\fleetmate.exe"
 
 $ts = Get-Date -Format "yyyyMMdd-HHmmss"
 $logFile = Join-Path $logDir "system-check-$AssetTag-$ts.log"
@@ -38,38 +38,56 @@ $logFile = Join-Path $logDir "system-check-$AssetTag-$ts.log"
 "" | Tee-Object -FilePath $logFile -Append
 
 "=== ReportMate: device lookup (asset tag) ===" | Tee-Object -FilePath $logFile -Append
-Invoke-FleetMateCommand "dotnet" @($fleetmateExe, "device", $AssetTag) | Tee-Object -FilePath $logFile -Append
+$deviceOutput = Invoke-FleetMateCommand $fleetmateExe @("device", $AssetTag)
+$deviceOutput | Tee-Object -FilePath $logFile -Append
+
+# Parse device details from ReportMate table output
+$serial = $null
+$owner = $null
+try {
+    $deviceOutput -split "`n" | ForEach-Object {
+        if ($_ -match "│\s*Serial\s*│\s*(.+?)\s*│") { $serial = $matches[1].Trim() }
+        if ($_ -match "│\s*Owner\s*│\s*(.+?)\s*│") { $owner = $matches[1].Trim() }
+    }
+} catch {}
+
 "" | Tee-Object -FilePath $logFile -Append
 
 "=== Snipe: asset detail (asset tag) ===" | Tee-Object -FilePath $logFile -Append
-Invoke-FleetMateCommand "dotnet" @($fleetmateExe, "snipe", "asset", $AssetTag) | Tee-Object -FilePath $logFile -Append
+Invoke-FleetMateCommand $fleetmateExe @("snipe", "asset", $AssetTag) | Tee-Object -FilePath $logFile -Append
 "" | Tee-Object -FilePath $logFile -Append
 
-"=== Entra: user lookup (from Snipe assignee if available) ===" | Tee-Object -FilePath $logFile -Append
-$owner = $null
-$assetJson = Invoke-FleetMateCommand "dotnet" @($fleetmateExe, "snipe", "asset", $AssetTag, "--json")
-try {
-    $asset = $assetJson | ConvertFrom-Json
-    if ($asset.assignedTo -and $asset.assignedTo.username) { $owner = $asset.assignedTo.username }
-    elseif ($asset.assignedTo -and $asset.assignedTo.name) { $owner = $asset.assignedTo.name }
-} catch {}
+"=== Entra: user lookup (from device owner if available) ===" | Tee-Object -FilePath $logFile -Append
+
+# Fall back to Snipe if no owner in ReportMate
+if (-not $owner) {
+    $assetJson = Invoke-FleetMateCommand $fleetmateExe @("snipe", "asset", $AssetTag, "--json")
+    try {
+        $asset = $assetJson | ConvertFrom-Json
+        if ($asset.assignedTo -and $asset.assignedTo.username) { $owner = $asset.assignedTo.username }
+        elseif ($asset.assignedTo -and $asset.assignedTo.name) { $owner = $asset.assignedTo.name }
+    } catch {}
+}
+
 if ($owner) {
     $upn = if ($owner -match "@") { $owner } else { "$owner@ecuad.ca" }
     "Resolved user: $upn" | Tee-Object -FilePath $logFile -Append
-    Invoke-FleetMateCommand "dotnet" @($fleetmateExe, "entra", "user", $upn) | Tee-Object -FilePath $logFile -Append
+    Invoke-FleetMateCommand $fleetmateExe @("entra", "user", $upn) | Tee-Object -FilePath $logFile -Append
 } else {
-    "No assigned user found in Snipe asset; skipping Entra lookup." | Tee-Object -FilePath $logFile -Append
+    "No assigned user found; skipping Entra lookup." | Tee-Object -FilePath $logFile -Append
 }
 "" | Tee-Object -FilePath $logFile -Append
 
-"=== Intune: basic info lookup (serial from Snipe if available) ===" | Tee-Object -FilePath $logFile -Append
-$serial = $null
-try {
-    if ($asset -and $asset.serial) { $serial = $asset.serial }
-} catch {}
+"=== Intune: basic info lookup (serial from device) ===" | Tee-Object -FilePath $logFile -Append
+
+# Fall back to Snipe if no serial in ReportMate
+if (-not $serial -and $asset -and $asset.serial) {
+    $serial = $asset.serial
+}
+
 if ($serial) {
     "Serial: $serial" | Tee-Object -FilePath $logFile -Append
-    Invoke-FleetMateCommand "dotnet" @($fleetmateExe, "intune", "device", $serial) | Tee-Object -FilePath $logFile -Append
+    Invoke-FleetMateCommand $fleetmateExe @("intune", "device", $serial) | Tee-Object -FilePath $logFile -Append
 } else {
     "No serial found; skipping Intune lookup." | Tee-Object -FilePath $logFile -Append
 }
@@ -77,7 +95,7 @@ if ($serial) {
 
 "=== TDX: asset info (search + detail) ===" | Tee-Object -FilePath $logFile -Append
 $tdxAssetId = $null
-$tdxAssetsJson = Invoke-FleetMateCommand "dotnet" @($fleetmateExe, "tdx", "assets", "--search", $AssetTag, "--limit", "5", "--json")
+$tdxAssetsJson = Invoke-FleetMateCommand $fleetmateExe @("tdx", "assets", "--search", $AssetTag, "--limit", "5", "--json")
 $tdxJsonPayload = $tdxAssetsJson
 if ($tdxAssetsJson -match "(?s)(\[.*\])") { $tdxJsonPayload = $matches[1] }
 try {
@@ -90,7 +108,7 @@ try {
 } catch {}
 if ($tdxAssetId) {
     "TDX asset ID: $tdxAssetId" | Tee-Object -FilePath $logFile -Append
-    $tdxAssetJson = Invoke-FleetMateCommand "dotnet" @($fleetmateExe, "tdx", "asset", $tdxAssetId, "--json")
+    $tdxAssetJson = Invoke-FleetMateCommand $fleetmateExe @("tdx", "asset", $tdxAssetId, "--json")
     try {
         $tdxAssetPayload = $tdxAssetJson
         if ($tdxAssetJson -match "(?s)(\{.*\})") { $tdxAssetPayload = $matches[1] }
@@ -116,7 +134,7 @@ if ($tdxAssetId) {
 "" | Tee-Object -FilePath $logFile -Append
 
 "=== SecureShell: run command (hostname) ===" | Tee-Object -FilePath $logFile -Append
-Invoke-FleetMateCommand "dotnet" @($fleetmateExe, "ssh", "exec", $AssetTag, "hostname") | Tee-Object -FilePath $logFile -Append
+Invoke-FleetMateCommand $fleetmateExe @("ssh", "exec", $AssetTag, "hostname") | Tee-Object -FilePath $logFile -Append
 "" | Tee-Object -FilePath $logFile -Append
 
 "Log saved to: $logFile" | Tee-Object -FilePath $logFile -Append
