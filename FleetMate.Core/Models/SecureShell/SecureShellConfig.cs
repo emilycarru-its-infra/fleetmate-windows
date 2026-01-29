@@ -48,6 +48,38 @@ public class SecureShellConfig
     public int Port { get; set; } = 22;
 
     /// <summary>
+    /// Automatically remove stale host keys from known_hosts when host key verification fails
+    /// and retry the connection. This handles the common case where devices are reimaged.
+    /// </summary>
+    public bool AutoCleanStaleHostKeys { get; set; } = true;
+
+    /// <summary>
+    /// Accept all host keys without verification (less secure but useful for dynamic fleet environments)
+    /// </summary>
+    public bool AcceptAllHostKeys { get; set; } = false;
+
+    /// <summary>
+    /// Path to known_hosts file (default: ~/.ssh/known_hosts)
+    /// </summary>
+    public string KnownHostsPath { get; set; } = "~/.ssh/known_hosts";
+
+    /// <summary>
+    /// Resolves the known_hosts path, expanding ~ to home directory
+    /// </summary>
+    public string ResolvedKnownHostsPath
+    {
+        get
+        {
+            if (KnownHostsPath.StartsWith("~"))
+            {
+                var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                return Path.Combine(home, KnownHostsPath.TrimStart('~', '/', '\\'));
+            }
+            return KnownHostsPath;
+        }
+    }
+
+    /// <summary>
     /// Resolves the private key path, expanding ~ to home directory
     /// </summary>
     public string ResolvedKeyPath
