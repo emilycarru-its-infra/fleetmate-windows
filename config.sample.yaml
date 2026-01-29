@@ -27,6 +27,9 @@ secureShell:
   commandTimeoutSeconds: 120              # Command execution timeout
   maxConcurrentConnections: 10            # Max parallel SecureShell connections for batch operations
   port: 22                                # SecureShell port
+  autoCleanStaleHostKeys: true            # Auto-remove stale host keys on verification failure (for reimaged devices)
+  acceptAllHostKeys: false                # Accept any host key without verification (less secure)
+  knownHostsPath: ~/.ssh/known_hosts      # Path to known_hosts file
 
 # Azure DevOps Configuration - Set via environment variables:
 # - DEVOPS_ORGANIZATION: Azure DevOps organization name
