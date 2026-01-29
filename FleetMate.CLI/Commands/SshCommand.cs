@@ -22,6 +22,7 @@ public static class SshCommand
         command.AddCommand(CreateBatchCommand(secureShellService, reportMate));
         command.AddCommand(CreateTestCommand(secureShellService));
         command.AddCommand(CreateLogsCommand(secureShellService));
+        command.AddCommand(CreateHostKeyCommand(secureShellService));
 
         return command;
     }
@@ -319,6 +320,121 @@ public static class SshCommand
                     }
                 });
         }, deviceArg, tailOption, errorsOption, usernameOption, jsonOption);
+
+        return command;
+    }
+
+    private static Command CreateHostKeyCommand(SecureShellService? secureShellService)
+    {
+        var command = new Command("host-key", "Manage SSH host keys in known_hosts");
+
+        command.AddCommand(CreateHostKeyCleanCommand(secureShellService));
+        command.AddCommand(CreateHostKeyCleanAllCommand(secureShellService));
+
+        return command;
+    }
+
+    private static Command CreateHostKeyCleanCommand(SecureShellService? secureShellService)
+    {
+        var command = new Command("clean", "Remove stale host key for a specific host (used when device is reimaged)");
+
+        var hostArg = new Argument<string>(
+            name: "host",
+            description: "Host IP address or hostname to remove from known_hosts");
+
+        command.AddArgument(hostArg);
+
+        command.SetHandler((host) =>
+        {
+            if (!EnsureConfigured(secureShellService)) return;
+
+            AnsiConsole.MarkupLine($"[dim]Removing host key for {host}...[/]");
+
+            var removed = secureShellService!.CleanStaleHostKey(host);
+
+            if (removed)
+            {
+                AnsiConsole.MarkupLine($"[green]✓[/] Removed stale host key for [cyan]{host}[/]");
+                AnsiConsole.MarkupLine("[dim]The next connection will accept the new host key.[/]");
+            }
+            else
+            {
+                AnsiConsole.MarkupLine($"[yellow]No host key found for {host} in known_hosts[/]");
+            }
+        }, hostArg);
+
+        return command;
+    }
+
+    private static Command CreateHostKeyCleanAllCommand(SecureShellService? secureShellService)
+    {
+        var command = new Command("clean-all", "Remove all host keys matching a pattern (useful for subnet cleanup)");
+
+        var patternArg = new Argument<string>(
+            name: "pattern",
+            description: "IP pattern to match (e.g., '10.15.26.' to clean all hosts in that subnet)");
+
+        var dryRunOption = new Option<bool>(
+            aliases: ["--dry-run", "-n"],
+            description: "Show what would be removed without actually removing");
+
+        command.AddArgument(patternArg);
+        command.AddOption(dryRunOption);
+
+        command.SetHandler((pattern, dryRun) =>
+        {
+            if (!EnsureConfigured(secureShellService)) return;
+
+            var knownHostsPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".ssh", "known_hosts");
+
+            if (!File.Exists(knownHostsPath))
+            {
+                AnsiConsole.MarkupLine("[yellow]known_hosts file not found[/]");
+                return;
+            }
+
+            var lines = File.ReadAllLines(knownHostsPath);
+            var matchingLines = lines
+                .Select((line, idx) => new { Line = line, Index = idx + 1 })
+                .Where(x => x.Line.StartsWith(pattern, StringComparison.OrdinalIgnoreCase) ||
+                            x.Line.StartsWith($"[{pattern}", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (matchingLines.Count == 0)
+            {
+                AnsiConsole.MarkupLine($"[yellow]No hosts matching '{pattern}' found in known_hosts[/]");
+                return;
+            }
+
+            AnsiConsole.MarkupLine($"Found [cyan]{matchingLines.Count}[/] matching entries:");
+            foreach (var match in matchingLines)
+            {
+                var host = match.Line.Split(' ')[0];
+                AnsiConsole.MarkupLine($"  [dim]Line {match.Index}:[/] {Markup.Escape(host)}");
+            }
+
+            if (dryRun)
+            {
+                AnsiConsole.MarkupLine("\n[yellow]Dry run - no changes made[/]");
+                return;
+            }
+
+            // Remove matching lines
+            var remainingLines = lines
+                .Where(line => !line.StartsWith(pattern, StringComparison.OrdinalIgnoreCase) &&
+                               !line.StartsWith($"[{pattern}", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+
+            // Backup
+            File.Copy(knownHostsPath, knownHostsPath + ".old", overwrite: true);
+            File.WriteAllLines(knownHostsPath, remainingLines);
+
+            AnsiConsole.MarkupLine($"\n[green]✓[/] Removed {matchingLines.Count} host key(s) matching '{pattern}'");
+            AnsiConsole.MarkupLine("[dim]Backup saved to known_hosts.old[/]");
+
+        }, patternArg, dryRunOption);
 
         return command;
     }

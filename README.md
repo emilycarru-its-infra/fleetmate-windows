@@ -133,7 +133,7 @@ fleetmate tdx comment 12345 "Troubleshooting steps taken..."
 
 ### Remote Execution (SecureShell)
 
-SSH-based remote command execution:
+SSH-based remote command execution with automatic host key management:
 
 ```powershell
 # Execute single command
@@ -148,7 +148,14 @@ fleetmate ssh test L003461
 
 # Retrieve Cimian logs
 fleetmate ssh logs L003461
+
+# Host key management (for reimaged devices)
+fleetmate ssh host-key clean 10.15.26.123     # Remove stale key for single host
+fleetmate ssh host-key clean-all 10.15.26.    # Clean all hosts in subnet (with confirmation)
+fleetmate ssh host-key clean-all 10.15. -n    # Dry run to preview what would be removed
 ```
+
+**Auto Host Key Recovery**: When connecting to a reimaged device, FleetMate automatically detects the "host key verification failed" error, removes the stale host key from `known_hosts`, and retries the connection. This is enabled by default and can be disabled in configuration.
 
 ### Microsoft Graph (Intune/Entra)
 
