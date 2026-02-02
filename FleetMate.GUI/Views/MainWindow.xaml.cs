@@ -29,7 +29,7 @@ public partial class MainWindow : Window
                 case "Dashboard":
                     ContentFrame.Navigate(typeof(DashboardPage));
                     break;
-                case "Intune":
+                case "Management":
                     ContentFrame.Navigate(typeof(IntunePage));
                     break;
                 case "Assets":
@@ -47,8 +47,11 @@ public partial class MainWindow : Window
                 case "Tickets":
                     ContentFrame.Navigate(typeof(TicketsPage));
                     break;
-                case "WorkItems":
+                case "Tasks":
                     ContentFrame.Navigate(typeof(WorkItemsPage));
+                    break;
+                case "Boards":
+                    ContentFrame.Navigate(typeof(BoardsPage));
                     break;
             }
         }
