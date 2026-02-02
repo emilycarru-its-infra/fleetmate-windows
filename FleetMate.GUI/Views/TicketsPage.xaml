@@ -6,18 +6,384 @@
     <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
 
-        <StackPanel Grid.Row="0">
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Grid.Column="0">
             <TextBlock Text="Tickets" Style="{StaticResource TitleTextStyle}" />
-            <TextBlock Text="TeamDynamix tickets" Style="{StaticResource SubtitleTextStyle}" />
+            <TextBlock x:Name="TicketCountText" Text="0 of 0 tickets" Style="{StaticResource SubtitleTextStyle}" />
         </StackPanel>
 
-        <Border Grid.Row="1" Style="{StaticResource CardStyle}" Margin="0,16,0,0">
-            <TextBlock Text="Ticket list will appear here once configured."
-                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                       VerticalAlignment="Center" HorizontalAlignment="Center" />
-        </Border>
+        <!-- Toolbar -->
+        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+            <!-- View Mode Toggle -->
+            <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                <RadioButton x:Name="ListViewRadio" Content="📋 List" IsChecked="True" GroupName="ViewMode" Checked="OnViewModeChanged" Margin="0,0,4,0" />
+                <RadioButton x:Name="BoardViewRadio" Content="📊 Board" GroupName="ViewMode" Checked="OnViewModeChanged" />
+            </StackPanel>
+            <ComboBox x:Name="SortComboBox" Width="110" Margin="0,0,8,0" SelectionChanged="OnSortChanged">
+                <ComboBoxItem Content="Modified" IsSelected="True" />
+                <ComboBoxItem Content="Created" />
+                <ComboBoxItem Content="Title" />
+                <ComboBoxItem Content="Status" />
+                <ComboBoxItem Content="Priority" />
+                <ComboBoxItem Content="Requestor" />
+                <ComboBoxItem Content="Responsible" />
+            </ComboBox>
+            <Button x:Name="SortDirectionButton" Content="↓" Width="32" Margin="0,0,8,0" Click="OnSortDirectionClicked" ToolTip="Toggle sort direction" />
+            <Button x:Name="DetailPanelButton" Content="📋 Details" Margin="0,0,8,0" Click="OnToggleDetailPanel" />
+            <Button x:Name="RefreshButton" Content="🔄 Refresh" Click="OnRefreshClicked" />
+        </StackPanel>
+
+        <!-- Filters and Search -->
+        <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,16,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Hide Closed -->
+            <CheckBox Grid.Column="0" x:Name="HideClosedCheckBox" Content="Hide Closed" IsChecked="True" Margin="0,0,16,0" Checked="OnHideClosedChanged" Unchecked="OnHideClosedChanged" />
+
+            <!-- Status Filter -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,16,0">
+                <TextBlock Text="Status:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                <ComboBox x:Name="StatusFilterComboBox" MinWidth="120" SelectionChanged="OnFilterChanged" />
+            </StackPanel>
+
+            <!-- Group Filter -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="0,0,16,0">
+                <TextBlock Text="Group:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                <ComboBox x:Name="GroupFilterComboBox" MinWidth="140" SelectionChanged="OnFilterChanged" />
+            </StackPanel>
+
+            <!-- Responsible Filter -->
+            <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="0,0,16,0">
+                <TextBlock Text="Responsible:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                <ComboBox x:Name="ResponsibleFilterComboBox" MinWidth="140" SelectionChanged="OnFilterChanged" />
+            </StackPanel>
+
+            <!-- Search -->
+            <TextBox Grid.Column="5" x:Name="SearchBox" Width="180" PlaceholderText="Search..." TextChanged="OnSearchChanged" />
+        </Grid>
+
+        <!-- Main Content -->
+        <Grid Grid.Row="2" Grid.ColumnSpan="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition x:Name="DetailPanelColumn" Width="0" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Ticket List View -->
+            <Border x:Name="ListViewPanel" Grid.Column="0" Style="{StaticResource CardStyle}">
+                <Grid>
+                    <!-- Loading indicator -->
+                    <StackPanel x:Name="LoadingPanel" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <ui:ProgressRing IsActive="True" Width="40" Height="40" />
+                        <TextBlock Text="Loading tickets..." Margin="0,8,0,0" />
+                    </StackPanel>
+
+                    <!-- Not configured message -->
+                    <TextBlock x:Name="NotConfiguredText" Visibility="Collapsed"
+                               Text="TeamDynamix is not configured. Set TDX_BASE_URL and TDX_TICKETING_APP_ID in your config."
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                               VerticalAlignment="Center" HorizontalAlignment="Center" TextWrapping="Wrap" />
+
+                    <!-- Tickets ListView -->
+                    <ListView x:Name="TicketsListView"
+                              SelectionMode="Single"
+                              SelectionChanged="OnTicketSelectionChanged">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="4">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Title and Status -->
+                                    <DockPanel Grid.Row="0">
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                            <Ellipse Width="8" Height="8" Margin="0,0,4,0">
+                                                <Ellipse.Style>
+                                                    <Style TargetType="Ellipse">
+                                                        <Setter Property="Fill" Value="Gray" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding StatusName}" Value="New">
+                                                                <Setter Property="Fill" Value="Blue" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusName}" Value="Open">
+                                                                <Setter Property="Fill" Value="Blue" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusName}" Value="In Progress">
+                                                                <Setter Property="Fill" Value="Orange" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusName}" Value="In Process">
+                                                                <Setter Property="Fill" Value="Orange" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusName}" Value="Resolved">
+                                                                <Setter Property="Fill" Value="Green" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusName}" Value="Closed">
+                                                                <Setter Property="Fill" Value="Green" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding StatusName}" Value="On Hold">
+                                                                <Setter Property="Fill" Value="Gray" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Ellipse.Style>
+                                            </Ellipse>
+                                            <TextBlock Text="{Binding StatusName}" FontSize="12" />
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    </DockPanel>
+
+                                    <!-- Secondary Info -->
+                                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,4,0,0">
+                                        <TextBlock Text="👤" FontSize="11" Margin="0,0,2,0" />
+                                        <TextBlock Text="{Binding RequestorName}" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,12,0" />
+                                        <TextBlock Text="👥" FontSize="11" Margin="0,0,2,0" />
+                                        <TextBlock Text="{Binding ResponsibleGroupName}" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,12,0" />
+                                        <TextBlock Text="→" FontSize="11" Margin="0,0,2,0" />
+                                        <TextBlock Text="{Binding ResponsibleFullName}" FontSize="11" Foreground="{DynamicResource SystemControlForegroundAccentBrush}" Margin="0,0,12,0" />
+                                        <TextBlock Text="{Binding PriorityName}" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </Border>
+            
+            <!-- Kanban Board View -->
+            <ScrollViewer x:Name="BoardViewPanel" Grid.Column="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Visibility="Collapsed">
+                <ItemsControl x:Name="BoardColumnsControl">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" 
+                                    CornerRadius="8" Width="280" Margin="0,0,16,0">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    
+                                    <!-- Column Header -->
+                                    <Border Grid.Row="0" Background="{Binding HeaderColor}" Padding="12,10" CornerRadius="8,8,0,0">
+                                        <DockPanel>
+                                            <Border DockPanel.Dock="Right" Background="#40000000" Padding="8,2" CornerRadius="10">
+                                                <TextBlock Text="{Binding Count}" FontSize="12" Foreground="White" />
+                                            </Border>
+                                            <TextBlock Text="{Binding StatusName}" FontWeight="SemiBold" FontSize="14" Foreground="White" />
+                                        </DockPanel>
+                                    </Border>
+                                    
+                                    <!-- Cards -->
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="600">
+                                        <ItemsControl ItemsSource="{Binding Tickets}" Margin="8">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="{DynamicResource SystemControlBackgroundAltHighBrush}" 
+                                                            Padding="10" CornerRadius="6" Margin="0,0,0,8" 
+                                                            MouseLeftButtonUp="OnBoardCardClick" Cursor="Hand"
+                                                            Tag="{Binding Id}">
+                                                        <Border.Effect>
+                                                            <DropShadowEffect BlurRadius="4" ShadowDepth="1" Opacity="0.2" />
+                                                        </Border.Effect>
+                                                        <StackPanel>
+                                                            <!-- ID and Priority -->
+                                                            <DockPanel Margin="0,0,0,4">
+                                                                <TextBlock DockPanel.Dock="Right" Text="{Binding PriorityName}" FontSize="10" 
+                                                                           Padding="6,2" Background="#20808080" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                                <TextBlock Text="{Binding Id, StringFormat='#{0}'}" FontSize="11" 
+                                                                           Foreground="{DynamicResource SystemControlForegroundAccentBrush}" FontWeight="Medium" />
+                                                            </DockPanel>
+                                                            
+                                                            <!-- Title -->
+                                                            <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="Medium" 
+                                                                       TextWrapping="Wrap" MaxHeight="40" TextTrimming="CharacterEllipsis" Margin="0,0,0,6" />
+                                                            
+                                                            <!-- Requestor and Group -->
+                                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                                <TextBlock Text="👤" FontSize="10" Margin="0,0,2,0" />
+                                                                <TextBlock Text="{Binding RequestorName}" FontSize="10" 
+                                                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" 
+                                                                           TextTrimming="CharacterEllipsis" MaxWidth="120" />
+                                                            </StackPanel>
+                                                            
+                                                            <!-- Responsible -->
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="→" FontSize="10" Margin="0,0,4,0" Foreground="{DynamicResource SystemControlForegroundAccentBrush}" />
+                                                                <TextBlock Text="{Binding ResponsibleFullName}" FontSize="10" 
+                                                                           Foreground="{DynamicResource SystemControlForegroundAccentBrush}" 
+                                                                           TextTrimming="CharacterEllipsis" MaxWidth="140" />
+                                                            </StackPanel>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <!-- Detail Panel -->
+            <Border x:Name="DetailPanel" Grid.Column="1" Style="{StaticResource CardStyle}" Margin="16,0,0,0" Visibility="Collapsed">
+                <Grid Width="380">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Panel Header -->
+                    <Grid Grid.Row="0" Margin="12">
+                        <TextBlock x:Name="DetailTicketIdText" FontWeight="Bold" FontSize="16" Foreground="{DynamicResource SystemControlForegroundAccentBrush}" />
+                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                            <Button x:Name="OpenInWebButton" Content="🌐" Width="28" Height="28" Click="OnOpenInWebClicked" ToolTip="Open in Web Browser" />
+                            <Button Content="🔄" Width="28" Height="28" Click="OnRefreshDetailClicked" ToolTip="Refresh" Margin="4,0,0,0" />
+                            <Button Content="✕" Width="28" Height="28" Click="OnCloseDetailPanel" Margin="4,0,0,0" />
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Detail Content -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="DetailContent" Margin="12,0,12,12" Visibility="Collapsed">
+                            <!-- Title -->
+                            <TextBlock x:Name="DetailTitleText" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8" />
+
+                            <!-- Status and Priority -->
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                <Border x:Name="DetailStatusBadge" Padding="8,4" CornerRadius="4" Margin="0,0,8,0">
+                                    <TextBlock x:Name="DetailStatusText" FontSize="12" />
+                                </Border>
+                                <Border Background="#FFF0D080" Padding="8,4" CornerRadius="4">
+                                    <TextBlock x:Name="DetailPriorityText" FontSize="12" />
+                                </Border>
+                            </StackPanel>
+
+                            <Separator Margin="0,0,0,12" />
+
+                            <!-- Details Grid -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Requestor:" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <TextBlock Grid.Row="0" Grid.Column="1" x:Name="DetailRequestorText" FontSize="13" TextWrapping="Wrap" />
+
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Email:" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,4,0,0" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" x:Name="DetailEmailText" FontSize="13" TextWrapping="Wrap" Margin="0,4,0,0" />
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Group:" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,4,0,0" />
+                                <TextBlock Grid.Row="2" Grid.Column="1" x:Name="DetailGroupText" FontSize="13" TextWrapping="Wrap" Margin="0,4,0,0" />
+
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Responsible:" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,4,0,0" />
+                                <TextBlock Grid.Row="3" Grid.Column="1" x:Name="DetailResponsibleText" FontSize="13" TextWrapping="Wrap" Margin="0,4,0,0" />
+
+                                <TextBlock Grid.Row="4" Grid.Column="0" Text="Created:" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,4,0,0" />
+                                <TextBlock Grid.Row="4" Grid.Column="1" x:Name="DetailCreatedText" FontSize="13" Margin="0,4,0,0" />
+
+                                <TextBlock Grid.Row="5" Grid.Column="0" Text="Modified:" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,4,0,0" />
+                                <TextBlock Grid.Row="5" Grid.Column="1" x:Name="DetailModifiedText" FontSize="13" Margin="0,4,0,0" />
+                            </Grid>
+
+                            <!-- Description -->
+                            <StackPanel x:Name="DescriptionSection" Visibility="Collapsed" Margin="0,12,0,0">
+                                <Separator Margin="0,0,0,8" />
+                                <TextBlock Text="Description" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,4" />
+                                <TextBlock x:Name="DetailDescriptionText" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" TextWrapping="Wrap" />
+                            </StackPanel>
+
+                            <!-- Add Comment (moved BEFORE Activity) -->
+                            <Separator Margin="0,12,0,8" />
+                            <TextBlock Text="Add Comment" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8" />
+                            <TextBox x:Name="CommentTextBox" AcceptsReturn="True" Height="70" TextWrapping="Wrap" FontSize="13" />
+                            
+                            <!-- Notify Options -->
+                            <StackPanel x:Name="NotifyOptionsPanel" Margin="0,8,0,0">
+                                <TextBlock Text="Notify:" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,4" />
+                                <StackPanel x:Name="NotifyCheckboxesPanel" />
+                            </StackPanel>
+                            
+                            <DockPanel Margin="0,8,0,0">
+                                <CheckBox x:Name="PrivateCheckBox" Content="Private" DockPanel.Dock="Left" FontSize="13" />
+                                <Button x:Name="PostCommentButton" Content="Post Comment" DockPanel.Dock="Right" HorizontalAlignment="Right" Click="OnPostCommentClicked" />
+                            </DockPanel>
+
+                            <!-- Action Message -->
+                            <Border x:Name="ActionMessageBorder" Visibility="Collapsed" Padding="8" Margin="0,8,0,0" CornerRadius="4">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:ProgressRing x:Name="ActionProgressRing" IsActive="False" Width="16" Height="16" Margin="0,0,8,0" />
+                                    <TextBlock x:Name="ActionMessageText" TextWrapping="Wrap" FontSize="13" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Feed (moved AFTER Add Comment) -->
+                            <StackPanel x:Name="FeedSection" Visibility="Collapsed" Margin="0,12,0,0">
+                                <Separator Margin="0,0,0,8" />
+                                <TextBlock x:Name="FeedHeaderText" Text="Activity" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8" />
+                                <ItemsControl x:Name="FeedItemsControl">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" Padding="10" CornerRadius="6" Margin="0,0,0,8">
+                                                <StackPanel>
+                                                    <DockPanel>
+                                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                                            <Border x:Name="PrivateBadge" Background="#FFFFD080" Padding="6,2" CornerRadius="4" Margin="0,0,4,0" Visibility="{Binding IsPrivate, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                                <TextBlock Text="Private" FontSize="10" />
+                                                            </Border>
+                                                            <TextBlock Text="{Binding FormattedDate}" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding CreatedFullName}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                    </DockPanel>
+                                                    <TextBlock Text="{Binding StrippedBody}" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" TextWrapping="Wrap" MaxHeight="100" TextTrimming="CharacterEllipsis" Margin="0,6,0,0" />
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- No Selection -->
+                        <StackPanel x:Name="NoSelectionPanel" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock Text="🎫" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,8" />
+                            <TextBlock Text="Select a Ticket" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            <TextBlock Text="Select a ticket from the list to view details" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </Page>
