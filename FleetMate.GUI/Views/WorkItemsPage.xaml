@@ -10,8 +10,8 @@
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0">
-            <TextBlock Text="Work Items" Style="{StaticResource TitleTextStyle}" />
-            <TextBlock Text="Azure DevOps work items" Style="{StaticResource SubtitleTextStyle}" />
+            <TextBlock Text="Tasks" Style="{StaticResource TitleTextStyle}" />
+            <TextBlock Text="Tasks from DevOps, Planner, GitHub, etc." Style="{StaticResource SubtitleTextStyle}" />
         </StackPanel>
 
         <Border Grid.Row="1" Style="{StaticResource CardStyle}" Margin="0,16,0,0">
