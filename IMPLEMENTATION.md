@@ -256,6 +256,128 @@ fleetmate tdx comment <id> <text>  # Add comment
 - [ ] Azure DevOps: `fleetmate ado items`
 - [ ] Graph: `fleetmate graph devices`
 - [ ] TDX: `fleetmate tdx tickets`
+- [ ] Tasks: `fleetmate tasks list`
+- [ ] Boards GUI: Navigate to Boards page
+
+---
+
+## FleetMate Boards — Unified Task Management
+
+**Status: ✅ COMPLETE** (Implemented 2025)
+
+### Overview
+FleetMate Boards provides unified task management across Azure DevOps, GitHub, and Gitea providers with optional sync to Microsoft Planner and Markdown files.
+
+### Files Created
+
+#### Core Abstractions (FleetMate.Core)
+| File | Description |
+|------|-------------|
+| `Models/Tasks/TaskState.cs` | Enum: Open, InProgress, Closed |
+| `Models/Tasks/UnifiedTask.cs` | Main task model + CreateTaskRequest, UpdateTaskRequest, TaskBucket, TaskLabel |
+| `Services/Tasks/ITaskProvider.cs` | Provider interface + TaskFilter class |
+| `Services/Tasks/TaskProviderRegistry.cs` | Aggregates providers, parallel query |
+
+#### Task Providers (FleetMate.Core/Services/Tasks)
+| File | Description |
+|------|-------------|
+| `AzureDevOpsTaskProvider.cs` | Wraps existing AzureDevOpsService, maps WorkItem↔UnifiedTask |
+| `GitHubTaskProvider.cs` | Full GitHub Issues API, milestone→bucket, gh CLI token fallback |
+| `GiteaTaskProvider.cs` | Gitea Issues API v1.25, milestone→bucket, delete support |
+
+#### Sync Services (FleetMate.Core/Services/Tasks)
+| File | Description |
+|------|-------------|
+| `PlannerSyncService.cs` | One-way push to Microsoft Planner via Graph API |
+| `MarkdownSyncService.cs` | Bidirectional sync with .md file |
+
+#### CLI Commands (FleetMate.CLI/Commands)
+| File | Subcommands |
+|------|-------------|
+| `TasksCommand.cs` | list, show, create, update, buckets, labels, sync, providers |
+
+#### GUI Views (FleetMate.GUI/Views)
+| File | Description |
+|------|-------------|
+| `BoardsPage.xaml` | Kanban board with Open/InProgress/Closed columns |
+| `BoardsPage.xaml.cs` | Code-behind with filtering, search, sync |
+
+### Configuration (config.yaml)
+
+```yaml
+tasks:
+  providers:
+    azure_devops:
+      enabled: true              # Uses existing azureDevOps config
+      default_area: "FleetMate"
+      default_iteration: "@CurrentIteration"
+    
+    github:
+      enabled: true
+      owner: "your-org"
+      repo: "your-repo"
+      token: ""                  # Or GITHUB_TOKEN env, or `gh auth token`
+      default_labels: ["fleetmate"]
+    
+    gitea:
+      enabled: true
+      url: "https://gitea.example.com"
+      owner: "your-org"
+      repo: "your-repo"
+      token: ""                  # Or GITEA_TOKEN env
+      default_labels: []
+  
+  planner_sync:
+    enabled: false
+    plan_id: ""                  # MS Planner Plan ID
+  
+  markdown_sync:
+    enabled: false
+    file_path: "./TASKS.md"
+```
+
+### CLI Usage Examples
+
+```bash
+# List all tasks from all providers
+fleetmate tasks list
+
+# List GitHub tasks only
+fleetmate tasks list --provider github
+
+# Filter by state and labels
+fleetmate tasks list --state open --label bug --label urgent
+
+# Show task details
+fleetmate tasks show github 42
+
+# Create a task
+fleetmate tasks create github --title "Fix login bug" --label bug --assignee username
+
+# Update a task
+fleetmate tasks update github 42 --state closed
+
+# List available buckets/milestones
+fleetmate tasks buckets
+
+# List configured providers and auth status
+fleetmate tasks providers
+
+# Sync to Planner and/or Markdown
+fleetmate tasks sync --planner --markdown
+
+# Dry run sync
+fleetmate tasks sync --planner --dry-run
+```
+
+### GUI Features
+- **Kanban Board**: Three-column layout (Open, In Progress, Closed)
+- **Provider Filter**: All, Azure DevOps, GitHub, or Gitea
+- **Bucket Filter**: Filter by milestone/bucket
+- **Search**: Real-time search across title and description
+- **Show Closed**: Toggle visibility of closed tasks
+- **Sync Button**: One-click sync to configured destinations
+- **Task Details**: Click task to open in external browser
 
 ---
 
