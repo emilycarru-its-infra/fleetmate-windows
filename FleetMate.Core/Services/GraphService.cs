@@ -339,6 +339,351 @@ public class GraphService : IDisposable
         return await GetManagedDevicesAsync(filter, limit);
     }
 
+    /// <summary>
+    /// Get a device by ID
+    /// </summary>
+    public async Task<IntuneDevice?> GetDeviceByIdAsync(string deviceId)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            return null;
+        }
+
+        try
+        {
+            var url = $"deviceManagement/managedDevices/{deviceId}";
+            var response = await _client.GetAsync(url);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Warning("Failed to get device {DeviceId}: {Status}", deviceId, response.StatusCode);
+                return null;
+            }
+
+            return await response.Content.ReadFromJsonAsync<IntuneDevice>(_jsonOptions);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to get device {DeviceId}", deviceId);
+            return null;
+        }
+    }
+
+    #endregion
+
+    #region Intune Device Actions
+
+    /// <summary>
+    /// Result of a device action
+    /// </summary>
+    public class DeviceActionResult
+    {
+        public bool Success { get; set; }
+        public string DeviceId { get; set; } = string.Empty;
+        public string Action { get; set; } = string.Empty;
+        public string? Message { get; set; }
+    }
+
+    /// <summary>
+    /// Force sync a managed device
+    /// </summary>
+    public async Task<DeviceActionResult> SyncDeviceAsync(string deviceId)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "syncDevice", Message = "Not authenticated" };
+        }
+
+        try
+        {
+            var url = $"deviceManagement/managedDevices/{deviceId}/syncDevice";
+            var response = await _client.PostAsync(url, null);
+
+            if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                Log.Information("Sync triggered for device {DeviceId}", deviceId);
+                return new DeviceActionResult { Success = true, DeviceId = deviceId, Action = "syncDevice" };
+            }
+
+            var error = await response.Content.ReadAsStringAsync();
+            Log.Warning("Failed to sync device {DeviceId}: {Status} - {Error}", deviceId, response.StatusCode, error);
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "syncDevice", Message = error };
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to sync device {DeviceId}", deviceId);
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "syncDevice", Message = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// Sync multiple devices in parallel
+    /// </summary>
+    public async Task<List<DeviceActionResult>> SyncDevicesAsync(IEnumerable<string> deviceIds)
+    {
+        var tasks = deviceIds.Select(SyncDeviceAsync);
+        var results = await Task.WhenAll(tasks);
+        return results.ToList();
+    }
+
+    /// <summary>
+    /// Reboot a managed device
+    /// </summary>
+    public async Task<DeviceActionResult> RebootDeviceAsync(string deviceId)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "rebootNow", Message = "Not authenticated" };
+        }
+
+        try
+        {
+            var url = $"deviceManagement/managedDevices/{deviceId}/rebootNow";
+            var response = await _client.PostAsync(url, null);
+
+            if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                Log.Information("Reboot triggered for device {DeviceId}", deviceId);
+                return new DeviceActionResult { Success = true, DeviceId = deviceId, Action = "rebootNow" };
+            }
+
+            var error = await response.Content.ReadAsStringAsync();
+            Log.Warning("Failed to reboot device {DeviceId}: {Status} - {Error}", deviceId, response.StatusCode, error);
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "rebootNow", Message = error };
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to reboot device {DeviceId}", deviceId);
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "rebootNow", Message = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// Reboot multiple devices
+    /// </summary>
+    public async Task<List<DeviceActionResult>> RebootDevicesAsync(IEnumerable<string> deviceIds)
+    {
+        var tasks = deviceIds.Select(RebootDeviceAsync);
+        var results = await Task.WhenAll(tasks);
+        return results.ToList();
+    }
+
+    /// <summary>
+    /// Remote lock a device with optional PIN
+    /// </summary>
+    public async Task<DeviceActionResult> RemoteLockDeviceAsync(string deviceId, string? pin = null)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "remoteLock", Message = "Not authenticated" };
+        }
+
+        try
+        {
+            var url = $"deviceManagement/managedDevices/{deviceId}/remoteLock";
+            HttpResponseMessage response;
+
+            if (!string.IsNullOrEmpty(pin))
+            {
+                var body = new { pin };
+                var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+                response = await _client.PostAsync(url, content);
+            }
+            else
+            {
+                response = await _client.PostAsync(url, null);
+            }
+
+            if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                Log.Information("Remote lock triggered for device {DeviceId}", deviceId);
+                return new DeviceActionResult { Success = true, DeviceId = deviceId, Action = "remoteLock" };
+            }
+
+            var error = await response.Content.ReadAsStringAsync();
+            Log.Warning("Failed to lock device {DeviceId}: {Status} - {Error}", deviceId, response.StatusCode, error);
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "remoteLock", Message = error };
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to lock device {DeviceId}", deviceId);
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "remoteLock", Message = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// Remote lock multiple devices
+    /// </summary>
+    public async Task<List<DeviceActionResult>> RemoteLockDevicesAsync(IEnumerable<string> deviceIds, string? pin = null)
+    {
+        var tasks = deviceIds.Select(id => RemoteLockDeviceAsync(id, pin));
+        var results = await Task.WhenAll(tasks);
+        return results.ToList();
+    }
+
+    /// <summary>
+    /// Wipe a device (factory reset)
+    /// </summary>
+    public async Task<DeviceActionResult> WipeDeviceAsync(string deviceId, bool keepEnrollmentData = false, bool keepUserData = false)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "wipe", Message = "Not authenticated" };
+        }
+
+        try
+        {
+            var url = $"deviceManagement/managedDevices/{deviceId}/wipe";
+            var body = new { keepEnrollmentData, keepUserData };
+            var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+            var response = await _client.PostAsync(url, content);
+
+            if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                Log.Information("Wipe triggered for device {DeviceId}", deviceId);
+                return new DeviceActionResult { Success = true, DeviceId = deviceId, Action = "wipe" };
+            }
+
+            var error = await response.Content.ReadAsStringAsync();
+            Log.Warning("Failed to wipe device {DeviceId}: {Status} - {Error}", deviceId, response.StatusCode, error);
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "wipe", Message = error };
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to wipe device {DeviceId}", deviceId);
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "wipe", Message = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// Retire a device (remove company data)
+    /// </summary>
+    public async Task<DeviceActionResult> RetireDeviceAsync(string deviceId)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "retire", Message = "Not authenticated" };
+        }
+
+        try
+        {
+            var url = $"deviceManagement/managedDevices/{deviceId}/retire";
+            var response = await _client.PostAsync(url, null);
+
+            if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                Log.Information("Retire triggered for device {DeviceId}", deviceId);
+                return new DeviceActionResult { Success = true, DeviceId = deviceId, Action = "retire" };
+            }
+
+            var error = await response.Content.ReadAsStringAsync();
+            Log.Warning("Failed to retire device {DeviceId}: {Status} - {Error}", deviceId, response.StatusCode, error);
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "retire", Message = error };
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to retire device {DeviceId}", deviceId);
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "retire", Message = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// Get mobile apps from Intune
+    /// </summary>
+    public async Task<List<MobileApp>> GetMobileAppsAsync(string? filter = null, int limit = 100)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            return new List<MobileApp>();
+        }
+
+        var allApps = new List<MobileApp>();
+        var url = "deviceAppManagement/mobileApps";
+
+        var queryParams = new List<string> { $"$top={Math.Min(limit, _config.PageSize)}" };
+        if (!string.IsNullOrEmpty(filter))
+        {
+            queryParams.Add($"$filter={Uri.EscapeDataString(filter)}");
+        }
+        url += "?" + string.Join("&", queryParams);
+
+        try
+        {
+            while (!string.IsNullOrEmpty(url) && allApps.Count < limit)
+            {
+                var response = await _client.GetAsync(url);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var error = await response.Content.ReadAsStringAsync();
+                    Log.Warning("Failed to get mobile apps: {Status} - {Error}", response.StatusCode, error);
+                    break;
+                }
+
+                var result = await response.Content.ReadFromJsonAsync<MobileAppsResponse>(_jsonOptions);
+                if (result?.Value != null)
+                {
+                    allApps.AddRange(result.Value);
+                }
+
+                url = result?.NextLink;
+                if (url != null && url.StartsWith(_client.BaseAddress!.ToString()))
+                {
+                    url = url.Substring(_client.BaseAddress.ToString().Length);
+                }
+            }
+
+            Log.Debug("Retrieved {Count} mobile apps from Intune", allApps.Count);
+            return allApps.Take(limit).ToList();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to get mobile apps");
+            return new List<MobileApp>();
+        }
+    }
+
+    /// <summary>
+    /// Search mobile apps by name
+    /// </summary>
+    public async Task<List<MobileApp>> SearchMobileAppsAsync(string query, int limit = 50)
+    {
+        var filter = $"contains(displayName, '{query}')";
+        return await GetMobileAppsAsync(filter, limit);
+    }
+
+    /// <summary>
+    /// Get detected apps on a device
+    /// </summary>
+    public async Task<List<DetectedApp>> GetDetectedAppsAsync(string deviceId)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            return new List<DetectedApp>();
+        }
+
+        try
+        {
+            var url = $"deviceManagement/managedDevices/{deviceId}/detectedApps";
+            var response = await _client.GetAsync(url);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Warning("Failed to get detected apps for device {DeviceId}: {Status}", deviceId, response.StatusCode);
+                return new List<DetectedApp>();
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<DetectedAppsResponse>(_jsonOptions);
+            return result?.Value ?? new List<DetectedApp>();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to get detected apps for device {DeviceId}", deviceId);
+            return new List<DetectedApp>();
+        }
+    }
+
     #endregion
 
     #region Entra Users
