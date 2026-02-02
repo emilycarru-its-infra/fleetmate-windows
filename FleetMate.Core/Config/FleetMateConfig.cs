@@ -5,6 +5,7 @@ using Serilog;
 using FleetMate.Models.SecureShell;
 using FleetMate.Models.Graph;
 using FleetMate.Models.Tdx;
+using FleetMate.Core.Models.Tasks;
 
 namespace FleetMate.Config;
 
@@ -81,6 +82,9 @@ public class FleetMateConfig
 
     // TeamDynamix Configuration
     public TdxConfig? Tdx { get; set; }
+
+    // Tasks Configuration (multi-provider task management)
+    public TasksConfig? Tasks { get; set; }
 
     /// <summary>
     /// Get the repo root path (where .git folder is)
@@ -244,6 +248,16 @@ public class FleetMateConfig
             var tdxWebServicesKey = key.GetValue("TdxWebServicesKey") as string;
             if (!string.IsNullOrEmpty(tdxWebServicesKey))
                 config.Tdx.WebServicesKey = tdxWebServicesKey;
+            
+            // Azure DevOps credentials
+            config.AzureDevOps ??= new AzureDevOpsConfig();
+            var devOpsOrganization = key.GetValue("DevOpsOrganization") as string;
+            if (!string.IsNullOrEmpty(devOpsOrganization))
+                config.AzureDevOps.Organization = devOpsOrganization;
+            
+            var devOpsProject = key.GetValue("DevOpsProject") as string;
+            if (!string.IsNullOrEmpty(devOpsProject))
+                config.AzureDevOps.Project = devOpsProject;
             
             Log.Debug("Loaded credentials from registry: HKCU\\{Path}", RegistryPath);
         }
@@ -485,3 +499,175 @@ public class AzureDevOpsConfig
     /// </summary>
     public string BaseUrl => $"https://dev.azure.com/{Organization}";
 }
+
+/// <summary>
+/// Configuration for multi-provider task management
+/// </summary>
+public class TasksConfig
+{
+    /// <summary>
+    /// Task provider configurations
+    /// </summary>
+    public TaskProvidersConfig Providers { get; set; } = new();
+
+    /// <summary>
+    /// Microsoft Planner sync configuration (one-way push)
+    /// </summary>
+    public PlannerSyncConfig? Planner { get; set; }
+
+    /// <summary>
+    /// Markdown file sync configuration
+    /// </summary>
+    public MarkdownSyncConfig? Markdown { get; set; }
+
+    /// <summary>
+    /// Default provider for task creation when not specified
+    /// </summary>
+    public string DefaultProvider { get; set; } = "azdevops";
+
+    /// <summary>
+    /// Alias for Planner sync configuration
+    /// </summary>
+    public PlannerSyncConfig? PlannerSync { get => Planner; set => Planner = value; }
+
+    /// <summary>
+    /// Alias for Markdown sync configuration
+    /// </summary>
+    public MarkdownSyncConfig? MarkdownSync { get => Markdown; set => Markdown = value; }
+}
+
+/// <summary>
+/// Configuration for individual task providers
+/// </summary>
+public class TaskProvidersConfig
+{
+    /// <summary>
+    /// Azure DevOps task provider configuration
+    /// </summary>
+    public AzureDevOpsProviderConfig? AzDevOps { get; set; }
+
+    /// <summary>
+    /// GitHub task provider configuration
+    /// </summary>
+    public GitHubProviderConfig? GitHub { get; set; }
+
+    /// <summary>
+    /// Gitea task provider configuration
+    /// </summary>
+    public GiteaProviderConfig? Gitea { get; set; }
+}
+
+/// <summary>
+/// Azure DevOps provider configuration for tasks
+/// </summary>
+public class AzureDevOpsProviderConfig
+{
+    /// <summary>Whether this provider is enabled</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Override organization (uses AzureDevOps.Organization if not set)</summary>
+    public string? Organization { get; set; }
+
+    /// <summary>Override project (uses AzureDevOps.Project if not set)</summary>
+    public string? Project { get; set; }
+
+    /// <summary>Default work item type for created tasks</summary>
+    public string DefaultWorkItemType { get; set; } = "Bug";
+
+    /// <summary>Area path for created tasks</summary>
+    public string? AreaPath { get; set; }
+
+    /// <summary>Iteration path for created tasks (empty = current sprint)</summary>
+    public string? IterationPath { get; set; }
+}
+
+/// <summary>
+/// GitHub provider configuration for tasks
+/// </summary>
+public class GitHubProviderConfig
+{
+    /// <summary>Whether this provider is enabled</summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>Repository owner (user or organization)</summary>
+    public string? Owner { get; set; }
+
+    /// <summary>Repository name</summary>
+    public string? Repo { get; set; }
+
+    /// <summary>Personal access token (or use 'gh auth token')</summary>
+    public string? Token { get; set; }
+
+    /// <summary>Default labels to apply to created issues</summary>
+    public List<string> DefaultLabels { get; set; } = new();
+
+    /// <summary>Use GitHub CLI for authentication if token not provided</summary>
+    public bool UseGhCli { get; set; } = true;
+}
+
+/// <summary>
+/// Gitea provider configuration for tasks
+/// </summary>
+public class GiteaProviderConfig
+{
+    /// <summary>Whether this provider is enabled</summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>Gitea server URL (e.g., "https://git.example.com")</summary>
+    public string? Url { get; set; }
+
+    /// <summary>Repository owner</summary>
+    public string? Owner { get; set; }
+
+    /// <summary>Repository name</summary>
+    public string? Repo { get; set; }
+
+    /// <summary>API token</summary>
+    public string? Token { get; set; }
+
+    /// <summary>Default labels to apply to created issues</summary>
+    public List<string> DefaultLabels { get; set; } = new();
+}
+
+/// <summary>
+/// Microsoft Planner sync configuration (one-way push)
+/// </summary>
+public class PlannerSyncConfig
+{
+    /// <summary>Whether Planner sync is enabled</summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>Planner plan ID to sync tasks to</summary>
+    public string? PlanId { get; set; }
+
+    /// <summary>Default bucket ID for new tasks (null = first available)</summary>
+    public string? DefaultBucketId { get; set; }
+
+    /// <summary>Path to store sync state mapping file</summary>
+    public string StatePath { get; set; } = "~/.fleetmate/planner-sync-state.json";
+}
+
+/// <summary>
+/// Markdown file sync configuration
+/// </summary>
+public class MarkdownSyncConfig
+{
+    /// <summary>Whether markdown sync is enabled</summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>Path to the planning repo/directory</summary>
+    public string? RepoPath { get; set; }
+
+    /// <summary>Subdirectory for board markdown files</summary>
+    public string BoardsPath { get; set; } = "boards";
+
+    /// <summary>Subdirectory for individual task markdown files</summary>
+    public string TasksPath { get; set; } = "tasks";
+
+    /// <summary>Watch for file changes and auto-sync</summary>
+    public bool WatchForChanges { get; set; } = true;
+
+    /// <summary>Path to the markdown file (single file mode)</summary>
+    public string? FilePath { get; set; }
+}
+
