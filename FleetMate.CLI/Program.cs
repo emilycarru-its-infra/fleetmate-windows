@@ -145,6 +145,9 @@ class Program
             // TeamDynamix (Ticketing)
             rootCommand.AddCommand(TdxCommand.Create(tdxService, reportMate));
 
+            // Unified task management (FleetMate Boards)
+            rootCommand.AddCommand(TasksCommand.Create(config));
+
             var result = await rootCommand.InvokeAsync(args);
             
             // Dispose services
