@@ -3,6 +3,24 @@ using System.Diagnostics;
 namespace FleetMate.Models.Tdx;
 
 /// <summary>
+/// TDX authentication method enumeration
+/// </summary>
+public enum TdxAuthMethod
+{
+    /// <summary>Use BEID/WebServicesKey for service account authentication</summary>
+    ServiceAccount,
+    
+    /// <summary>Use username/password for regular authentication</summary>
+    UserPassword,
+    
+    /// <summary>Use browser-based SSO (Entra ID/SAML) for user authentication</summary>
+    BrowserSSO,
+    
+    /// <summary>Auto-select: try SSO first, fall back to service account</summary>
+    Auto
+}
+
+/// <summary>
 /// TeamDynamix (TDX) API configuration
 ///
 /// Required Environment Variables:
@@ -17,6 +35,9 @@ namespace FleetMate.Models.Tdx;
 /// Regular Auth (fallback):
 /// - TDX_USERNAME: TDX username
 /// - TDX_PASSWORD: TDX password
+///
+/// SSO Auth (user context):
+/// - TDX_AUTH_METHOD: Set to "BrowserSSO" to enable SSO authentication
 ///
 /// Optional:
 /// - TDX_KEY_VAULT_NAME: Azure Key Vault name to load credentials from
@@ -96,6 +117,26 @@ public class TdxConfig
     /// Cache duration in minutes for reference data
     /// </summary>
     public int CacheMinutes { get; set; } = 30;
+    
+    /// <summary>
+    /// Authentication method to use (ServiceAccount, UserPassword, BrowserSSO, Auto)
+    /// </summary>
+    public TdxAuthMethod AuthMethod { get; set; } = TdxAuthMethod.Auto;
+    
+    /// <summary>
+    /// Separate Application ID for ticketing (if different from AppId)
+    /// </summary>
+    public int? TicketingAppId { get; set; }
+    
+    /// <summary>
+    /// Separate Application ID for assets (if different from AppId)
+    /// </summary>
+    public int? AssetsAppId { get; set; }
+    
+    /// <summary>
+    /// Whether SSO authentication is enabled
+    /// </summary>
+    public bool SsoEnabled => AuthMethod == TdxAuthMethod.BrowserSSO || AuthMethod == TdxAuthMethod.Auto;
 
     // Cached Key Vault secrets
     private static Dictionary<string, string>? _kvSecrets;
