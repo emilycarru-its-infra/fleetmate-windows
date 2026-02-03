@@ -52,7 +52,59 @@ public partial class TicketsPage : Page
 
         TicketsListView.ItemsSource = _filteredTickets;
 
-        Loaded += async (s, e) => await LoadTicketsAsync();
+        Loaded += async (s, e) => 
+        {
+            UpdateSsoState();
+            await LoadTicketsAsync();
+        };
+    }
+    
+    private void UpdateSsoState()
+    {
+        if (_app == null || _tdxService == null) return;
+        
+        // Check if SSO should be shown
+        if (_tdxService.ShouldAttemptSso)
+        {
+            if (_tdxService.IsSsoAuthenticated)
+            {
+                // Show user info
+                SsoUserBorder.Visibility = Visibility.Visible;
+                SsoUserNameText.Text = _tdxService.AuthenticatedUserName ?? "Signed In";
+                SsoLoginButton.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                // Show login button
+                SsoUserBorder.Visibility = Visibility.Collapsed;
+                SsoLoginButton.Visibility = Visibility.Visible;
+            }
+        }
+        else
+        {
+            // SSO not enabled, hide both
+            SsoUserBorder.Visibility = Visibility.Collapsed;
+            SsoLoginButton.Visibility = Visibility.Collapsed;
+        }
+    }
+    
+    private void OnSsoLoginClicked(object sender, RoutedEventArgs e)
+    {
+        _app?.ShowTdxSsoLogin(success =>
+        {
+            UpdateSsoState();
+            if (success)
+            {
+                // Reload tickets with new auth
+                _ = LoadTicketsAsync();
+            }
+        });
+    }
+    
+    private void OnSsoSignOutClicked(object sender, RoutedEventArgs e)
+    {
+        _app?.SignOutTdxSso();
+        UpdateSsoState();
     }
 
     private async Task LoadTicketsAsync()
