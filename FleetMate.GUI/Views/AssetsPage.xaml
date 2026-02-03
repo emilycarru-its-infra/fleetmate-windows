@@ -11,7 +11,7 @@
 
         <StackPanel Grid.Row="0">
             <TextBlock Text="Assets" Style="{StaticResource TitleTextStyle}" />
-            <TextBlock Text="Assets Inventory" Style="{StaticResource SubtitleTextStyle}" />
+            <TextBlock Text="Inventory assets (Snipe-IT, ServiceNow, etc.)" Style="{StaticResource SubtitleTextStyle}" />
         </StackPanel>
 
         <Border Grid.Row="1" Style="{StaticResource CardStyle}" Margin="0,16,0,0">

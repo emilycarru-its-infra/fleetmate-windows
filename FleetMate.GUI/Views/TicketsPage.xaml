@@ -22,6 +22,20 @@
 
         <!-- Toolbar -->
         <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+            <!-- SSO Login/User Info -->
+            <Border x:Name="SsoUserBorder" Visibility="Collapsed" Background="{DynamicResource SystemControlBackgroundAccentBrush}" 
+                    CornerRadius="4" Padding="8,4" Margin="0,0,16,0">
+                <StackPanel Orientation="Horizontal">
+                    <ui:FontIcon Glyph="&#xE77B;" FontSize="14" Foreground="White" Margin="0,0,6,0"/>
+                    <TextBlock x:Name="SsoUserNameText" Text="" Foreground="White" VerticalAlignment="Center" FontSize="12"/>
+                    <Button x:Name="SsoSignOutButton" Content="⎋" FontSize="10" Padding="4,2" Margin="8,0,0,0" 
+                            ToolTip="Sign out of TDX SSO" Click="OnSsoSignOutClicked" 
+                            Background="Transparent" Foreground="White"/>
+                </StackPanel>
+            </Border>
+            <Button x:Name="SsoLoginButton" Content="🔑 Sign In" Margin="0,0,16,0" 
+                    ToolTip="Sign in with SSO for user context" Click="OnSsoLoginClicked" Visibility="Collapsed"/>
+            
             <!-- View Mode Toggle -->
             <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
                 <RadioButton x:Name="ListViewRadio" Content="📋 List" IsChecked="True" GroupName="ViewMode" Checked="OnViewModeChanged" Margin="0,0,4,0" />

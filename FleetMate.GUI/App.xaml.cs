@@ -14,6 +14,10 @@ public partial class App : Application
     public SnipeService? SnipeService { get; private set; }
     public TdxService? TdxService { get; private set; }
     
+    // MARK: - TDX SSO State
+    public bool IsTdxSsoAuthenticated => TdxService?.IsSsoAuthenticated ?? false;
+    public string? TdxAuthenticatedUserName => TdxService?.AuthenticatedUserName;
+    
     // MARK: - Cached Data
     // Data caches with timestamps to avoid reloading on tab switches
     
@@ -101,6 +105,69 @@ public partial class App : Application
         CachedTickets.Clear();
         CachedUsers.Clear();
         CachedGroups.Clear();
+    }
+    
+    // MARK: - TDX SSO Authentication
+    
+    /// <summary>
+    /// Show TDX SSO login window and handle result
+    /// </summary>
+    public void ShowTdxSsoLogin(Action<bool>? onComplete = null)
+    {
+        if (Config.Tdx == null || string.IsNullOrEmpty(Config.Tdx.BaseUrl))
+        {
+            Log.Warning("Cannot show TDX SSO login - TDX not configured");
+            onComplete?.Invoke(false);
+            return;
+        }
+        
+        var ssoWindow = new TdxSsoLoginWindow(Config.Tdx.BaseUrl)
+        {
+            Owner = Current.MainWindow
+        };
+        
+        ssoWindow.AuthenticationCompleted += (_, result) =>
+        {
+            if (result.Success && !string.IsNullOrEmpty(result.Token))
+            {
+                TdxService?.SetSsoToken(
+                    result.Token,
+                    result.Expiry,
+                    result.UserEmail,
+                    result.UserName
+                );
+                
+                // Clear tickets cache to reload with new auth
+                _ticketsCacheTime = null;
+                
+                Log.Information("TDX SSO authentication successful for {UserName}", result.UserName);
+                onComplete?.Invoke(true);
+            }
+            else
+            {
+                Log.Warning("TDX SSO authentication failed: {Error}", result.Error);
+                onComplete?.Invoke(false);
+            }
+        };
+        
+        ssoWindow.AuthenticationCancelled += (_, _) =>
+        {
+            Log.Debug("TDX SSO authentication cancelled");
+            onComplete?.Invoke(false);
+        };
+        
+        ssoWindow.ShowDialog();
+    }
+    
+    /// <summary>
+    /// Sign out of TDX SSO
+    /// </summary>
+    public void SignOutTdxSso()
+    {
+        TdxService?.ClearSsoToken();
+        _ticketsCacheTime = null;
+        CachedTickets.Clear();
+        Log.Information("Signed out of TDX SSO");
     }
 
     protected override void OnStartup(StartupEventArgs e)

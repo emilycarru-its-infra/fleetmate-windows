@@ -10,7 +10,7 @@ namespace FleetMate.Services;
 
 /// <summary>
 /// TeamDynamix (TDX) service for ticket management
-/// Uses JWT authentication via username/password
+/// Uses JWT authentication via SSO, username/password, or BEID
 /// </summary>
 public class TdxService : IDisposable
 {
@@ -19,6 +19,12 @@ public class TdxService : IDisposable
     private readonly JsonSerializerOptions _jsonOptions;
     private string? _cachedToken;
     private DateTime _tokenExpiry = DateTime.MinValue;
+    
+    // SSO authentication state
+    private string? _ssoToken;
+    private DateTime _ssoTokenExpiry = DateTime.MinValue;
+    private string? _ssoUserId;
+    private string? _ssoUserName;
 
     // Reference data caches
     private readonly Dictionary<int, string> _statusCache = new();
@@ -26,6 +32,31 @@ public class TdxService : IDisposable
     private readonly Dictionary<int, string> _priorityCache = new();
     private DateTime _refDataExpiry = DateTime.MinValue;
     private readonly TimeSpan _cacheDuration;
+    
+    /// <summary>
+    /// Returns true if SSO authentication is active and valid
+    /// </summary>
+    public bool IsSsoAuthenticated => !string.IsNullOrEmpty(_ssoToken) && DateTime.UtcNow < _ssoTokenExpiry;
+    
+    /// <summary>
+    /// The authenticated SSO user's display name
+    /// </summary>
+    public string? AuthenticatedUserName => IsSsoAuthenticated ? _ssoUserName : null;
+    
+    /// <summary>
+    /// The authenticated SSO user's ID
+    /// </summary>
+    public string? AuthenticatedUserId => IsSsoAuthenticated ? _ssoUserId : null;
+    
+    /// <summary>
+    /// Returns true if SSO login is required based on config
+    /// </summary>
+    public bool RequiresSsoLogin => _config.AuthMethod == TdxAuthMethod.BrowserSSO && !IsSsoAuthenticated;
+    
+    /// <summary>
+    /// Returns true if SSO should be attempted (based on config)
+    /// </summary>
+    public bool ShouldAttemptSso => _config.AuthMethod == TdxAuthMethod.BrowserSSO || _config.AuthMethod == TdxAuthMethod.Auto;
 
     public TdxService(TdxConfig config)
     {
@@ -47,77 +78,134 @@ public class TdxService : IDisposable
     }
 
     #region Authentication
+    
+    /// <summary>
+    /// Set SSO token from external SSO login flow
+    /// </summary>
+    public void SetSsoToken(string token, DateTime expiry, string? userId = null, string? userName = null)
+    {
+        _ssoToken = token;
+        _ssoTokenExpiry = expiry;
+        _ssoUserId = userId;
+        _ssoUserName = userName;
+        Log.Information("TDX SSO token set for user: {UserName}", userName ?? "(unknown)");
+    }
+    
+    /// <summary>
+    /// Clear SSO authentication state
+    /// </summary>
+    public void ClearSsoToken()
+    {
+        _ssoToken = null;
+        _ssoTokenExpiry = DateTime.MinValue;
+        _ssoUserId = null;
+        _ssoUserName = null;
+        Log.Debug("TDX SSO token cleared");
+    }
 
     /// <summary>
     /// Authenticate and get JWT bearer token
     /// </summary>
     private async Task<string?> GetAccessTokenAsync()
     {
+        var authMethod = _config.AuthMethod;
+        
+        // Check for valid SSO token first (if SSO is configured)
+        if (authMethod == TdxAuthMethod.BrowserSSO || authMethod == TdxAuthMethod.Auto)
+        {
+            if (!string.IsNullOrEmpty(_ssoToken) && DateTime.UtcNow < _ssoTokenExpiry)
+            {
+                return _ssoToken;
+            }
+            
+            // If browserSSO is required and no valid token, return null
+            if (authMethod == TdxAuthMethod.BrowserSSO)
+            {
+                Log.Warning("TDX SSO authentication required but no valid token available");
+                return null;
+            }
+        }
+        
+        // Check cached service account / password token
         if (_cachedToken != null && DateTime.UtcNow < _tokenExpiry)
         {
             return _cachedToken;
+        }
+        
+        // For SSO-only mode, don't fall back to service account
+        if (authMethod == TdxAuthMethod.BrowserSSO)
+        {
+            return null;
         }
 
         try
         {
             // Try admin login first (BEID + WebServicesKey)
-            var (beid, webServicesKey) = _config.GetAdminCredentials();
-            if (!string.IsNullOrEmpty(beid) && !string.IsNullOrEmpty(webServicesKey))
+            if (authMethod == TdxAuthMethod.ServiceAccount || authMethod == TdxAuthMethod.Auto)
             {
-                var loginUrl = "api/auth/loginadmin";
-                var loginBody = new
+                var (beid, webServicesKey) = _config.GetAdminCredentials();
+                if (!string.IsNullOrEmpty(beid) && !string.IsNullOrEmpty(webServicesKey))
                 {
-                    BEID = beid,
-                    WebServicesKey = webServicesKey
-                };
+                    var loginUrl = "api/auth/loginadmin";
+                    var loginBody = new
+                    {
+                        BEID = beid,
+                        WebServicesKey = webServicesKey
+                    };
 
-                var content = new StringContent(JsonSerializer.Serialize(loginBody), Encoding.UTF8, "application/json");
-                var response = await _client.PostAsync(loginUrl, content);
+                    var content = new StringContent(JsonSerializer.Serialize(loginBody), Encoding.UTF8, "application/json");
+                    var response = await _client.PostAsync(loginUrl, content);
 
-                if (response.IsSuccessStatusCode)
-                {
-                    _cachedToken = await response.Content.ReadAsStringAsync();
-                    _cachedToken = _cachedToken.Trim('"');
-                    _tokenExpiry = DateTime.UtcNow.AddHours(23);
-                    Log.Debug("Acquired TDX JWT token via admin login (BEID)");
-                    return _cachedToken;
+                    if (response.IsSuccessStatusCode)
+                    {
+                        _cachedToken = await response.Content.ReadAsStringAsync();
+                        _cachedToken = _cachedToken.Trim('"');
+                        _tokenExpiry = DateTime.UtcNow.AddHours(23);
+                        Log.Debug("Acquired TDX JWT token via admin login (BEID)");
+                        return _cachedToken;
+                    }
+
+                    var error = await response.Content.ReadAsStringAsync();
+                    Log.Warning("TDX admin login failed: {Status} - {Error}, trying regular login", response.StatusCode, error);
                 }
-
-                var error = await response.Content.ReadAsStringAsync();
-                Log.Warning("TDX admin login failed: {Status} - {Error}, trying regular login", response.StatusCode, error);
             }
 
             // Fallback to regular login (Username + Password)
-            var (username, password) = _config.GetRegularCredentials();
-            if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+            if (authMethod == TdxAuthMethod.UserPassword || authMethod == TdxAuthMethod.Auto)
             {
-                Log.Error("TDX credentials not configured. Set BEID/WebServicesKey or Username/Password in config, environment variables, or Key Vault.");
-                return null;
+                var (username, password) = _config.GetRegularCredentials();
+                if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+                {
+                    Log.Error("TDX credentials not configured. Set BEID/WebServicesKey or Username/Password in config, environment variables, or Key Vault.");
+                    return null;
+                }
+
+                var regularLoginUrl = "api/auth/login";
+                var regularLoginBody = new
+                {
+                    UserName = username,
+                    Password = password
+                };
+                var regularContent = new StringContent(JsonSerializer.Serialize(regularLoginBody), Encoding.UTF8, "application/json");
+                var regularResponse = await _client.PostAsync(regularLoginUrl, regularContent);
+
+                if (!regularResponse.IsSuccessStatusCode)
+                {
+                    var error = await regularResponse.Content.ReadAsStringAsync();
+                    Log.Error("TDX authentication failed: {Status} - {Error}", regularResponse.StatusCode, error);
+                    return null;
+                }
+
+                // Response body is the JWT token as a string
+                _cachedToken = await regularResponse.Content.ReadAsStringAsync();
+                _cachedToken = _cachedToken.Trim('"');
+                _tokenExpiry = DateTime.UtcNow.AddHours(23);
+
+                Log.Debug("Acquired TDX JWT token via regular login");
+                return _cachedToken;
             }
-
-            var regularLoginUrl = "api/auth/login";
-            var regularLoginBody = new
-            {
-                UserName = username,
-                Password = password
-            };
-            var regularContent = new StringContent(JsonSerializer.Serialize(regularLoginBody), Encoding.UTF8, "application/json");
-            var regularResponse = await _client.PostAsync(regularLoginUrl, regularContent);
-
-            if (!regularResponse.IsSuccessStatusCode)
-            {
-                var error = await regularResponse.Content.ReadAsStringAsync();
-                Log.Error("TDX authentication failed: {Status} - {Error}", regularResponse.StatusCode, error);
-                return null;
-            }
-
-            // Response body is the JWT token as a string
-            _cachedToken = await regularResponse.Content.ReadAsStringAsync();
-            _cachedToken = _cachedToken.Trim('"');
-            _tokenExpiry = DateTime.UtcNow.AddHours(23);
-
-            Log.Debug("Acquired TDX JWT token via regular login");
-            return _cachedToken;
+            
+            return null;
         }
         catch (Exception ex)
         {
