@@ -21,6 +21,7 @@ public partial class TicketsPage : Page
     private bool _detailPanelVisible = false;
     private bool _hideClosed = true;  // Default to hiding closed tickets
     private bool _isBoardView = false;  // List vs Board view mode
+    private string _feedFilter = "Comments";  // Comments (default), Activity, All
     
     // Use cached tickets from App
     private List<TdxTicket> _allTickets => _app?.CachedTickets ?? new();
@@ -309,8 +310,7 @@ public partial class TicketsPage : Page
             if (ticket != null)
             {
                 _selectedTicket = ticket;
-                SelectionInfoText.Text = $"• #{ticket.Id} selected";
-                
+
                 // Show detail panel
                 if (!_detailPanelVisible)
                 {
@@ -357,6 +357,18 @@ public partial class TicketsPage : Page
             _hideClosed = checkbox.IsChecked == true;
             ApplyFiltersAndSort();
         }
+    }
+
+    private void OnFeedFilterChanged(object sender, RoutedEventArgs e)
+    {
+        if (FeedFilterComments.IsChecked == true)
+            _feedFilter = "Comments";
+        else if (FeedFilterActivity.IsChecked == true)
+            _feedFilter = "Activity";
+        else if (FeedFilterAll.IsChecked == true)
+            _feedFilter = "All";
+        
+        UpdateFeedPanel();
     }
 
     private void OnOpenInWebClicked(object sender, RoutedEventArgs e)
@@ -414,7 +426,6 @@ public partial class TicketsPage : Page
         if (TicketsListView.SelectedItem is TdxTicket ticket)
         {
             _selectedTicket = ticket;
-            SelectionInfoText.Text = $"• #{ticket.Id} selected";
             
             // Show detail panel if not already visible
             if (!_detailPanelVisible)
@@ -496,15 +507,23 @@ public partial class TicketsPage : Page
 
     private void UpdateFeedPanel()
     {
-        // Filter out System activity entries
-        var filteredFeed = _ticketFeed.Where(f => f.CreatedFullName != "System").ToList();
-        
-        if (filteredFeed.Count > 0)
+        // Filter feed based on current filter mode
+        IEnumerable<TdxFeedEntry> filteredFeed = _feedFilter switch
         {
-            FeedHeaderText.Text = $"Activity ({filteredFeed.Count})";
+            "Comments" => _ticketFeed.Where(f => f.CreatedFullName != "System" && !string.IsNullOrWhiteSpace(f.Body)),
+            "Activity" => _ticketFeed.Where(f => f.CreatedFullName != "System"),
+            "All" => _ticketFeed,
+            _ => _ticketFeed.Where(f => f.CreatedFullName != "System" && !string.IsNullOrWhiteSpace(f.Body))
+        };
+
+        var feedList = filteredFeed.ToList();
+        
+        if (feedList.Count > 0)
+        {
+            FeedHeaderText.Text = $"Activity ({feedList.Count})";
             
             // Convert feed entries for display
-            var displayFeed = filteredFeed.Take(20).Select(f => new FeedDisplayItem
+            var displayFeed = feedList.Take(20).Select(f => new FeedDisplayItem
             {
                 CreatedFullName = f.CreatedFullName ?? "Unknown",
                 FormattedDate = FormatDate(f.CreatedDate),
@@ -517,7 +536,9 @@ public partial class TicketsPage : Page
         }
         else
         {
-            FeedSection.Visibility = Visibility.Collapsed;
+            FeedHeaderText.Text = "Activity";
+            FeedItemsControl.ItemsSource = null;
+            FeedSection.Visibility = Visibility.Visible;
         }
     }
 

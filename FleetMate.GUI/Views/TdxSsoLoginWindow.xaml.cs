@@ -51,8 +51,9 @@ public partial class TdxSsoLoginWindow : ModernWpf.Controls.Window
     {
         InitializeComponent();
         
-        // Build SSO login URL
-        _ssoLoginUrl = baseUrl.TrimEnd('/') + "/TDWebApi/api/auth/loginsso";
+        // Build SSO login URL - strip /TDWebApi path if present for root SSO endpoint
+        var rootUrl = baseUrl.TrimEnd('/').Replace("/TDWebApi", "");
+        _ssoLoginUrl = rootUrl + "/api/auth/loginsso";
         
         Loaded += async (_, _) => await InitializeWebViewAsync();
         Closing += (_, e) =>
