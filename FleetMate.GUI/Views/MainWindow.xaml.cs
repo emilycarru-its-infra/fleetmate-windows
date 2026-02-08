@@ -29,10 +29,10 @@ public partial class MainWindow : Window
                 case "Dashboard":
                     ContentFrame.Navigate(typeof(DashboardPage));
                     break;
-                case "Management":
+                case "Devices":
                     ContentFrame.Navigate(typeof(IntunePage));
                     break;
-                case "Assets":
+                case "Inventory":
                     ContentFrame.Navigate(typeof(AssetsPage));
                     break;
                 case "Errors":
