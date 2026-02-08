@@ -32,15 +32,15 @@
 
                 <ui:NavigationViewItemSeparator />
 
-                <ui:NavigationViewItemHeader Content="Inventory &amp; Management" />
+                <ui:NavigationViewItemHeader Content="Devices &amp; Inventory" />
 
-                <ui:NavigationViewItem Content="Assets" Tag="Assets">
+                <ui:NavigationViewItem Content="Inventory" Tag="Inventory">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="Library" />
                     </ui:NavigationViewItem.Icon>
                 </ui:NavigationViewItem>
 
-                <ui:NavigationViewItem Content="Management" Tag="Management">
+                <ui:NavigationViewItem Content="Devices" Tag="Devices">
                     <ui:NavigationViewItem.Icon>
                         <ui:SymbolIcon Symbol="CellPhone" />
                     </ui:NavigationViewItem.Icon>
