@@ -1,5 +1,9 @@
 using System;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.Web.WebView2.Core;
@@ -9,11 +13,15 @@ using Serilog;
 namespace FleetMate.GUI.Views;
 
 /// <summary>
-/// TDX SSO login window using WebView2 for SAML/Shibboleth authentication
+/// TDX SSO login window using WebView2 for SAML/Shibboleth authentication.
+/// WebView2 handles cross-origin POSTs natively (unlike WKWebView on macOS),
+/// so no SAML form interception is needed. After a successful SAML flow,
+/// we call /api/auth/loginSSO to retrieve a JWT bearer token.
 /// </summary>
 public partial class TdxSsoLoginWindow : ModernWpf.Controls.Window
 {
     private readonly string _ssoLoginUrl;
+    private readonly string _rootUrl;
     private bool _authCompleted;
     
     /// <summary>
@@ -24,6 +32,7 @@ public partial class TdxSsoLoginWindow : ModernWpf.Controls.Window
         "/SBTDClient/",
         "/TDClient/",
         "/TDNext/",
+        "/TDWorkManagement/",
         "/Home/Desktop"
     };
     
@@ -51,9 +60,9 @@ public partial class TdxSsoLoginWindow : ModernWpf.Controls.Window
     {
         InitializeComponent();
         
-        // Build SSO login URL - strip /TDWebApi path if present for root SSO endpoint
-        var rootUrl = baseUrl.TrimEnd('/').Replace("/TDWebApi", "");
-        _ssoLoginUrl = rootUrl + "/api/auth/loginsso";
+        // Build SSO login URL - navigate to TDWorkManagement to trigger SAML redirect chain
+        _rootUrl = baseUrl.TrimEnd('/').Replace("/TDWebApi", "");
+        _ssoLoginUrl = _rootUrl + "/TDWorkManagement/";
         
         Loaded += async (_, _) => await InitializeWebViewAsync();
         Closing += (_, e) =>
@@ -192,9 +201,38 @@ public partial class TdxSsoLoginWindow : ModernWpf.Controls.Window
             // Wait a moment for cookies to be fully set
             await Task.Delay(500);
             
-            // Extract token from cookies
+            // First, try to get a JWT bearer token from TDX loginSSO endpoint
+            // This mirrors the macOS approach: after SAML completes, call
+            // /api/auth/loginSSO with the session cookies to get a proper JWT
+            var jwtResult = await TryGetJwtTokenAsync();
+            
+            if (jwtResult.token != null)
+            {
+                _authCompleted = true;
+                
+                var result = new TdxSsoResult
+                {
+                    Success = true,
+                    Token = jwtResult.token,
+                    UserName = jwtResult.userName,
+                    UserEmail = jwtResult.userEmail,
+                    Expiry = DateTime.UtcNow.AddHours(23)
+                };
+                
+                Log.Information("[JWT] ✓ TDX SSO authentication successful for user: {UserName} ({UserEmail})", 
+                    jwtResult.userName ?? "(unknown)",
+                    jwtResult.userEmail ?? "(unknown)");
+                
+                AuthenticationCompleted?.Invoke(this, result);
+                Close();
+                return;
+            }
+            
+            // Fallback: Extract token from cookies
+            Log.Debug("[JWT] JWT retrieval failed, falling back to cookie extraction");
+            
             var cookieManager = WebView.CoreWebView2.CookieManager;
-            var cookies = await cookieManager.GetCookiesAsync(_ssoLoginUrl);
+            var cookies = await cookieManager.GetCookiesAsync(_rootUrl);
             
             string? token = null;
             foreach (var cookieName in TokenCookieNames)
@@ -216,7 +254,7 @@ public partial class TdxSsoLoginWindow : ModernWpf.Controls.Window
             
             if (!string.IsNullOrEmpty(token))
             {
-                // Get user info
+                // Get user info from page JavaScript
                 var (userName, userEmail) = await TryExtractUserInfoAsync();
                 
                 _authCompleted = true;
@@ -244,6 +282,142 @@ public partial class TdxSsoLoginWindow : ModernWpf.Controls.Window
         {
             Log.Error(ex, "Failed to complete SSO authentication");
             ShowError($"Failed to complete authentication: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// Call /api/auth/loginSSO with session cookies from WebView2 to get a JWT bearer token.
+    /// This is the same approach used on macOS after the SAML flow completes.
+    /// </summary>
+    private async Task<(string? token, string? userName, string? userEmail)> TryGetJwtTokenAsync()
+    {
+        try
+        {
+            var loginSsoUrl = _rootUrl + "/TDWebApi/api/auth/loginSSO";
+            Log.Debug("[JWT] Requesting bearer token from {Url}", loginSsoUrl);
+            
+            // Get all cookies from WebView2 for the TDX domain
+            var cookieManager = WebView.CoreWebView2.CookieManager;
+            var cookies = await cookieManager.GetCookiesAsync(_rootUrl);
+            
+            // Build a CookieContainer with the WebView2 cookies
+            var cookieContainer = new CookieContainer();
+            var uri = new Uri(_rootUrl);
+            foreach (var cookie in cookies)
+            {
+                try
+                {
+                    cookieContainer.Add(uri, new Cookie(cookie.Name, cookie.Value, cookie.Path, cookie.Domain));
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug("Skipping cookie {Name}: {Error}", cookie.Name, ex.Message);
+                }
+            }
+            
+            using var handler = new HttpClientHandler
+            {
+                CookieContainer = cookieContainer,
+                UseCookies = true,
+                AllowAutoRedirect = true
+            };
+            
+            using var httpClient = new HttpClient(handler);
+            httpClient.DefaultRequestHeaders.Add("User-Agent", "FleetMate/1.0");
+            
+            var response = await httpClient.GetAsync(loginSsoUrl);
+            
+            Log.Debug("[JWT] loginSSO response: {StatusCode}", response.StatusCode);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var tokenText = await response.Content.ReadAsStringAsync();
+                
+                // Token comes back as a quoted JSON string (e.g., "\"eyJhbG...\"")
+                var cleanToken = tokenText.Trim().Trim('"');
+                
+                if (!string.IsNullOrEmpty(cleanToken) && cleanToken.Length > 20)
+                {
+                    Log.Debug("[JWT] ✓ Got bearer token ({TokenPrefix}...)", cleanToken[..20]);
+                    
+                    // Extract user info from JWT payload
+                    var (userName, userEmail) = ExtractUserInfoFromJwt(cleanToken);
+                    
+                    if (userName != null)
+                    {
+                        Log.Debug("[JWT] User: {Name} ({Email})", userName, userEmail ?? "");
+                    }
+                    
+                    return (cleanToken, userName, userEmail);
+                }
+            }
+            
+            Log.Debug("[JWT] loginSSO didn't return a valid token");
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[JWT] loginSSO error");
+        }
+        
+        return (null, null, null);
+    }
+    
+    /// <summary>
+    /// Extract user info (name, email) from a JWT token's payload.
+    /// The JWT payload is base64url-encoded JSON in the second segment.
+    /// </summary>
+    private static (string? userName, string? userEmail) ExtractUserInfoFromJwt(string token)
+    {
+        try
+        {
+            var parts = token.Split('.');
+            if (parts.Length < 2) return (null, null);
+            
+            // Base64URL → Base64 conversion
+            var payload = parts[1]
+                .Replace('-', '+')
+                .Replace('_', '/');
+            
+            // Add padding
+            var remainder = payload.Length % 4;
+            if (remainder > 0)
+            {
+                payload += new string('=', 4 - remainder);
+            }
+            
+            var bytes = Convert.FromBase64String(payload);
+            var json = JsonDocument.Parse(bytes);
+            var root = json.RootElement;
+            
+            string? name = null;
+            string? email = null;
+            
+            // Try different JWT claim names for name
+            foreach (var claim in new[] { "given_name", "name", "unique_name" })
+            {
+                if (root.TryGetProperty(claim, out var val) && val.ValueKind == JsonValueKind.String)
+                {
+                    name = val.GetString();
+                    if (!string.IsNullOrEmpty(name)) break;
+                }
+            }
+            
+            // Try different JWT claim names for email
+            foreach (var claim in new[] { "email", "upn", "unique_name" })
+            {
+                if (root.TryGetProperty(claim, out var val) && val.ValueKind == JsonValueKind.String)
+                {
+                    email = val.GetString();
+                    if (!string.IsNullOrEmpty(email)) break;
+                }
+            }
+            
+            return (name, email);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Failed to extract user info from JWT");
+            return (null, null);
         }
     }
     
@@ -309,7 +483,7 @@ public partial class TdxSsoLoginWindow : ModernWpf.Controls.Window
             if (!string.IsNullOrEmpty(result) && result != "null" && result != "\"null\"")
             {
                 // Parse JSON result
-                var json = System.Text.Json.JsonDocument.Parse(result.Trim('"').Replace("\\\"", "\""));
+                var json = JsonDocument.Parse(result.Trim('"').Replace("\\\"", "\""));
                 var root = json.RootElement;
                 
                 var name = root.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null;
