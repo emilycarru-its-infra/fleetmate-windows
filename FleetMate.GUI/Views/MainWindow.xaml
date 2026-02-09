@@ -24,22 +24,22 @@
         </Grid.RowDefinitions>
 
         <!-- Top Tab Bar -->
-        <Border Grid.Row="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" Padding="12,6">
+        <Border Grid.Row="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" Padding="12,8">
             <StackPanel Orientation="Horizontal" x:Name="TabBar">
                 <RadioButton x:Name="TabDashboard" Content="Dashboard" Tag="Dashboard" GroupName="MainTabs"
-                             IsChecked="True" Checked="OnTabChecked" Style="{StaticResource {x:Type RadioButton}}" Margin="0,0,4,0" />
+                             IsChecked="True" Checked="OnTabChecked" Style="{StaticResource {x:Type RadioButton}}" Margin="0,0,4,0" FontSize="13" />
                 <RadioButton x:Name="TabDevices" Content="Devices" Tag="Devices" GroupName="MainTabs"
-                             Checked="OnTabChecked" Margin="0,0,4,0" />
+                             Checked="OnTabChecked" Margin="0,0,4,0" FontSize="13" />
                 <RadioButton x:Name="TabInventory" Content="Inventory" Tag="Inventory" GroupName="MainTabs"
-                             Checked="OnTabChecked" Margin="0,0,4,0" />
+                             Checked="OnTabChecked" Margin="0,0,4,0" FontSize="13" />
                 <RadioButton x:Name="TabTickets" Content="Tickets" Tag="Tickets" GroupName="MainTabs"
-                             Checked="OnTabChecked" Margin="0,0,4,0" />
+                             Checked="OnTabChecked" Margin="0,0,4,0" FontSize="13" />
                 <RadioButton x:Name="TabBoards" Content="Boards" Tag="Boards" GroupName="MainTabs"
-                             Checked="OnTabChecked" Margin="0,0,4,0" />
+                             Checked="OnTabChecked" Margin="0,0,4,0" FontSize="13" />
                 <RadioButton x:Name="TabIdentity" Content="Identity" Tag="Identity" GroupName="MainTabs"
-                             Checked="OnTabChecked" Margin="0,0,4,0" />
+                             Checked="OnTabChecked" Margin="0,0,4,0" FontSize="13" />
                 <RadioButton x:Name="TabSettings" Content="⚙ Settings" Tag="Settings" GroupName="MainTabs"
-                             Checked="OnTabChecked" Margin="16,0,0,0" />
+                             Checked="OnTabChecked" Margin="16,0,0,0" FontSize="13" />
             </StackPanel>
         </Border>
 
