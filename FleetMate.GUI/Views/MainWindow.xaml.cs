@@ -1,5 +1,5 @@
 using System.Windows;
-using ModernWpf.Controls;
+using System.Windows.Controls;
 
 namespace FleetMate.GUI.Views;
 
@@ -9,21 +9,15 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // Navigate to Dashboard on startup
-        ContentFrame.Navigate(typeof(DashboardPage));
+        // Navigate to Tickets on startup (matching macOS default)
+        ContentFrame.Navigate(typeof(TicketsPage));
+        TabTickets.IsChecked = true;
     }
 
-    private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    private void OnTabChecked(object sender, RoutedEventArgs e)
     {
-        if (args.IsSettingsSelected)
+        if (sender is RadioButton radio && radio.Tag is string tag)
         {
-            ContentFrame.Navigate(typeof(SettingsPage));
-            return;
-        }
-
-        if (args.SelectedItem is NavigationViewItem item)
-        {
-            var tag = item.Tag?.ToString();
             switch (tag)
             {
                 case "Dashboard":
@@ -35,23 +29,17 @@ public partial class MainWindow : Window
                 case "Inventory":
                     ContentFrame.Navigate(typeof(AssetsPage));
                     break;
-                case "Errors":
-                    ContentFrame.Navigate(typeof(ErrorsPage));
-                    break;
-                case "Users":
-                    ContentFrame.Navigate(typeof(UsersPage));
-                    break;
-                case "Groups":
-                    ContentFrame.Navigate(typeof(GroupsPage));
-                    break;
                 case "Tickets":
                     ContentFrame.Navigate(typeof(TicketsPage));
                     break;
-                case "Tasks":
-                    ContentFrame.Navigate(typeof(WorkItemsPage));
-                    break;
                 case "Boards":
                     ContentFrame.Navigate(typeof(BoardsPage));
+                    break;
+                case "Identity":
+                    ContentFrame.Navigate(typeof(IdentityPage));
+                    break;
+                case "Settings":
+                    ContentFrame.Navigate(typeof(SettingsPage));
                     break;
             }
         }

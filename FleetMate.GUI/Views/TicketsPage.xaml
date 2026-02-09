@@ -17,7 +17,7 @@
         <!-- Header -->
         <StackPanel Grid.Row="0" Grid.Column="0">
             <TextBlock Text="Tickets" Style="{StaticResource TitleTextStyle}" />
-            <TextBlock x:Name="TicketCountText" Text="0 of 0 tickets" Style="{StaticResource SubtitleTextStyle}" />
+            <TextBlock x:Name="TicketCountText" Text="0 of 0" Style="{StaticResource SubtitleTextStyle}" />
         </StackPanel>
 
         <!-- Toolbar -->
@@ -66,8 +66,8 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <!-- Hide Closed -->
-            <CheckBox Grid.Column="0" x:Name="HideClosedCheckBox" Content="Hide Closed" IsChecked="True" Margin="0,0,16,0" Checked="OnHideClosedChanged" Unchecked="OnHideClosedChanged" />
+            <!-- Hide Closed → Show Closed (unchecked by default) -->
+            <CheckBox Grid.Column="0" x:Name="ShowClosedCheckBox" Content="Show Closed" IsChecked="False" Margin="0,0,16,0" Checked="OnShowClosedChanged" Unchecked="OnShowClosedChanged" />
 
             <!-- Status Filter -->
             <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,16,0">
@@ -88,7 +88,15 @@
             </StackPanel>
 
             <!-- Search -->
-            <TextBox Grid.Column="5" x:Name="SearchBox" Width="180" PlaceholderText="Search..." TextChanged="OnSearchChanged" />
+            <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="8">
+                <ComboBox x:Name="LimitComboBox" Width="80" ToolTip="Max results" SelectionChanged="OnLimitChanged">
+                    <ComboBoxItem Content="500" IsSelected="True" />
+                    <ComboBoxItem Content="1000" />
+                    <ComboBoxItem Content="2000" />
+                    <ComboBoxItem Content="5000" />
+                </ComboBox>
+                <TextBox x:Name="SearchBox" Width="160" PlaceholderText="Search..." TextChanged="OnSearchChanged" />
+            </StackPanel>
         </Grid>
 
         <!-- Main Content -->
@@ -225,7 +233,7 @@
                                                             <DockPanel Margin="0,0,0,4">
                                                                 <TextBlock DockPanel.Dock="Right" Text="{Binding PriorityName}" FontSize="10" 
                                                                            Padding="6,2" Background="#20808080" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                                                <TextBlock Text="{Binding Id, StringFormat='#{0:0}'}" FontSize="11" 
+                                                                <TextBlock Text="{Binding Id, StringFormat='#{0}'}" FontSize="11" 
                                                                            Foreground="{DynamicResource SystemControlForegroundAccentBrush}" FontWeight="Medium" />
                                                             </DockPanel>
                                                             
@@ -271,7 +279,15 @@
 
                     <!-- Panel Header -->
                     <Grid Grid.Row="0" Margin="12">
-                        <TextBlock x:Name="DetailTicketIdText" FontWeight="Bold" FontSize="16" Foreground="{DynamicResource SystemControlForegroundAccentBrush}" />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="DetailTicketIdText" FontWeight="Bold" FontSize="16" 
+                                       Foreground="{DynamicResource SystemControlForegroundAccentBrush}" 
+                                       VerticalAlignment="Center" />
+                            <Button x:Name="CopyTicketIdButton" Content="📋" Width="28" Height="28" Margin="4,0,0,0"
+                                    ToolTip="Copy ticket number" Click="OnCopyTicketIdClicked" />
+                            <Button x:Name="CopyTicketLinkButton" Content="🔗" Width="28" Height="28" Margin="4,0,0,0"
+                                    ToolTip="Copy ticket link" Click="OnCopyTicketLinkClicked" />
+                        </StackPanel>
                         <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
                             <Button x:Name="OpenInWebButton" Content="🌐" Width="28" Height="28" Click="OnOpenInWebClicked" ToolTip="Open in Web Browser" />
                             <Button Content="🔄" Width="28" Height="28" Click="OnRefreshDetailClicked" ToolTip="Refresh" Margin="4,0,0,0" />

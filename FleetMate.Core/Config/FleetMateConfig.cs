@@ -29,6 +29,8 @@ namespace FleetMate.Config;
 /// - DEVOPS_ORGANIZATION: Azure DevOps organization name
 /// - DEVOPS_PROJECT: Azure DevOps project name
 /// - DEVOPS_PAT: Azure DevOps personal access token (optional, uses Azure CLI SSO if not set)
+/// - DEVOPS_CLIENT_ID: Azure AD app client ID for OAuth2 SSO (optional)
+/// - DEVOPS_TENANT_ID: Azure AD tenant ID for OAuth2 SSO (optional)
 /// - TDX_BASE_URL: TeamDynamix Web API base URL
 /// - TDX_APP_ID: TeamDynamix application ID
 /// - TDX_USERNAME: TeamDynamix username (for regular auth)
@@ -258,6 +260,14 @@ public class FleetMateConfig
             var devOpsProject = key.GetValue("DevOpsProject") as string;
             if (!string.IsNullOrEmpty(devOpsProject))
                 config.AzureDevOps.Project = devOpsProject;
+
+            var devOpsClientId = key.GetValue("DevOpsClientId") as string;
+            if (!string.IsNullOrEmpty(devOpsClientId))
+                config.AzureDevOps.ClientId = devOpsClientId;
+
+            var devOpsTenantId = key.GetValue("DevOpsTenantId") as string;
+            if (!string.IsNullOrEmpty(devOpsTenantId))
+                config.AzureDevOps.TenantId = devOpsTenantId;
             
             Log.Debug("Loaded credentials from registry: HKCU\\{Path}", RegistryPath);
         }
@@ -493,6 +503,16 @@ public class AzureDevOpsConfig
     /// Cache duration for boards/sprints in minutes
     /// </summary>
     public int CacheMinutes { get; set; } = 30;
+
+    /// <summary>
+    /// Azure AD client ID for OAuth2 PKCE SSO authentication (optional)
+    /// </summary>
+    public string? ClientId { get; set; }
+
+    /// <summary>
+    /// Azure AD tenant ID for OAuth2 PKCE SSO authentication (optional)
+    /// </summary>
+    public string? TenantId { get; set; }
 
     /// <summary>
     /// Base URL for Azure DevOps API
