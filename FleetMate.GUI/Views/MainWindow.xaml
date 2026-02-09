@@ -34,7 +34,7 @@
                              Checked="OnTabChecked" Margin="0,0,4,0" FontSize="13" />
                 <RadioButton x:Name="TabTickets" Content="Tickets" Tag="Tickets" GroupName="MainTabs"
                              Checked="OnTabChecked" Margin="0,0,4,0" FontSize="13" />
-                <RadioButton x:Name="TabBoards" Content="Boards" Tag="Boards" GroupName="MainTabs"
+                <RadioButton x:Name="TabBoards" Content="Projects" Tag="Projects" GroupName="MainTabs"
                              Checked="OnTabChecked" Margin="0,0,4,0" FontSize="13" />
                 <RadioButton x:Name="TabIdentity" Content="Identity" Tag="Identity" GroupName="MainTabs"
                              Checked="OnTabChecked" Margin="0,0,4,0" FontSize="13" />

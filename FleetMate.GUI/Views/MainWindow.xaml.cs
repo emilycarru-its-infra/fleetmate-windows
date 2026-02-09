@@ -32,7 +32,7 @@ public partial class MainWindow : Window
                 case "Tickets":
                     ContentFrame.Navigate(typeof(TicketsPage));
                     break;
-                case "Boards":
+                case "Projects":
                     ContentFrame.Navigate(typeof(BoardsPage));
                     break;
                 case "Identity":
