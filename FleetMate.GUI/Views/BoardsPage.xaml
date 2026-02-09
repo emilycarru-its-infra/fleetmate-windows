@@ -8,6 +8,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -41,11 +42,28 @@
                 <Button x:Name="SyncButton" Click="SyncButton_Click" ToolTip="Sync to Planner/Markdown">
                     <ui:SymbolIcon Symbol="Sync" />
                 </Button>
+
+                <!-- AzDO SSO Status -->
+                <Button x:Name="SsoButton" Click="OnSsoButtonClicked" ToolTip="Azure DevOps SSO"
+                        Visibility="Collapsed" Margin="8,0,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock x:Name="SsoIcon" Text="🔒" />
+                        <TextBlock x:Name="SsoLabel" Text="Sign In" />
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </Grid>
 
-        <!-- Search and filters -->
-        <Border Grid.Row="1" Style="{StaticResource CardStyle}" Margin="0,16,0,0" Padding="12">
+        <!-- Board / List toggle (separate row, left-aligned) -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
+            <RadioButton x:Name="BoardModeRadio" Content="Board" IsChecked="True" 
+                         GroupName="ViewMode" Checked="OnViewModeChanged" />
+            <RadioButton x:Name="ListModeRadio" Content="List" 
+                         GroupName="ViewMode" Checked="OnViewModeChanged" Margin="8,0,0,0" />
+        </StackPanel>
+
+        <!-- Search and filters (Board mode) -->
+        <Border x:Name="BoardFilters" Grid.Row="2" Style="{StaticResource CardStyle}" Margin="0,16,0,0" Padding="12">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -81,8 +99,43 @@
             </Grid>
         </Border>
 
-        <!-- Kanban Board -->
-        <Grid Grid.Row="2" Margin="0,16,0,0">
+        <!-- Search and filters (List mode) -->
+        <Border x:Name="ListFilters" Grid.Row="2" Style="{StaticResource CardStyle}" Margin="0,16,0,0" Padding="12" Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBox x:Name="ListSearchBox" 
+                         PlaceholderText="Search work items..." 
+                         Grid.Column="0"
+                         TextChanged="ListSearchBox_TextChanged" />
+
+                <ComboBox x:Name="ListStateFilter" 
+                          Grid.Column="1" 
+                          Width="120" 
+                          Margin="8,0,0,0"
+                          SelectedIndex="0"
+                          SelectionChanged="ListStateFilter_SelectionChanged">
+                    <ComboBoxItem Content="All States" Tag="" />
+                    <ComboBoxItem Content="Active" Tag="Active" />
+                    <ComboBoxItem Content="New" Tag="New" />
+                    <ComboBoxItem Content="Closed" Tag="Closed" />
+                    <ComboBoxItem Content="Resolved" Tag="Resolved" />
+                </ComboBox>
+
+                <TextBlock x:Name="ListCountLabel" 
+                           Grid.Column="2" 
+                           Margin="16,0,0,0"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <!-- Kanban Board (Board mode) -->
+        <Grid x:Name="KanbanBoard" Grid.Row="3" Margin="0,16,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="*" />
@@ -267,6 +320,31 @@
             </Border>
         </Grid>
 
+        <!-- Work Items List (List mode) -->
+        <Border x:Name="WorkItemsList" Grid.Row="3" Margin="0,16,0,0" Visibility="Collapsed">
+            <ListView x:Name="WorkItemsListView" 
+                      BorderThickness="0"
+                      SelectionMode="Single"
+                      SelectionChanged="WorkItemsListView_SelectionChanged">
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Header="ID" Width="70"
+                                        DisplayMemberBinding="{Binding Id}" />
+                        <GridViewColumn Header="Type" Width="100"
+                                        DisplayMemberBinding="{Binding WorkItemType}" />
+                        <GridViewColumn Header="Title" Width="350"
+                                        DisplayMemberBinding="{Binding Title}" />
+                        <GridViewColumn Header="State" Width="100"
+                                        DisplayMemberBinding="{Binding State}" />
+                        <GridViewColumn Header="Priority" Width="70"
+                                        DisplayMemberBinding="{Binding Priority}" />
+                        <GridViewColumn Header="Assigned To" Width="180"
+                                        DisplayMemberBinding="{Binding AssignedTo}" />
+                    </GridView>
+                </ListView.View>
+            </ListView>
+        </Border>
+
         <!-- Loading Overlay -->
         <Border x:Name="LoadingOverlay" 
                 Grid.RowSpan="3" 
@@ -275,7 +353,7 @@
                 Visibility="Collapsed">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                 <ui:ProgressRing IsActive="True" Width="40" Height="40" />
-                <TextBlock Text="Loading tasks..." Margin="0,12,0,0" />
+                <TextBlock Text="Loading..." Margin="0,12,0,0" />
             </StackPanel>
         </Border>
     </Grid>
