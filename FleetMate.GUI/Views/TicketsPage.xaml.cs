@@ -19,9 +19,10 @@ public partial class TicketsPage : Page
     private bool _sortAscending = false;  // Default descending (newest first)
     private string _sortField = "Modified";  // Default to Modified date
     private bool _detailPanelVisible = false;
-    private bool _hideClosed = true;  // Default to hiding closed tickets
+    private bool _showClosed = false;  // Default to hiding closed tickets (Show Closed unchecked)
     private bool _isBoardView = false;  // List vs Board view mode
     private string _feedFilter = "Comments";  // Comments (default), Activity, All
+    private int _maxResults = 500;  // Default max results
     
     // Use cached tickets from App
     private List<TdxTicket> _allTickets => _app?.CachedTickets ?? new();
@@ -129,7 +130,7 @@ public partial class TicketsPage : Page
 
         try
         {
-            var search = new TicketSearchRequest { MaxResults = 500 };
+            var search = new TicketSearchRequest { MaxResults = _maxResults };
             
             // Apply group filter from config if set
             if (_app.Config.Tdx?.ResponsibleGroupId > 0)
@@ -137,7 +138,7 @@ public partial class TicketsPage : Page
                 search.ResponsibleGroupIds = new List<int> { _app.Config.Tdx.ResponsibleGroupId };
             }
             
-            var tickets = await _tdxService.SearchTicketsAsync(search, 500);
+            var tickets = await _tdxService.SearchTicketsAsync(search, _maxResults);
             _app.UpdateTicketsCache(tickets);
             UpdateFilterOptions();
             ApplyFiltersAndSort();
@@ -179,8 +180,8 @@ public partial class TicketsPage : Page
     {
         var filtered = _allTickets.AsEnumerable();
 
-        // Filter hide closed (before status filter)
-        if (_hideClosed)
+        // Filter show closed (hide when unchecked)
+        if (!_showClosed)
         {
             filtered = filtered.Where(t => 
                 t.StatusName?.ToLower() != "closed" && 
@@ -239,7 +240,7 @@ public partial class TicketsPage : Page
         }
         
         // Update ticket count display
-        TicketCountText.Text = $"{_filteredTickets.Count} of {_allTickets.Count} tickets";
+        TicketCountText.Text = $"{_filteredTickets.Count} of {_allTickets.Count}";
         
         // Update board view if active
         if (_isBoardView)
@@ -350,12 +351,24 @@ public partial class TicketsPage : Page
         ApplyFiltersAndSort();
     }
 
-    private void OnHideClosedChanged(object sender, RoutedEventArgs e)
+    private void OnShowClosedChanged(object sender, RoutedEventArgs e)
     {
         if (sender is CheckBox checkbox)
         {
-            _hideClosed = checkbox.IsChecked == true;
+            _showClosed = checkbox.IsChecked == true;
             ApplyFiltersAndSort();
+        }
+    }
+
+    private async void OnLimitChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (sender is ComboBox comboBox && comboBox.SelectedItem is ComboBoxItem item)
+        {
+            if (int.TryParse(item.Content?.ToString(), out int limit))
+            {
+                _maxResults = limit;
+                await LoadTicketsAsync();
+            }
         }
     }
 
@@ -375,19 +388,14 @@ public partial class TicketsPage : Page
     {
         if (_selectedTicket == null || _app?.Config?.Tdx == null) return;
         
-        var uri = _selectedTicket.Uri;
-        if (string.IsNullOrEmpty(uri)) return;
-        
-        // Build full URL: baseUrl without /TDWebApi + uri
-        var baseUrl = _app.Config.Tdx.BaseUrl ?? "";
-        var webBaseUrl = baseUrl.Replace("/TDWebApi", "");
-        var fullUrl = webBaseUrl + uri;
+        var url = GetTicketUrl();
+        if (string.IsNullOrEmpty(url)) return;
         
         try
         {
             Process.Start(new ProcessStartInfo
             {
-                FileName = fullUrl,
+                FileName = url,
                 UseShellExecute = true
             });
         }
@@ -395,6 +403,48 @@ public partial class TicketsPage : Page
         {
             ShowActionMessage($"Failed to open browser: {ex.Message}", isError: true);
         }
+    }
+
+    private void OnCopyTicketIdClicked(object sender, RoutedEventArgs e)
+    {
+        if (_selectedTicket == null) return;
+        try
+        {
+            Clipboard.SetText(_selectedTicket.Id.ToString());
+            ShowActionMessage("Ticket number copied");
+        }
+        catch (Exception ex)
+        {
+            ShowActionMessage($"Copy failed: {ex.Message}", isError: true);
+        }
+    }
+
+    private void OnCopyTicketLinkClicked(object sender, RoutedEventArgs e)
+    {
+        if (_selectedTicket == null) return;
+        var url = GetTicketUrl();
+        if (string.IsNullOrEmpty(url)) return;
+        try
+        {
+            Clipboard.SetText(url);
+            ShowActionMessage("Ticket link copied");
+        }
+        catch (Exception ex)
+        {
+            ShowActionMessage($"Copy failed: {ex.Message}", isError: true);
+        }
+    }
+
+    private string? GetTicketUrl()
+    {
+        if (_selectedTicket == null || _app?.Config?.Tdx == null) return null;
+        
+        var uri = _selectedTicket.Uri;
+        if (string.IsNullOrEmpty(uri)) return null;
+        
+        var baseUrl = _app.Config.Tdx.BaseUrl ?? "";
+        var webBaseUrl = baseUrl.Replace("/TDWebApi", "");
+        return webBaseUrl + uri;
     }
 
     private async void OnRefreshClicked(object sender, RoutedEventArgs e)

@@ -1,7 +1,9 @@
 using System.Windows;
 using FleetMate.Config;
 using FleetMate.GUI.Views;
-using FleetMate.Models;
+using FleetMate.Models.Graph;
+using FleetMate.Models.Snipe;
+using FleetMate.Models.Tdx;
 using FleetMate.Services;
 using Serilog;
 
@@ -188,6 +190,76 @@ public partial class App : Application
 
         var mainWindow = new MainWindow();
         mainWindow.Show();
+
+        // Background preloading of data
+        _ = PreloadAllDataAsync();
+    }
+
+    /// <summary>
+    /// Preload all data in the background on startup
+    /// </summary>
+    private async Task PreloadAllDataAsync()
+    {
+        var tasks = new List<Task>();
+
+        if (GraphService != null)
+        {
+            tasks.Add(Task.Run(async () =>
+            {
+                try
+                {
+                    var devices = await GraphService.GetManagedDevicesAsync();
+                    Dispatcher.Invoke(() => UpdateDevicesCache(devices));
+                    Log.Information("Preloaded {Count} devices", devices.Count);
+                }
+                catch (Exception ex) { Log.Warning(ex, "Failed to preload devices"); }
+            }));
+
+            tasks.Add(Task.Run(async () =>
+            {
+                try
+                {
+                    var groups = await GraphService.SearchGroupsAsync("Devices-", 100);
+                    Dispatcher.Invoke(() => UpdateGroupsCache(groups));
+                    Log.Information("Preloaded {Count} groups", groups.Count);
+                }
+                catch (Exception ex) { Log.Warning(ex, "Failed to preload groups"); }
+            }));
+        }
+
+        if (SnipeService != null)
+        {
+            tasks.Add(Task.Run(async () =>
+            {
+                try
+                {
+                    var assets = await SnipeService.GetAssetsAsync();
+                    Dispatcher.Invoke(() => UpdateAssetsCache(assets));
+                    Log.Information("Preloaded {Count} assets", assets.Count);
+                }
+                catch (Exception ex) { Log.Warning(ex, "Failed to preload assets"); }
+            }));
+        }
+
+        if (TdxService != null)
+        {
+            tasks.Add(Task.Run(async () =>
+            {
+                try
+                {
+                    var tickets = await TdxService.SearchTicketsAsync(new TicketSearchRequest { MaxResults = 500 }, 500);
+                    Dispatcher.Invoke(() => UpdateTicketsCache(tickets));
+                    Log.Information("Preloaded {Count} tickets", tickets.Count);
+                }
+                catch (Exception ex) { Log.Warning(ex, "Failed to preload tickets"); }
+            }));
+        }
+
+        if (tasks.Count > 0)
+        {
+            await Task.WhenAll(tasks);
+            Log.Information("Background preloading complete");
+        }
     }
 
     private void InitializeServices()
