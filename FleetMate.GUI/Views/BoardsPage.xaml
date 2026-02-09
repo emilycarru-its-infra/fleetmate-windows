@@ -20,7 +20,7 @@
             </Grid.ColumnDefinitions>
 
             <StackPanel Grid.Column="0">
-                <TextBlock Text="Boards" Style="{StaticResource TitleTextStyle}" />
+                <TextBlock Text="Projects" Style="{StaticResource TitleTextStyle}" />
                 <TextBlock Text="Unified task management across all providers" Style="{StaticResource SubtitleTextStyle}" />
             </StackPanel>
 
