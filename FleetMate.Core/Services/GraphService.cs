@@ -737,6 +737,40 @@ public class GraphService : IDisposable
     }
 
     /// <summary>
+    /// Search for users by display name, UPN, or mail using fuzzy filter
+    /// </summary>
+    public async Task<List<EntraUser>> SearchUsersAsync(string query, int limit = 25)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            return new List<EntraUser>();
+        }
+
+        try
+        {
+            var escaped = query.Replace("'", "''");
+            var filter = $"startswith(displayName,'{escaped}') or startswith(userPrincipalName,'{escaped}') or startswith(mail,'{escaped}')";
+            var select = "id,displayName,userPrincipalName,mail,jobTitle,department,officeLocation";
+            var url = $"users?$filter={Uri.EscapeDataString(filter)}&$select={select}&$top={limit}";
+
+            var response = await _client.GetAsync(url);
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Warning("Failed to search users with query '{Query}': {Status}", query, response.StatusCode);
+                return new List<EntraUser>();
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<EntraUserListResponse>(_jsonOptions);
+            return result?.Value ?? new List<EntraUser>();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to search users with query '{Query}'", query);
+            return new List<EntraUser>();
+        }
+    }
+
+    /// <summary>
     /// Get groups a user is a member of
     /// </summary>
     public async Task<List<EntraGroup>> GetUserGroupsAsync(string userPrincipalNameOrId)

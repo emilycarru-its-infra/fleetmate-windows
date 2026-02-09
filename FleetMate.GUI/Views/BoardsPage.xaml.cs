@@ -4,6 +4,8 @@ using System.Windows.Controls;
 using FleetMate.Config;
 using FleetMate.Core.Models.Tasks;
 using FleetMate.Core.Services.Tasks;
+using FleetMate.Models.AzureDevOps;
+using FleetMate.Services;
 
 namespace FleetMate.GUI.Views;
 
@@ -17,6 +19,12 @@ public partial class BoardsPage : Page
     private string _searchText = "";
     private bool _showClosed;
 
+    // List mode
+    private AzureDevOpsService? _devOpsService;
+    private List<WorkItem> _allWorkItems = new();
+    private string _listSearchText = "";
+    private string? _listStateFilter;
+
     public BoardsPage()
     {
         InitializeComponent();
@@ -25,6 +33,12 @@ public partial class BoardsPage : Page
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
     {
+        // Initialize AzDO service for list mode
+        if (_config.AzureDevOps != null && !string.IsNullOrEmpty(_config.AzureDevOps.Organization))
+        {
+            _devOpsService = new AzureDevOpsService(_config.AzureDevOps);
+        }
+
         await InitializeRegistryAsync();
         await LoadBucketsAsync();
         await LoadTasksAsync();
@@ -238,5 +252,109 @@ public partial class BoardsPage : Page
             // Clear selection
             listView.SelectedItem = null;
         }
+    }
+
+    // MARK: - View Mode Toggle
+
+    private async void OnViewModeChanged(object sender, RoutedEventArgs e)
+    {
+        var isBoardMode = BoardModeRadio.IsChecked == true;
+
+        // Toggle visibility
+        BoardFilters.Visibility = isBoardMode ? Visibility.Visible : Visibility.Collapsed;
+        ListFilters.Visibility = isBoardMode ? Visibility.Collapsed : Visibility.Visible;
+        KanbanBoard.Visibility = isBoardMode ? Visibility.Visible : Visibility.Collapsed;
+        WorkItemsList.Visibility = isBoardMode ? Visibility.Collapsed : Visibility.Visible;
+
+        if (!isBoardMode && _allWorkItems.Count == 0)
+        {
+            await LoadWorkItemsAsync();
+        }
+    }
+
+    // MARK: - List Mode (AzDO Work Items)
+
+    private async Task LoadWorkItemsAsync()
+    {
+        if (_devOpsService == null) return;
+
+        try
+        {
+            LoadingOverlay.Visibility = Visibility.Visible;
+            _allWorkItems = await _devOpsService.GetWorkItemsAsync(limit: 200);
+            UpdateListDisplay();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to load work items: {ex.Message}", "Error", 
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            LoadingOverlay.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void UpdateListDisplay()
+    {
+        var filtered = _allWorkItems.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(_listSearchText))
+        {
+            var search = _listSearchText.ToLowerInvariant();
+            filtered = filtered.Where(w =>
+                w.Title.ToLowerInvariant().Contains(search) ||
+                w.Id.ToString().Contains(search) ||
+                (w.AssignedTo?.ToLowerInvariant().Contains(search) ?? false));
+        }
+
+        if (!string.IsNullOrEmpty(_listStateFilter))
+        {
+            filtered = filtered.Where(w => w.State.Equals(_listStateFilter, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var items = filtered.ToList();
+        WorkItemsListView.ItemsSource = items;
+        ListCountLabel.Text = $"{items.Count} work items";
+    }
+
+    private void ListSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _listSearchText = ListSearchBox.Text;
+        UpdateListDisplay();
+    }
+
+    private void ListStateFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ListStateFilter.SelectedItem is ComboBoxItem item)
+        {
+            _listStateFilter = item.Tag?.ToString();
+            if (string.IsNullOrEmpty(_listStateFilter)) _listStateFilter = null;
+            UpdateListDisplay();
+        }
+    }
+
+    private void WorkItemsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (WorkItemsListView.SelectedItem is WorkItem wi && _config.AzureDevOps != null)
+        {
+            var url = $"{_config.AzureDevOps.BaseUrl}/{_config.AzureDevOps.Project}/_workitems/edit/{wi.Id}";
+            try
+            {
+                Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+            }
+            catch { }
+
+            WorkItemsListView.SelectedItem = null;
+        }
+    }
+
+    // MARK: - SSO
+
+    private void OnSsoButtonClicked(object sender, RoutedEventArgs e)
+    {
+        // TODO: Implement WebView2-based AzDO OAuth2 SSO login
+        MessageBox.Show("Azure DevOps SSO login is not yet implemented for Windows.", 
+            "SSO", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 }

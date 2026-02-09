@@ -9,7 +9,7 @@
         Height="700"
         Width="1100"
         MinHeight="500"
-        MinWidth="800"
+        MinWidth="900"
         WindowStartupLocation="CenterScreen">
 
     <Window.DataContext>
@@ -17,84 +17,35 @@
     </Window.DataContext>
 
     <Grid>
-        <ui:NavigationView x:Name="NavView"
-                          IsBackButtonVisible="Collapsed"
-                          IsSettingsVisible="True"
-                          PaneDisplayMode="Left"
-                          SelectionChanged="NavView_SelectionChanged">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-            <ui:NavigationView.MenuItems>
-                <ui:NavigationViewItem Content="Dashboard" Tag="Dashboard" IsSelected="True">
-                    <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="Home" />
-                    </ui:NavigationViewItem.Icon>
-                </ui:NavigationViewItem>
+        <!-- Top Tab Bar -->
+        <Border Grid.Row="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" Padding="12,6">
+            <StackPanel Orientation="Horizontal" x:Name="TabBar">
+                <RadioButton x:Name="TabDashboard" Content="Dashboard" Tag="Dashboard" GroupName="MainTabs"
+                             IsChecked="True" Checked="OnTabChecked" Style="{StaticResource {x:Type RadioButton}}" Margin="0,0,4,0" />
+                <RadioButton x:Name="TabDevices" Content="Devices" Tag="Devices" GroupName="MainTabs"
+                             Checked="OnTabChecked" Margin="0,0,4,0" />
+                <RadioButton x:Name="TabInventory" Content="Inventory" Tag="Inventory" GroupName="MainTabs"
+                             Checked="OnTabChecked" Margin="0,0,4,0" />
+                <RadioButton x:Name="TabTickets" Content="Tickets" Tag="Tickets" GroupName="MainTabs"
+                             Checked="OnTabChecked" Margin="0,0,4,0" />
+                <RadioButton x:Name="TabBoards" Content="Boards" Tag="Boards" GroupName="MainTabs"
+                             Checked="OnTabChecked" Margin="0,0,4,0" />
+                <RadioButton x:Name="TabIdentity" Content="Identity" Tag="Identity" GroupName="MainTabs"
+                             Checked="OnTabChecked" Margin="0,0,4,0" />
+                <RadioButton x:Name="TabSettings" Content="⚙ Settings" Tag="Settings" GroupName="MainTabs"
+                             Checked="OnTabChecked" Margin="16,0,0,0" />
+            </StackPanel>
+        </Border>
 
-                <ui:NavigationViewItemSeparator />
+        <Separator Grid.Row="1" />
 
-                <ui:NavigationViewItemHeader Content="Devices &amp; Inventory" />
-
-                <ui:NavigationViewItem Content="Inventory" Tag="Inventory">
-                    <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="Library" />
-                    </ui:NavigationViewItem.Icon>
-                </ui:NavigationViewItem>
-
-                <ui:NavigationViewItem Content="Devices" Tag="Devices">
-                    <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="CellPhone" />
-                    </ui:NavigationViewItem.Icon>
-                </ui:NavigationViewItem>
-
-                <ui:NavigationViewItem Content="Errors" Tag="Errors">
-                    <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="ReportHacked" />
-                    </ui:NavigationViewItem.Icon>
-                </ui:NavigationViewItem>
-
-                <ui:NavigationViewItemSeparator />
-
-                <ui:NavigationViewItemHeader Content="Identity" />
-
-                <ui:NavigationViewItem Content="Users" Tag="Users">
-                    <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="Contact" />
-                    </ui:NavigationViewItem.Icon>
-                </ui:NavigationViewItem>
-
-                <ui:NavigationViewItem Content="Groups" Tag="Groups">
-                    <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="People" />
-                    </ui:NavigationViewItem.Icon>
-                </ui:NavigationViewItem>
-
-                <ui:NavigationViewItemSeparator />
-
-                <ui:NavigationViewItemHeader Content="Work Management" />
-
-                <ui:NavigationViewItem Content="Tickets" Tag="Tickets">
-                    <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="Comment" />
-                    </ui:NavigationViewItem.Icon>
-                </ui:NavigationViewItem>
-
-                <ui:NavigationViewItem Content="Tasks" Tag="Tasks">
-                    <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="List" />
-                    </ui:NavigationViewItem.Icon>
-                </ui:NavigationViewItem>
-
-                <ui:NavigationViewItem Content="Boards" Tag="Boards">
-                    <ui:NavigationViewItem.Icon>
-                        <ui:SymbolIcon Symbol="ViewAll" />
-                    </ui:NavigationViewItem.Icon>
-                </ui:NavigationViewItem>
-            </ui:NavigationView.MenuItems>
-
-            <ui:NavigationView.Content>
-                <Frame x:Name="ContentFrame" />
-            </ui:NavigationView.Content>
-
-        </ui:NavigationView>
+        <!-- Content Frame -->
+        <Frame Grid.Row="2" x:Name="ContentFrame" NavigationUIVisibility="Hidden" />
     </Grid>
 </Window>
