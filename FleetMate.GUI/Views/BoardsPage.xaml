@@ -24,7 +24,7 @@
                 <TextBlock Text="Unified task management across all providers" Style="{StaticResource SubtitleTextStyle}" />
             </StackPanel>
 
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+            <ui:SimpleStackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                 <ComboBox x:Name="ProviderFilter" 
                           Width="120" 
                           SelectedIndex="0"
@@ -46,12 +46,12 @@
                 <!-- AzDO SSO Status -->
                 <Button x:Name="SsoButton" Click="OnSsoButtonClicked" ToolTip="Azure DevOps SSO"
                         Visibility="Collapsed" Margin="8,0,0,0">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
+                    <ui:SimpleStackPanel Orientation="Horizontal" Spacing="4">
                         <TextBlock x:Name="SsoIcon" Text="🔒" />
                         <TextBlock x:Name="SsoLabel" Text="Sign In" />
-                    </StackPanel>
+                    </ui:SimpleStackPanel>
                 </Button>
-            </StackPanel>
+            </ui:SimpleStackPanel>
         </Grid>
 
         <!-- Board / List toggle (separate row, left-aligned) -->
@@ -73,7 +73,7 @@
                 </Grid.ColumnDefinitions>
 
                 <TextBox x:Name="SearchBox" 
-                         PlaceholderText="Search tasks..." 
+                         ui:ControlHelper.PlaceholderText="Search tasks..." 
                          Grid.Column="0"
                          TextChanged="SearchBox_TextChanged" />
 
@@ -81,7 +81,7 @@
                           Grid.Column="1" 
                           Width="150" 
                           Margin="8,0,0,0"
-                          PlaceholderText="Bucket"
+                          ui:ControlHelper.PlaceholderText="Bucket"
                           SelectionChanged="BucketFilter_SelectionChanged" />
 
                 <CheckBox x:Name="ShowClosedCheckbox" 
@@ -109,7 +109,7 @@
                 </Grid.ColumnDefinitions>
 
                 <TextBox x:Name="ListSearchBox" 
-                         PlaceholderText="Search work items..." 
+                         ui:ControlHelper.PlaceholderText="Search work items..." 
                          Grid.Column="0"
                          TextChanged="ListSearchBox_TextChanged" />
 
