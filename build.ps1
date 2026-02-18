@@ -1,41 +1,67 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-    Builds FleetMate CLI with enterprise code signing.
+    Builds FleetMate (CLI + GUI) with enterprise code signing.
 
 .PARAMETER Sign
-    Sign binary with enterprise certificate (required for production)
+    Sign binaries with enterprise certificate (required to run on WDAC-enforced systems)
+
+.PARAMETER Thumbprint
+    Override certificate thumbprint (auto-detected from cert store if not specified)
 
 .PARAMETER Clean
     Clean build artifacts before building
 
 .PARAMETER Publish
-    Create single-file self-contained executable
+    Create single-file self-contained executables
+
+.PARAMETER GUI
+    Build the GUI project (fleetmate-gui.exe) in addition to the CLI
+
+.PARAMETER GUIOnly
+    Build and sign only the GUI project
+
+.PARAMETER CLIOnly
+    Build and sign only the CLI project  
 
 .PARAMETER PkgOnly
     Create .pkg package from existing binaries (skip build)
 
-.EXAMPLE
-    .\build.ps1 -Sign
-    # Build and sign FleetMate
+.PARAMETER Launch
+    After building and signing, launch the GUI application
 
 .EXAMPLE
-    .\build.ps1 -Publish -Sign -PkgOnly
-    # Build, sign, and create .pkg package
+    .\build.ps1 -Sign -GUI
+    # Build CLI + GUI with auto-detected enterprise cert
+
+.EXAMPLE
+    .\build.ps1 -Sign -GUIOnly -Launch
+    # Build, sign, and launch just the GUI
+
+.EXAMPLE
+    .\build.ps1 -Sign -Thumbprint "ABCDEF..."
+    # Build with specific certificate thumbprint
 #>
 
 [CmdletBinding()]
 param(
     [switch]$Sign,
+    [string]$Thumbprint,
     [switch]$Clean,
     [switch]$Publish,
-    [switch]$PkgOnly
+    [switch]$GUI,
+    [switch]$GUIOnly,
+    [switch]$CLIOnly,
+    [switch]$PkgOnly,
+    [switch]$Launch
 )
 
 $ErrorActionPreference = 'Stop'
 $RootDir = $PSScriptRoot
 
-# Enterprise certificate configuration
+# Enterprise certificate configuration — matches CN used by Cimian build scripts
+$EnterpriseCertCN = $env:ENTERPRISE_CERT_CN ?? 'EmilyCarrU Intune Windows Enterprise Certificate'
+# Fallback subject substring search
 $EnterpriseCertSubject = $env:CIMIAN_CERT_SUBJECT ?? 'EmilyCarrU'
 
 function Write-BuildLog {
@@ -46,75 +72,93 @@ function Write-BuildLog {
 }
 
 function Get-SigningCertThumbprint {
-    # Check CurrentUser store first
-    $cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object {
-        $_.HasPrivateKey -and $_.Subject -like "*$EnterpriseCertSubject*"
-    } | Sort-Object NotAfter -Descending | Select-Object -First 1
+    param([string]$OverrideThumbprint = $null)
 
-    if ($cert) { return @{ Thumbprint = $cert.Thumbprint; Store = "CurrentUser" } }
+    # Explicit thumbprint from param or environment variable
+    $explicit = $OverrideThumbprint
+    if (-not $explicit -and $env:CERT_THUMBPRINT) { $explicit = $env:CERT_THUMBPRINT }
+    if ($explicit) {
+        foreach ($store in @('CurrentUser', 'LocalMachine')) {
+            $cert = Get-ChildItem "Cert:\$store\My\$explicit" -ErrorAction SilentlyContinue
+            if ($cert -and $cert.HasPrivateKey) {
+                return @{ Thumbprint = $explicit; Store = $store }
+            }
+        }
+        throw "Certificate with thumbprint '$explicit' not found in cert stores."
+    }
 
-    # Check LocalMachine store
-    $cert = Get-ChildItem Cert:\LocalMachine\My | Where-Object {
-        $_.HasPrivateKey -and $_.Subject -like "*$EnterpriseCertSubject*"
-    } | Sort-Object NotAfter -Descending | Select-Object -First 1
-
-    if ($cert) { return @{ Thumbprint = $cert.Thumbprint; Store = "LocalMachine" } }
+    # Auto-detect by CN (matches Cimian enterprise cert pattern)
+    foreach ($store in @('CurrentUser', 'LocalMachine')) {
+        $cert = Get-ChildItem "Cert:\$store\My" -ErrorAction SilentlyContinue |
+            Where-Object { $_.HasPrivateKey -and ($_.Subject -like "*$EnterpriseCertCN*" -or $_.Subject -like "*$EnterpriseCertSubject*") } |
+            Sort-Object NotAfter -Descending |
+            Select-Object -First 1
+        if ($cert) { return @{ Thumbprint = $cert.Thumbprint; Store = $store } }
+    }
     return $null
 }
 
 function Get-SignToolPath {
-    # Check PATH
+    # Check PATH — prefer arm64 or x64 variant
     $c = Get-Command signtool.exe -ErrorAction SilentlyContinue
-    if ($c -and $c.Source -match '\\x64\\') { return $c.Source }
+    if ($c) { return $c.Source }
 
-    # Search Windows SDK
+    # Search Windows SDK — prefer arm64 on ARM64 systems, fall back to x64
     $programFilesx86 = [Environment]::GetFolderPath('ProgramFilesX86')
     $searchRoot = Join-Path $programFilesx86 "Windows Kits\10\bin"
 
     if (Test-Path $searchRoot) {
+        # On ARM64, prefer arm64 signtool; on x64, prefer x64
+        $arch = if ([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -eq 'Arm64') { 'arm64' } else { 'x64' }
         $candidates = Get-ChildItem -Path $searchRoot -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match '\\x64\\' } |
-            Sort-Object { $_.Directory.Parent.Name } -Descending
+            Sort-Object { if ($_.FullName -match "\\$arch\\") { 0 } else { 1 } }, { $_.Directory.Parent.Name } -Descending
         if ($candidates.Count -gt 0) { return $candidates[0].FullName }
     }
     return $null
 }
 
 function Invoke-SignArtifact {
-    param([string]$Path, [string]$Thumbprint, [string]$Store = "CurrentUser")
+    param([string]$Path, [string]$Thumbprint, [string]$Store = "CurrentUser", [int]$MaxAttempts = 4)
+
+    if (-not (Test-Path -LiteralPath $Path)) { throw "File not found: $Path" }
 
     $signToolExe = Get-SignToolPath
-    if (-not $signToolExe) { throw "signtool.exe not found" }
+    if (-not $signToolExe) { throw "signtool.exe not found. Install Windows 10/11 SDK with Signing Tools." }
 
-    $storeParam = if ($Store -eq "CurrentUser") { "/s", "My" } else { "/s", "My", "/sm" }
-    $tsas = @('http://timestamp.digicert.com', 'http://timestamp.sectigo.com')
+    Write-BuildLog "  signtool: $signToolExe" "INFO"
 
-    foreach ($tsa in $tsas) {
-        try {
-            Write-BuildLog "Signing: $Path"
-            $signArgs = @("sign", "/sha1", $Thumbprint, "/tr", $tsa, "/td", "sha256", "/fd", "sha256") + $storeParam + @($Path)
+    # CurrentUser store: just /s My; LocalMachine store: add /sm
+    $storeParam = if ($Store -eq 'LocalMachine') { @('/s', 'My', '/sm') } else { @('/s', 'My') }
 
-            $psi = New-Object System.Diagnostics.ProcessStartInfo
-            $psi.FileName = $signToolExe
-            $psi.Arguments = $signArgs -join ' '
-            $psi.UseShellExecute = $false
-            $psi.RedirectStandardOutput = $true
-            $psi.RedirectStandardError = $true
-            $psi.CreateNoWindow = $true
+    $tsas = @(
+        'http://timestamp.digicert.com',
+        'http://timestamp.sectigo.com',
+        'http://timestamp.entrust.net/TSS/RFC3161sha2TS'
+    )
 
-            $process = [System.Diagnostics.Process]::Start($psi)
-            $process.WaitForExit()
-
-            if ($process.ExitCode -eq 0) {
-                Write-BuildLog "Signed: $Path" "SUCCESS"
+    $attempt = 0
+    while ($attempt -lt $MaxAttempts) {
+        $attempt++
+        foreach ($tsa in $tsas) {
+            $signArgs = @('sign') + $storeParam + @(
+                '/sha1', $Thumbprint,
+                '/fd', 'SHA256',
+                '/td', 'SHA256',
+                '/tr', $tsa,
+                '/v',
+                $Path
+            )
+            Write-BuildLog "Signing [$tsa] (attempt $attempt): $(Split-Path $Path -Leaf)"
+            & $signToolExe @signArgs
+            if ($LASTEXITCODE -eq 0) {
+                Write-BuildLog "Signed: $(Split-Path $Path -Leaf)" "SUCCESS"
                 return
             }
-        } catch {
-            Write-BuildLog "Signing attempt failed: $_" "WARNING"
+            Write-BuildLog "Attempt $attempt failed (exit $LASTEXITCODE)" "WARNING"
+            Start-Sleep -Seconds (2 * $attempt)
         }
-        Start-Sleep -Seconds 2
     }
-    throw "Signing failed: $Path"
+    throw "Signing failed after $MaxAttempts attempts: $Path"
 }
 
 function Get-BuildVersion {
@@ -295,72 +339,113 @@ installs:
 try {
     Write-Host "`n=== FleetMate Build ===" -ForegroundColor Cyan
 
+    # Determine what to build
+    $buildCLI = -not $GUIOnly
+    $buildGUI  = $GUI -or $GUIOnly
+
+    # Default with no flags: build + sign everything (CLI + GUI)
+    if (-not $buildCLI -and -not $buildGUI) {
+        $buildCLI = $true
+        $buildGUI = $true
+    }
+    if (-not $Sign -and -not $PkgOnly) {
+        Write-BuildLog "No -Sign flag specified — defaulting to signed build" "INFO"
+        $Sign = $true
+    }
+
     # Clean if requested
     if ($Clean) {
         Write-BuildLog "Cleaning build artifacts..."
-        Remove-Item -Path "$RootDir\bin" -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item -Path "$RootDir\obj" -Recurse -Force -ErrorAction SilentlyContinue
+        foreach ($proj in @('FleetMate.CLI', 'FleetMate.GUI', 'FleetMate.Core')) {
+            Remove-Item -Path "$RootDir\$proj\bin" -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path "$RootDir\$proj\obj" -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 
-    # Check signing
+    # Resolve signing cert
     $certInfo = $null
     if ($Sign) {
-        $certInfo = Get-SigningCertThumbprint
+        $certInfo = Get-SigningCertThumbprint -OverrideThumbprint $Thumbprint
         if (-not $certInfo) {
-            throw "No enterprise signing certificate found. Install certificate or omit -Sign."
+            throw "No enterprise signing certificate found. Install the enterprise cert or pass -Thumbprint."
         }
-        Write-BuildLog "Using certificate: $($certInfo.Thumbprint)" "SUCCESS"
+        Write-BuildLog "Signing with certificate: $($certInfo.Thumbprint) (Store: $($certInfo.Store))" "SUCCESS"
     }
 
-    # Build
-    $outputDir = Join-Path $RootDir "bin\Release\net10.0-windows\win-x64"
+    # --- Build CLI ---
+    if ($buildCLI -and -not $PkgOnly) {
+        Write-BuildLog "Building FleetMate CLI..."
+        if ($Publish) {
+            & dotnet publish "$RootDir\FleetMate.CLI\FleetMate.CLI.csproj" `
+                --configuration Release `
+                --runtime win-arm64 `
+                --self-contained true `
+                -p:PublishSingleFile=true `
+                -p:EnableCompressionInSingleFile=true `
+                --output "$RootDir\publish\cli"
+        } else {
+            & dotnet build "$RootDir\FleetMate.CLI\FleetMate.CLI.csproj" --configuration Release
+        }
+        if ($LASTEXITCODE -ne 0) { throw "CLI build failed" }
+        Write-BuildLog "CLI build completed" "SUCCESS"
 
-    if ($Publish) {
-        Write-BuildLog "Publishing self-contained single-file executable..."
-        & dotnet publish "$RootDir\FleetMate.CLI\FleetMate.CLI.csproj" `
+        if ($Sign -and $certInfo) {
+            $cliExe = if ($Publish) {
+                "$RootDir\publish\cli\fleetmate.exe"
+            } else {
+                "$RootDir\FleetMate.CLI\bin\Release\net10.0-windows\win-arm64\fleetmate.exe"
+            }
+            if (Test-Path $cliExe) {
+                Invoke-SignArtifact -Path $cliExe -Thumbprint $certInfo.Thumbprint -Store $certInfo.Store
+            } else {
+                Write-BuildLog "CLI exe not found at: $cliExe" "WARNING"
+            }
+        }
+    }
+
+    # --- Build GUI ---
+    if ($buildGUI -and -not $PkgOnly) {
+        Write-BuildLog "Building FleetMate GUI..."
+
+        # GUI must be published as self-contained single-file for WDAC-compliant signing.
+        # A regular dotnet build produces a dotnet host stub that WDAC blocks signtool from modifying.
+        $guiOutDir = "$RootDir\publish\gui"
+
+        & dotnet publish "$RootDir\FleetMate.GUI\FleetMate.GUI.csproj" `
             --configuration Release `
-            --runtime win-x64 `
+            --runtime win-arm64 `
             --self-contained true `
             -p:PublishSingleFile=true `
-            -p:EnableCompressionInSingleFile=true `
-            --output "$RootDir\publish"
-        $outputDir = Join-Path $RootDir "publish"
-    } else {
-        Write-BuildLog "Building FleetMate..."
-        & dotnet build "$RootDir\FleetMate.sln" --configuration Release
-    }
+            --output $guiOutDir
 
-    if ($LASTEXITCODE -ne 0) { throw "Build failed" }
-    Write-BuildLog "Build completed" "SUCCESS"
+        if ($LASTEXITCODE -ne 0) { throw "GUI build failed" }
+        Write-BuildLog "GUI build completed" "SUCCESS"
 
-    # Sign
-    if ($Sign -and $certInfo) {
-        if ($Publish) {
-            $exePath = Join-Path $RootDir "publish\fleetmate.exe"
-        } else {
-            $exePath = Join-Path $RootDir "FleetMate.CLI\bin\Release\net10.0-windows\win-x64\fleetmate.exe"
-        }
-        
-        if (Test-Path $exePath) {
-            Invoke-SignArtifact -Path $exePath -Thumbprint $certInfo.Thumbprint -Store $certInfo.Store
-        } else {
-            Write-BuildLog "Executable not found at $exePath" "WARNING"
+        if ($Sign -and $certInfo) {
+            $guiExe = Join-Path $guiOutDir "fleetmate-gui.exe"
+            if (Test-Path $guiExe) {
+                Invoke-SignArtifact -Path $guiExe -Thumbprint $certInfo.Thumbprint -Store $certInfo.Store
+            } else {
+                Write-BuildLog "GUI exe not found at: $guiExe — skipping sign" "WARNING"
+            }
         }
     }
 
-    # Summary
+    # --- Summary ---
     Write-Host "`n=== Build Complete ===" -ForegroundColor Green
-    if (Test-Path $outputDir) {
-        Get-ChildItem $outputDir -Filter "*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
-            $size = [math]::Round($_.Length / 1MB, 1)
-            Write-Host "  $($_.Name) ($size MB)"
-        }
-    }
-    if ($Publish) {
-        $dllPath = Join-Path $RootDir "publish\fleetmate.dll"
-        if (Test-Path $dllPath) {
-            $size = [math]::Round((Get-Item $dllPath).Length / 1MB, 1)
-            Write-Host "  fleetmate.dll ($size MB)"
+
+    # --- Launch GUI after build ---
+    if ($Launch) {
+        if (-not $buildGUI) {
+            Write-BuildLog "Cannot launch: GUI was not built (add -GUI or -GUIOnly)" "WARNING"
+        } else {
+            $guiExe = "$RootDir\publish\gui\fleetmate-gui.exe"
+            if (Test-Path $guiExe) {
+                Write-BuildLog "Launching: $guiExe" "INFO"
+                Start-Process $guiExe
+            } else {
+                Write-BuildLog "GUI exe not found: $guiExe" "ERROR"
+            }
         }
     }
 
