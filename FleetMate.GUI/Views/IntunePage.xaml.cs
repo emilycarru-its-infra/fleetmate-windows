@@ -91,6 +91,9 @@ public partial class IntunePage : Page
 
     private void ApplyFiltersAndSort()
     {
+        // Guard: don't run during XAML initialization before controls exist
+        if (!IsLoaded || _allDevices == null) return;
+
         var filtered = _allDevices.AsEnumerable();
 
         // Filter by non-compliant
