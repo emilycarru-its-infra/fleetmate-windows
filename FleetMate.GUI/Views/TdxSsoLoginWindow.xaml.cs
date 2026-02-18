@@ -18,7 +18,7 @@ namespace FleetMate.GUI.Views;
 /// so no SAML form interception is needed. After a successful SAML flow,
 /// we call /api/auth/loginSSO to retrieve a JWT bearer token.
 /// </summary>
-public partial class TdxSsoLoginWindow : ModernWpf.Controls.Window
+public partial class TdxSsoLoginWindow : Window
 {
     private readonly string _ssoLoginUrl;
     private readonly string _rootUrl;
@@ -166,7 +166,7 @@ public partial class TdxSsoLoginWindow : ModernWpf.Controls.Window
             {
                 // Check for set-cookie headers
                 var iterator = e.Response.Headers.GetIterator();
-                while (iterator.HasCurrent)
+                while (iterator.HasCurrentHeader)
                 {
                     if (iterator.Current.Key.Equals("set-cookie", StringComparison.OrdinalIgnoreCase))
                     {
