@@ -137,6 +137,10 @@ class Program
             // Azure DevOps integration
             rootCommand.AddCommand(DevOpsCommand.Create(adoService, reportMate));
 
+            // Cimian deployment management
+            var cimianService = new CimianService(config, secureShellService);
+            rootCommand.AddCommand(CimianCommand.Create(graphService, secureShellService, cimianService));
+
             // Intune device management
             rootCommand.AddCommand(IntuneCommand.Create(graphService, reportMate));
             // Entra ID (Azure AD) user/group management
