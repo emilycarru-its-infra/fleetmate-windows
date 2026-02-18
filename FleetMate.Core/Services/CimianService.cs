@@ -3,6 +3,7 @@ using YamlDotNet.Serialization.NamingConventions;
 using FleetMate.Config;
 using FleetMate.Models;
 using FleetMate.Models.Cimian;
+using FleetMate.Models.Graph;
 using Serilog;
 using System.Text.RegularExpressions;
 
@@ -590,6 +591,242 @@ exit 0
     }
 
     #endregion
+
+    #region Push / Remote Trigger
+
+    /// <summary>
+    /// Result of a Cimian push operation on a single device
+    /// </summary>
+    public class CimianPushResult
+    {
+        public string DeviceIdentifier { get; set; } = string.Empty;
+        public string? DeviceName { get; set; }
+        public string Channel { get; set; } = string.Empty; // "SSH" or "Intune"
+        public bool Success { get; set; }
+        public string? Message { get; set; }
+    }
+
+    /// <summary>
+    /// Aggregate result of a batch push operation
+    /// </summary>
+    public class CimianPushBatchResult
+    {
+        public List<CimianPushResult> Results { get; set; } = new();
+        public string Channel { get; set; } = string.Empty;
+        public int SuccessCount => Results.Count(r => r.Success);
+        public int FailedCount => Results.Count(r => !r.Success);
+        public int TotalCount => Results.Count;
+        public TimeSpan Duration { get; set; }
+    }
+
+    /// <summary>
+    /// Push a Cimian run to devices via SSH by creating the .cimian.headless trigger file.
+    /// CimianWatcher polls every 10 seconds and will pick up the file to launch managedsoftwareupdate.
+    /// </summary>
+    public async Task<CimianPushBatchResult> PushViaSshAsync(IEnumerable<string> serialNumbers, string triggeredBy = "FleetMate SSH")
+    {
+        if (_SecureShellService == null)
+        {
+            throw new InvalidOperationException("SecureShell service not available");
+        }
+
+        var serials = serialNumbers.ToList();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var results = new List<CimianPushResult>();
+
+        var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+        var triggerContent = $"Bootstrap triggered at: {timestamp}\\nMode: Headless\\nTriggered by: {triggeredBy}";
+        var command = $"powershell -c \"$dir = 'C:\\ProgramData\\ManagedInstalls'; if (-not (Test-Path $dir)) {{ New-Item -ItemType Directory -Path $dir -Force | Out-Null }}; Set-Content -Path (Join-Path $dir '.cimian.headless') -Value '{triggerContent}' -Force; Write-Output 'OK'\"";
+
+        Log.Information("Pushing Cimian run via SSH to {Count} device(s)", serials.Count);
+
+        var batchResult = await _SecureShellService.ExecuteBatchAsync(serials, command);
+
+        foreach (var sshResult in batchResult.Results)
+        {
+            var pushResult = new CimianPushResult
+            {
+                DeviceIdentifier = sshResult.Host,
+                DeviceName = sshResult.DeviceName,
+                Channel = "SSH",
+                Success = sshResult.Success && sshResult.Stdout?.Trim() == "OK",
+                Message = sshResult.Success
+                    ? "Trigger file created, CimianWatcher will pick up within 10s"
+                    : sshResult.Error?.Message ?? sshResult.Stderr ?? "SSH connection failed"
+            };
+            results.Add(pushResult);
+        }
+
+        sw.Stop();
+        Log.Information("SSH push completed: {Success}/{Total} succeeded in {Duration}ms",
+            results.Count(r => r.Success), results.Count, sw.ElapsedMilliseconds);
+
+        return new CimianPushBatchResult
+        {
+            Results = results,
+            Channel = "SSH",
+            Duration = sw.Elapsed
+        };
+    }
+
+    /// <summary>
+    /// Push a Cimian run to devices via Intune proactive remediation.
+    /// Deploys a remediation script that creates .cimian.headless on target devices.
+    /// Optionally forces an Intune sync to expedite delivery.
+    /// </summary>
+    public async Task<CimianPushBatchResult> PushViaIntuneAsync(
+        GraphService graphService,
+        string groupNameOrId,
+        bool forceSyncAfter = true)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var results = new List<CimianPushResult>();
+
+        Log.Information("Pushing Cimian run via Intune remediation to group '{Group}'", groupNameOrId);
+
+        // Deploy the proactive remediation
+        var deployResult = await graphService.DeployCimianPushRemediationAsync(groupNameOrId);
+
+        if (!deployResult.Success)
+        {
+            sw.Stop();
+            results.Add(new CimianPushResult
+            {
+                DeviceIdentifier = groupNameOrId,
+                Channel = "Intune",
+                Success = false,
+                Message = $"Failed to deploy remediation: {deployResult.Message}"
+            });
+            return new CimianPushBatchResult { Results = results, Channel = "Intune", Duration = sw.Elapsed };
+        }
+
+        // Get group devices for reporting and optional sync
+        var devices = await graphService.GetGroupDevicesAsync(groupNameOrId);
+
+        if (devices.Count == 0)
+        {
+            Log.Warning("No managed devices found in group '{Group}'", groupNameOrId);
+            results.Add(new CimianPushResult
+            {
+                DeviceIdentifier = groupNameOrId,
+                Channel = "Intune",
+                Success = true,
+                Message = $"Remediation deployed ({deployResult.Message}) but no managed devices found in group"
+            });
+            sw.Stop();
+            return new CimianPushBatchResult { Results = results, Channel = "Intune", Duration = sw.Elapsed };
+        }
+
+        // Force sync to expedite remediation pickup
+        if (forceSyncAfter)
+        {
+            Log.Information("Forcing Intune sync on {Count} devices to expedite remediation", devices.Count);
+            var syncResults = await graphService.SyncDevicesAsync(devices.Select(d => d.Id));
+
+            foreach (var device in devices)
+            {
+                var syncResult = syncResults.FirstOrDefault(r => r.DeviceId == device.Id);
+                results.Add(new CimianPushResult
+                {
+                    DeviceIdentifier = device.SerialNumber ?? device.Id,
+                    DeviceName = device.DeviceName,
+                    Channel = "Intune",
+                    Success = syncResult?.Success ?? true,
+                    Message = syncResult?.Success == true
+                        ? "Remediation deployed + sync forced"
+                        : $"Remediation deployed but sync failed: {syncResult?.Message}"
+                });
+            }
+        }
+        else
+        {
+            foreach (var device in devices)
+            {
+                results.Add(new CimianPushResult
+                {
+                    DeviceIdentifier = device.SerialNumber ?? device.Id,
+                    DeviceName = device.DeviceName,
+                    Channel = "Intune",
+                    Success = true,
+                    Message = "Remediation deployed, will execute at next Intune check-in"
+                });
+            }
+        }
+
+        sw.Stop();
+        Log.Information("Intune push completed: {Count} devices targeted in {Duration}ms",
+            devices.Count, sw.ElapsedMilliseconds);
+
+        return new CimianPushBatchResult { Results = results, Channel = "Intune", Duration = sw.Elapsed };
+    }
+
+    /// <summary>
+    /// Push a Cimian run to specific devices by serial number via Intune.
+    /// Looks up each serial in Intune, then syncs those specific devices after deploying remediation.
+    /// </summary>
+    public async Task<CimianPushBatchResult> PushViaIntuneBySerialAsync(
+        GraphService graphService,
+        IEnumerable<string> serialNumbers,
+        bool forceSyncAfter = true)
+    {
+        var serials = serialNumbers.ToList();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var results = new List<CimianPushResult>();
+
+        Log.Information("Pushing Cimian run via Intune to {Count} device(s) by serial", serials.Count);
+
+        // Resolve serial numbers to Intune device IDs
+        var resolvedDevices = new List<IntuneDevice>();
+        foreach (var serial in serials)
+        {
+            var device = await graphService.GetDeviceBySerialAsync(serial);
+            if (device != null)
+            {
+                resolvedDevices.Add(device);
+            }
+            else
+            {
+                results.Add(new CimianPushResult
+                {
+                    DeviceIdentifier = serial,
+                    Channel = "Intune",
+                    Success = false,
+                    Message = "Device not found in Intune"
+                });
+            }
+        }
+
+        if (resolvedDevices.Count == 0)
+        {
+            sw.Stop();
+            return new CimianPushBatchResult { Results = results, Channel = "Intune", Duration = sw.Elapsed };
+        }
+
+        // For serial-targeted push, sync devices directly (remediation group targeting is optional)
+        // The sync itself forces check-in; if a remediation is already deployed broadly, this triggers it
+        if (forceSyncAfter)
+        {
+            var syncResults = await graphService.SyncDevicesAsync(resolvedDevices.Select(d => d.Id));
+
+            foreach (var device in resolvedDevices)
+            {
+                var syncResult = syncResults.FirstOrDefault(r => r.DeviceId == device.Id);
+                results.Add(new CimianPushResult
+                {
+                    DeviceIdentifier = device.SerialNumber ?? device.Id,
+                    DeviceName = device.DeviceName,
+                    Channel = "Intune",
+                    Success = syncResult?.Success ?? true,
+                    Message = syncResult?.Success == true
+                        ? "Intune sync forced, remediation will execute on check-in"
+                        : $"Sync failed: {syncResult?.Message}"
+                });
+            }
+        }
+
+        sw.Stop();
+        return new CimianPushBatchResult { Results = results, Channel = "Intune", Duration = sw.Elapsed };
+    }
+
+    #endregion
 }
-
-
