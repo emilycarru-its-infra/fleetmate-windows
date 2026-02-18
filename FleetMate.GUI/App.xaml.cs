@@ -15,10 +15,15 @@ public partial class App : Application
     public GraphService? GraphService { get; private set; }
     public SnipeService? SnipeService { get; private set; }
     public TdxService? TdxService { get; private set; }
+    public AzureDevOpsService? DevOpsService { get; private set; }
     
     // MARK: - TDX SSO State
     public bool IsTdxSsoAuthenticated => TdxService?.IsSsoAuthenticated ?? false;
     public string? TdxAuthenticatedUserName => TdxService?.AuthenticatedUserName;
+    
+    // MARK: - DevOps SSO State
+    public bool IsDevOpsSsoAuthenticated => DevOpsService?.IsSsoAuthenticated ?? false;
+    public string? DevOpsAuthenticatedUserName => DevOpsService?.SsoUserName;
     
     // MARK: - Cached Data
     // Data caches with timestamps to avoid reloading on tab switches
@@ -109,6 +114,11 @@ public partial class App : Application
         CachedGroups.Clear();
     }
     
+    /// <summary>
+    /// Reload all data — called by Dashboard refresh button
+    /// </summary>
+    public Task ReloadAllDataAsync() => PreloadAllDataAsync();
+    
     // MARK: - TDX SSO Authentication
     
     /// <summary>
@@ -170,6 +180,60 @@ public partial class App : Application
         _ticketsCacheTime = null;
         CachedTickets.Clear();
         Log.Information("Signed out of TDX SSO");
+    }
+
+    // MARK: - DevOps SSO Authentication
+
+    /// <summary>
+    /// Show DevOps SSO login window (OAuth2 PKCE) and handle result.
+    /// </summary>
+    public void ShowDevOpsSsoLogin(Action<bool>? onComplete = null)
+    {
+        if (Config.AzureDevOps == null
+            || string.IsNullOrEmpty(Config.AzureDevOps.ClientId)
+            || string.IsNullOrEmpty(Config.AzureDevOps.TenantId))
+        {
+            Log.Warning("Cannot show DevOps SSO login - ClientId/TenantId not configured");
+            onComplete?.Invoke(false);
+            return;
+        }
+
+        var ssoWindow = new DevOpsSsoLoginWindow(Config.AzureDevOps.ClientId, Config.AzureDevOps.TenantId)
+        {
+            Owner = Current.MainWindow
+        };
+
+        ssoWindow.AuthenticationCompleted += (_, result) =>
+        {
+            if (result.Success && !string.IsNullOrEmpty(result.Token))
+            {
+                DevOpsService?.SetSsoToken(result.Token, result.Expiry, result.UserName);
+                Log.Information("DevOps SSO authentication successful for {UserName}", result.UserName);
+                onComplete?.Invoke(true);
+            }
+            else
+            {
+                Log.Warning("DevOps SSO authentication failed: {Error}", result.Error);
+                onComplete?.Invoke(false);
+            }
+        };
+
+        ssoWindow.AuthenticationCancelled += (_, _) =>
+        {
+            Log.Debug("DevOps SSO authentication cancelled");
+            onComplete?.Invoke(false);
+        };
+
+        ssoWindow.ShowDialog();
+    }
+
+    /// <summary>
+    /// Sign out of DevOps SSO.
+    /// </summary>
+    public void SignOutDevOpsSso()
+    {
+        DevOpsService?.ClearSsoToken();
+        Log.Information("Signed out of DevOps SSO");
     }
 
     protected override void OnStartup(StartupEventArgs e)
@@ -286,6 +350,13 @@ public partial class App : Application
                 TdxService = new TdxService(Config.Tdx);
                 Log.Information("TdxService initialized");
             }
+
+            // Initialize AzureDevOpsService if configured
+            if (Config.AzureDevOps != null && !string.IsNullOrEmpty(Config.AzureDevOps.Organization))
+            {
+                DevOpsService = new AzureDevOpsService(Config.AzureDevOps);
+                Log.Information("AzureDevOpsService initialized");
+            }
         }
         catch (Exception ex)
         {
@@ -296,6 +367,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         GraphService?.Dispose();
+        DevOpsService?.Dispose();
         Log.CloseAndFlush();
         base.OnExit(e);
     }

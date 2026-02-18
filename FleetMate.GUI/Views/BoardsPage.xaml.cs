@@ -12,6 +12,7 @@ namespace FleetMate.GUI.Views;
 public partial class BoardsPage : Page
 {
     private readonly FleetMateConfig _config;
+    private readonly App? _app;
     private TaskProviderRegistry? _registry;
     private List<UnifiedTask> _allTasks = new();
     private string? _filterProvider;
@@ -29,6 +30,7 @@ public partial class BoardsPage : Page
     {
         InitializeComponent();
         _config = FleetMateConfig.Load();
+        _app = Application.Current as App;
     }
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
@@ -38,6 +40,15 @@ public partial class BoardsPage : Page
         {
             _devOpsService = new AzureDevOpsService(_config.AzureDevOps);
         }
+
+        // Show SSO button if ClientId + TenantId are configured
+        if (_config.AzureDevOps != null
+            && !string.IsNullOrEmpty(_config.AzureDevOps.ClientId)
+            && !string.IsNullOrEmpty(_config.AzureDevOps.TenantId))
+        {
+            SsoButton.Visibility = Visibility.Visible;
+        }
+        UpdateSsoButtonState();
 
         await InitializeRegistryAsync();
         await LoadBucketsAsync();
@@ -353,8 +364,44 @@ public partial class BoardsPage : Page
 
     private void OnSsoButtonClicked(object sender, RoutedEventArgs e)
     {
-        // TODO: Implement WebView2-based AzDO OAuth2 SSO login
-        MessageBox.Show("Azure DevOps SSO login is not yet implemented for Windows.", 
-            "SSO", MessageBoxButton.OK, MessageBoxImage.Information);
+        if (_app == null) return;
+
+        if (_app.IsDevOpsSsoAuthenticated)
+        {
+            // Already signed in — sign out
+            _app.SignOutDevOpsSso();
+            UpdateSsoButtonState();
+        }
+        else
+        {
+            // Launch OAuth2 PKCE SSO flow
+            _app.ShowDevOpsSsoLogin(success =>
+            {
+                UpdateSsoButtonState();
+                if (success)
+                {
+                    // Reload work items with new auth
+                    _ = LoadWorkItemsAsync();
+                }
+            });
+        }
+    }
+
+    private void UpdateSsoButtonState()
+    {
+        if (_app == null) return;
+
+        if (_app.IsDevOpsSsoAuthenticated)
+        {
+            SsoIcon.Text = "🔓";
+            SsoLabel.Text = _app.DevOpsAuthenticatedUserName ?? "Signed In";
+            SsoButton.ToolTip = "Click to sign out of Azure DevOps SSO";
+        }
+        else
+        {
+            SsoIcon.Text = "🔒";
+            SsoLabel.Text = "Sign In";
+            SsoButton.ToolTip = "Sign in to Azure DevOps via SSO";
+        }
     }
 }
