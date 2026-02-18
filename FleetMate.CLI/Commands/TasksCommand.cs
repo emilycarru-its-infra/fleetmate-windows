@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.CommandLine.Invocation;
 using System.Text.Json;
 using FleetMate.Config;
 using FleetMate.Core.Models.Tasks;
@@ -85,8 +86,18 @@ public static class TasksCommand
         command.AddOption(closedOption);
         command.AddOption(jsonOption);
 
-        command.SetHandler(async (provider, state, labels, bucket, assignee, search, limit, includeClosed, json) =>
+        command.SetHandler(async (InvocationContext ctx) =>
         {
+            var provider = ctx.ParseResult.GetValueForOption(providerOption);
+            var state = ctx.ParseResult.GetValueForOption(stateOption);
+            var labels = ctx.ParseResult.GetValueForOption(labelOption);
+            var bucket = ctx.ParseResult.GetValueForOption(bucketOption);
+            var assignee = ctx.ParseResult.GetValueForOption(assigneeOption);
+            var search = ctx.ParseResult.GetValueForOption(searchOption);
+            var limit = ctx.ParseResult.GetValueForOption(limitOption);
+            var includeClosed = ctx.ParseResult.GetValueForOption(closedOption);
+            var json = ctx.ParseResult.GetValueForOption(jsonOption);
+
             var registry = await CreateRegistry(config);
             
             if (!registry.HasEnabledProviders)
@@ -181,8 +192,7 @@ public static class TasksCommand
             AnsiConsole.Write(table);
             AnsiConsole.MarkupLine($"[dim]Total: {tasks.Count} tasks[/]");
 
-        }, providerOption, stateOption, labelOption, bucketOption, assigneeOption, 
-           searchOption, limitOption, closedOption, jsonOption);
+        });
 
         return command;
     }
@@ -224,10 +234,10 @@ public static class TasksCommand
                 [bold]Bucket:[/] {task.Bucket ?? "-"}
                 [bold]Assignees:[/] {(task.Assignees?.Count > 0 ? string.Join(", ", task.Assignees) : "-")}
                 [bold]Labels:[/] {(task.Labels?.Count > 0 ? string.Join(", ", task.Labels) : "-")}
-                [bold]Priority:[/] {task.Priority ?? "-"}
+                [bold]Priority:[/] {task.Priority?.ToString() ?? "-"}
                 [bold]Due:[/] {task.DueDate?.ToString("yyyy-MM-dd") ?? "-"}
-                [bold]Created:[/] {task.CreatedAt?.ToString("g") ?? "-"}
-                [bold]Updated:[/] {task.UpdatedAt?.ToString("g") ?? "-"}
+                [bold]Created:[/] {task.CreatedAt.ToString("g")}
+                [bold]Updated:[/] {task.UpdatedAt.ToString("g")}
                 [bold]URL:[/] {task.ExternalUrl ?? "-"}
                 
                 [bold]Description:[/]
@@ -254,7 +264,7 @@ public static class TasksCommand
         var labelOption = new Option<string[]>(["--label", "-l"], "Labels") { AllowMultipleArgumentsPerToken = true };
         var assigneeOption = new Option<string[]>(["--assignee", "-a"], "Assignees") { AllowMultipleArgumentsPerToken = true };
         var bucketOption = new Option<string?>(["--bucket", "-b"], "Bucket/milestone");
-        var priorityOption = new Option<string?>(["--priority", "-p"], "Priority");
+        var priorityOption = new Option<int?>(["--priority", "-p"], "Priority (1=highest, 4=lowest)");
 
         command.AddArgument(providerArg);
         command.AddOption(titleOption);
