@@ -1054,6 +1054,305 @@ public class GraphService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Get Intune managed devices that belong to an Entra group.
+    /// Resolves group members (devices) and cross-references with managed devices.
+    /// </summary>
+    public async Task<List<IntuneDevice>> GetGroupDevicesAsync(string groupNameOrId, int limit = 500)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            return new List<IntuneDevice>();
+        }
+
+        // Resolve group ID
+        var groupId = groupNameOrId;
+        if (!Guid.TryParse(groupNameOrId, out _))
+        {
+            var group = await GetGroupByNameAsync(groupNameOrId);
+            if (group == null)
+            {
+                Log.Warning("Group not found: {Group}", groupNameOrId);
+                return new List<IntuneDevice>();
+            }
+            groupId = group.Id;
+        }
+
+        var devices = new List<IntuneDevice>();
+
+        try
+        {
+            // Get device members from the group (filters for device objects)
+            var url = $"groups/{groupId}/members?$top={Math.Min(limit, _config.PageSize)}";
+
+            while (!string.IsNullOrEmpty(url) && devices.Count < limit)
+            {
+                var response = await _client.GetAsync(url);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var error = await response.Content.ReadAsStringAsync();
+                    Log.Warning("Failed to get group device members: {Status} - {Error}", response.StatusCode, error);
+                    break;
+                }
+
+                using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("value", out var values))
+                {
+                    foreach (var member in values.EnumerateArray())
+                    {
+                        // Check if this is a device object
+                        var odataType = member.TryGetProperty("@odata.type", out var typeProp)
+                            ? typeProp.GetString() : null;
+
+                        if (odataType == "#microsoft.graph.device")
+                        {
+                            var deviceId = member.TryGetProperty("deviceId", out var devIdProp)
+                                ? devIdProp.GetString() : null;
+
+                            if (!string.IsNullOrEmpty(deviceId))
+                            {
+                                // Cross-reference with managed devices by azureADDeviceId
+                                var filter = $"azureADDeviceId eq '{deviceId}'";
+                                var managed = await GetManagedDevicesAsync(filter, 1);
+                                if (managed.Count > 0)
+                                {
+                                    devices.Add(managed[0]);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Handle pagination
+                url = root.TryGetProperty("@odata.nextLink", out var nextLink) 
+                    ? nextLink.GetString() : null;
+                if (url != null && url.StartsWith(_client.BaseAddress!.ToString()))
+                {
+                    url = url.Substring(_client.BaseAddress.ToString().Length);
+                }
+            }
+
+            Log.Information("Resolved {Count} managed devices from group {Group}", devices.Count, groupNameOrId);
+            return devices.Take(limit).ToList();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to get devices for group {Group}", groupNameOrId);
+            return new List<IntuneDevice>();
+        }
+    }
+
+    #endregion
+
+    #region Intune Proactive Remediations
+
+    /// <summary>
+    /// Deploy a proactive remediation script to targeted devices via Intune.
+    /// Creates a deviceHealthScript and assigns it to a group.
+    /// </summary>
+    public async Task<DeviceActionResult> DeployRemediationAsync(
+        string displayName,
+        string detectionScript,
+        string remediationScript,
+        string groupId,
+        string? description = null)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            return new DeviceActionResult { Success = false, Action = "deployRemediation", Message = "Not authenticated" };
+        }
+
+        try
+        {
+            // Base64-encode the scripts (Graph API requirement)
+            var detectionBase64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(detectionScript));
+            var remediationBase64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(remediationScript));
+
+            // Create the deviceHealthScript
+            var scriptPayload = new
+            {
+                displayName,
+                description = description ?? $"Deployed by FleetMate at {DateTime.UtcNow:u}",
+                publisher = "FleetMate",
+                runAsAccount = "system",
+                enforceSignatureCheck = false,
+                runAs32Bit = false,
+                detectionScriptContent = detectionBase64,
+                remediationScriptContent = remediationBase64
+            };
+
+            var content = new StringContent(
+                JsonSerializer.Serialize(scriptPayload),
+                Encoding.UTF8,
+                "application/json");
+
+            var createResponse = await _client.PostAsync("deviceManagement/deviceHealthScripts", content);
+
+            if (!createResponse.IsSuccessStatusCode)
+            {
+                var error = await createResponse.Content.ReadAsStringAsync();
+                Log.Error("Failed to create remediation script: {Status} - {Error}", createResponse.StatusCode, error);
+                return new DeviceActionResult
+                {
+                    Success = false, Action = "deployRemediation",
+                    Message = $"Failed to create script: {createResponse.StatusCode}"
+                };
+            }
+
+            using var createDoc = await JsonDocument.ParseAsync(await createResponse.Content.ReadAsStreamAsync());
+            var scriptId = createDoc.RootElement.GetProperty("id").GetString();
+
+            if (string.IsNullOrEmpty(scriptId))
+            {
+                return new DeviceActionResult { Success = false, Action = "deployRemediation", Message = "Script created but no ID returned" };
+            }
+
+            // Assign the script to the target group
+            var assignPayload = new
+            {
+                deviceHealthScriptAssignments = new[]
+                {
+                    new
+                    {
+                        target = new
+                        {
+                            @OdataType = "#microsoft.graph.groupAssignmentTarget",
+                            groupId
+                        },
+                        runRemediationScript = true,
+                        runSchedule = new
+                        {
+                            @OdataType = "#microsoft.graph.deviceHealthScriptRunOnceSchedule",
+                            date = DateTime.UtcNow.ToString("yyyy-MM-dd"),
+                            time = DateTime.UtcNow.ToString("HH:mm:ss"),
+                            useUtc = true
+                        }
+                    }
+                }
+            };
+
+            var assignContent = new StringContent(
+                JsonSerializer.Serialize(assignPayload),
+                Encoding.UTF8,
+                "application/json");
+
+            var assignUrl = $"deviceManagement/deviceHealthScripts/{scriptId}/assign";
+            var assignResponse = await _client.PostAsync(assignUrl, assignContent);
+
+            if (!assignResponse.IsSuccessStatusCode)
+            {
+                var error = await assignResponse.Content.ReadAsStringAsync();
+                Log.Warning("Remediation created but assignment failed: {Error}", error);
+                return new DeviceActionResult
+                {
+                    Success = false, Action = "deployRemediation", DeviceId = scriptId,
+                    Message = $"Script created (ID: {scriptId}) but group assignment failed"
+                };
+            }
+
+            Log.Information("Deployed remediation '{Name}' (ID: {Id}) to group {Group}", displayName, scriptId, groupId);
+            return new DeviceActionResult
+            {
+                Success = true, Action = "deployRemediation", DeviceId = scriptId,
+                Message = $"Remediation deployed (ID: {scriptId})"
+            };
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to deploy remediation '{Name}'", displayName);
+            return new DeviceActionResult { Success = false, Action = "deployRemediation", Message = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// Deploy the Cimian push trigger remediation to a group.
+    /// Creates a proactive remediation that writes .cimian.headless on target devices.
+    /// </summary>
+    public async Task<DeviceActionResult> DeployCimianPushRemediationAsync(string groupNameOrId)
+    {
+        // Resolve group ID
+        var groupId = groupNameOrId;
+        if (!Guid.TryParse(groupNameOrId, out _))
+        {
+            var group = await GetGroupByNameAsync(groupNameOrId);
+            if (group == null)
+            {
+                return new DeviceActionResult
+                {
+                    Success = false, Action = "cimianPush",
+                    Message = $"Group not found: {groupNameOrId}"
+                };
+            }
+            groupId = group.Id;
+        }
+
+        var timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss");
+        var displayName = $"Cimian Push Trigger - {timestamp}";
+
+        var detectionScript = @"# Cimian Push - Detection Script
+# Exit 0 = remediation needed (trigger file does not exist)
+# Exit 1 = no action needed (trigger file already exists or MSU is running)
+
+$triggerFile = 'C:\ProgramData\ManagedInstalls\.cimian.headless'
+$msuProcess = Get-Process -Name 'managedsoftwareupdate' -ErrorAction SilentlyContinue
+
+if ($msuProcess) {
+    Write-Output 'managedsoftwareupdate is already running'
+    exit 1
+}
+
+if (Test-Path $triggerFile) {
+    $age = (Get-Date) - (Get-Item $triggerFile).LastWriteTime
+    if ($age.TotalMinutes -lt 5) {
+        Write-Output 'Trigger file exists and is recent'
+        exit 1
+    }
+}
+
+Write-Output 'Cimian push trigger needed'
+exit 0
+";
+
+        var remediationScript = @"# Cimian Push - Remediation Script
+# Creates .cimian.headless trigger file for CimianWatcher to pick up
+
+$managedInstallsDir = 'C:\ProgramData\ManagedInstalls'
+$triggerFile = Join-Path $managedInstallsDir '.cimian.headless'
+
+# Ensure directory exists
+if (-not (Test-Path $managedInstallsDir)) {
+    New-Item -ItemType Directory -Path $managedInstallsDir -Force | Out-Null
+}
+
+# Write trigger file
+$content = @""
+Bootstrap triggered at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+Mode: Headless
+Triggered by: FleetMate Intune Push
+""@
+
+Set-Content -Path $triggerFile -Value $content -Force
+Write-Output ""Cimian push trigger created at $triggerFile""
+
+# Verify CimianWatcher service is running
+$svc = Get-Service -Name 'CimianWatcher' -ErrorAction SilentlyContinue
+if ($svc -and $svc.Status -ne 'Running') {
+    Start-Service -Name 'CimianWatcher' -ErrorAction SilentlyContinue
+    Write-Output 'CimianWatcher service was stopped, started it'
+}
+";
+
+        return await DeployRemediationAsync(
+            displayName,
+            detectionScript,
+            remediationScript,
+            groupId,
+            "FleetMate-initiated Cimian push trigger. Creates .cimian.headless to force an immediate managed software update run.");
+    }
+
     #endregion
 
     public void Dispose()
