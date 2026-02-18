@@ -23,11 +23,11 @@
                 <TextBlock Text="Snipe-IT asset inventory management" Style="{StaticResource SubtitleTextStyle}" />
             </StackPanel>
 
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+            <ui:SimpleStackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                 <Button Click="OnRefreshClicked" ToolTip="Refresh">
                     <ui:SymbolIcon Symbol="Refresh" />
                 </Button>
-            </StackPanel>
+            </ui:SimpleStackPanel>
         </Grid>
 
         <!-- Search -->
@@ -39,7 +39,7 @@
                 </Grid.ColumnDefinitions>
 
                 <TextBox x:Name="SearchBox" 
-                         PlaceholderText="Search assets by name, tag, or serial..." 
+                         ui:ControlHelper.PlaceholderText="Search assets by name, tag, or serial..." 
                          Grid.Column="0"
                          TextChanged="SearchBox_TextChanged" />
 
@@ -115,7 +115,7 @@
                     Margin="16,0,0,0" Padding="0"
                     x:Name="DetailPanel" Visibility="Collapsed">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
-                    <StackPanel Spacing="12">
+                    <ui:SimpleStackPanel Spacing="12">
                         <!-- Asset name + open in Snipe-IT -->
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -231,7 +231,7 @@
                             <TextBlock Text="Custom Fields" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
                             <StackPanel x:Name="CustomFieldsContainer" Margin="0,4,0,0" />
                         </StackPanel>
-                    </StackPanel>
+                    </ui:SimpleStackPanel>
                 </ScrollViewer>
             </Border>
         </Grid>

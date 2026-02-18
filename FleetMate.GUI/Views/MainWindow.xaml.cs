@@ -9,37 +9,38 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // Navigate to Tickets on startup (matching macOS default)
-        ContentFrame.Navigate(typeof(TicketsPage));
-        TabTickets.IsChecked = true;
+        // Navigate to Dashboard on startup
+        ContentFrame.Navigate(new DashboardPage());
+        TabDashboard.IsChecked = true;
     }
 
     private void OnTabChecked(object sender, RoutedEventArgs e)
     {
+        if (ContentFrame == null) return; // Not yet initialized
         if (sender is RadioButton radio && radio.Tag is string tag)
         {
             switch (tag)
             {
                 case "Dashboard":
-                    ContentFrame.Navigate(typeof(DashboardPage));
+                    ContentFrame.Navigate(new DashboardPage());
                     break;
                 case "Devices":
-                    ContentFrame.Navigate(typeof(IntunePage));
+                    ContentFrame.Navigate(new IntunePage());
                     break;
                 case "Inventory":
-                    ContentFrame.Navigate(typeof(AssetsPage));
+                    ContentFrame.Navigate(new AssetsPage());
                     break;
                 case "Tickets":
-                    ContentFrame.Navigate(typeof(TicketsPage));
+                    ContentFrame.Navigate(new TicketsPage());
                     break;
                 case "Projects":
-                    ContentFrame.Navigate(typeof(BoardsPage));
+                    ContentFrame.Navigate(new BoardsPage());
                     break;
                 case "Identity":
-                    ContentFrame.Navigate(typeof(IdentityPage));
+                    ContentFrame.Navigate(new IdentityPage());
                     break;
                 case "Settings":
-                    ContentFrame.Navigate(typeof(SettingsPage));
+                    ContentFrame.Navigate(new SettingsPage());
                     break;
             }
         }

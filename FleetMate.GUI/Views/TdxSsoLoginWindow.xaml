@@ -1,13 +1,13 @@
-<ui:Window x:Class="FleetMate.GUI.Views.TdxSsoLoginWindow"
+<Window x:Class="FleetMate.GUI.Views.TdxSsoLoginWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.modernwpf.com/2019"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        ui:WindowHelper.UseModernWindowStyle="True"
         Title="Sign in to TeamDynamix"
         Width="700" Height="700"
         MinWidth="500" MinHeight="500"
-        WindowStartupLocation="CenterOwner"
-        Style="{StaticResource DefaultWindowStyle}">
+        WindowStartupLocation="CenterOwner">
     
     <Grid>
         <Grid.RowDefinitions>
@@ -103,4 +103,4 @@
                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
         </Border>
     </Grid>
-</ui:Window>
+</Window>
