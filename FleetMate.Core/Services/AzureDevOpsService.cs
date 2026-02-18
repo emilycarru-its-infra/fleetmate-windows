@@ -21,6 +21,11 @@ public class AzureDevOpsService : IDisposable
     private string? _cachedToken;
     private DateTime _tokenExpiry = DateTime.MinValue;
 
+    // SSO token (set externally via OAuth2 PKCE flow)
+    private string? _ssoToken;
+    private DateTime _ssoTokenExpiry = DateTime.MinValue;
+    private string? _ssoUserName;
+
     // Caches
     private List<Sprint>? _sprintCache;
     private DateTime _sprintCacheExpiry = DateTime.MinValue;
@@ -28,6 +33,39 @@ public class AzureDevOpsService : IDisposable
 
     // Azure DevOps resource ID for token acquisition
     private const string AdoResourceId = "499b84ac-1321-427f-aa17-267ca6975798";
+
+    /// <summary>Whether the user is authenticated via SSO</summary>
+    public bool IsSsoAuthenticated => _ssoToken != null && DateTime.UtcNow < _ssoTokenExpiry;
+
+    /// <summary>Display name of the SSO-authenticated user</summary>
+    public string? SsoUserName => _ssoUserName;
+
+    /// <summary>
+    /// Set an OAuth2 SSO access token (from WebView2 PKCE flow)
+    /// </summary>
+    public void SetSsoToken(string token, DateTime expiry, string? userName = null)
+    {
+        _ssoToken = token;
+        _ssoTokenExpiry = expiry;
+        _ssoUserName = userName;
+        // Also set as cached token so existing auth flow uses it
+        _cachedToken = token;
+        _tokenExpiry = expiry;
+        Log.Information("AzureDevOpsService: SSO token set for {UserName}, expires {Expiry}", userName ?? "(unknown)", expiry);
+    }
+
+    /// <summary>
+    /// Clear the SSO token (sign out)
+    /// </summary>
+    public void ClearSsoToken()
+    {
+        _ssoToken = null;
+        _ssoTokenExpiry = DateTime.MinValue;
+        _ssoUserName = null;
+        _cachedToken = null;
+        _tokenExpiry = DateTime.MinValue;
+        Log.Information("AzureDevOpsService: SSO token cleared");
+    }
 
     public AzureDevOpsService(AzureDevOpsConfig config)
     {
