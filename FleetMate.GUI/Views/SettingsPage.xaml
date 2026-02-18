@@ -124,7 +124,31 @@
 
             <!-- Save Button -->
             <Button Content="Save Settings" HorizontalAlignment="Right"
-                    Style="{StaticResource AccentButtonStyle}" Padding="24,8" />
+                    Style="{StaticResource AccentButtonStyle}" Padding="24,8"
+                    Click="OnSaveClicked" />
+
+            <!-- About Section -->
+            <Border Style="{StaticResource CardStyle}" Margin="0,24,0,16">
+                <StackPanel>
+                    <TextBlock Text="About" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,8" />
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Version" Width="100" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBlock x:Name="VersionText" Text="1.0.0" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Platform" Width="100" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBlock x:Name="PlatformText" Text="Windows" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text="Architecture" Width="100" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBlock x:Name="ArchitectureText" Text="" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,4">
+                        <TextBlock Text=".NET Runtime" Width="100" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBlock x:Name="RuntimeText" Text="" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </Page>
