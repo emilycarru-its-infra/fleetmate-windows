@@ -34,7 +34,7 @@
                     <DockPanel Grid.Row="0" Margin="0,0,0,8">
                         <Button DockPanel.Dock="Right" x:Name="GroupsRefreshButton" Content="🔄 Refresh" 
                                 Click="OnGroupsRefreshClicked" Margin="8,0,0,0" />
-                        <TextBox x:Name="GroupsSearchBox" PlaceholderText="Filter groups..." 
+                        <TextBox x:Name="GroupsSearchBox" ui:ControlHelper.PlaceholderText="Filter groups..." 
                                  TextChanged="OnGroupsSearchChanged" />
                     </DockPanel>
 
@@ -68,7 +68,7 @@
                     <DockPanel Grid.Row="0" Margin="0,0,0,8">
                         <Button DockPanel.Dock="Right" x:Name="UsersSearchButton" Content="🔍 Search" 
                                 Click="OnUsersSearchClicked" Margin="8,0,0,0" />
-                        <TextBox x:Name="UsersSearchBox" PlaceholderText="Search by email or name..." 
+                        <TextBox x:Name="UsersSearchBox" ui:ControlHelper.PlaceholderText="Search by email or name..." 
                                  KeyDown="OnUsersSearchKeyDown" />
                     </DockPanel>
 
@@ -96,8 +96,13 @@
                         <ListView.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="4">
-                                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
                                     <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="👤 " FontSize="16" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="AccountBadge" Margin="8,0,0,0" FontSize="11" VerticalAlignment="Center"
+                                                   Foreground="Green" Text="● Active" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
                                         <TextBlock Text="{Binding Mail}" FontSize="12" 
                                                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" 
                                                    Margin="0,0,12,0" />
@@ -107,6 +112,22 @@
                                         <TextBlock Text="{Binding Department}" FontSize="12" 
                                                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                     </StackPanel>
+                                    <!-- Group Memberships -->
+                                    <ItemsControl x:Name="GroupTags" ItemsSource="{Binding MemberOf}" Margin="0,4,0,0">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="#220078D4" 
+                                                        CornerRadius="3" Padding="6,2" Margin="0,0,4,4">
+                                                    <TextBlock Text="{Binding DisplayName}" FontSize="11" />
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </StackPanel>
                             </DataTemplate>
                         </ListView.ItemTemplate>

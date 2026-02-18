@@ -84,18 +84,18 @@ public partial class IdentityPage : Page
 
         try
         {
-            var devices = await _graphService!.GetGroupDeviceMembersAsync(groupId);
+            var devices = await _graphService!.GetGroupDevicesAsync(groupId);
             if (devices.Count == 0)
             {
                 item.Items.Add(new TreeViewItem { Header = "(no devices)" });
             }
             else
             {
-                foreach (var device in devices.OrderBy(d => d.DisplayName))
+                foreach (var device in devices.OrderBy(d => d.DeviceName))
                 {
                     item.Items.Add(new TreeViewItem
                     {
-                        Header = $"💻 {device.DisplayName} — {device.OperatingSystem} {device.OperatingSystemVersion}"
+                        Header = $"💻 {device.DeviceName} — {device.OperatingSystem} {device.OsVersion}"
                     });
                 }
             }
