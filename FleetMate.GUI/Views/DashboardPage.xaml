@@ -5,8 +5,27 @@
 
     <ScrollViewer Padding="24">
         <StackPanel>
-            <TextBlock Text="Dashboard" Style="{StaticResource TitleTextStyle}" />
-            <TextBlock Text="Fleet overview and quick actions" Style="{StaticResource SubtitleTextStyle}" />
+            <!-- Header with Refresh -->
+            <DockPanel Margin="0,0,0,4">
+                <Button DockPanel.Dock="Right" Content="Refresh" Click="OnRefreshClicked" VerticalAlignment="Top" />
+                <StackPanel>
+                    <TextBlock Text="Dashboard" Style="{StaticResource TitleTextStyle}" />
+                    <TextBlock Text="Fleet overview and quick stats" Style="{StaticResource SubtitleTextStyle}" />
+                </StackPanel>
+            </DockPanel>
+
+            <!-- Error Banner -->
+            <Border x:Name="ErrorBanner" Visibility="Collapsed" Background="#33FF6600" CornerRadius="4" Padding="12,8" Margin="0,0,0,12">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Dismiss" Click="OnDismissErrorClicked" 
+                            VerticalAlignment="Center" Margin="12,0,0,0" />
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="⚠" FontSize="16" Margin="0,0,8,0" />
+                        <TextBlock x:Name="ErrorBannerText" TextWrapping="Wrap" 
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
 
             <TextBlock Text="Quick Stats" Style="{StaticResource SectionHeaderStyle}" />
 
@@ -14,9 +33,18 @@
                 <!-- Devices Card -->
                 <Border Style="{StaticResource CardStyle}" Width="200">
                     <StackPanel>
-                        <TextBlock Text="Devices" FontSize="14" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                        <TextBlock Text="--" FontSize="36" FontWeight="SemiBold" Margin="0,8,0,0" />
-                        <TextBlock Text="managed devices" FontSize="12" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBlock Text="Managed Devices" FontSize="14" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBlock x:Name="DevicesCountText" Text="--" FontSize="36" FontWeight="SemiBold" Margin="0,8,0,0" />
+                        <TextBlock Text="in Intune" FontSize="12" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Non-Compliant Card -->
+                <Border Style="{StaticResource CardStyle}" Width="200">
+                    <StackPanel>
+                        <TextBlock Text="Non-Compliant" FontSize="14" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBlock x:Name="NonCompliantCountText" Text="--" FontSize="36" FontWeight="SemiBold" Margin="0,8,0,0" />
+                        <TextBlock Text="devices" FontSize="12" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                     </StackPanel>
                 </Border>
 
@@ -24,17 +52,8 @@
                 <Border Style="{StaticResource CardStyle}" Width="200">
                     <StackPanel>
                         <TextBlock Text="Assets" FontSize="14" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                        <TextBlock Text="--" FontSize="36" FontWeight="SemiBold" Margin="0,8,0,0" />
+                        <TextBlock x:Name="AssetsCountText" Text="--" FontSize="36" FontWeight="SemiBold" Margin="0,8,0,0" />
                         <TextBlock Text="in inventory" FontSize="12" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                    </StackPanel>
-                </Border>
-
-                <!-- Errors Card -->
-                <Border Style="{StaticResource CardStyle}" Width="200">
-                    <StackPanel>
-                        <TextBlock Text="Errors" FontSize="14" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                        <TextBlock Text="--" FontSize="36" FontWeight="SemiBold" Foreground="OrangeRed" Margin="0,8,0,0" />
-                        <TextBlock Text="install failures" FontSize="12" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                     </StackPanel>
                 </Border>
 
@@ -42,17 +61,72 @@
                 <Border Style="{StaticResource CardStyle}" Width="200">
                     <StackPanel>
                         <TextBlock Text="Open Tickets" FontSize="14" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                        <TextBlock Text="--" FontSize="36" FontWeight="SemiBold" Margin="0,8,0,0" />
+                        <TextBlock x:Name="TicketsCountText" Text="--" FontSize="36" FontWeight="SemiBold" Margin="0,8,0,0" />
                         <TextBlock Text="in queue" FontSize="12" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                     </StackPanel>
                 </Border>
             </ui:SimpleStackPanel>
 
+            <!-- Configuration Status -->
+            <TextBlock Text="Configuration Status" Style="{StaticResource SectionHeaderStyle}" />
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel>
+                    <StackPanel x:Name="ConfigGraphRow" Orientation="Horizontal" Margin="0,4">
+                        <TextBlock x:Name="ConfigGraphIcon" Text="❌" FontSize="14" Margin="0,0,8,0" />
+                        <TextBlock Text="Microsoft Graph" FontSize="13" Width="140" />
+                        <TextBlock x:Name="ConfigGraphStatus" Text="Not Configured" FontSize="12" 
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+                    <StackPanel x:Name="ConfigDevOpsRow" Orientation="Horizontal" Margin="0,4">
+                        <TextBlock x:Name="ConfigDevOpsIcon" Text="❌" FontSize="14" Margin="0,0,8,0" />
+                        <TextBlock Text="Azure DevOps" FontSize="13" Width="140" />
+                        <TextBlock x:Name="ConfigDevOpsStatus" Text="Not Configured" FontSize="12" 
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+                    <StackPanel x:Name="ConfigTdxRow" Orientation="Horizontal" Margin="0,4">
+                        <TextBlock x:Name="ConfigTdxIcon" Text="❌" FontSize="14" Margin="0,0,8,0" />
+                        <TextBlock Text="TeamDynamix" FontSize="13" Width="140" />
+                        <TextBlock x:Name="ConfigTdxStatus" Text="Not Configured" FontSize="12" 
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+                    <StackPanel x:Name="ConfigSnipeRow" Orientation="Horizontal" Margin="0,4">
+                        <TextBlock x:Name="ConfigSnipeIcon" Text="❌" FontSize="14" Margin="0,0,8,0" />
+                        <TextBlock Text="Snipe-IT" FontSize="13" Width="140" />
+                        <TextBlock x:Name="ConfigSnipeStatus" Text="Not Configured" FontSize="12" 
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Recent Activity -->
             <TextBlock Text="Recent Activity" Style="{StaticResource SectionHeaderStyle}" />
 
             <Border Style="{StaticResource CardStyle}">
-                <TextBlock Text="Activity feed will appear here once connected to services."
-                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <ItemsControl x:Name="ActivityFeed">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Margin="0,2" FontSize="13"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                    <ItemsControl.Style>
+                        <Style TargetType="ItemsControl">
+                            <Style.Triggers>
+                                <Trigger Property="HasItems" Value="False">
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate>
+                                                <TextBlock Text="Activity feed will appear here once connected to services."
+                                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ItemsControl.Style>
+                </ItemsControl>
             </Border>
 
         </StackPanel>
