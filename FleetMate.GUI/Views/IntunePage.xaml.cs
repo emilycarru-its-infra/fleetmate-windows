@@ -46,6 +46,7 @@ public partial class IntunePage : Page
         // Use cache if valid
         if (_app.IsDevicesCacheValid && _app.CachedDevices.Count > 0)
         {
+            PopulatePlatformFilter();
             ApplyFiltersAndSort();
             return;
         }
@@ -57,6 +58,7 @@ public partial class IntunePage : Page
         {
             var devices = await _graphService.GetManagedDevicesAsync(limit: 500);
             _app.UpdateDevicesCache(devices);
+            PopulatePlatformFilter();
             ApplyFiltersAndSort();
         }
         catch (Exception ex)
@@ -69,6 +71,24 @@ public partial class IntunePage : Page
         }
     }
 
+    private void PopulatePlatformFilter()
+    {
+        var platforms = _allDevices
+            .Select(d => d.OperatingSystem)
+            .Where(os => !string.IsNullOrEmpty(os))
+            .Distinct()
+            .OrderBy(os => os)
+            .ToList();
+
+        PlatformFilterComboBox.Items.Clear();
+        PlatformFilterComboBox.Items.Add(new ComboBoxItem { Content = "All", IsSelected = true });
+        foreach (var platform in platforms)
+        {
+            PlatformFilterComboBox.Items.Add(new ComboBoxItem { Content = platform });
+        }
+        PlatformFilterComboBox.SelectedIndex = 0;
+    }
+
     private void ApplyFiltersAndSort()
     {
         var filtered = _allDevices.AsEnumerable();
@@ -77,6 +97,17 @@ public partial class IntunePage : Page
         if (NonCompliantOnlyCheckBox.IsChecked == true)
         {
             filtered = filtered.Where(d => d.ComplianceState?.Equals("noncompliant", StringComparison.OrdinalIgnoreCase) == true);
+        }
+
+        // Filter by platform
+        if (PlatformFilterComboBox.SelectedItem is ComboBoxItem platformItem)
+        {
+            var platform = platformItem.Content?.ToString();
+            if (!string.IsNullOrEmpty(platform) && platform != "All")
+            {
+                filtered = filtered.Where(d =>
+                    d.OperatingSystem?.Contains(platform, StringComparison.OrdinalIgnoreCase) == true);
+            }
         }
 
         // Filter by search text
@@ -113,6 +144,11 @@ public partial class IntunePage : Page
     }
 
     private void OnSearchChanged(object sender, TextChangedEventArgs e)
+    {
+        ApplyFiltersAndSort();
+    }
+
+    private void OnPlatformFilterChanged(object sender, SelectionChangedEventArgs e)
     {
         ApplyFiltersAndSort();
     }
@@ -368,6 +404,36 @@ public partial class IntunePage : Page
             ShowActionMessage(failed == 0
                 ? $"Triggered update check on {successful} device(s)"
                 : $"Triggered on {successful}, {failed} failed");
+        }
+        catch (Exception ex)
+        {
+            ShowActionMessage($"Error: {ex.Message}", isError: true);
+        }
+    }
+
+    private async void OnPushCimianClicked(object sender, RoutedEventArgs e)
+    {
+        if (_graphService == null) return;
+
+        var selectedDevices = DevicesDataGrid.SelectedItems.Cast<IntuneDevice>().ToList();
+        if (selectedDevices.Count == 0)
+        {
+            ShowActionMessage("Select devices to push Cimian run", isError: true);
+            return;
+        }
+
+        ShowActionMessage($"Pushing Cimian run to {selectedDevices.Count} device(s)...", isLoading: true);
+
+        try
+        {
+            // Force Intune sync on selected devices to trigger remediation pickup
+            var syncResults = await _graphService.SyncDevicesAsync(selectedDevices.Select(d => d.Id));
+            var successful = syncResults.Count(r => r.Success);
+            var failed = syncResults.Count - successful;
+
+            ShowActionMessage(failed == 0
+                ? $"Cimian push initiated on {successful} device(s) - sync forced, remediation will create trigger file on check-in"
+                : $"Push initiated on {successful}, {failed} sync(s) failed");
         }
         catch (Exception ex)
         {

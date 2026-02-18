@@ -26,6 +26,10 @@
         <!-- Toolbar -->
         <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
             <CheckBox x:Name="NonCompliantOnlyCheckBox" Content="Non-Compliant Only" Margin="0,0,16,0" Checked="OnFilterChanged" Unchecked="OnFilterChanged" />
+            <TextBlock Text="Platform:" VerticalAlignment="Center" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,4,0" />
+            <ComboBox x:Name="PlatformFilterComboBox" Width="110" Margin="0,0,8,0" SelectionChanged="OnPlatformFilterChanged">
+                <ComboBoxItem Content="All" IsSelected="True" />
+            </ComboBox>
             <ComboBox x:Name="SortComboBox" Width="120" Margin="0,0,8,0" SelectionChanged="OnSortChanged">
                 <ComboBoxItem Content="Serial" IsSelected="True" />
                 <ComboBoxItem Content="Name" />
@@ -46,7 +50,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBox x:Name="SearchBox" PlaceholderText="Search devices..." TextChanged="OnSearchChanged" />
+            <TextBox x:Name="SearchBox" ui:ControlHelper.PlaceholderText="Search devices..." TextChanged="OnSearchChanged" />
             <Button Grid.Column="1" Content="Select All" Margin="8,0,0,0" Click="OnSelectAllClicked" />
             <Button Grid.Column="2" x:Name="ClearSelectionButton" Content="Clear" Margin="8,0,0,0" Click="OnClearSelectionClicked" IsEnabled="False" />
         </Grid>
@@ -177,7 +181,7 @@
                                 <StackPanel Margin="8">
                                     <TextBlock Text="Remotely lock devices. Enter a PIN for supported devices." 
                                                TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
-                                    <TextBox x:Name="LockPinTextBox" PlaceholderText="PIN (optional)" Margin="0,0,0,8" />
+                                    <TextBox x:Name="LockPinTextBox" ui:ControlHelper.PlaceholderText="PIN (optional)" Margin="0,0,0,8" />
                                     <Button Content="Lock Device" Click="OnLockClicked" HorizontalAlignment="Stretch" Background="Red" Foreground="White" />
                                 </StackPanel>
                             </Expander>
@@ -192,10 +196,10 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBox x:Name="AppSearchBox" PlaceholderText="Search apps..." />
+                                        <TextBox x:Name="AppSearchBox" ui:ControlHelper.PlaceholderText="Search apps..." />
                                         <Button Grid.Column="1" Content="🔍" Width="32" Margin="4,0,0,0" Click="OnSearchAppsClicked" />
                                     </Grid>
-                                    <ComboBox x:Name="AppComboBox" PlaceholderText="Select an app..." HorizontalAlignment="Stretch" Margin="0,0,0,8" />
+                                    <ComboBox x:Name="AppComboBox" ui:ControlHelper.PlaceholderText="Select an app..." HorizontalAlignment="Stretch" Margin="0,0,0,8" />
                                     <Button Content="Trigger Reinstall" Click="OnReinstallAppClicked" HorizontalAlignment="Stretch" />
                                 </StackPanel>
                             </Expander>
@@ -206,6 +210,16 @@
                                     <TextBlock Text="Trigger OS update check. Updates are installed based on update policies." 
                                                TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
                                     <Button Content="Check for Updates" Click="OnCheckUpdatesClicked" HorizontalAlignment="Stretch" />
+                                </StackPanel>
+                            </Expander>
+
+                            <!-- Cimian Push Section -->
+                            <Expander Header="⚡ Push Cimian Run">
+                                <StackPanel Margin="8">
+                                    <TextBlock Text="Trigger an immediate Cimian managed software update on selected devices. Creates a .cimian.headless trigger file via Intune remediation. CimianWatcher picks it up within 10 seconds." 
+                                               TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
+                                    <Button Content="Push Cimian Run" Click="OnPushCimianClicked" HorizontalAlignment="Stretch" 
+                                            Background="{DynamicResource SystemControlForegroundAccentBrush}" Foreground="White" />
                                 </StackPanel>
                             </Expander>
                         </StackPanel>
