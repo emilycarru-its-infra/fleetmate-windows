@@ -46,6 +46,6 @@
         <Separator Grid.Row="1" />
 
         <!-- Content Frame -->
-        <Frame Grid.Row="2" x:Name="ContentFrame" NavigationUIVisibility="Hidden" />
+        <Frame Grid.Row="2" x:Name="ContentFrame" NavigationUIVisibility="Hidden" Background="Transparent" />
     </Grid>
 </Window>
