@@ -528,7 +528,7 @@ public partial class TicketsPage : Page
         DetailGroupText.Text = ticket.ResponsibleGroupName ?? "-";
         DetailResponsibleText.Text = ticket.ResponsibleFullName ?? "-";
         DetailCreatedText.Text = FormatDate(ticket.CreatedDate);
-        DetailModifiedText.Text = FormatDate(ticket.ModifiedDate);
+        DetailModifiedText.Text = FormatDate(ticket.ModifiedDate as DateTime?);
 
         // Status badge color
         var statusBrush = ticket.StatusName?.ToLower() switch
@@ -578,7 +578,7 @@ public partial class TicketsPage : Page
                 CreatedFullName = f.CreatedFullName ?? "Unknown",
                 FormattedDate = FormatDate(f.CreatedDate),
                 StrippedBody = DecodeHtml(f.Body ?? ""),
-                IsPrivate = f.IsPrivate ?? false
+                IsPrivate = f.IsPrivate
             }).ToList();
             
             FeedItemsControl.ItemsSource = displayFeed;
@@ -606,13 +606,13 @@ public partial class TicketsPage : Page
         }
         
         // Requestor
-        if (!string.IsNullOrEmpty(ticket.RequestorName) && !string.IsNullOrEmpty(ticket.RequestorUid))
+        if (!string.IsNullOrEmpty(ticket.RequestorName) && ticket.RequestorUid != null && ticket.RequestorUid != Guid.Empty)
         {
             options.Add(($"user:{ticket.RequestorUid}", $"Requestor: {ticket.RequestorName}"));
         }
         
         // Responsible person (if different from requestor)
-        if (!string.IsNullOrEmpty(ticket.ResponsibleFullName) && !string.IsNullOrEmpty(ticket.ResponsibleUid))
+        if (!string.IsNullOrEmpty(ticket.ResponsibleFullName) && ticket.ResponsibleUid != null && ticket.ResponsibleUid != Guid.Empty)
         {
             if (ticket.ResponsibleUid != ticket.RequestorUid)
             {
@@ -695,19 +695,19 @@ public partial class TicketsPage : Page
                          : new SolidColorBrush(Color.FromRgb(0xC0, 0xFF, 0xC0)));
     }
 
-    private static string FormatDate(string? dateString)
+    private static string FormatDate(DateTime? dateTime)
     {
-        if (string.IsNullOrEmpty(dateString)) return "-";
+        if (dateTime == null) return "-";
         
-        // Parse ISO8601 date and convert to local timezone
-        if (DateTime.TryParse(dateString, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dt))
-        {
-            var localDt = dt.Kind == DateTimeKind.Utc ? dt.ToLocalTime() : dt;
-            return localDt.ToString("MMM d 'at' h:mm tt");
-        }
-        
-        // Fallback: just format the string
-        return dateString.Length >= 16 ? dateString[..16].Replace("T", " ") : dateString;
+        var dt = dateTime.Value;
+        var localDt = dt.Kind == DateTimeKind.Utc ? dt.ToLocalTime() : dt;
+        return localDt.ToString("MMM d 'at' h:mm tt");
+    }
+
+    private static string FormatDate(DateTime dateTime)
+    {
+        var localDt = dateTime.Kind == DateTimeKind.Utc ? dateTime.ToLocalTime() : dateTime;
+        return localDt.ToString("MMM d 'at' h:mm tt");
     }
 
     private static string StripHtml(string html)
