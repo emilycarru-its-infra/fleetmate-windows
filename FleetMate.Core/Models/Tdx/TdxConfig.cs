@@ -89,6 +89,11 @@ public class TdxConfig
     public string PasswordEnvVar { get; set; } = "TDX_PASSWORD";
 
     /// <summary>
+    /// Responsible group ID to filter tickets by in the GUI
+    /// </summary>
+    public int ResponsibleGroupId { get; set; }
+
+    /// <summary>
     /// Default ticket type ID for new tickets
     /// </summary>
     public int? DefaultTypeId { get; set; }

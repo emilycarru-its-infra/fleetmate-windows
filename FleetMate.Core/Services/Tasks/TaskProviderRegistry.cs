@@ -40,6 +40,16 @@ public class TaskProviderRegistry
         _providers.Values.Where(p => p.IsEnabled);
     
     /// <summary>
+    /// Whether any providers are enabled.
+    /// </summary>
+    public bool HasEnabledProviders => _providers.Values.Any(p => p.IsEnabled);
+    
+    /// <summary>
+    /// Gets all registered providers (enabled and disabled).
+    /// </summary>
+    public IEnumerable<ITaskProvider> GetProviders() => _providers.Values;
+    
+    /// <summary>
     /// Gets a provider by its ID.
     /// </summary>
     /// <param name="providerId">Provider identifier (e.g., "azdevops", "github").</param>
@@ -254,5 +264,77 @@ public class TaskProviderRegistry
         }
         
         return results;
+    }
+    
+    // MARK: - Convenience Methods (used by CLI commands)
+    
+    /// <summary>
+    /// Lists tasks from a specific provider.
+    /// </summary>
+    /// <param name="providerId">Provider to query.</param>
+    /// <param name="filter">Optional filter criteria.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>List of tasks from the specified provider.</returns>
+    public async Task<List<UnifiedTask>> ListTasksAsync(
+        string providerId,
+        TaskFilter? filter = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await ListTasksAsync(filter, new[] { providerId }, cancellationToken);
+    }
+    
+    /// <summary>
+    /// Lists tasks from all enabled providers.
+    /// </summary>
+    /// <param name="filter">Optional filter criteria.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Aggregated list of tasks from all enabled providers.</returns>
+    public async Task<List<UnifiedTask>> ListAllTasksAsync(
+        TaskFilter? filter = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await ListTasksAsync(filter, null, cancellationToken);
+    }
+    
+    /// <summary>
+    /// Gets a task by provider ID and task ID.
+    /// </summary>
+    /// <param name="providerId">Provider identifier.</param>
+    /// <param name="taskId">Task identifier within the provider.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The task, or null if not found.</returns>
+    public async Task<UnifiedTask?> GetTaskAsync(
+        string providerId,
+        string taskId,
+        CancellationToken cancellationToken = default)
+    {
+        var provider = GetProvider(providerId);
+        if (provider == null)
+        {
+            _logger.Warning("Provider not found: {ProviderId}", providerId);
+            return null;
+        }
+        
+        return await provider.GetTaskAsync(taskId, cancellationToken);
+    }
+    
+    /// <summary>
+    /// Updates a task by provider ID and task ID.
+    /// </summary>
+    /// <param name="providerId">Provider identifier.</param>
+    /// <param name="taskId">Task identifier within the provider.</param>
+    /// <param name="request">Update request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The updated task.</returns>
+    public async Task<UnifiedTask> UpdateTaskAsync(
+        string providerId,
+        string taskId,
+        UpdateTaskRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var provider = GetProvider(providerId)
+            ?? throw new InvalidOperationException($"Provider not found: {providerId}");
+        
+        return await provider.UpdateTaskAsync(taskId, request, cancellationToken);
     }
 }
