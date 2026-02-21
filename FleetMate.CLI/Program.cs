@@ -152,6 +152,9 @@ class Program
             // Unified task management (FleetMate Boards)
             rootCommand.AddCommand(TasksCommand.Create(config));
 
+            // GitHub Projects v2 board and management
+            rootCommand.AddCommand(ProjectsCommand.Create(config));
+
             var result = await rootCommand.InvokeAsync(args);
             
             // Dispose services
