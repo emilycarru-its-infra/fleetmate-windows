@@ -10,6 +10,7 @@ public partial class IdentityPage : Page
 {
     private readonly App? _app;
     private readonly GraphService? _graphService;
+    private bool _isInitialLoadDone;
 
     public IdentityPage()
     {
@@ -21,7 +22,14 @@ public partial class IdentityPage : Page
             _graphService = app.GraphService;
         }
 
-        Loaded += async (s, e) => await LoadGroupsAsync();
+        Loaded += async (s, e) =>
+        {
+            if (!_isInitialLoadDone)
+            {
+                _isInitialLoadDone = true;
+                await LoadGroupsAsync();
+            }
+        };
     }
 
     private void OnTabChanged(object sender, RoutedEventArgs e)

@@ -15,6 +15,7 @@ public partial class IntunePage : Page
     private List<MobileApp> _mobileApps = new();
     private bool _sortAscending = true;
     private string _sortField = "Serial";
+    private bool _isInitialLoadDone;
     
     // Use cached devices from App
     private List<IntuneDevice> _allDevices => _app?.CachedDevices ?? new();
@@ -32,7 +33,25 @@ public partial class IntunePage : Page
 
         DevicesDataGrid.ItemsSource = _filteredDevices;
 
-        Loaded += async (s, e) => await LoadDevicesAsync();
+        Loaded += async (s, e) =>
+        {
+            if (!_isInitialLoadDone)
+            {
+                _isInitialLoadDone = true;
+                await LoadDevicesAsync();
+            }
+            // Deep link: check on every navigation (page is cached)
+            if (_app?.PendingNavigateDeviceId is { } deviceId)
+            {
+                _app.PendingNavigateDeviceId = null;
+                var device = _filteredDevices.FirstOrDefault(d => d.Id == deviceId);
+                if (device != null)
+                {
+                    DevicesDataGrid.SelectedItem = device;
+                    DevicesDataGrid.ScrollIntoView(device);
+                }
+            }
+        };
     }
 
     private async Task LoadDevicesAsync()
@@ -56,7 +75,7 @@ public partial class IntunePage : Page
 
         try
         {
-            var devices = await _graphService.GetManagedDevicesAsync(limit: 500);
+            var devices = await _graphService.GetManagedDevicesAsync(limit: 10000);
             _app.UpdateDevicesCache(devices);
             PopulatePlatformFilter();
             ApplyFiltersAndSort();

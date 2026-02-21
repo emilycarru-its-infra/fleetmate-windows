@@ -14,6 +14,7 @@ public partial class AssetsPage : Page
     private SnipeService? _snipeService;
     private List<SnipeAsset> _allAssets = new();
     private SnipeAsset? _selectedAsset;
+    private bool _isInitialLoadDone;
 
     public AssetsPage()
     {
@@ -28,6 +29,9 @@ public partial class AssetsPage : Page
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
     {
+        if (_isInitialLoadDone) return;
+        _isInitialLoadDone = true;
+
         if (_snipeService == null || !_snipeService.IsConfigured)
         {
             NotConfiguredText.Visibility = Visibility.Visible;
