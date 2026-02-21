@@ -23,6 +23,7 @@ public partial class TicketsPage : Page
     private bool _isBoardView = false;  // List vs Board view mode
     private string _feedFilter = "Comments";  // Comments (default), Activity, All
     private int _maxResults = 500;  // Default max results
+    private bool _isInitialLoadDone;
     
     // Use cached tickets from App
     private List<TdxTicket> _allTickets => _app?.CachedTickets ?? new();
@@ -56,8 +57,23 @@ public partial class TicketsPage : Page
 
         Loaded += async (s, e) => 
         {
-            UpdateSsoState();
-            await LoadTicketsAsync();
+            if (!_isInitialLoadDone)
+            {
+                _isInitialLoadDone = true;
+                UpdateSsoState();
+                await LoadTicketsAsync();
+            }
+            // Deep link: check on every navigation (page is cached)
+            if (_app?.PendingNavigateTicketId is { } ticketId)
+            {
+                _app.PendingNavigateTicketId = null;
+                var ticket = _filteredTickets.FirstOrDefault(t => t.Id == ticketId);
+                if (ticket != null)
+                {
+                    TicketsListView.SelectedItem = ticket;
+                    TicketsListView.ScrollIntoView(ticket);
+                }
+            }
         };
     }
     
