@@ -5,12 +5,15 @@ namespace FleetMate.GUI.Views;
 
 public partial class MainWindow : Window
 {
+    // Page cache: keep views alive across tab switches
+    private readonly Dictionary<string, Page> _pageCache = new();
+
     public MainWindow()
     {
         InitializeComponent();
 
         // Navigate to Dashboard on startup
-        ContentFrame.Navigate(new DashboardPage());
+        ContentFrame.Navigate(GetOrCreatePage("Dashboard"));
         TabDashboard.IsChecked = true;
     }
 
@@ -38,31 +41,26 @@ public partial class MainWindow : Window
         }
     }
 
+    private Page GetOrCreatePage(string tag) => tag switch
+    {
+        // Settings is intentionally NOT cached (always fresh)
+        "Settings" => new SettingsPage(),
+        _ => _pageCache.TryGetValue(tag, out var cached) ? cached : (_pageCache[tag] = CreatePage(tag))
+    };
+
+    private static Page CreatePage(string tag) => tag switch
+    {
+        "Dashboard" => new DashboardPage(),
+        "Devices" => new IntunePage(),
+        "Inventory" => new AssetsPage(),
+        "Tickets" => new TicketsPage(),
+        "Projects" => new BoardsPage(),
+        "Identity" => new IdentityPage(),
+        _ => new DashboardPage()
+    };
+
     private void NavigateToPage(string tag)
     {
-        switch (tag)
-        {
-            case "Dashboard":
-                ContentFrame.Navigate(new DashboardPage());
-                break;
-            case "Devices":
-                ContentFrame.Navigate(new IntunePage());
-                break;
-            case "Inventory":
-                ContentFrame.Navigate(new AssetsPage());
-                break;
-            case "Tickets":
-                ContentFrame.Navigate(new TicketsPage());
-                break;
-            case "Projects":
-                ContentFrame.Navigate(new BoardsPage());
-                break;
-            case "Identity":
-                ContentFrame.Navigate(new IdentityPage());
-                break;
-            case "Settings":
-                ContentFrame.Navigate(new SettingsPage());
-                break;
-        }
+        ContentFrame.Navigate(GetOrCreatePage(tag));
     }
 }

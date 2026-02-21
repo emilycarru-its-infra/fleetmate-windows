@@ -30,6 +30,10 @@ public partial class App : Application
     public bool IsDevOpsSsoAuthenticated => DevOpsService?.IsSsoAuthenticated ?? false;
     public string? DevOpsAuthenticatedUserName => DevOpsService?.SsoUserName;
     
+    // MARK: - Deep Navigation
+    public string? PendingNavigateDeviceId { get; set; }
+    public int? PendingNavigateTicketId { get; set; }
+    
     // MARK: - Cached Data
     // Data caches with timestamps to avoid reloading on tab switches
     
