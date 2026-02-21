@@ -1,4 +1,4 @@
-namespace FleetMate.Models;
+namespace FleetMate.Core.Models;
 
 /// <summary>
 /// Top-level grouping of connected systems, matching tab categories.
@@ -6,7 +6,7 @@ namespace FleetMate.Models;
 public enum AuthCategory
 {
     Devices,
-    Assets,
+    Inventory,
     Tickets,
     Projects,
     Identity
@@ -131,7 +131,7 @@ public static class AuthExtensions
     public static AuthCategory Category(this AuthSystemId id) => id switch
     {
         AuthSystemId.Intune or AuthSystemId.Graph => AuthCategory.Devices,
-        AuthSystemId.Snipe => AuthCategory.Assets,
+        AuthSystemId.Snipe => AuthCategory.Inventory,
         AuthSystemId.Tdx => AuthCategory.Tickets,
         AuthSystemId.DevOps or AuthSystemId.GitHub or AuthSystemId.Gitea => AuthCategory.Projects,
         AuthSystemId.Entra => AuthCategory.Identity,
@@ -141,7 +141,7 @@ public static class AuthExtensions
     public static string DisplayName(this AuthCategory cat) => cat switch
     {
         AuthCategory.Devices => "Devices",
-        AuthCategory.Assets => "Assets",
+        AuthCategory.Inventory => "Inventory",
         AuthCategory.Tickets => "Tickets",
         AuthCategory.Projects => "Projects",
         AuthCategory.Identity => "Identity",

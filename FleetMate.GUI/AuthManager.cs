@@ -2,9 +2,14 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
-using FleetMate.Config;
-using FleetMate.Models;
-using FleetMate.Services;
+using FleetMate.Core.Config;
+using FleetMate.Core.Models;
+using FleetMate.Core.Services;
+using FleetMate.Core.Services.Devices;
+using FleetMate.Core.Services.Inventory;
+using FleetMate.Core.Services.Tickets;
+using FleetMate.Core.Services.Projects;
+using FleetMate.Core.Services.Reporting;
 using Serilog;
 
 namespace FleetMate.GUI;

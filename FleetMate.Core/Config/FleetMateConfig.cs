@@ -2,12 +2,14 @@ using Microsoft.Win32;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 using Serilog;
-using FleetMate.Models.SecureShell;
-using FleetMate.Models.Graph;
-using FleetMate.Models.Tdx;
-using FleetMate.Core.Models.Tasks;
+using FleetMate.Core.Models;
+using FleetMate.Core.Models.Devices;
+using FleetMate.Core.Models.Identity;
+using FleetMate.Core.Config;
+using FleetMate.Core.Models.Tickets;
+using FleetMate.Core.Models.Projects;
 
-namespace FleetMate.Config;
+namespace FleetMate.Core.Config;
 
 /// <summary>
 /// Configuration for FleetMate
