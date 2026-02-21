@@ -2,7 +2,9 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using FleetMate.Config;
+using FleetMate.Core.Models.GitHub;
 using FleetMate.Core.Models.Tasks;
+using FleetMate.Core.Services;
 using FleetMate.Core.Services.Tasks;
 using FleetMate.Models.AzureDevOps;
 using FleetMate.Services;
@@ -25,6 +27,11 @@ public partial class BoardsPage : Page
     private List<WorkItem> _allWorkItems = new();
     private string _listSearchText = "";
     private string? _listStateFilter;
+
+    // Projects mode (GitHub Projects v2 dynamic board)
+    private GitHubProjectsService? _projectsService;
+    private List<GitHubProjectItem> _projectItems = new();
+    private GitHubProjectField? _statusField;
 
     public BoardsPage()
     {
@@ -60,7 +67,7 @@ public partial class BoardsPage : Page
         _registry = new TaskProviderRegistry();
 
         var azdo = new AzureDevOpsTaskProvider(_config);
-        var github = new GitHubTaskProvider(_config);
+        var github = new GitHubProjectsTaskProvider(_config);
         var gitea = new GiteaTaskProvider(_config);
 
         _registry.RegisterProvider(azdo);
@@ -270,16 +277,25 @@ public partial class BoardsPage : Page
     private async void OnViewModeChanged(object sender, RoutedEventArgs e)
     {
         var isBoardMode = BoardModeRadio.IsChecked == true;
+        var isListMode = ListModeRadio.IsChecked == true;
+        var isProjectsMode = ProjectsModeRadio.IsChecked == true;
 
         // Toggle visibility
         BoardFilters.Visibility = isBoardMode ? Visibility.Visible : Visibility.Collapsed;
-        ListFilters.Visibility = isBoardMode ? Visibility.Collapsed : Visibility.Visible;
+        ListFilters.Visibility = isListMode ? Visibility.Visible : Visibility.Collapsed;
+        ProjectsFilters.Visibility = isProjectsMode ? Visibility.Visible : Visibility.Collapsed;
         KanbanBoard.Visibility = isBoardMode ? Visibility.Visible : Visibility.Collapsed;
-        WorkItemsList.Visibility = isBoardMode ? Visibility.Collapsed : Visibility.Visible;
+        WorkItemsList.Visibility = isListMode ? Visibility.Visible : Visibility.Collapsed;
+        ProjectsBoard.Visibility = isProjectsMode ? Visibility.Visible : Visibility.Collapsed;
 
-        if (!isBoardMode && _allWorkItems.Count == 0)
+        if (isListMode && _allWorkItems.Count == 0)
         {
             await LoadWorkItemsAsync();
+        }
+
+        if (isProjectsMode && _projectItems.Count == 0)
+        {
+            await LoadProjectsBoardAsync();
         }
     }
 
@@ -358,6 +374,271 @@ public partial class BoardsPage : Page
 
             WorkItemsListView.SelectedItem = null;
         }
+    }
+
+    // MARK: - Projects Mode (GitHub Projects v2 Dynamic Board)
+
+    private async Task LoadProjectsBoardAsync()
+    {
+        var ghConfig = _config.Tasks?.Providers?.GitHub;
+        if (ghConfig == null || !ghConfig.Enabled)
+        {
+            ProjectsCountLabel.Text = "GitHub not configured";
+            return;
+        }
+
+        try
+        {
+            LoadingOverlay.Visibility = Visibility.Visible;
+
+            _projectsService = new GitHubProjectsService(ghConfig);
+            if (!await _projectsService.AuthenticateAsync())
+            {
+                ProjectsCountLabel.Text = "Auth failed";
+                return;
+            }
+
+            // Resolve project
+            var scope = (ghConfig.ProjectScope?.ToLowerInvariant()) switch
+            {
+                "user" => ProjectScope.User,
+                "repository" or "repo" => ProjectScope.Repository,
+                _ => ProjectScope.Organization
+            };
+            var owner = ghConfig.Organization ?? ghConfig.Owner ?? "";
+            string? projectId = null;
+
+            if (ghConfig.ProjectNumber.HasValue)
+            {
+                var project = await _projectsService.GetProjectAsync(scope, owner, ghConfig.ProjectNumber.Value, ghConfig.Repo);
+                projectId = project?.Id;
+            }
+            else
+            {
+                var projects = await _projectsService.ListProjectsAsync(scope, owner, ghConfig.Repo, limit: 1);
+                projectId = projects.FirstOrDefault()?.Id;
+            }
+
+            if (projectId == null)
+            {
+                ProjectsCountLabel.Text = "No project found";
+                return;
+            }
+
+            _statusField = await _projectsService.GetStatusFieldAsync(projectId);
+            _projectItems = await _projectsService.ListProjectItemsAsync(projectId, 100);
+
+            RenderProjectsBoard();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to load project: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            LoadingOverlay.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private string _projectsSearchText = "";
+
+    private void ProjectsSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        _projectsSearchText = ProjectsSearchBox.Text;
+        RenderProjectsBoard();
+    }
+
+    private void RenderProjectsBoard()
+    {
+        ProjectsColumnsPanel.Children.Clear();
+
+        var items = _projectItems.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_projectsSearchText))
+        {
+            var search = _projectsSearchText.ToLowerInvariant();
+            items = items.Where(i =>
+                (i.Content?.Title?.ToLowerInvariant().Contains(search) ?? false) ||
+                (i.DraftContent?.Title?.ToLowerInvariant().Contains(search) ?? false));
+        }
+        var filteredItems = items.ToList();
+
+        // Build columns from status field options
+        var columns = new List<(string Name, System.Windows.Media.Brush Color, List<GitHubProjectItem> Items)>();
+
+        if (_statusField != null)
+        {
+            foreach (var opt in _statusField.Options)
+            {
+                columns.Add((opt.Name, GetStatusBrush(opt.Name), new List<GitHubProjectItem>()));
+            }
+        }
+        columns.Add(("(No Status)", new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(113, 128, 150)), new List<GitHubProjectItem>()));
+
+        foreach (var item in filteredItems)
+        {
+            var statusValue = item.FieldValues
+                .FirstOrDefault(fv => fv.FieldName.Equals("Status", StringComparison.OrdinalIgnoreCase))
+                ?.SingleSelectValue;
+
+            var col = columns.FirstOrDefault(c => c.Name.Equals(statusValue, StringComparison.OrdinalIgnoreCase));
+            if (col.Items != null)
+                col.Items.Add(item);
+            else
+                columns.Last().Items.Add(item);
+        }
+
+        // Remove empty "(No Status)" column
+        if (columns.Last().Items.Count == 0)
+            columns.RemoveAt(columns.Count - 1);
+
+        foreach (var col in columns)
+        {
+            var columnBorder = new Border
+            {
+                Background = (System.Windows.Media.Brush)FindResource("SystemControlBackgroundListLowBrush"),
+                CornerRadius = new CornerRadius(8),
+                Margin = new Thickness(0, 0, 12, 0),
+                MinWidth = 250,
+                MaxWidth = 300,
+                Padding = new Thickness(8)
+            };
+
+            var columnPanel = new StackPanel();
+
+            // Column header
+            var headerPanel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 4, 4, 8) };
+            headerPanel.Children.Add(new System.Windows.Shapes.Ellipse
+            {
+                Width = 10, Height = 10, Fill = col.Color,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            headerPanel.Children.Add(new TextBlock
+            {
+                Text = col.Name, FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center
+            });
+            headerPanel.Children.Add(new TextBlock
+            {
+                Text = $"({col.Items.Count})", Opacity = 0.6,
+                Margin = new Thickness(4, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center
+            });
+            columnPanel.Children.Add(headerPanel);
+
+            // Cards
+            foreach (var item in col.Items)
+            {
+                var card = CreateProjectCard(item);
+                columnPanel.Children.Add(card);
+            }
+
+            columnBorder.Child = columnPanel;
+            ProjectsColumnsPanel.Children.Add(columnBorder);
+        }
+
+        ProjectsCountLabel.Text = $"{filteredItems.Count} items across {columns.Count} columns";
+    }
+
+    private Border CreateProjectCard(GitHubProjectItem item)
+    {
+        var title = item.Content?.Title ?? item.DraftContent?.Title ?? "(untitled)";
+        var typeIcon = item.Type switch
+        {
+            "ISSUE" => "●",
+            "PULL_REQUEST" => "⊙",
+            "DRAFT_ISSUE" => "○",
+            _ => "?"
+        };
+        var typeColor = item.Type switch
+        {
+            "ISSUE" => System.Windows.Media.Colors.Green,
+            "PULL_REQUEST" => System.Windows.Media.Colors.Purple,
+            _ => System.Windows.Media.Colors.Gray
+        };
+
+        var cardPanel = new StackPanel();
+
+        // Title row
+        var titlePanel = new StackPanel { Orientation = Orientation.Horizontal };
+        titlePanel.Children.Add(new TextBlock
+        {
+            Text = typeIcon,
+            Foreground = new System.Windows.Media.SolidColorBrush(typeColor),
+            Margin = new Thickness(0, 0, 6, 0)
+        });
+        titlePanel.Children.Add(new TextBlock
+        {
+            Text = title, FontWeight = FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap, MaxWidth = 220
+        });
+        cardPanel.Children.Add(titlePanel);
+
+        // Assignees
+        if (item.Content?.Assignees.Count > 0)
+        {
+            cardPanel.Children.Add(new TextBlock
+            {
+                Text = "  @" + string.Join(", ", item.Content.Assignees.Take(2)),
+                FontSize = 11, Opacity = 0.7, Margin = new Thickness(0, 2, 0, 0)
+            });
+        }
+
+        // Labels
+        if (item.Content?.Labels.Count > 0)
+        {
+            var labelPanel = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
+            foreach (var label in item.Content.Labels.Take(3))
+            {
+                var labelBorder = new Border
+                {
+                    Background = (System.Windows.Media.Brush)FindResource("SystemControlBackgroundBaseLowBrush"),
+                    CornerRadius = new CornerRadius(4),
+                    Padding = new Thickness(6, 2, 6, 2),
+                    Margin = new Thickness(0, 0, 4, 0)
+                };
+                labelBorder.Child = new TextBlock { Text = label, FontSize = 10 };
+                labelPanel.Children.Add(labelBorder);
+            }
+            cardPanel.Children.Add(labelPanel);
+        }
+
+        var card = new Border
+        {
+            Background = (System.Windows.Media.Brush)FindResource("SystemControlBackgroundListLowBrush"),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10),
+            Margin = new Thickness(0, 0, 0, 6),
+            Cursor = System.Windows.Input.Cursors.Hand
+        };
+        card.Child = cardPanel;
+
+        // Click to open URL
+        card.MouseLeftButtonUp += (_, _) =>
+        {
+            var url = item.Content?.Url;
+            if (!string.IsNullOrEmpty(url))
+            {
+                try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); }
+                catch { }
+            }
+        };
+
+        return card;
+    }
+
+    private static System.Windows.Media.Brush GetStatusBrush(string name)
+    {
+        var lower = name.ToLowerInvariant();
+        if (lower.Contains("done") || lower.Contains("closed"))
+            return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(56, 161, 105));
+        if (lower.Contains("progress") || lower.Contains("active"))
+            return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(49, 130, 206));
+        if (lower.Contains("review"))
+            return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(128, 90, 213));
+        if (lower.Contains("backlog"))
+            return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(160, 174, 192));
+        if (lower.Contains("todo"))
+            return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(237, 137, 54));
+        return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(214, 158, 46));
     }
 
     // MARK: - SSO
