@@ -1,13 +1,14 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
-using FleetMate.Models.ReportMate;
-using FleetMate.Models.SecureShell;
+using FleetMate.Core.Models.Reporting;
+using FleetMate.Core.Services.Reporting;
+using FleetMate.Core.Models;
 using Renci.SshNet;
 using Renci.SshNet.Common;
 using Serilog;
 
-namespace FleetMate.Services;
+namespace FleetMate.Core.Services;
 
 /// <summary>
 /// SecureShell service for remote command execution on fleet devices

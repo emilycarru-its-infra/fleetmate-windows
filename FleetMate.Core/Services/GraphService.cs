@@ -3,10 +3,12 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
-using FleetMate.Models.Graph;
+using FleetMate.Core.Models.Devices;
+using FleetMate.Core.Models.Identity;
+using FleetMate.Core.Config;
 using Serilog;
 
-namespace FleetMate.Services;
+namespace FleetMate.Core.Services;
 
 /// <summary>
 /// Microsoft Graph service for Intune devices and Entra ID users/groups

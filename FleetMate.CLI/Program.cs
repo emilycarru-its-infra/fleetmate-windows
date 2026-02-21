@@ -1,7 +1,17 @@
 ﻿using System.CommandLine;
-using FleetMate.Commands;
-using FleetMate.Config;
-using FleetMate.Services;
+using FleetMate.Commands.Devices;
+using FleetMate.Commands.Inventory;
+using FleetMate.Commands.Tickets;
+using FleetMate.Commands.Projects;
+using FleetMate.Commands.Identity;
+using FleetMate.Commands.Shared;
+using FleetMate.Core.Config;
+using FleetMate.Core.Services;
+using FleetMate.Core.Services.Devices;
+using FleetMate.Core.Services.Inventory;
+using FleetMate.Core.Services.Tickets;
+using FleetMate.Core.Services.Projects;
+using FleetMate.Core.Services.Reporting;
 using Serilog;
 using Serilog.Events;
 
