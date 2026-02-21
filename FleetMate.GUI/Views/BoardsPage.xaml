@@ -39,7 +39,7 @@
                     <ui:SymbolIcon Symbol="Refresh" />
                 </Button>
 
-                <Button x:Name="SyncButton" Click="SyncButton_Click" ToolTip="Sync to Planner/Markdown">
+                <Button x:Name="SyncButton" Click="SyncButton_Click" ToolTip="Sync to Planner/Markdown (Planner deprecated — use Projects mode)">
                     <ui:SymbolIcon Symbol="Sync" />
                 </Button>
 
@@ -54,11 +54,13 @@
             </ui:SimpleStackPanel>
         </Grid>
 
-        <!-- Board / List toggle (separate row, left-aligned) -->
+        <!-- Board / List / Projects toggle (separate row, left-aligned) -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
             <RadioButton x:Name="BoardModeRadio" Content="Board" IsChecked="True" 
                          GroupName="ViewMode" Checked="OnViewModeChanged" />
             <RadioButton x:Name="ListModeRadio" Content="List" 
+                         GroupName="ViewMode" Checked="OnViewModeChanged" Margin="8,0,0,0" />
+            <RadioButton x:Name="ProjectsModeRadio" Content="Projects" 
                          GroupName="ViewMode" Checked="OnViewModeChanged" Margin="8,0,0,0" />
         </StackPanel>
 
@@ -344,6 +346,32 @@
                 </ListView.View>
             </ListView>
         </Border>
+
+        <!-- GitHub Projects v2 Dynamic Board (Projects mode) -->
+        <Border x:Name="ProjectsFilters" Grid.Row="2" Style="{StaticResource CardStyle}" Margin="0,16,0,0" Padding="12" Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBox x:Name="ProjectsSearchBox" 
+                         ui:ControlHelper.PlaceholderText="Search project items..." 
+                         Grid.Column="0"
+                         TextChanged="ProjectsSearchBox_TextChanged" />
+
+                <TextBlock x:Name="ProjectsCountLabel" 
+                           Grid.Column="1" 
+                           Margin="16,0,0,0"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <ScrollViewer x:Name="ProjectsBoard" Grid.Row="3" Margin="0,16,0,0" Visibility="Collapsed"
+                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="ProjectsColumnsPanel" Orientation="Horizontal" />
+        </ScrollViewer>
 
         <!-- Loading Overlay -->
         <Border x:Name="LoadingOverlay" 
