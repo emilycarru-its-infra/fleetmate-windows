@@ -74,10 +74,7 @@
                             <TextBox x:Name="AdoProjectTextBox" Margin="0,4,0,0" />
                         </StackPanel>
 
-                        <StackPanel Grid.Column="0" Grid.Row="1" Grid.ColumnSpan="2">
-                            <TextBlock Text="Personal Access Token" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                            <PasswordBox x:Name="AdoPatBox" Margin="0,4,0,0" />
-                        </StackPanel>
+                        <!-- NO PAT — Azure DevOps uses SSO only -->
                     </Grid>
                 </StackPanel>
             </Border>

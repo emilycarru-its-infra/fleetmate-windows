@@ -10,8 +10,9 @@ using Serilog;
 namespace FleetMate.Services;
 
 /// <summary>
-/// Azure DevOps service for work item management
-/// Uses Azure CLI SSO for authentication
+/// Azure DevOps service for work item management.
+/// Authentication: SSO token (browser OAuth2 PKCE) → Azure CLI (uses system Platform SSO).
+/// **NO PAT (Personal Access Token) authentication** — enterprise SSO only.
 /// </summary>
 public class AzureDevOpsService : IDisposable
 {
@@ -86,7 +87,8 @@ public class AzureDevOpsService : IDisposable
     }
 
     /// <summary>
-    /// Get access token using Azure CLI SSO
+    /// Get access token using SSO or Azure CLI.
+    /// NO PAT — Azure DevOps uses SSO only (browser OAuth2 PKCE or Azure CLI with Platform SSO).
     /// </summary>
     private async Task<string?> GetAccessTokenAsync()
     {
