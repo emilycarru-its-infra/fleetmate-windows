@@ -34,7 +34,7 @@ secureShell:
 # Azure DevOps Configuration - Set via environment variables:
 # - DEVOPS_ORGANIZATION: Azure DevOps organization name
 # - DEVOPS_PROJECT: Azure DevOps project name
-# - DEVOPS_PAT: Azure DevOps personal access token (optional, uses Azure CLI SSO if not set)
+# NOTE: NO PAT — Azure DevOps uses SSO only (browser OAuth2 PKCE or Azure CLI with Platform SSO)
 azureDevOps:
   defaultWorkItemType: Bug                # Default type for created items
   defaultIterationPath:                   # Optional: default iteration (empty = current)
@@ -65,6 +65,25 @@ tdx:
 
 # Cache settings
 cacheMinutes: 5
+
+# Tasks / GitHub Projects integration
+# GitHub auth is fully automatic if you have `gh` CLI installed and authenticated
+# (gh auth login). No token configuration needed for developer machines.
+tasks:
+  providers:
+    github:
+      enabled: false
+      owner:                              # GitHub user or org (e.g., "octocat")
+      repo:                               # Repository name (e.g., "my-repo")
+      organization:                       # Org name for Projects v2 org-level queries
+      project_number:                     # Default project number to load
+      project_scope: organization         # organization | user | repository
+      use_gh_cli: true                    # Use `gh auth token` (default: true)
+      # oauth_client_id:                  # GitHub OAuth App client_id for Device Flow
+      #   Register at github.com/settings/applications/new
+      #   Select "Device" authorization flow. No client secret needed.
+      #   Enables invisible browser-based first-time auth if gh CLI is not available.
+      # token:                            # Explicit PAT override (last resort)
 
 # Logging
 logPath: C:\ProgramData\Cimian\Logs

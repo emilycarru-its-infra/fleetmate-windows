@@ -38,14 +38,7 @@ public partial class SettingsPage : Page
         // Azure DevOps
         AdoOrgTextBox.Text     = config.AzureDevOps?.Organization ?? "";
         AdoProjectTextBox.Text = config.AzureDevOps?.Project      ?? "";
-        // PAT is registry-only (not in config object)
-        try
-        {
-            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RegistryPath);
-            var pat = key?.GetValue("DevOpsPat") as string;
-            if (!string.IsNullOrEmpty(pat)) AdoPatBox.Password = pat;
-        }
-        catch { /* ignore */ }
+        // NO PAT — Azure DevOps uses SSO only (browser OAuth2 PKCE or Azure CLI)
 
         // Snipe-IT
         SnipeUrlTextBox.Text = config.SnipeUrl ?? "";
@@ -80,10 +73,9 @@ public partial class SettingsPage : Page
             SetReg(key, "GraphClientId",    ClientIdTextBox.Text);
             SetReg(key, "GraphClientSecret", ClientSecretBox.Password);
 
-            // AzDO
+            // AzDO — NO PAT, SSO only
             SetReg(key, "DevOpsOrganization", AdoOrgTextBox.Text);
             SetReg(key, "DevOpsProject",      AdoProjectTextBox.Text);
-            SetReg(key, "DevOpsPat",          AdoPatBox.Password);
 
             // Snipe
             SetReg(key, "SnipeUrl",    SnipeUrlTextBox.Text);
