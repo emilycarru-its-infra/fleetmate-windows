@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
@@ -6,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using FleetMate.Config;
 using FleetMate.Core.Models.Tasks;
+using FleetMate.Core.Services;
 using Serilog;
 
 namespace FleetMate.Core.Services.Tasks;
@@ -18,8 +18,8 @@ public class GitHubTaskProvider : ITaskProvider, IDisposable
 {
     private readonly HttpClient _client;
     private readonly GitHubProviderConfig _config;
+    private readonly GitHubTokenSource _tokenSource;
     private readonly JsonSerializerOptions _jsonOptions;
-    private string? _cachedToken;
     private bool _isAuthenticated;
 
     public string ProviderId => "github";
@@ -29,9 +29,12 @@ public class GitHubTaskProvider : ITaskProvider, IDisposable
                              !string.IsNullOrEmpty(_config.Owner) && 
                              !string.IsNullOrEmpty(_config.Repo);
 
-    public GitHubTaskProvider(FleetMateConfig config)
+    public GitHubTaskProvider(
+        FleetMateConfig config,
+        Func<string, string, CancellationToken, Task>? deviceFlowPrompt = null)
     {
         _config = config.Tasks?.Providers?.GitHub ?? new GitHubProviderConfig();
+        _tokenSource = new GitHubTokenSource(_config) { DeviceFlowPrompt = deviceFlowPrompt };
         
         _client = new HttpClient
         {
@@ -53,7 +56,7 @@ public class GitHubTaskProvider : ITaskProvider, IDisposable
 
     public async Task<bool> AuthenticateAsync(CancellationToken cancellationToken = default)
     {
-        var token = await GetTokenAsync();
+        var token = await _tokenSource.GetTokenAsync(cancellationToken);
         if (string.IsNullOrEmpty(token))
         {
             Log.Warning("GitHub: No token available");
@@ -85,70 +88,6 @@ public class GitHubTaskProvider : ITaskProvider, IDisposable
             Log.Error(ex, "Failed to authenticate with GitHub");
             return false;
         }
-    }
-
-    private async Task<string?> GetTokenAsync()
-    {
-        if (!string.IsNullOrEmpty(_cachedToken))
-            return _cachedToken;
-        
-        // Try configured token first
-        if (!string.IsNullOrEmpty(_config.Token))
-        {
-            _cachedToken = _config.Token;
-            return _cachedToken;
-        }
-        
-        // Try environment variable
-        var envToken = Environment.GetEnvironmentVariable("GITHUB_TOKEN") 
-                    ?? Environment.GetEnvironmentVariable("GH_TOKEN");
-        if (!string.IsNullOrEmpty(envToken))
-        {
-            _cachedToken = envToken;
-            return _cachedToken;
-        }
-        
-        // Try gh CLI if enabled
-        if (_config.UseGhCli)
-        {
-            _cachedToken = await GetTokenFromGhCli();
-        }
-        
-        return _cachedToken;
-    }
-
-    private async Task<string?> GetTokenFromGhCli()
-    {
-        try
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = "gh",
-                Arguments = "auth token",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            using var process = Process.Start(psi);
-            if (process == null) return null;
-
-            var token = await process.StandardOutput.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode == 0)
-            {
-                Log.Debug("Got GitHub token from gh CLI");
-                return token.Trim();
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Debug(ex, "Failed to get token from gh CLI");
-        }
-        
-        return null;
     }
 
     public async Task<List<UnifiedTask>> ListTasksAsync(TaskFilter? filter = null, CancellationToken cancellationToken = default)
@@ -417,6 +356,7 @@ public class GitHubTaskProvider : ITaskProvider, IDisposable
     public void Dispose()
     {
         _client.Dispose();
+        _tokenSource.Dispose();
     }
 }
 
