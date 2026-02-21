@@ -551,17 +551,19 @@ public static class TasksCommand
 
         // Register all providers
         var azdo = new AzureDevOpsTaskProvider(config);
-        var github = new GitHubTaskProvider(config);
+        var github = new GitHubProjectsTaskProvider(config.Tasks?.Providers.GitHub ?? new GitHubProviderConfig());
         var gitea = new GiteaTaskProvider(config);
 
         registry.RegisterProvider(azdo);
         registry.RegisterProvider(github);
         registry.RegisterProvider(gitea);
 
-        // Authenticate enabled providers
-        foreach (var provider in registry.GetProviders().Where(p => p.IsEnabled))
+        // Use the registry's built-in AuthenticateAllAsync which isolates per-provider failures
+        var authResults = await registry.AuthenticateAllAsync();
+        foreach (var (id, success) in authResults)
         {
-            await provider.AuthenticateAsync();
+            if (!success)
+                AnsiConsole.MarkupLine($"[yellow]Warning: Provider {id} auth failed (non-fatal)[/]");
         }
 
         return registry;
