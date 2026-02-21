@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace FleetMate.Converters;
+namespace FleetMate.Core.Converters;
 
 /// <summary>
 /// JSON converter that handles empty strings and various date formats for nullable DateTime

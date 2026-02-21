@@ -1,0 +1,388 @@
+<Page x:Class="FleetMate.GUI.Views.Projects.BoardsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.modernwpf.com/2019"
+      Loaded="Page_Loaded">
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Projects" Style="{StaticResource TitleTextStyle}" />
+                <TextBlock Text="Unified task management across all providers" Style="{StaticResource SubtitleTextStyle}" />
+            </StackPanel>
+
+            <ui:SimpleStackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <ComboBox x:Name="ProviderFilter" 
+                          Width="120" 
+                          SelectedIndex="0"
+                          SelectionChanged="ProviderFilter_SelectionChanged">
+                    <ComboBoxItem Content="All Providers" Tag="" />
+                    <ComboBoxItem Content="Azure DevOps" Tag="azdo" />
+                    <ComboBoxItem Content="GitHub" Tag="github" />
+                    <ComboBoxItem Content="Gitea" Tag="gitea" />
+                </ComboBox>
+
+                <Button x:Name="RefreshButton" Click="RefreshButton_Click" ToolTip="Refresh">
+                    <ui:SymbolIcon Symbol="Refresh" />
+                </Button>
+
+                <Button x:Name="SyncButton" Click="SyncButton_Click" ToolTip="Sync to Planner/Markdown (Planner deprecated — use Projects mode)">
+                    <ui:SymbolIcon Symbol="Sync" />
+                </Button>
+
+                <!-- AzDO SSO Status -->
+                <Button x:Name="SsoButton" Click="OnSsoButtonClicked" ToolTip="Azure DevOps SSO"
+                        Visibility="Collapsed" Margin="8,0,0,0">
+                    <ui:SimpleStackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock x:Name="SsoIcon" Text="🔒" />
+                        <TextBlock x:Name="SsoLabel" Text="Sign In" />
+                    </ui:SimpleStackPanel>
+                </Button>
+            </ui:SimpleStackPanel>
+        </Grid>
+
+        <!-- Board / List / Projects toggle (separate row, left-aligned) -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
+            <RadioButton x:Name="BoardModeRadio" Content="Board" IsChecked="True" 
+                         GroupName="ViewMode" Checked="OnViewModeChanged" />
+            <RadioButton x:Name="ListModeRadio" Content="List" 
+                         GroupName="ViewMode" Checked="OnViewModeChanged" Margin="8,0,0,0" />
+            <RadioButton x:Name="ProjectsModeRadio" Content="Projects" 
+                         GroupName="ViewMode" Checked="OnViewModeChanged" Margin="8,0,0,0" />
+        </StackPanel>
+
+        <!-- Search and filters (Board mode) -->
+        <Border x:Name="BoardFilters" Grid.Row="2" Style="{StaticResource CardStyle}" Margin="0,16,0,0" Padding="12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBox x:Name="SearchBox" 
+                         ui:ControlHelper.PlaceholderText="Search tasks..." 
+                         Grid.Column="0"
+                         TextChanged="SearchBox_TextChanged" />
+
+                <ComboBox x:Name="BucketFilter" 
+                          Grid.Column="1" 
+                          Width="150" 
+                          Margin="8,0,0,0"
+                          ui:ControlHelper.PlaceholderText="Bucket"
+                          SelectionChanged="BucketFilter_SelectionChanged" />
+
+                <CheckBox x:Name="ShowClosedCheckbox" 
+                          Grid.Column="2" 
+                          Content="Show Closed" 
+                          Margin="8,0,0,0"
+                          Checked="ShowClosedCheckbox_Changed"
+                          Unchecked="ShowClosedCheckbox_Changed" />
+
+                <TextBlock x:Name="TaskCountLabel" 
+                           Grid.Column="3" 
+                           Margin="16,0,0,0"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <!-- Search and filters (List mode) -->
+        <Border x:Name="ListFilters" Grid.Row="2" Style="{StaticResource CardStyle}" Margin="0,16,0,0" Padding="12" Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBox x:Name="ListSearchBox" 
+                         ui:ControlHelper.PlaceholderText="Search work items..." 
+                         Grid.Column="0"
+                         TextChanged="ListSearchBox_TextChanged" />
+
+                <ComboBox x:Name="ListStateFilter" 
+                          Grid.Column="1" 
+                          Width="120" 
+                          Margin="8,0,0,0"
+                          SelectedIndex="0"
+                          SelectionChanged="ListStateFilter_SelectionChanged">
+                    <ComboBoxItem Content="All States" Tag="" />
+                    <ComboBoxItem Content="Active" Tag="Active" />
+                    <ComboBoxItem Content="New" Tag="New" />
+                    <ComboBoxItem Content="Closed" Tag="Closed" />
+                    <ComboBoxItem Content="Resolved" Tag="Resolved" />
+                </ComboBox>
+
+                <TextBlock x:Name="ListCountLabel" 
+                           Grid.Column="2" 
+                           Margin="16,0,0,0"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <!-- Kanban Board (Board mode) -->
+        <Grid x:Name="KanbanBoard" Grid.Row="3" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Open Column -->
+            <Border Grid.Column="0" Style="{StaticResource CardStyle}" Margin="0,0,8,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Orientation="Horizontal" Margin="12" VerticalAlignment="Center">
+                        <Ellipse Width="10" Height="10" Fill="#38A169" />
+                        <TextBlock Text="Open" FontWeight="SemiBold" Margin="8,0,0,0" />
+                        <TextBlock x:Name="OpenCount" Text="(0)" Margin="4,0,0,0" Opacity="0.6" />
+                    </StackPanel>
+
+                    <ListView x:Name="OpenTasksList" 
+                              Grid.Row="1" 
+                              BorderThickness="0"
+                              SelectionMode="Single"
+                              SelectionChanged="TasksList_SelectionChanged">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}"
+                                        CornerRadius="6" Padding="12" Margin="4">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding Title}" 
+                                                       FontWeight="SemiBold" 
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="1" 
+                                                       Text="{Binding Provider}" 
+                                                       FontSize="10" 
+                                                       Opacity="0.6" />
+                                        </Grid>
+                                        <TextBlock Text="{Binding Bucket}" 
+                                                   FontSize="11" 
+                                                   Opacity="0.7" 
+                                                   Margin="0,4,0,0" />
+                                        <ItemsControl ItemsSource="{Binding Labels}" Margin="0,6,0,0">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                                                            CornerRadius="4" Padding="6,2" Margin="0,0,4,0">
+                                                        <TextBlock Text="{Binding}" FontSize="10" />
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </Border>
+
+            <!-- In Progress Column -->
+            <Border Grid.Column="1" Style="{StaticResource CardStyle}" Margin="8,0,8,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Orientation="Horizontal" Margin="12" VerticalAlignment="Center">
+                        <Ellipse Width="10" Height="10" Fill="#3182CE" />
+                        <TextBlock Text="In Progress" FontWeight="SemiBold" Margin="8,0,0,0" />
+                        <TextBlock x:Name="InProgressCount" Text="(0)" Margin="4,0,0,0" Opacity="0.6" />
+                    </StackPanel>
+
+                    <ListView x:Name="InProgressTasksList" 
+                              Grid.Row="1" 
+                              BorderThickness="0"
+                              SelectionMode="Single"
+                              SelectionChanged="TasksList_SelectionChanged">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}"
+                                        CornerRadius="6" Padding="12" Margin="4">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding Title}" 
+                                                       FontWeight="SemiBold" 
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="1" 
+                                                       Text="{Binding Provider}" 
+                                                       FontSize="10" 
+                                                       Opacity="0.6" />
+                                        </Grid>
+                                        <TextBlock Text="{Binding Bucket}" 
+                                                   FontSize="11" 
+                                                   Opacity="0.7" 
+                                                   Margin="0,4,0,0" />
+                                        <ItemsControl ItemsSource="{Binding Labels}" Margin="0,6,0,0">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                                                            CornerRadius="4" Padding="6,2" Margin="0,0,4,0">
+                                                        <TextBlock Text="{Binding}" FontSize="10" />
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </Border>
+
+            <!-- Closed Column -->
+            <Border Grid.Column="2" Style="{StaticResource CardStyle}" Margin="8,0,0,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Orientation="Horizontal" Margin="12" VerticalAlignment="Center">
+                        <Ellipse Width="10" Height="10" Fill="#718096" />
+                        <TextBlock Text="Closed" FontWeight="SemiBold" Margin="8,0,0,0" />
+                        <TextBlock x:Name="ClosedCount" Text="(0)" Margin="4,0,0,0" Opacity="0.6" />
+                    </StackPanel>
+
+                    <ListView x:Name="ClosedTasksList" 
+                              Grid.Row="1" 
+                              BorderThickness="0"
+                              SelectionMode="Single"
+                              SelectionChanged="TasksList_SelectionChanged">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}"
+                                        CornerRadius="6" Padding="12" Margin="4" Opacity="0.7">
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding Title}" 
+                                                       FontWeight="SemiBold" 
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="1" 
+                                                       Text="{Binding Provider}" 
+                                                       FontSize="10" 
+                                                       Opacity="0.6" />
+                                        </Grid>
+                                        <TextBlock Text="{Binding Bucket}" 
+                                                   FontSize="11" 
+                                                   Opacity="0.7" 
+                                                   Margin="0,4,0,0" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- Work Items List (List mode) -->
+        <Border x:Name="WorkItemsList" Grid.Row="3" Margin="0,16,0,0" Visibility="Collapsed">
+            <ListView x:Name="WorkItemsListView" 
+                      BorderThickness="0"
+                      SelectionMode="Single"
+                      SelectionChanged="WorkItemsListView_SelectionChanged">
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Header="ID" Width="70"
+                                        DisplayMemberBinding="{Binding Id}" />
+                        <GridViewColumn Header="Type" Width="100"
+                                        DisplayMemberBinding="{Binding WorkItemType}" />
+                        <GridViewColumn Header="Title" Width="350"
+                                        DisplayMemberBinding="{Binding Title}" />
+                        <GridViewColumn Header="State" Width="100"
+                                        DisplayMemberBinding="{Binding State}" />
+                        <GridViewColumn Header="Priority" Width="70"
+                                        DisplayMemberBinding="{Binding Priority}" />
+                        <GridViewColumn Header="Assigned To" Width="180"
+                                        DisplayMemberBinding="{Binding AssignedTo}" />
+                    </GridView>
+                </ListView.View>
+            </ListView>
+        </Border>
+
+        <!-- GitHub Projects v2 Dynamic Board (Projects mode) -->
+        <Border x:Name="ProjectsFilters" Grid.Row="2" Style="{StaticResource CardStyle}" Margin="0,16,0,0" Padding="12" Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBox x:Name="ProjectsSearchBox" 
+                         ui:ControlHelper.PlaceholderText="Search project items..." 
+                         Grid.Column="0"
+                         TextChanged="ProjectsSearchBox_TextChanged" />
+
+                <TextBlock x:Name="ProjectsCountLabel" 
+                           Grid.Column="1" 
+                           Margin="16,0,0,0"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <ScrollViewer x:Name="ProjectsBoard" Grid.Row="3" Margin="0,16,0,0" Visibility="Collapsed"
+                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="ProjectsColumnsPanel" Orientation="Horizontal" />
+        </ScrollViewer>
+
+        <!-- Loading Overlay -->
+        <Border x:Name="LoadingOverlay" 
+                Grid.RowSpan="3" 
+                Background="{DynamicResource SystemControlBackgroundAltHighBrush}" 
+                Opacity="0.8"
+                Visibility="Collapsed">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <ui:ProgressRing IsActive="True" Width="40" Height="40" />
+                <TextBlock Text="Loading..." Margin="0,12,0,0" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Page>
