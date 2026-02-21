@@ -21,6 +21,7 @@ public partial class BoardsPage : Page
     private string? _filterBucket;
     private string _searchText = "";
     private bool _showClosed;
+    private bool _isInitialLoadDone;
 
     // List mode
     private AzureDevOpsService? _devOpsService;
@@ -42,6 +43,9 @@ public partial class BoardsPage : Page
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
     {
+        if (_isInitialLoadDone) return;
+        _isInitialLoadDone = true;
+
         // Initialize AzDO service for list mode
         if (_config.AzureDevOps != null && !string.IsNullOrEmpty(_config.AzureDevOps.Organization))
         {
