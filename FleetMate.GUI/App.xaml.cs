@@ -1,9 +1,12 @@
 using System.Windows;
 using FleetMate.Config;
 using FleetMate.GUI.Views;
+using FleetMate.Models;
 using FleetMate.Models.Graph;
 using FleetMate.Models.Snipe;
 using FleetMate.Models.Tdx;
+using FleetMate.Models.AzureDevOps;
+using FleetMate.Models.ReportMate;
 using FleetMate.Services;
 using Serilog;
 
@@ -12,10 +15,12 @@ namespace FleetMate.GUI;
 public partial class App : Application
 {
     public FleetMateConfig Config { get; private set; } = null!;
+    public AuthManager AuthManager { get; private set; } = null!;
     public GraphService? GraphService { get; private set; }
     public SnipeService? SnipeService { get; private set; }
     public TdxService? TdxService { get; private set; }
     public AzureDevOpsService? DevOpsService { get; private set; }
+    public ReportMateService? ReportMateService { get; private set; }
     
     // MARK: - TDX SSO State
     public bool IsTdxSsoAuthenticated => TdxService?.IsSsoAuthenticated ?? false;
@@ -33,6 +38,8 @@ public partial class App : Application
     public List<TdxTicket> CachedTickets { get; set; } = new();
     public List<EntraUser> CachedUsers { get; set; } = new();
     public List<EntraGroup> CachedGroups { get; set; } = new();
+    public List<WorkItem> CachedWorkItems { get; set; } = new();
+    public List<Sprint> CachedSprints { get; set; } = new();
     
     // Cache timestamps
     private DateTime? _devicesCacheTime;
@@ -152,12 +159,15 @@ public partial class App : Application
                 // Clear tickets cache to reload with new auth
                 _ticketsCacheTime = null;
                 
+                AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Valid(result.UserName, result.Expiry));
                 Log.Information("TDX SSO authentication successful for {UserName}", result.UserName);
                 onComplete?.Invoke(true);
             }
             else
             {
                 Log.Warning("TDX SSO authentication failed: {Error}", result.Error);
+                if (result.Error != null)
+                    AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Failed(result.Error));
                 onComplete?.Invoke(false);
             }
         };
@@ -179,6 +189,7 @@ public partial class App : Application
         TdxService?.ClearSsoToken();
         _ticketsCacheTime = null;
         CachedTickets.Clear();
+        AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Configured());
         Log.Information("Signed out of TDX SSO");
     }
 
@@ -208,12 +219,15 @@ public partial class App : Application
             if (result.Success && !string.IsNullOrEmpty(result.Token))
             {
                 DevOpsService?.SetSsoToken(result.Token, result.Expiry, result.UserName);
+                AuthManager.Update(AuthSystemId.DevOps, AuthTokenState.Valid(result.UserName, result.Expiry));
                 Log.Information("DevOps SSO authentication successful for {UserName}", result.UserName);
                 onComplete?.Invoke(true);
             }
             else
             {
                 Log.Warning("DevOps SSO authentication failed: {Error}", result.Error);
+                if (result.Error != null)
+                    AuthManager.Update(AuthSystemId.DevOps, AuthTokenState.Failed(result.Error));
                 onComplete?.Invoke(false);
             }
         };
@@ -233,6 +247,7 @@ public partial class App : Application
     public void SignOutDevOpsSso()
     {
         DevOpsService?.ClearSsoToken();
+        AuthManager.Update(AuthSystemId.DevOps, AuthTokenState.Configured());
         Log.Information("Signed out of DevOps SSO");
     }
 
@@ -248,6 +263,9 @@ public partial class App : Application
 
         // Load configuration
         Config = FleetMateConfig.Load();
+
+        // Initialize auth manager
+        AuthManager = new AuthManager(Config);
 
         // Initialize services
         InitializeServices();
@@ -319,11 +337,39 @@ public partial class App : Application
             }));
         }
 
+        if (DevOpsService != null)
+        {
+            tasks.Add(Task.Run(async () =>
+            {
+                try
+                {
+                    var items = await DevOpsService.GetWorkItemsAsync(limit: 200);
+                    Dispatcher.Invoke(() => CachedWorkItems = items);
+                    Log.Information("Preloaded {Count} work items", items.Count);
+                }
+                catch (Exception ex) { Log.Warning(ex, "Failed to preload work items"); }
+            }));
+
+            tasks.Add(Task.Run(async () =>
+            {
+                try
+                {
+                    var sprints = await DevOpsService.GetSprintsAsync();
+                    Dispatcher.Invoke(() => CachedSprints = sprints);
+                    Log.Information("Preloaded {Count} sprints", sprints.Count);
+                }
+                catch (Exception ex) { Log.Warning(ex, "Failed to preload sprints"); }
+            }));
+        }
+
         if (tasks.Count > 0)
         {
             await Task.WhenAll(tasks);
             Log.Information("Background preloading complete");
         }
+
+        // Probe auth status for all configured systems
+        await AuthManager.ProbeAllAsync(GraphService, TdxService, SnipeService, DevOpsService);
     }
 
     private void InitializeServices()
@@ -357,6 +403,13 @@ public partial class App : Application
                 DevOpsService = new AzureDevOpsService(Config.AzureDevOps);
                 Log.Information("AzureDevOpsService initialized");
             }
+
+            // Initialize ReportMateService if configured
+            if (!string.IsNullOrEmpty(Config.ReportMateUrl))
+            {
+                ReportMateService = new ReportMateService(Config.ReportMateUrl, Config.ReportMatePassphrase, Config.CacheMinutes);
+                Log.Information("ReportMateService initialized");
+            }
         }
         catch (Exception ex)
         {
@@ -368,6 +421,7 @@ public partial class App : Application
     {
         GraphService?.Dispose();
         DevOpsService?.Dispose();
+        ReportMateService?.Dispose();
         Log.CloseAndFlush();
         base.OnExit(e);
     }
