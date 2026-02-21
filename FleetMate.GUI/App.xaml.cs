@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using FleetMate.Core.Config;
 using FleetMate.GUI.Views;
@@ -146,6 +147,64 @@ public partial class App : Application
     // MARK: - TDX SSO Authentication
     
     /// <summary>
+    /// Attempt silent TDX SSO authentication (Phase 1 → Phase 1.5 → Phase 2 fallback).
+    /// Called automatically on startup when TDX is configured with SSO.
+    /// </summary>
+    public async Task AttemptSilentTdxSsoAsync()
+    {
+        if (Config.Tdx == null || string.IsNullOrEmpty(Config.Tdx.BaseUrl) || !Config.Tdx.SsoEnabled)
+        {
+            Log.Debug("[tdx-sso] TDX SSO not configured or not enabled");
+            return;
+        }
+        
+        if (IsTdxSsoAuthenticated)
+        {
+            Log.Debug("[tdx-sso] Already authenticated, skipping silent SSO");
+            return;
+        }
+        
+        var baseUrl = Config.Tdx.BaseUrl;
+        
+        // Phase 1: Silent HttpClient SSO (Negotiate/Kerberos)
+        AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Authenticating());
+        Log.Information("[tdx-sso] Starting silent SSO sequence for {BaseUrl}", baseUrl);
+        
+        var result = await Task.Run(() => TdxSsoLoginWindow.TryPhase1SilentAsync(baseUrl));
+        
+        if (result is { Success: true, Token: not null })
+        {
+            HandleSilentSsoSuccess(result);
+            return;
+        }
+        
+        // Phase 1.5: Headless WebView2 SSO (must run on UI thread)
+        Log.Information("[tdx-sso] Phase 1 failed — trying headless WebView2 (Phase 1.5)");
+        result = await TdxSsoLoginWindow.TryPhase15HeadlessAsync(baseUrl);
+        
+        if (result is { Success: true, Token: not null })
+        {
+            HandleSilentSsoSuccess(result);
+            return;
+        }
+        
+        // Phase 2: Fall back to interactive window (user will see a login prompt)
+        Log.Information("[tdx-sso] Phase 1.5 failed — falling back to interactive login (Phase 2)");
+        ShowTdxSsoLogin();
+    }
+    
+    /// <summary>
+    /// Handle a successful silent SSO result (from Phase 1 or 1.5).
+    /// </summary>
+    private void HandleSilentSsoSuccess(TdxSsoResult result)
+    {
+        TdxService?.SetSsoToken(result.Token!, result.Expiry, result.UserEmail, result.UserName);
+        _ticketsCacheTime = null;
+        AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Valid(result.UserName, result.Expiry));
+        Log.Information("[tdx-sso] ✓ Silent SSO successful — user={UserName}", result.UserName ?? "(unknown)");
+    }
+    
+    /// <summary>
     /// Show TDX SSO login window and handle result
     /// </summary>
     public void ShowTdxSsoLogin(Action<bool>? onComplete = null)
@@ -273,9 +332,19 @@ public partial class App : Application
         base.OnStartup(e);
 
         // Configure Serilog
+        var logDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".fleetmate");
+        Directory.CreateDirectory(logDir);
+        var logPath = Path.Combine(logDir, "debug.log");
+
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Debug()
             .WriteTo.Debug()
+            .WriteTo.File(logPath,
+                rollingInterval: RollingInterval.Day,
+                retainedFileCountLimit: 7,
+                outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
             .CreateLogger();
 
         // Load configuration
@@ -290,10 +359,31 @@ public partial class App : Application
         var mainWindow = new MainWindow();
         mainWindow.Show();
 
-        // Background preloading of data
-        _ = PreloadAllDataAsync();
+        // Attempt silent TDX SSO, then preload all data in the background
+        _ = InitializeAndPreloadAsync();
     }
 
+    /// <summary>
+    /// Run silent SSO then preload all data.
+    /// Silent SSO must complete first so that TdxService has a valid token
+    /// before ticket preloading starts.
+    /// </summary>
+    private async Task InitializeAndPreloadAsync()
+    {
+        // Try silent TDX SSO first (Phase 1 → 1.5 → 2)
+        try
+        {
+            await AttemptSilentTdxSsoAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[tdx-sso] Silent SSO sequence failed");
+        }
+        
+        // Now preload all data (tickets will use the SSO token if it was obtained)
+        await PreloadAllDataAsync();
+    }
+    
     /// <summary>
     /// Preload all data in the background on startup
     /// </summary>
