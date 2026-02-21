@@ -28,9 +28,9 @@ namespace FleetMate.Config;
 /// - GRAPH_CLIENT_SECRET: Azure AD application client secret (optional, uses Azure CLI SSO if not set)
 /// - DEVOPS_ORGANIZATION: Azure DevOps organization name
 /// - DEVOPS_PROJECT: Azure DevOps project name
-/// - DEVOPS_PAT: Azure DevOps personal access token (optional, uses Azure CLI SSO if not set)
 /// - DEVOPS_CLIENT_ID: Azure AD app client ID for OAuth2 SSO (optional)
 /// - DEVOPS_TENANT_ID: Azure AD tenant ID for OAuth2 SSO (optional)
+/// NOTE: NO PAT (Personal Access Token) — Azure DevOps uses SSO only.
 /// - TDX_BASE_URL: TeamDynamix Web API base URL
 /// - TDX_APP_ID: TeamDynamix application ID
 /// - TDX_USERNAME: TeamDynamix username (for regular auth)
@@ -623,6 +623,19 @@ public class GitHubProviderConfig
 
     /// <summary>Use GitHub CLI for authentication if token not provided</summary>
     public bool UseGhCli { get; set; } = true;
+
+    /// <summary>GitHub OAuth App client ID for Device Flow authentication.
+    /// Register at github.com/settings/applications/new with "Device" grant type enabled.</summary>
+    public string? OauthClientId { get; set; }
+
+    /// <summary>Organization name for org-level Projects v2 queries</summary>
+    public string? Organization { get; set; }
+
+    /// <summary>Default project number to use</summary>
+    public int? ProjectNumber { get; set; }
+
+    /// <summary>Default scope for project queries (organization, user, repository)</summary>
+    public string ProjectScope { get; set; } = "organization";
 }
 
 /// <summary>
@@ -654,7 +667,8 @@ public class GiteaProviderConfig
 /// </summary>
 public class PlannerSyncConfig
 {
-    /// <summary>Whether Planner sync is enabled</summary>
+    /// <summary>Whether Planner sync is enabled (deprecated — use GitHub Projects v2 instead)</summary>
+    [Obsolete("Planner sync is deprecated. Use GitHub Projects v2 via the 'projects' command.")]
     public bool Enabled { get; set; } = false;
 
     /// <summary>Planner plan ID to sync tasks to</summary>
