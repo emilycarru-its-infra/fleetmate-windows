@@ -1,6 +1,5 @@
 using FleetMate.Core.Config;
 using FleetMate.Core.Models.Projects;
-using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services;
 using FleetMate.Core.Services.Devices;
 using FleetMate.Core.Services.Inventory;
@@ -63,16 +62,20 @@ public class AzureDevOpsTaskProvider : ITaskProvider, IDisposable
         }
     }
 
+    /// <summary>Escape a value for safe WIQL string interpolation</summary>
+    private static string EscapeWiql(string value) => value.Replace("'", "''");
+
     public async Task<List<UnifiedTask>> ListTasksAsync(TaskFilter? filter = null, CancellationToken cancellationToken = default)
     {
-        var conditions = new List<string> { "[System.TeamProject] = @project" };
+        // Org-level query — no [System.TeamProject] = @project filter
+        var conditions = new List<string>();
         
         // Build filter conditions
         if (filter != null)
         {
             if (filter.States?.Count > 0)
             {
-                var stateConditions = filter.States.Select(s => $"[System.State] = '{MapStateToAdo(s)}'");
+                var stateConditions = filter.States.Select(s => $"[System.State] = '{EscapeWiql(MapStateToAdo(s))}'");
                 conditions.Add($"({string.Join(" OR ", stateConditions)})");
             }
             else if (!filter.IncludeClosed)
@@ -84,7 +87,7 @@ public class AzureDevOpsTaskProvider : ITaskProvider, IDisposable
             
             if (filter.Assignees?.Count > 0)
             {
-                var assigneeConditions = filter.Assignees.Select(a => $"[System.AssignedTo] = '{a}'");
+                var assigneeConditions = filter.Assignees.Select(a => $"[System.AssignedTo] = '{EscapeWiql(a)}'");
                 conditions.Add($"({string.Join(" OR ", assigneeConditions)})");
             }
             
@@ -92,18 +95,18 @@ public class AzureDevOpsTaskProvider : ITaskProvider, IDisposable
             {
                 foreach (var label in filter.Labels)
                 {
-                    conditions.Add($"[System.Tags] CONTAINS '{label}'");
+                    conditions.Add($"[System.Tags] CONTAINS '{EscapeWiql(label)}'");
                 }
             }
             
             if (!string.IsNullOrEmpty(filter.Bucket))
             {
-                conditions.Add($"[System.IterationPath] UNDER '{filter.Bucket}'");
+                conditions.Add($"[System.IterationPath] UNDER '{EscapeWiql(filter.Bucket)}'");
             }
             
             if (!string.IsNullOrEmpty(filter.SearchText))
             {
-                conditions.Add($"[System.Title] CONTAINS '{filter.SearchText}'");
+                conditions.Add($"[System.Title] CONTAINS '{EscapeWiql(filter.SearchText)}'");
             }
         }
         else
@@ -114,9 +117,12 @@ public class AzureDevOpsTaskProvider : ITaskProvider, IDisposable
             conditions.Add("[System.State] <> 'Removed'");
         }
         
-        var wiql = $"SELECT [System.Id] FROM WorkItems WHERE {string.Join(" AND ", conditions)} ORDER BY [System.ChangedDate] DESC";
+        var whereClause = conditions.Count > 0
+            ? $" WHERE {string.Join(" AND ", conditions)}"
+            : "";
+        var wiql = $"SELECT [System.Id] FROM WorkItems{whereClause} ORDER BY [System.ChangedDate] DESC";
         
-        var workItems = await _service.QueryWorkItemsAsync(wiql);
+        var workItems = await _service.QueryWorkItemsAsync(wiql, orgLevel: true);
         
         if (filter?.Limit > 0)
         {

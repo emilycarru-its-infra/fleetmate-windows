@@ -11,7 +11,6 @@ using FleetMate.GUI.Views.Shared;
 using FleetMate.Core.Models;
 using FleetMate.Core.Models.Devices;
 using FleetMate.Core.Models.Identity;
-using FleetMate.Core.Config;
 using FleetMate.Core.Models.Inventory;
 using FleetMate.Core.Models.Tickets;
 using FleetMate.Core.Models.Projects;
@@ -34,6 +33,7 @@ public partial class App : Application
     public SnipeService? SnipeService { get; private set; }
     public TdxService? TdxService { get; private set; }
     public AzureDevOpsService? DevOpsService { get; private set; }
+    public DevOpsSsoService? DevOpsSsoService { get; private set; }
     public ReportMateService? ReportMateService { get; private set; }
     
     // MARK: - TDX SSO State
@@ -43,6 +43,8 @@ public partial class App : Application
     // MARK: - DevOps SSO State
     public bool IsDevOpsSsoAuthenticated => DevOpsService?.IsSsoAuthenticated ?? false;
     public string? DevOpsAuthenticatedUserName => DevOpsService?.SsoUserName;
+    public bool DevOpsProjectReady { get; private set; }
+    private bool _hasAutoPromptedDevOpsSso;
     
     // MARK: - Deep Navigation
     public string? PendingNavigateDeviceId { get; set; }
@@ -272,20 +274,160 @@ public partial class App : Application
     // MARK: - DevOps SSO Authentication
 
     /// <summary>
-    /// Show DevOps SSO login window (OAuth2 PKCE) and handle result.
+    /// Phase 1: Attempt silent SSO (az CLI → MSAL cache → refresh token).
+    /// No UI shown. If it fails, falls through to Phase 1.5 headless WebView2.
+    /// </summary>
+    public async Task AttemptSilentDevOpsSsoAsync()
+    {
+        if (DevOpsSsoService == null || DevOpsService == null)
+        {
+            Log.Debug("[devops-sso] DevOps not configured, skipping silent SSO");
+            return;
+        }
+        
+        if (IsDevOpsSsoAuthenticated)
+        {
+            Log.Debug("[devops-sso] Already authenticated, skipping silent SSO");
+            return;
+        }
+        
+        Log.Information("[devops-sso] Phase 1: Starting silent token acquisition (az CLI → MSAL cache)");
+        AuthManager.Update(AuthSystemId.DevOps, AuthTokenState.Authenticating());
+        
+        try
+        {
+            var result = await DevOpsSsoService.RefreshAccessTokenAsync();
+            
+            if (result.Success && !string.IsNullOrEmpty(result.Token))
+            {
+                Log.Information("[devops-sso] Phase 1: Silent token acquired — user={UserName}", result.UserName ?? "(unknown)");
+                HandleDevOpsSsoSuccess(result);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[devops-sso] Phase 1: Token acquisition failed");
+        }
+        
+        Log.Information("[devops-sso] Phase 1 failed — trying headless WebView2 (Phase 1.5)");
+        await AttemptHeadlessDevOpsSsoAsync();
+    }
+    
+    /// <summary>
+    /// Phase 1.5: Attempt SSO using a hidden WebView2 window.
+    /// Enterprise SSO / WAM can intercept WebView2 requests to login.microsoftonline.com
+    /// and handle auth silently (Kerberos/Windows Hello).
+    /// </summary>
+    private async Task AttemptHeadlessDevOpsSsoAsync()
+    {
+        if (DevOpsSsoService == null)
+            return;
+        
+        Log.Information("[devops-sso] Phase 1.5: Starting headless WebView2 SSO attempt");
+        
+        DevOpsSsoResult? capturedResult = null;
+        var tcs = new TaskCompletionSource<bool>();
+        
+        // Create a hidden window with a DevOpsSsoLoginWindow
+        var ssoWindow = new DevOpsSsoLoginWindow(DevOpsSsoService)
+        {
+            WindowState = WindowState.Minimized,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            Width = 1,
+            Height = 1,
+            Left = -9999,
+            Top = -9999
+        };
+        
+        ssoWindow.AuthenticationCompleted += (_, result) =>
+        {
+            capturedResult = result;
+            tcs.TrySetResult(true);
+        };
+        
+        ssoWindow.AuthenticationCancelled += (_, _) =>
+        {
+            tcs.TrySetResult(false);
+        };
+        
+        ssoWindow.Show();
+        
+        // Wait up to 15 seconds for headless auth to complete
+        var timeoutTask = Task.Delay(TimeSpan.FromSeconds(15));
+        var completedTask = await Task.WhenAny(tcs.Task, timeoutTask);
+        
+        // Close the hidden window
+        if (ssoWindow.IsLoaded)
+        {
+            try { ssoWindow.Close(); } catch { /* window may already be closed */ }
+        }
+        
+        if (completedTask == tcs.Task && capturedResult is { Success: true, Token: not null })
+        {
+            Log.Information("[devops-sso] Phase 1.5: Headless SSO SUCCEEDED — user={UserName}", capturedResult.UserName ?? "(unknown)");
+            HandleDevOpsSsoSuccess(capturedResult);
+            return;
+        }
+        
+        Log.Information("[devops-sso] Phase 1.5 failed or timed out — falling back to interactive login (Phase 2)");
+        
+        // Only auto-prompt once; subsequent attempts require user action
+        if (!_hasAutoPromptedDevOpsSso)
+        {
+            _hasAutoPromptedDevOpsSso = true;
+            ShowDevOpsSsoLogin();
+        }
+    }
+    
+    /// <summary>
+    /// Handle successful DevOps SSO authentication from any phase.
+    /// </summary>
+    private void HandleDevOpsSsoSuccess(DevOpsSsoResult result)
+    {
+        DevOpsService?.SetSsoToken(result.Token!, result.Expiry, result.UserName);
+        AuthManager.Update(AuthSystemId.DevOps, AuthTokenState.Valid(result.UserName, result.Expiry));
+        
+        // Auto-discover a default project (for sprints/boards, which are project-scoped)
+        _ = DiscoverDevOpsProjectAsync();
+    }
+    
+    /// <summary>
+    /// Discover a default project for sprints/boards context.
+    /// Work items use org-level WIQL and don't need this.
+    /// </summary>
+    private async Task DiscoverDevOpsProjectAsync()
+    {
+        if (DevOpsService == null) return;
+        
+        try
+        {
+            Log.Information("[devops-sso] Running project discovery (for sprints/boards context)");
+            var discovered = await DevOpsService.DiscoverProjectAsync();
+            Log.Information("[devops-sso] Default project: {Project}", discovered ?? "none");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[devops-sso] Project discovery failed (non-fatal)");
+        }
+        
+        DevOpsProjectReady = true;
+    }
+
+    /// <summary>
+    /// Show DevOps SSO login window (Phase 2: interactive OAuth2 PKCE) and handle result.
     /// </summary>
     public void ShowDevOpsSsoLogin(Action<bool>? onComplete = null)
     {
-        if (Config.AzureDevOps == null
-            || string.IsNullOrEmpty(Config.AzureDevOps.ClientId)
-            || string.IsNullOrEmpty(Config.AzureDevOps.TenantId))
+        if (DevOpsSsoService == null)
         {
-            Log.Warning("Cannot show DevOps SSO login - ClientId/TenantId not configured");
+            Log.Warning("Cannot show DevOps SSO login - DevOpsSsoService not configured");
             onComplete?.Invoke(false);
             return;
         }
 
-        var ssoWindow = new DevOpsSsoLoginWindow(Config.AzureDevOps.ClientId, Config.AzureDevOps.TenantId)
+        var ssoWindow = new DevOpsSsoLoginWindow(DevOpsSsoService)
         {
             Owner = Current.MainWindow
         };
@@ -294,8 +436,7 @@ public partial class App : Application
         {
             if (result.Success && !string.IsNullOrEmpty(result.Token))
             {
-                DevOpsService?.SetSsoToken(result.Token, result.Expiry, result.UserName);
-                AuthManager.Update(AuthSystemId.DevOps, AuthTokenState.Valid(result.UserName, result.Expiry));
+                HandleDevOpsSsoSuccess(result);
                 Log.Information("DevOps SSO authentication successful for {UserName}", result.UserName);
                 onComplete?.Invoke(true);
             }
@@ -322,7 +463,9 @@ public partial class App : Application
     /// </summary>
     public void SignOutDevOpsSso()
     {
+        DevOpsSsoService?.ClearTokens();
         DevOpsService?.ClearSsoToken();
+        DevOpsProjectReady = false;
         AuthManager.Update(AuthSystemId.DevOps, AuthTokenState.Configured());
         Log.Information("Signed out of DevOps SSO");
     }
@@ -365,8 +508,8 @@ public partial class App : Application
 
     /// <summary>
     /// Run silent SSO then preload all data.
-    /// Silent SSO must complete first so that TdxService has a valid token
-    /// before ticket preloading starts.
+    /// Silent SSO must complete first so that services have valid tokens
+    /// before data preloading starts.
     /// </summary>
     private async Task InitializeAndPreloadAsync()
     {
@@ -380,7 +523,17 @@ public partial class App : Application
             Log.Warning(ex, "[tdx-sso] Silent SSO sequence failed");
         }
         
-        // Now preload all data (tickets will use the SSO token if it was obtained)
+        // Try silent DevOps SSO (Phase 1 → 1.5 → 2)
+        try
+        {
+            await AttemptSilentDevOpsSsoAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[devops-sso] Silent SSO sequence failed");
+        }
+        
+        // Now preload all data (tickets/work items will use SSO tokens if obtained)
         await PreloadAllDataAsync();
     }
     
@@ -444,7 +597,7 @@ public partial class App : Application
             }));
         }
 
-        if (DevOpsService != null)
+        if (DevOpsService != null && DevOpsService.HasValidToken)
         {
             tasks.Add(Task.Run(async () =>
             {
@@ -509,6 +662,13 @@ public partial class App : Application
             {
                 DevOpsService = new AzureDevOpsService(Config.AzureDevOps);
                 Log.Information("AzureDevOpsService initialized");
+                
+                // Initialize DevOpsSsoService if OAuth2 credentials are configured
+                if (!string.IsNullOrEmpty(Config.AzureDevOps.ClientId) && !string.IsNullOrEmpty(Config.AzureDevOps.TenantId))
+                {
+                    DevOpsSsoService = new DevOpsSsoService(Config.AzureDevOps.ClientId, Config.AzureDevOps.TenantId);
+                    Log.Information("DevOpsSsoService initialized");
+                }
             }
 
             // Initialize ReportMateService if configured
