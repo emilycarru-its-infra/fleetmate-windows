@@ -1,7 +1,6 @@
 using System.Text.Json;
 using FleetMate.Core.Config;
 using FleetMate.Core.Models.Projects;
-using FleetMate.Core.Models.Projects;
 using Serilog;
 
 namespace FleetMate.Core.Services.Projects.Tasks;

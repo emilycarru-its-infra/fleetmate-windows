@@ -238,29 +238,42 @@ public class AuthManager : INotifyPropertyChanged
     {
         try
         {
-            var (name, type) = await RunAzAccountShowAsync();
-            if (type == "servicePrincipal")
+            if (devOpsService == null)
             {
-                Update(AuthSystemId.DevOps, AuthTokenState.SP(name));
+                Update(AuthSystemId.DevOps, AuthTokenState.Configured());
                 return;
             }
-
-            if (devOpsService != null)
+            
+            // If we already have a valid SSO token, verify it works
+            if (devOpsService.HasValidToken)
             {
-                // Try a lightweight API call to verify access
                 try
                 {
-                    await devOpsService.GetSprintsAsync();
-                    Update(AuthSystemId.DevOps, AuthTokenState.Valid(name));
+                    await devOpsService.VerifyAuthAsync();
+                    Update(AuthSystemId.DevOps, AuthTokenState.Valid(devOpsService.SsoUserName ?? "SSO User"));
+                    return;
                 }
                 catch
                 {
-                    Update(AuthSystemId.DevOps, AuthTokenState.Failed("DevOps: access denied"));
+                    // Token is expired or invalid — fall through to az CLI check
                 }
             }
-            else
+            
+            // Fall back to az CLI check for service principal detection
+            try
             {
-                Update(AuthSystemId.DevOps, AuthTokenState.Valid(name));
+                var (name, type) = await RunAzAccountShowAsync();
+                if (type == "servicePrincipal")
+                {
+                    Update(AuthSystemId.DevOps, AuthTokenState.SP(name));
+                    return;
+                }
+                Update(AuthSystemId.DevOps, AuthTokenState.Configured());
+            }
+            catch
+            {
+                // az CLI not available or not logged in
+                Update(AuthSystemId.DevOps, AuthTokenState.Configured());
             }
         }
         catch (Exception ex)

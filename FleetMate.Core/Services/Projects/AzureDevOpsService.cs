@@ -35,6 +35,10 @@ public class AzureDevOpsService : IDisposable
     // Azure DevOps resource ID for token acquisition
     private const string AdoResourceId = "499b84ac-1321-427f-aa17-267ca6975798";
 
+    /// <summary>Whether we have a valid Bearer token (with 60s buffer)</summary>
+    public bool HasValidToken =>
+        !string.IsNullOrEmpty(_cachedToken) && DateTime.UtcNow.AddSeconds(60) < _tokenExpiry;
+
     /// <summary>Whether the user is authenticated via SSO</summary>
     public bool IsSsoAuthenticated => _ssoToken != null && DateTime.UtcNow < _ssoTokenExpiry;
 
@@ -165,9 +169,16 @@ public class AzureDevOpsService : IDisposable
     }
 
     /// <summary>
-    /// Run a WIQL query to get work items
+    /// Escape a value for safe inclusion in a WIQL single-quoted string literal.
+    /// WIQL uses single-quoted strings; escape ' as ''.
     /// </summary>
-    public async Task<List<WorkItem>> QueryWorkItemsAsync(string wiql)
+    private static string EscapeWiql(string value) => value.Replace("'", "''");
+
+    /// <summary>
+    /// Run a WIQL query to get work items.
+    /// Set orgLevel=true to query across all projects in the organization.
+    /// </summary>
+    public async Task<List<WorkItem>> QueryWorkItemsAsync(string wiql, bool orgLevel = false)
     {
         if (!await SetAuthorizationAsync())
         {
@@ -177,8 +188,10 @@ public class AzureDevOpsService : IDisposable
 
         try
         {
-            // Execute WIQL query
-            var queryUrl = $"{_config.Project}/_apis/wit/wiql?api-version=7.0";
+            // Execute WIQL query — org-level or project-scoped
+            var queryUrl = orgLevel
+                ? "_apis/wit/wiql?api-version=7.0"
+                : $"{_config.Project}/_apis/wit/wiql?api-version=7.0";
             var queryBody = new { query = wiql };
             var queryJson = JsonSerializer.Serialize(queryBody);
             var content = new StringContent(queryJson, Encoding.UTF8, "application/json");
@@ -285,26 +298,34 @@ public class AzureDevOpsService : IDisposable
     }
 
     /// <summary>
-    /// Get work items with optional filters
+    /// Get work items with optional filters.
+    /// Queries at org level (across all projects) by default.
     /// </summary>
     public async Task<List<WorkItem>> GetWorkItemsAsync(
         string? state = null,
         string? type = null,
         string? assignedTo = null,
-        int limit = 50)
+        int limit = 50,
+        bool orgLevel = true)
     {
-        var conditions = new List<string> { "[System.TeamProject] = @project" };
+        var conditions = new List<string>();
+
+        if (!orgLevel)
+            conditions.Add("[System.TeamProject] = @project");
 
         if (!string.IsNullOrEmpty(state))
-            conditions.Add($"[System.State] = '{state}'");
+            conditions.Add($"[System.State] = '{EscapeWiql(state)}'");
         if (!string.IsNullOrEmpty(type))
-            conditions.Add($"[System.WorkItemType] = '{type}'");
+            conditions.Add($"[System.WorkItemType] = '{EscapeWiql(type)}'");
         if (!string.IsNullOrEmpty(assignedTo))
-            conditions.Add($"[System.AssignedTo] = '{assignedTo}'");
+            conditions.Add($"[System.AssignedTo] = '{EscapeWiql(assignedTo)}'");
 
-        var wiql = $"SELECT [System.Id] FROM WorkItems WHERE {string.Join(" AND ", conditions)} ORDER BY [System.ChangedDate] DESC";
+        var whereClause = conditions.Count > 0
+            ? $" WHERE {string.Join(" AND ", conditions)}"
+            : "";
+        var wiql = $"SELECT [System.Id] FROM WorkItems{whereClause} ORDER BY [System.ChangedDate] DESC";
 
-        var items = await QueryWorkItemsAsync(wiql);
+        var items = await QueryWorkItemsAsync(wiql, orgLevel);
         return items.Take(limit).ToList();
     }
 
@@ -567,6 +588,105 @@ public class AzureDevOpsService : IDisposable
         }
 
         return null;
+    }
+
+    // MARK: - Auth Verification
+
+    /// <summary>
+    /// Verify the REST API is accessible with the current token (lightweight check).
+    /// </summary>
+    public async Task<bool> VerifyAuthAsync()
+    {
+        if (!await SetAuthorizationAsync()) return false;
+
+        try
+        {
+            var response = await _client.GetAsync("_apis/projects?api-version=7.0&$top=1");
+            var ok = response.IsSuccessStatusCode;
+            Log.Debug("AzureDevOps auth verified: {Result} (status={Status})", ok, response.StatusCode);
+            return ok;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "AzureDevOps auth verification failed");
+            return false;
+        }
+    }
+
+    // MARK: - Project Discovery
+
+    /// <summary>
+    /// List all projects in the organization.
+    /// </summary>
+    public async Task<List<DevOpsProject>> ListProjectsAsync()
+    {
+        if (!await SetAuthorizationAsync()) return new List<DevOpsProject>();
+
+        try
+        {
+            var response = await _client.GetAsync("_apis/projects?api-version=7.0");
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Warning("Failed to list projects: {Status}", response.StatusCode);
+                return new List<DevOpsProject>();
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<DevOpsProjectsResponse>(_jsonOptions);
+            return result?.Value ?? new List<DevOpsProject>();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to list projects");
+            return new List<DevOpsProject>();
+        }
+    }
+
+    /// <summary>
+    /// Auto-discover the best project (most active work items). Returns the project name or null.
+    /// </summary>
+    public async Task<string?> DiscoverProjectAsync()
+    {
+        try
+        {
+            var projects = await ListProjectsAsync();
+            if (projects.Count == 0) return null;
+
+            if (projects.Count == 1)
+            {
+                Log.Information("AzureDevOps discover: using '{Project}' (only project)", projects[0].Name);
+                return projects[0].Name;
+            }
+
+            // Multiple projects — pick the one with the most active work items
+            string bestProject = projects[0].Name;
+            int bestCount = 0;
+
+            foreach (var p in projects)
+            {
+                try
+                {
+                    var wiql = $"SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '{EscapeWiql(p.Name)}' AND [System.State] <> 'Closed' AND [System.State] <> 'Done' AND [System.State] <> 'Removed'";
+                    var items = await QueryWorkItemsAsync(wiql, orgLevel: true);
+                    if (items.Count > bestCount)
+                    {
+                        bestCount = items.Count;
+                        bestProject = p.Name;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug("AzureDevOps discover: '{Project}' query failed: {Error}", p.Name, ex.Message);
+                }
+            }
+
+            Log.Information("AzureDevOps discover: using '{Project}'{Info}", bestProject, bestCount > 0 ? " (has active items)" : " (fallback)");
+            return bestProject;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "AzureDevOps project discovery failed");
+            return null;
+        }
     }
 
     public void Dispose()
