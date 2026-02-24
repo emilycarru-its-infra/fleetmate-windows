@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using FleetMate.Core.Config;
 using FleetMate.Core.Models.Inventory;
@@ -20,6 +22,31 @@ public partial class AssetsPage : Page
     private List<SnipeAsset> _allAssets = new();
     private SnipeAsset? _selectedAsset;
     private bool _isInitialLoadDone;
+    private List<SnipeStatusLabelFull> _statusLabels = new();
+    private bool _hasEdits;
+    private bool _isLoadingDetail;
+    private int? _editStatusId;
+
+    private static readonly HashSet<string> HardwareFieldNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Platform", "Chip", "CPU", "GPU", "NPU", "Memory", "Storage", "Display"
+    };
+
+    private static readonly HashSet<string> ManagementFieldNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Micro ID", "Intune ID", "Object ID"
+    };
+
+    private static readonly HashSet<string> FinancialFieldNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Invoice Number", "PO Number", "Lease Contract ID", "Lease Contract Name",
+        "Lease End Date", "Ownership Type", "Purchase Cost", "Purchase Date"
+    };
+
+    private static readonly HashSet<string> HiddenFieldNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Username"
+    };
 
     public AssetsPage()
     {
@@ -54,6 +81,7 @@ public partial class AssetsPage : Page
         {
             LoadingOverlay.Visibility = Visibility.Visible;
             _allAssets = await _snipeService.GetAssetsAsync(forceRefresh: true);
+            UpdateFilterOptions();
             UpdateDisplay();
         }
         catch (Exception ex)
@@ -81,6 +109,39 @@ public partial class AssetsPage : Page
                 (a.AssignedTo?.Name?.ToLowerInvariant().Contains(searchText) ?? false));
         }
 
+        // Apply filters
+        var statusFilter = StatusFilterComboBox.SelectedItem?.ToString();
+        if (!string.IsNullOrEmpty(statusFilter) && statusFilter != "All")
+            filtered = filtered.Where(a => a.StatusLabel?.Name == statusFilter);
+
+        var categoryFilter = CategoryFilterComboBox.SelectedItem?.ToString();
+        if (!string.IsNullOrEmpty(categoryFilter) && categoryFilter != "All")
+            filtered = filtered.Where(a => a.Category?.Name == categoryFilter);
+
+        var platformFilter = PlatformFilterComboBox.SelectedItem?.ToString();
+        if (!string.IsNullOrEmpty(platformFilter) && platformFilter != "All")
+            filtered = filtered.Where(a => GetCustomFieldValue(a, "Platform") == platformFilter);
+
+        var manufacturerFilter = ManufacturerFilterComboBox.SelectedItem?.ToString();
+        if (!string.IsNullOrEmpty(manufacturerFilter) && manufacturerFilter != "All")
+            filtered = filtered.Where(a => a.Manufacturer?.Name == manufacturerFilter);
+
+        var modelFilter = ModelFilterComboBox.SelectedItem?.ToString();
+        if (!string.IsNullOrEmpty(modelFilter) && modelFilter != "All")
+            filtered = filtered.Where(a => a.Model?.Name == modelFilter);
+
+        var usageFilter = UsageFilterComboBox.SelectedItem?.ToString();
+        if (!string.IsNullOrEmpty(usageFilter) && usageFilter != "All")
+            filtered = filtered.Where(a => GetCustomFieldValue(a, "Usage") == usageFilter);
+
+        var catalogFilter = CatalogFilterComboBox.SelectedItem?.ToString();
+        if (!string.IsNullOrEmpty(catalogFilter) && catalogFilter != "All")
+            filtered = filtered.Where(a => GetCustomFieldValue(a, "Catalog") == catalogFilter);
+
+        var areaFilter = AreaFilterComboBox.SelectedItem?.ToString();
+        if (!string.IsNullOrEmpty(areaFilter) && areaFilter != "All")
+            filtered = filtered.Where(a => GetCustomFieldValue(a, "Area") == areaFilter);
+
         var list = filtered.ToList();
         AssetListView.ItemsSource = list;
         AssetCountLabel.Text = $"{list.Count} assets";
@@ -89,6 +150,68 @@ public partial class AssetsPage : Page
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         UpdateDisplay();
+    }
+
+    private void OnFilterChanged(object sender, SelectionChangedEventArgs e)
+    {
+        UpdateDisplay();
+    }
+
+    private void OnClearFiltersClicked(object sender, RoutedEventArgs e)
+    {
+        StatusFilterComboBox.SelectedIndex = 0;
+        CategoryFilterComboBox.SelectedIndex = 0;
+        PlatformFilterComboBox.SelectedIndex = 0;
+        ManufacturerFilterComboBox.SelectedIndex = 0;
+        ModelFilterComboBox.SelectedIndex = 0;
+        UsageFilterComboBox.SelectedIndex = 0;
+        CatalogFilterComboBox.SelectedIndex = 0;
+        AreaFilterComboBox.SelectedIndex = 0;
+        UpdateDisplay();
+    }
+
+    private void UpdateFilterOptions()
+    {
+        var statuses = new HashSet<string> { "All" };
+        var categories = new HashSet<string> { "All" };
+        var platforms = new HashSet<string> { "All" };
+        var manufacturers = new HashSet<string> { "All" };
+        var models = new HashSet<string> { "All" };
+        var usages = new HashSet<string> { "All" };
+        var catalogs = new HashSet<string> { "All" };
+        var areas = new HashSet<string> { "All" };
+
+        foreach (var asset in _allAssets)
+        {
+            if (!string.IsNullOrEmpty(asset.StatusLabel?.Name)) statuses.Add(asset.StatusLabel.Name);
+            if (!string.IsNullOrEmpty(asset.Category?.Name)) categories.Add(asset.Category.Name);
+            if (!string.IsNullOrEmpty(asset.Manufacturer?.Name)) manufacturers.Add(asset.Manufacturer.Name);
+            if (!string.IsNullOrEmpty(asset.Model?.Name)) models.Add(asset.Model.Name);
+
+            var platform = GetCustomFieldValue(asset, "Platform");
+            if (!string.IsNullOrEmpty(platform)) platforms.Add(platform);
+            var usage = GetCustomFieldValue(asset, "Usage");
+            if (!string.IsNullOrEmpty(usage)) usages.Add(usage);
+            var catalog = GetCustomFieldValue(asset, "Catalog");
+            if (!string.IsNullOrEmpty(catalog)) catalogs.Add(catalog);
+            var area = GetCustomFieldValue(asset, "Area");
+            if (!string.IsNullOrEmpty(area)) areas.Add(area);
+        }
+
+        SetFilterItems(StatusFilterComboBox, statuses);
+        SetFilterItems(CategoryFilterComboBox, categories);
+        SetFilterItems(PlatformFilterComboBox, platforms);
+        SetFilterItems(ManufacturerFilterComboBox, manufacturers);
+        SetFilterItems(ModelFilterComboBox, models);
+        SetFilterItems(UsageFilterComboBox, usages);
+        SetFilterItems(CatalogFilterComboBox, catalogs);
+        SetFilterItems(AreaFilterComboBox, areas);
+    }
+
+    private static void SetFilterItems(ComboBox comboBox, HashSet<string> items)
+    {
+        comboBox.ItemsSource = items.OrderBy(s => s == "All" ? "" : s).ToList();
+        comboBox.SelectedIndex = 0;
     }
 
     private async void OnRefreshClicked(object sender, RoutedEventArgs e)
@@ -107,24 +230,33 @@ public partial class AssetsPage : Page
         }
     }
 
-    private void ShowAssetDetail(SnipeAsset asset)
+    private async void ShowAssetDetail(SnipeAsset asset)
     {
+        _isLoadingDetail = true;
+        _hasEdits = false;
+        _editStatusId = null;
+        SaveChangesButton.Visibility = Visibility.Collapsed;
+
         DetailPanel.Visibility = Visibility.Visible;
         DetailPlaceholder.Visibility = Visibility.Collapsed;
 
         DetailAssetName.Text = asset.DisplayName;
         DetailAssetTag.Text = $"Tag: {asset.AssetTag}";
 
-        // Status
-        DetailStatus.Text = asset.StatusLabel?.Name ?? "—";
+        // Status dropdown
+        if (_statusLabels.Count == 0 && _snipeService != null)
+        {
+            _statusLabels = await _snipeService.GetStatusLabelsAsync();
+        }
+        DetailStatusComboBox.ItemsSource = _statusLabels;
+        var currentStatus = _statusLabels.FirstOrDefault(s => s.Id == asset.StatusLabel?.Id);
+        DetailStatusComboBox.SelectedItem = currentStatus;
 
-        // Assignment
+        // Assignment (no username)
         if (asset.AssignedTo != null)
         {
             AssignmentSection.Visibility = Visibility.Visible;
             DetailAssignedName.Text = asset.AssignedTo.Name;
-            DetailAssignedUsername.Text = !string.IsNullOrEmpty(asset.AssignedTo.Username)
-                ? $"@{asset.AssignedTo.Username}" : "";
             DetailAssignedEmployee.Text = !string.IsNullOrEmpty(asset.AssignedTo.EmployeeNumber)
                 ? $"Employee #{asset.AssignedTo.EmployeeNumber}" : "";
             ReAllocateButton.Visibility = Visibility.Visible;
@@ -170,26 +302,58 @@ public partial class AssetsPage : Page
             NotesSection.Visibility = Visibility.Collapsed;
         }
 
-        // Custom Fields
+        // Custom Fields (sectioned)
         PopulateCustomFields(asset);
+        _isLoadingDetail = false;
     }
 
     private void PopulateCustomFields(SnipeAsset asset)
     {
-        CustomFieldsContainer.Children.Clear();
+        HardwareFieldsContainer.Children.Clear();
+        ManagementFieldsContainer.Children.Clear();
+        FinancialFieldsContainer.Children.Clear();
+        OtherFieldsContainer.Children.Clear();
+
+        HardwareFieldsSection.Visibility = Visibility.Collapsed;
+        ManagementFieldsSection.Visibility = Visibility.Collapsed;
+        FinancialFieldsSection.Visibility = Visibility.Collapsed;
+        OtherFieldsSection.Visibility = Visibility.Collapsed;
 
         if (asset.CustomFields == null || asset.CustomFields.Count == 0)
-        {
-            CustomFieldsSection.Visibility = Visibility.Collapsed;
             return;
-        }
-
-        CustomFieldsSection.Visibility = Visibility.Visible;
 
         foreach (var kvp in asset.CustomFields.OrderBy(f => f.Value.Field))
         {
+            var fieldName = kvp.Value.Field ?? "";
             var fieldValue = kvp.Value.Value ?? "";
             if (string.IsNullOrWhiteSpace(fieldValue)) continue;
+            if (HiddenFieldNames.Contains(fieldName)) continue;
+
+            StackPanel targetContainer;
+            StackPanel targetSection;
+
+            if (HardwareFieldNames.Contains(fieldName))
+            {
+                targetContainer = HardwareFieldsContainer;
+                targetSection = HardwareFieldsSection;
+            }
+            else if (ManagementFieldNames.Contains(fieldName))
+            {
+                targetContainer = ManagementFieldsContainer;
+                targetSection = ManagementFieldsSection;
+            }
+            else if (FinancialFieldNames.Contains(fieldName))
+            {
+                targetContainer = FinancialFieldsContainer;
+                targetSection = FinancialFieldsSection;
+            }
+            else
+            {
+                targetContainer = OtherFieldsContainer;
+                targetSection = OtherFieldsSection;
+            }
+
+            targetSection.Visibility = Visibility.Visible;
 
             var row = new Grid();
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -199,8 +363,8 @@ public partial class AssetsPage : Page
 
             var label = new TextBlock
             {
-                Text = $"{kvp.Value.Field}:",
-                FontSize = 12,
+                Text = $"{fieldName}:",
+                FontSize = 18,
                 Opacity = 0.7,
                 Margin = new Thickness(0, 0, 8, 0)
             };
@@ -209,14 +373,14 @@ public partial class AssetsPage : Page
             var value = new TextBlock
             {
                 Text = fieldValue,
-                FontSize = 12,
+                FontSize = 18,
                 TextWrapping = TextWrapping.Wrap
             };
             Grid.SetColumn(value, 1);
 
             var copyBtn = new Button
             {
-                Content = new TextBlock { Text = "📋", FontSize = 10 },
+                Content = new TextBlock { Text = "📋", FontSize = 14 },
                 Padding = new Thickness(2),
                 Background = System.Windows.Media.Brushes.Transparent,
                 BorderThickness = new Thickness(0),
@@ -230,8 +394,84 @@ public partial class AssetsPage : Page
             row.Children.Add(value);
             row.Children.Add(copyBtn);
 
-            CustomFieldsContainer.Children.Add(row);
+            targetContainer.Children.Add(row);
         }
+    }
+
+    // MARK: - Status Edit & Save
+
+    private void OnDetailStatusChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isLoadingDetail || _selectedAsset == null) return;
+
+        if (DetailStatusComboBox.SelectedItem is SnipeStatusLabelFull selected)
+        {
+            if (selected.Id != _selectedAsset.StatusLabel?.Id)
+            {
+                _editStatusId = selected.Id;
+                _hasEdits = true;
+                SaveChangesButton.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                _editStatusId = null;
+                _hasEdits = false;
+                SaveChangesButton.Visibility = Visibility.Collapsed;
+            }
+        }
+    }
+
+    private async void OnSaveChangesClicked(object sender, RoutedEventArgs e)
+    {
+        if (_selectedAsset == null || _snipeService == null || !_hasEdits) return;
+
+        try
+        {
+            SaveChangesButton.IsEnabled = false;
+            SaveChangesButton.Content = "Saving...";
+
+            var request = new SnipeAssetRequest
+            {
+                AssetTag = _selectedAsset.AssetTag,
+                StatusId = _editStatusId ?? _selectedAsset.StatusLabel?.Id ?? 0,
+                ModelId = _selectedAsset.Model?.Id ?? 0
+            };
+
+            var result = await _snipeService.UpdateAssetAsync(_selectedAsset.Id, request);
+
+            if (result != null && result.IsSuccess)
+            {
+                _hasEdits = false;
+                _editStatusId = null;
+                SaveChangesButton.Visibility = Visibility.Collapsed;
+                await LoadAssetsAsync();
+            }
+            else
+            {
+                MessageBox.Show($"Update failed: {result?.Messages ?? "Unknown error"}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Save failed: {ex.Message}", "Error",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            SaveChangesButton.IsEnabled = true;
+            SaveChangesButton.Content = "Save Changes";
+        }
+    }
+
+    // MARK: - Helpers
+
+    private static string GetCustomFieldValue(SnipeAsset asset, string displayName)
+    {
+        if (asset.CustomFields == null) return "";
+        var field = asset.CustomFields.Values.FirstOrDefault(f =>
+            string.Equals(f.Field, displayName, StringComparison.OrdinalIgnoreCase));
+        return field?.Value ?? "";
     }
 
     // MARK: - Actions
@@ -439,5 +679,28 @@ public class ReAllocateDialog : Window
             MessageBox.Show($"User search failed: {ex.Message}", "Error",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+}
+
+/// <summary>
+/// Converts a CustomFields dictionary to a display value by looking up the field display name.
+/// Usage: Converter={StaticResource CustomFieldConverter}, ConverterParameter=Platform
+/// </summary>
+public class CustomFieldValueConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is Dictionary<string, SnipeCustomField> fields && parameter is string fieldName)
+        {
+            var match = fields.Values.FirstOrDefault(f =>
+                string.Equals(f.Field, fieldName, StringComparison.OrdinalIgnoreCase));
+            return match?.Value ?? "";
+        }
+        return "";
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
     }
 }

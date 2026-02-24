@@ -2,10 +2,16 @@
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.modernwpf.com/2019"
+      xmlns:local="clr-namespace:FleetMate.GUI.Views.Inventory"
       Loaded="Page_Loaded">
+
+    <Page.Resources>
+        <local:CustomFieldValueConverter x:Key="CustomFieldConverter" />
+    </Page.Resources>
 
     <Grid Margin="24">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -41,6 +47,7 @@
                 <TextBox x:Name="SearchBox" 
                          ui:ControlHelper.PlaceholderText="Search assets by name, tag, or serial..." 
                          Grid.Column="0"
+                         MaxWidth="400" MinWidth="300" HorizontalAlignment="Left"
                          TextChanged="SearchBox_TextChanged" />
 
                 <TextBlock x:Name="AssetCountLabel" 
@@ -51,8 +58,50 @@
             </Grid>
         </Border>
 
+        <!-- Filters -->
+        <Border Grid.Row="2" Style="{StaticResource CardStyle}" Margin="0,8,0,0" Padding="8">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <StackPanel Orientation="Horizontal">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+                        <TextBlock Text="Status:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <ComboBox x:Name="StatusFilterComboBox" MinWidth="120" SelectionChanged="OnFilterChanged" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+                        <TextBlock Text="Category:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <ComboBox x:Name="CategoryFilterComboBox" MinWidth="120" SelectionChanged="OnFilterChanged" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+                        <TextBlock Text="Platform:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <ComboBox x:Name="PlatformFilterComboBox" MinWidth="120" SelectionChanged="OnFilterChanged" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+                        <TextBlock Text="Manufacturer:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <ComboBox x:Name="ManufacturerFilterComboBox" MinWidth="130" SelectionChanged="OnFilterChanged" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+                        <TextBlock Text="Model:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <ComboBox x:Name="ModelFilterComboBox" MinWidth="120" SelectionChanged="OnFilterChanged" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+                        <TextBlock Text="Usage:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <ComboBox x:Name="UsageFilterComboBox" MinWidth="120" SelectionChanged="OnFilterChanged" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+                        <TextBlock Text="Catalog:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <ComboBox x:Name="CatalogFilterComboBox" MinWidth="120" SelectionChanged="OnFilterChanged" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+                        <TextBlock Text="Area:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <ComboBox x:Name="AreaFilterComboBox" MinWidth="120" SelectionChanged="OnFilterChanged" />
+                    </StackPanel>
+                    <Button Content="Clear Filters" Click="OnClearFiltersClicked" 
+                            BorderBrush="Orange" BorderThickness="1" Background="Transparent" Padding="8,4" />
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
         <!-- 60/40 split: Asset list + Detail sidebar -->
-        <Grid Grid.Row="2" Margin="0,16,0,0">
+        <Grid Grid.Row="3" Margin="0,8,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="6*" />
                 <ColumnDefinition Width="4*" />
@@ -93,6 +142,48 @@
                                 </DataTemplate>
                             </GridViewColumn.CellTemplate>
                         </GridViewColumn>
+                        <GridViewColumn Header="Category" Width="120">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Category.Name}" />
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                        <GridViewColumn Header="Platform" Width="100">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding CustomFields, Converter={StaticResource CustomFieldConverter}, ConverterParameter=Platform}" />
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                        <GridViewColumn Header="Manufacturer" Width="130">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Manufacturer.Name}" />
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                        <GridViewColumn Header="Usage" Width="100">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding CustomFields, Converter={StaticResource CustomFieldConverter}, ConverterParameter=Usage}" />
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                        <GridViewColumn Header="Catalog" Width="100">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding CustomFields, Converter={StaticResource CustomFieldConverter}, ConverterParameter=Catalog}" />
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+                        <GridViewColumn Header="Area" Width="100">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding CustomFields, Converter={StaticResource CustomFieldConverter}, ConverterParameter=Area}" />
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
                     </GridView>
                 </ListView.View>
             </ListView>
@@ -116,41 +207,45 @@
                     x:Name="DetailPanel" Visibility="Collapsed">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
                     <ui:SimpleStackPanel Spacing="12">
-                        <!-- Asset name + open in Snipe-IT -->
+                        <!-- Asset name + Re-Allocate + open in Snipe-IT -->
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock x:Name="DetailAssetName" FontSize="18" FontWeight="Bold" TextWrapping="Wrap" />
-                            <Button Grid.Column="1" Click="OnOpenInSnipeClicked" ToolTip="Open in Snipe-IT" Padding="6">
-                                <TextBlock Text="🌐" FontSize="14" />
+                            <TextBlock x:Name="DetailAssetName" FontSize="24" FontWeight="Bold" TextWrapping="Wrap" />
+                            <Button x:Name="ReAllocateButton" Grid.Column="1" Content="Re-Allocate" 
+                                    Click="OnReAllocateClicked" Visibility="Collapsed" Margin="8,0,0,0" />
+                            <Button Grid.Column="2" Click="OnOpenInSnipeClicked" ToolTip="Open in Snipe-IT" Padding="6" Margin="4,0,0,0">
+                                <TextBlock Text="🌐" FontSize="18" />
                             </Button>
                         </Grid>
 
-                        <TextBlock x:Name="DetailAssetTag" FontSize="13" Opacity="0.7" />
+                        <TextBlock x:Name="DetailAssetTag" FontSize="18" Opacity="0.7" />
 
-                        <!-- Status -->
+                        <!-- Status (editable dropdown) -->
                         <StackPanel>
-                            <TextBlock Text="Status" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
-                            <TextBlock x:Name="DetailStatus" Margin="0,2,0,0" />
+                            <TextBlock Text="Status" FontWeight="SemiBold" FontSize="16" Opacity="0.6" />
+                            <ComboBox x:Name="DetailStatusComboBox" Margin="0,2,0,0" FontSize="18"
+                                      DisplayMemberPath="Name" SelectionChanged="OnDetailStatusChanged" />
                         </StackPanel>
 
                         <!-- Assignment -->
                         <StackPanel x:Name="AssignmentSection">
-                            <TextBlock Text="Assignment" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
-                            <TextBlock x:Name="DetailAssignedName" Margin="0,2,0,0" />
-                            <TextBlock x:Name="DetailAssignedUsername" FontSize="12" Opacity="0.7" />
-                            <TextBlock x:Name="DetailAssignedEmployee" FontSize="12" Opacity="0.7" />
+                            <TextBlock Text="Assignment" FontWeight="SemiBold" FontSize="16" Opacity="0.6" />
+                            <TextBlock x:Name="DetailAssignedName" FontSize="18" Margin="0,2,0,0" />
+                            <TextBlock x:Name="DetailAssignedEmployee" FontSize="18" Opacity="0.7" />
                         </StackPanel>
 
-                        <!-- Re-Allocate Button -->
-                        <Button x:Name="ReAllocateButton" Content="Re-Allocate" Click="OnReAllocateClicked" 
-                                HorizontalAlignment="Stretch" Visibility="Collapsed" />
+                        <!-- Save Changes -->
+                        <Button x:Name="SaveChangesButton" Content="Save Changes" Click="OnSaveChangesClicked" 
+                                HorizontalAlignment="Stretch" Visibility="Collapsed"
+                                Background="{DynamicResource SystemControlBackgroundAccentBrush}" Foreground="White" />
 
                         <!-- Hardware -->
                         <StackPanel>
-                            <TextBlock Text="Hardware" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
+                            <TextBlock Text="Hardware" FontWeight="SemiBold" FontSize="16" Opacity="0.6" />
                             <Grid Margin="0,4,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -164,32 +259,32 @@
                                     <RowDefinition />
                                 </Grid.RowDefinitions>
 
-                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Serial:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailSerial" Grid.Row="0" Grid.Column="1" FontSize="12" />
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Serial:" FontSize="18" Opacity="0.7" Margin="0,0,8,2" />
+                                <TextBlock x:Name="DetailSerial" Grid.Row="0" Grid.Column="1" FontSize="18" />
                                 <Button Grid.Row="0" Grid.Column="2" Click="OnCopySerialClicked" ToolTip="Copy" Padding="2" Background="Transparent" BorderThickness="0">
-                                    <TextBlock Text="📋" FontSize="10" />
+                                    <TextBlock Text="📋" FontSize="14" />
                                 </Button>
 
-                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Model:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailModel" Grid.Row="1" Grid.Column="1" FontSize="12" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Model:" FontSize="18" Opacity="0.7" Margin="0,0,8,2" />
+                                <TextBlock x:Name="DetailModel" Grid.Row="1" Grid.Column="1" FontSize="18" />
 
-                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Category:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailCategory" Grid.Row="2" Grid.Column="1" FontSize="12" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Category:" FontSize="18" Opacity="0.7" Margin="0,0,8,2" />
+                                <TextBlock x:Name="DetailCategory" Grid.Row="2" Grid.Column="1" FontSize="18" />
 
-                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Manufacturer:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailManufacturer" Grid.Row="3" Grid.Column="1" FontSize="12" />
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Manufacturer:" FontSize="18" Opacity="0.7" Margin="0,0,8,2" />
+                                <TextBlock x:Name="DetailManufacturer" Grid.Row="3" Grid.Column="1" FontSize="18" />
                             </Grid>
                         </StackPanel>
 
                         <!-- Location -->
                         <StackPanel x:Name="LocationSection">
-                            <TextBlock Text="Location" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
-                            <TextBlock x:Name="DetailLocation" FontSize="12" Margin="0,2,0,0" />
+                            <TextBlock Text="Location" FontWeight="SemiBold" FontSize="16" Opacity="0.6" />
+                            <TextBlock x:Name="DetailLocation" FontSize="18" Margin="0,2,0,0" />
                         </StackPanel>
 
                         <!-- Dates -->
                         <StackPanel>
-                            <TextBlock Text="Dates" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
+                            <TextBlock Text="Dates" FontWeight="SemiBold" FontSize="16" Opacity="0.6" />
                             <Grid Margin="0,4,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -203,33 +298,51 @@
                                     <RowDefinition />
                                 </Grid.RowDefinitions>
 
-                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Purchased:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailPurchaseDate" Grid.Row="0" Grid.Column="1" FontSize="12" />
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Purchased:" FontSize="18" Opacity="0.7" Margin="0,0,8,2" />
+                                <TextBlock x:Name="DetailPurchaseDate" Grid.Row="0" Grid.Column="1" FontSize="18" />
 
-                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Last Checkout:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailLastCheckout" Grid.Row="1" Grid.Column="1" FontSize="12" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Last Checkout:" FontSize="18" Opacity="0.7" Margin="0,0,8,2" />
+                                <TextBlock x:Name="DetailLastCheckout" Grid.Row="1" Grid.Column="1" FontSize="18" />
 
-                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Last Audit:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailLastAudit" Grid.Row="2" Grid.Column="1" FontSize="12" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Last Audit:" FontSize="18" Opacity="0.7" Margin="0,0,8,2" />
+                                <TextBlock x:Name="DetailLastAudit" Grid.Row="2" Grid.Column="1" FontSize="18" />
 
-                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Created:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailCreated" Grid.Row="3" Grid.Column="1" FontSize="12" />
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Created:" FontSize="18" Opacity="0.7" Margin="0,0,8,2" />
+                                <TextBlock x:Name="DetailCreated" Grid.Row="3" Grid.Column="1" FontSize="18" />
 
-                                <TextBlock Grid.Row="4" Grid.Column="0" Text="Updated:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailUpdated" Grid.Row="4" Grid.Column="1" FontSize="12" />
+                                <TextBlock Grid.Row="4" Grid.Column="0" Text="Updated:" FontSize="18" Opacity="0.7" Margin="0,0,8,2" />
+                                <TextBlock x:Name="DetailUpdated" Grid.Row="4" Grid.Column="1" FontSize="18" />
                             </Grid>
                         </StackPanel>
 
                         <!-- Notes -->
                         <StackPanel x:Name="NotesSection">
-                            <TextBlock Text="Notes" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
-                            <TextBlock x:Name="DetailNotes" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0" />
+                            <TextBlock Text="Notes" FontWeight="SemiBold" FontSize="16" Opacity="0.6" />
+                            <TextBlock x:Name="DetailNotes" FontSize="18" TextWrapping="Wrap" Margin="0,2,0,0" />
                         </StackPanel>
 
-                        <!-- Custom Fields (dynamically populated) -->
-                        <StackPanel x:Name="CustomFieldsSection">
-                            <TextBlock Text="Custom Fields" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
-                            <StackPanel x:Name="CustomFieldsContainer" Margin="0,4,0,0" />
+                        <!-- Hardware Custom Fields (dynamically populated) -->
+                        <StackPanel x:Name="HardwareFieldsSection" Visibility="Collapsed">
+                            <TextBlock Text="Hardware Details" FontWeight="SemiBold" FontSize="16" Opacity="0.6" />
+                            <StackPanel x:Name="HardwareFieldsContainer" Margin="0,4,0,0" />
+                        </StackPanel>
+
+                        <!-- Management Custom Fields -->
+                        <StackPanel x:Name="ManagementFieldsSection" Visibility="Collapsed">
+                            <TextBlock Text="Management" FontWeight="SemiBold" FontSize="16" Opacity="0.6" />
+                            <StackPanel x:Name="ManagementFieldsContainer" Margin="0,4,0,0" />
+                        </StackPanel>
+
+                        <!-- Financials Custom Fields -->
+                        <StackPanel x:Name="FinancialFieldsSection" Visibility="Collapsed">
+                            <TextBlock Text="Financials" FontWeight="SemiBold" FontSize="16" Opacity="0.6" />
+                            <StackPanel x:Name="FinancialFieldsContainer" Margin="0,4,0,0" />
+                        </StackPanel>
+
+                        <!-- Other Custom Fields -->
+                        <StackPanel x:Name="OtherFieldsSection" Visibility="Collapsed">
+                            <TextBlock Text="Other Fields" FontWeight="SemiBold" FontSize="16" Opacity="0.6" />
+                            <StackPanel x:Name="OtherFieldsContainer" Margin="0,4,0,0" />
                         </StackPanel>
                     </ui:SimpleStackPanel>
                 </ScrollViewer>
@@ -238,7 +351,7 @@
 
         <!-- Not Configured -->
         <TextBlock x:Name="NotConfiguredText"
-                   Grid.Row="2"
+                   Grid.Row="3"
                    Text="Snipe-IT is not configured. Please set SNIPE_URL and SNIPE_API_KEY."
                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                    VerticalAlignment="Center" HorizontalAlignment="Center"
@@ -246,7 +359,7 @@
 
         <!-- Loading Overlay -->
         <Border x:Name="LoadingOverlay" 
-                Grid.RowSpan="3" 
+                Grid.RowSpan="4" 
                 Background="{DynamicResource SystemControlBackgroundAltHighBrush}" 
                 Opacity="0.8"
                 Visibility="Collapsed">
