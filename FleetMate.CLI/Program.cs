@@ -12,6 +12,7 @@ using FleetMate.Core.Services.Inventory;
 using FleetMate.Core.Services.Tickets;
 using FleetMate.Core.Services.Projects;
 using FleetMate.Core.Services.Reporting;
+using FleetMate.Commands.Reporting;
 using Serilog;
 using Serilog.Events;
 
@@ -164,6 +165,9 @@ class Program
 
             // GitHub Projects v2 board and management
             rootCommand.AddCommand(ProjectsCommand.Create(config));
+
+            // ReportMate fleet reporting
+            rootCommand.AddCommand(ReportMateCommand.Create(reportMate));
 
             var result = await rootCommand.InvokeAsync(args);
             
