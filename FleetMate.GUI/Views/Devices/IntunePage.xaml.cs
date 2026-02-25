@@ -40,6 +40,8 @@ public partial class IntunePage : Page
 
         DevicesDataGrid.ItemsSource = _filteredDevices;
 
+        DeviceDetail.CloseRequested += (_, _) => HideDeviceDetail();
+
         Loaded += async (s, e) =>
         {
             if (!_isInitialLoadDone)
@@ -240,7 +242,34 @@ public partial class IntunePage : Page
                 var first2 = string.Join(", ", selectedDevices.Take(2).Select(d => d.DeviceName ?? d.SerialNumber ?? "Unknown"));
                 SelectedDeviceNamesText.Text = $"{first2} and {selectedCount - 2} more...";
             }
+
+            // Show device detail panel for single selection
+            if (selectedCount == 1)
+            {
+                _ = ShowDeviceDetailAsync(selectedDevices[0]);
+            }
+            else
+            {
+                HideDeviceDetail();
+            }
         }
+        else
+        {
+            HideDeviceDetail();
+        }
+    }
+
+    private async Task ShowDeviceDetailAsync(IntuneDevice device)
+    {
+        DeviceDetail.Visibility = Visibility.Visible;
+        DetailPanelColumn.Width = new GridLength(400);
+        await DeviceDetail.ShowDeviceAsync(device, _graphService);
+    }
+
+    private void HideDeviceDetail()
+    {
+        DeviceDetail.Visibility = Visibility.Collapsed;
+        DetailPanelColumn.Width = new GridLength(0);
     }
 
     private void OnActionsClicked(object sender, RoutedEventArgs e)

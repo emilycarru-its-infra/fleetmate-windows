@@ -34,4 +34,26 @@ public class GraphConfig
     /// Maximum results per page for device queries
     /// </summary>
     public int PageSize { get; set; } = 100;
+
+    // Multi-SP: separate credentials for Devices vs Systems scopes (matches macOS)
+
+    /// <summary>Client ID for the Devices-scoped service principal.</summary>
+    public string? DevicesClientId { get; set; }
+
+    /// <summary>Client secret for the Devices-scoped service principal.</summary>
+    public string? DevicesClientSecret { get; set; }
+
+    /// <summary>Client ID for the Systems-scoped service principal.</summary>
+    public string? SystemsClientId { get; set; }
+
+    /// <summary>Client secret for the Systems-scoped service principal.</summary>
+    public string? SystemsClientSecret { get; set; }
+
+    /// <summary>True when a dedicated Devices SP is configured.</summary>
+    public bool IsDevicesSpConfigured =>
+        !string.IsNullOrWhiteSpace(DevicesClientId) && !string.IsNullOrWhiteSpace(DevicesClientSecret);
+
+    /// <summary>True when a dedicated Systems SP is configured.</summary>
+    public bool IsSystemsSpConfigured =>
+        !string.IsNullOrWhiteSpace(SystemsClientId) && !string.IsNullOrWhiteSpace(SystemsClientSecret);
 }

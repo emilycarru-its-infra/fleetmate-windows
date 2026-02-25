@@ -1,0 +1,38 @@
+<UserControl x:Class="FleetMate.GUI.Views.Projects.TaskDetailPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:FleetMate.GUI.Views.Shared">
+
+    <Border Style="{StaticResource CardStyle}" MinWidth="360" MaxWidth="500">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Header with close button -->
+            <Grid Grid.Row="0" Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
+                    <TextBlock x:Name="ProviderBadge" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    <TextBlock x:Name="TaskTitle" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock x:Name="TaskId" FontSize="11"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                </StackPanel>
+
+                <Button Grid.Column="1" Content="✕" Click="OnClose" VerticalAlignment="Top"
+                        FontSize="14" Background="Transparent" Padding="8,4" />
+            </Grid>
+
+            <!-- Content (switches based on provider) -->
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="ContentPanel" />
+            </ScrollViewer>
+        </Grid>
+    </Border>
+</UserControl>

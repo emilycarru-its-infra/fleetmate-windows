@@ -44,6 +44,9 @@ public partial class BoardsPage : Page
         InitializeComponent();
         _config = FleetMateConfig.Load();
         _app = Application.Current as App;
+
+        DetailPanel.CloseRequested += (_, _) => DetailPanel.Visibility = Visibility.Collapsed;
+        DetailPanel.TaskUpdated += async (_, _) => await LoadTasksAsync();
     }
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
@@ -262,22 +265,10 @@ public partial class BoardsPage : Page
     {
         if (sender is ListView listView && listView.SelectedItem is UnifiedTask task)
         {
-            // Open external URL if available
-            if (!string.IsNullOrEmpty(task.ExternalUrl))
-            {
-                try
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = task.ExternalUrl,
-                        UseShellExecute = true
-                    });
-                }
-                catch { }
-            }
-
-            // Clear selection
-            listView.SelectedItem = null;
+            // Show task detail sidebar
+            var provider = _registry?.GetProvider(task.Provider);
+            DetailPanel.ShowTask(task, provider);
+            DetailPanel.Visibility = Visibility.Visible;
         }
     }
 

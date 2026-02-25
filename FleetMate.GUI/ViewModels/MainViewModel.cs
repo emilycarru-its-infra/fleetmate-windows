@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -21,17 +22,26 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void Refresh()
+    private async Task RefreshAsync()
     {
         IsLoading = true;
         StatusMessage = "Refreshing...";
 
-        // Placeholder for actual refresh logic
-        Task.Run(async () =>
+        try
         {
-            await Task.Delay(500);
+            if (Application.Current is App app)
+            {
+                await app.ReloadAllDataAsync();
+            }
             StatusMessage = "Ready";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Refresh failed: {ex.Message}";
+        }
+        finally
+        {
             IsLoading = false;
-        });
+        }
     }
 }
