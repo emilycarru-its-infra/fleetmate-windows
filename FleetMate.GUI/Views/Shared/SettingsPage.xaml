@@ -124,6 +124,16 @@
                     Style="{StaticResource AccentButtonStyle}" Padding="24,8"
                     Click="OnSaveClicked" />
 
+            <!-- Authentication Status Section -->
+            <TextBlock Text="Authentication Status" FontWeight="SemiBold" FontSize="18" Margin="0,24,0,12" />
+
+            <StackPanel x:Name="AuthCardsPanel">
+                <!-- Cards are generated in code-behind -->
+            </StackPanel>
+
+            <Button Content="Refresh All" HorizontalAlignment="Right" Margin="0,8,0,0"
+                    Click="OnRefreshAuthClicked" />
+
             <!-- About Section -->
             <Border Style="{StaticResource CardStyle}" Margin="0,24,0,16">
                 <StackPanel>
