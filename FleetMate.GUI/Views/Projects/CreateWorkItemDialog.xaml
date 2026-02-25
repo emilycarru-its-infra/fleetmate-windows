@@ -1,0 +1,79 @@
+<Window x:Class="FleetMate.GUI.Views.Projects.CreateWorkItemDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        ui:WindowHelper.UseModernWindowStyle="True"
+        Title="Create Work Item"
+        Height="560" Width="520"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <TextBlock Grid.Row="0" Text="New Work Item" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,16" />
+
+        <!-- Form -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <!-- Type -->
+                <TextBlock Text="Type" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <ComboBox x:Name="TypeCombo" SelectedIndex="0" HorizontalAlignment="Stretch" Margin="0,0,0,12">
+                    <ComboBoxItem Content="Bug" />
+                    <ComboBoxItem Content="Task" />
+                    <ComboBoxItem Content="User Story" />
+                    <ComboBoxItem Content="Feature" />
+                    <ComboBoxItem Content="Epic" />
+                </ComboBox>
+
+                <!-- Title -->
+                <TextBlock Text="Title" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <TextBox x:Name="TitleBox" Margin="0,0,0,12" />
+
+                <!-- Description -->
+                <TextBlock Text="Description" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <TextBox x:Name="DescriptionBox" AcceptsReturn="True" TextWrapping="Wrap"
+                         MinHeight="80" MaxHeight="160" VerticalScrollBarVisibility="Auto" Margin="0,0,0,12" />
+
+                <!-- Assigned To -->
+                <TextBlock Text="Assigned To" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <TextBox x:Name="AssignedToBox" Margin="0,0,0,12" />
+
+                <!-- Priority -->
+                <TextBlock Text="Priority" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <ComboBox x:Name="PriorityCombo" SelectedIndex="1" HorizontalAlignment="Stretch" Margin="0,0,0,12">
+                    <ComboBoxItem Content="1 — Critical" Tag="1" />
+                    <ComboBoxItem Content="2 — High" Tag="2" />
+                    <ComboBoxItem Content="3 — Medium" Tag="3" />
+                    <ComboBoxItem Content="4 — Low" Tag="4" />
+                </ComboBox>
+
+                <!-- Area Path -->
+                <TextBlock Text="Area Path" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <TextBox x:Name="AreaPathBox" Margin="0,0,0,12" />
+
+                <!-- Iteration Path -->
+                <TextBlock Text="Iteration Path" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <TextBox x:Name="IterationPathBox" Margin="0,0,0,12" />
+
+                <!-- Tags -->
+                <TextBlock Text="Tags (semicolon-separated)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <TextBox x:Name="TagsBox" Margin="0,0,0,12" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Actions -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <TextBlock x:Name="StatusText" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                       VerticalAlignment="Center" Margin="0,0,16,0" />
+            <Button Content="Cancel" Click="OnCancel" Margin="0,0,8,0" MinWidth="80" />
+            <Button x:Name="CreateButton" Content="Create" Click="OnCreate"
+                    Style="{StaticResource AccentButtonStyle}" MinWidth="80" />
+        </StackPanel>
+    </Grid>
+</Window>

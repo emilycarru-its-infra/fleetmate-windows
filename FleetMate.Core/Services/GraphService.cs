@@ -22,6 +22,12 @@ public class GraphService : IDisposable
     private string? _cachedToken;
     private DateTime _tokenExpiry = DateTime.MinValue;
 
+    // Multi-SP: per-scope token caches
+    private string? _devicesToken;
+    private DateTime _devicesTokenExpiry = DateTime.MinValue;
+    private string? _systemsToken;
+    private DateTime _systemsTokenExpiry = DateTime.MinValue;
+
     private const string GraphScope = "https://graph.microsoft.com/.default";
 
     // Caches
@@ -128,6 +134,31 @@ public class GraphService : IDisposable
         {
             Log.Error(ex, "Failed to get Microsoft Graph access token");
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Get an access token scoped to a specific purpose.
+    /// Falls back to the default SP / az CLI if no dedicated SP is configured.
+    /// </summary>
+    private async Task<string?> GetScopedAccessTokenAsync(string scope)
+    {
+        switch (scope)
+        {
+            case "devices" when _config.IsDevicesSpConfigured:
+                if (_devicesToken != null && DateTime.UtcNow < _devicesTokenExpiry) return _devicesToken;
+                var dt = await GetClientCredentialTokenAsync(_config.TenantId!, _config.DevicesClientId!, _config.DevicesClientSecret!);
+                if (!string.IsNullOrEmpty(dt)) { _devicesToken = dt; _devicesTokenExpiry = DateTime.UtcNow.AddMinutes(55); }
+                return _devicesToken ?? await GetAccessTokenAsync();
+
+            case "systems" when _config.IsSystemsSpConfigured:
+                if (_systemsToken != null && DateTime.UtcNow < _systemsTokenExpiry) return _systemsToken;
+                var st = await GetClientCredentialTokenAsync(_config.TenantId!, _config.SystemsClientId!, _config.SystemsClientSecret!);
+                if (!string.IsNullOrEmpty(st)) { _systemsToken = st; _systemsTokenExpiry = DateTime.UtcNow.AddMinutes(55); }
+                return _systemsToken ?? await GetAccessTokenAsync();
+
+            default:
+                return await GetAccessTokenAsync();
         }
     }
 
