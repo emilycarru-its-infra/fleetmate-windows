@@ -25,7 +25,7 @@ public class SnipeAssetProvider : IAssetProvider
     public async Task<List<UnifiedAsset>> ListAssetsAsync(AssetFilter? filter = null, CancellationToken ct = default)
     {
         var assets = filter?.SearchQuery != null
-            ? await _snipeService.SearchAssetsAsync(filter.SearchQuery)
+            ? await _snipeService.GetAssetsAsync(search: filter.SearchQuery)
             : await _snipeService.GetAssetsAsync();
 
         return assets.Select(ToUnified).ToList();
@@ -46,7 +46,7 @@ public class SnipeAssetProvider : IAssetProvider
 
     public async Task<List<UnifiedAsset>> SearchAssetsAsync(string query, CancellationToken ct = default)
     {
-        var assets = await _snipeService.SearchAssetsAsync(query);
+        var assets = await _snipeService.GetAssetsAsync(search: query);
         return assets.Select(ToUnified).ToList();
     }
 
@@ -62,8 +62,8 @@ public class SnipeAssetProvider : IAssetProvider
         StatusLabel = a.StatusLabel?.Name,
         AssignedTo = a.AssignedTo?.Name,
         LocationName = a.Location?.Name,
-        PurchaseDate = a.PurchaseDate?.Datetime,
-        PurchaseCost = a.PurchaseCostDecimal,
+        PurchaseDate = DateTime.TryParse(a.PurchaseDate?.Date, out var pd) ? pd : null,
+        PurchaseCost = decimal.TryParse(a.PurchaseCost, out var pc) ? pc : null,
         OrderNumber = a.OrderNumber,
         Notes = a.Notes,
         CustomFields = a.CustomFields?.ToDictionary(
