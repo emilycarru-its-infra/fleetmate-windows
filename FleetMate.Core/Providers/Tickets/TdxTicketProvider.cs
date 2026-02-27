@@ -25,7 +25,7 @@ public class TdxTicketProvider : ITicketProvider
     public async Task<List<UnifiedTicket>> ListTicketsAsync(TicketFilter? filter = null, CancellationToken ct = default)
     {
         var search = new TicketSearchRequest { MaxResults = filter?.Limit ?? 500 };
-        var tickets = await _tdxService.SearchTicketsAsync(search, search.MaxResults);
+        var tickets = await _tdxService.SearchTicketsAsync(search, search.MaxResults ?? 500);
         return tickets.Select(ToUnified).ToList();
     }
 
@@ -56,7 +56,7 @@ public class TdxTicketProvider : ITicketProvider
         GroupName = t.ResponsibleGroupName,
         CreatedDate = t.CreatedDate,
         ModifiedDate = t.ModifiedDate,
-        DueDate = t.DueDate,
+        DueDate = t.ResolveByDate,
         TicketType = t.TypeName,
         Source = t.SourceName,
     };

@@ -70,6 +70,9 @@ public class EntraUser
     [JsonPropertyName("onPremisesSyncEnabled")]
     public bool? OnPremisesSyncEnabled { get; set; }
 
+    [JsonPropertyName("@odata.type")]
+    public string? OdataType { get; set; }
+
     /// <summary>
     /// Groups the user is a member of (populated separately)
     /// </summary>
