@@ -105,6 +105,12 @@ public class AuthManager : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasServicePrincipalWarning));
     }
 
+    public void SignOut()
+    {
+        foreach (var id in _systems.Keys.ToList())
+            Update(id, AuthTokenState.Configured());
+    }
+
     // MARK: - Queries
 
     public IReadOnlyList<AuthSystemStatus> ConfiguredSystems =>
@@ -204,7 +210,7 @@ public class AuthManager : INotifyPropertyChanged
             {
                 try
                 {
-                    await tdxService.SearchTicketsAsync(new Models.Tdx.TicketSearchRequest { MaxResults = 1 }, 1);
+                    await tdxService.SearchTicketsAsync(new FleetMate.Core.Models.Tickets.TicketSearchRequest { MaxResults = 1 }, 1);
                     var userName = tdxService.AuthenticatedUserName;
                     Update(AuthSystemId.Tdx, AuthTokenState.Valid(userName ?? "Service Account"));
                 }
