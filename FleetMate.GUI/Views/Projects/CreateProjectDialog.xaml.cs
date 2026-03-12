@@ -45,8 +45,7 @@ public partial class CreateProjectDialog : Window
 
             var project = await _projectsService.CreateProjectAsync(
                 owner,
-                TitleBox.Text.Trim(),
-                scope == "org");
+                TitleBox.Text.Trim());
 
             if (project != null)
             {
