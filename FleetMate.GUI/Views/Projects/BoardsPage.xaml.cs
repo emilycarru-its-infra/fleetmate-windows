@@ -79,7 +79,7 @@ public partial class BoardsPage : Page
         _registry = new TaskProviderRegistry();
 
         var azdo = new AzureDevOpsTaskProvider(_config);
-        var github = new GitHubProjectsTaskProvider(_config);
+        var github = new GitHubProjectsTaskProvider(_config.Tasks?.Providers?.GitHub ?? new GitHubProviderConfig());
         var gitea = new GiteaTaskProvider(_config);
 
         _registry.RegisterProvider(azdo);

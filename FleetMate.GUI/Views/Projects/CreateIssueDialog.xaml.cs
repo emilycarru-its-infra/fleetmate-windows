@@ -57,7 +57,8 @@ public partial class CreateIssueDialog : Window
                 Description = string.IsNullOrWhiteSpace(BodyBox.Text) ? null : BodyBox.Text.Trim(),
                 Labels = string.IsNullOrWhiteSpace(LabelsBox.Text) ? null :
                     LabelsBox.Text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
-                AssignedTo = string.IsNullOrWhiteSpace(AssigneesBox.Text) ? null : AssigneesBox.Text.Trim(),
+                Assignees = string.IsNullOrWhiteSpace(AssigneesBox.Text) ? null : 
+                    new List<string> { AssigneesBox.Text.Trim() },
             };
 
             var task = await provider.CreateTaskAsync(request);
