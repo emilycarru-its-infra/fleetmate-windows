@@ -111,7 +111,8 @@ function Get-SignToolPath {
         # On ARM64, prefer arm64 signtool; on x64, prefer x64
         $arch = if ([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -eq 'Arm64') { 'arm64' } else { 'x64' }
         $candidates = Get-ChildItem -Path $searchRoot -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue |
-            Sort-Object { if ($_.FullName -match "\\$arch\\") { 0 } else { 1 } }, { $_.Directory.Parent.Name } -Descending
+            Sort-Object @{ Expression = { if ($_.FullName -match "\\$arch\\") { 0 } else { 1 } }; Ascending = $true },
+                        @{ Expression = { $_.Directory.Parent.Name }; Descending = $true }
         if ($candidates.Count -gt 0) { return $candidates[0].FullName }
     }
     return $null
@@ -384,21 +385,30 @@ try {
                 -p:EnableCompressionInSingleFile=true `
                 --output "$RootDir\publish\cli"
         } else {
-            & dotnet build "$RootDir\FleetMate.CLI\FleetMate.CLI.csproj" --configuration Release
+            foreach ($rid in @('win-x64', 'win-arm64')) {
+                & dotnet build "$RootDir\FleetMate.CLI\FleetMate.CLI.csproj" --configuration Release -r $rid
+                if ($LASTEXITCODE -ne 0) { throw "CLI build failed ($rid)" }
+            }
         }
-        if ($LASTEXITCODE -ne 0) { throw "CLI build failed" }
         Write-BuildLog "CLI build completed" "SUCCESS"
 
         if ($Sign -and $certInfo) {
-            $cliExe = if ($Publish) {
-                "$RootDir\publish\cli\fleetmate.exe"
+            if ($Publish) {
+                $cliExe = "$RootDir\publish\cli\fleetmate.exe"
+                if (Test-Path $cliExe) {
+                    Invoke-SignArtifact -Path $cliExe -Thumbprint $certInfo.Thumbprint -Store $certInfo.Store
+                } else {
+                    Write-BuildLog "CLI exe not found at: $cliExe" "WARNING"
+                }
             } else {
-                "$RootDir\FleetMate.CLI\bin\Release\net10.0-windows\win-arm64\fleetmate.exe"
-            }
-            if (Test-Path $cliExe) {
-                Invoke-SignArtifact -Path $cliExe -Thumbprint $certInfo.Thumbprint -Store $certInfo.Store
-            } else {
-                Write-BuildLog "CLI exe not found at: $cliExe" "WARNING"
+                foreach ($rid in @('win-x64', 'win-arm64')) {
+                    $cliExe = "$RootDir\FleetMate.CLI\bin\Release\net10.0-windows\$rid\fleetmate.exe"
+                    if (Test-Path $cliExe) {
+                        Invoke-SignArtifact -Path $cliExe -Thumbprint $certInfo.Thumbprint -Store $certInfo.Store
+                    } else {
+                        Write-BuildLog "CLI exe not found at: $cliExe" "WARNING"
+                    }
+                }
             }
         }
     }
