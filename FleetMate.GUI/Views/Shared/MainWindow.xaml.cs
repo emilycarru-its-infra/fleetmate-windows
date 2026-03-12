@@ -1,5 +1,10 @@
 using System.Windows;
 using System.Windows.Controls;
+using FleetMate.GUI.Views.Devices;
+using FleetMate.GUI.Views.Inventory;
+using FleetMate.GUI.Views.Tickets;
+using FleetMate.GUI.Views.Projects;
+using FleetMate.GUI.Views.Identity;
 
 namespace FleetMate.GUI.Views.Shared;
 

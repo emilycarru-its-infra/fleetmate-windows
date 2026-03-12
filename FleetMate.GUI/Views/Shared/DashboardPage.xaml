@@ -157,29 +157,3 @@
         </Grid>
     </Grid>
 </Page>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                            <ItemsControl.Style>
-                                <Style TargetType="ItemsControl">
-                                    <Style.Triggers>
-                                        <Trigger Property="HasItems" Value="False">
-                                            <Setter Property="Template">
-                                                <Setter.Value>
-                                                    <ControlTemplate>
-                                                        <TextBlock Text="Activity will appear once data loads." Padding="0,8"
-                                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                                    </ControlTemplate>
-                                                </Setter.Value>
-                                            </Setter>
-                                        </Trigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </ItemsControl.Style>
-                        </ItemsControl>
-                    </Border>
-                </StackPanel>
-            </Grid>
-
-        </StackPanel>
-    </ScrollViewer>
-</Page>
