@@ -48,7 +48,7 @@ public static class ReportMateCommand
                     d.Hostname ?? "-",
                     d.Model ?? "-",
                     d.OsVersion ?? "-",
-                    d.LastCheckIn?.ToString("yyyy-MM-dd HH:mm") ?? "-");
+                    d.LastSeen?.ToString("yyyy-MM-dd HH:mm") ?? "-");
             }
 
             AnsiConsole.Write(table);
@@ -79,7 +79,7 @@ public static class ReportMateCommand
             table.AddRow("Hostname", device.Hostname ?? "-");
             table.AddRow("Model", device.Model ?? "-");
             table.AddRow("OS Version", device.OsVersion ?? "-");
-            table.AddRow("Last Check-In", device.LastCheckIn?.ToString("yyyy-MM-dd HH:mm") ?? "-");
+            table.AddRow("Last Seen", device.LastSeen?.ToString("yyyy-MM-dd HH:mm") ?? "-");
 
             AnsiConsole.Write(table);
 
@@ -87,30 +87,31 @@ public static class ReportMateCommand
             var full = await reportMate.GetFullDeviceAsync(device.SerialNumber);
             if (full != null)
             {
-                AnsiConsole.MarkupLine($"\n[bold]IP Address:[/] {full.IpAddress ?? "-"}");
-                AnsiConsole.MarkupLine($"[bold]Console User:[/] {full.ConsoleUser ?? "-"}");
+                AnsiConsole.MarkupLine($"\n[bold]IP Address:[/] {full.Network?.PrimaryIpv4 ?? "-"}");
+            }
 
-                if (full.Installs?.Count > 0)
+            // Show device installs
+            var installs = await reportMate.GetDeviceInstallsAsync(device.SerialNumber);
+            if (installs.Count > 0)
+            {
+                var installTable = new Table();
+                installTable.Border = TableBorder.Rounded;
+                installTable.Title = new TableTitle($"[cyan]Installs ({installs.Count})[/]");
+                installTable.AddColumn("Name");
+                installTable.AddColumn("Version");
+                installTable.AddColumn("Status");
+                installTable.AddColumn("Date");
+
+                foreach (var i in installs.Take(50))
                 {
-                    var installTable = new Table();
-                    installTable.Border = TableBorder.Rounded;
-                    installTable.Title = new TableTitle($"[cyan]Installs ({full.Installs.Count})[/]");
-                    installTable.AddColumn("Name");
-                    installTable.AddColumn("Version");
-                    installTable.AddColumn("Status");
-                    installTable.AddColumn("Date");
-
-                    foreach (var i in full.Installs.Take(50))
-                    {
-                        installTable.AddRow(
-                            i.Name ?? "-",
-                            i.Version ?? "-",
-                            i.Status ?? "-",
-                            i.Date?.ToString("yyyy-MM-dd") ?? "-");
-                    }
-
-                    AnsiConsole.Write(installTable);
+                    installTable.AddRow(
+                        i.ItemName ?? "-",
+                        i.InstalledVersion ?? "-",
+                        i.CurrentStatus ?? "-",
+                        i.InstallDate?.ToString("yyyy-MM-dd") ?? "-");
                 }
+
+                AnsiConsole.Write(installTable);
             }
         }, queryArg);
         return cmd;
@@ -140,11 +141,11 @@ public static class ReportMateCommand
             foreach (var i in installs.Take(100))
             {
                 table.AddRow(
-                    i.Name ?? "-",
-                    i.Version ?? "-",
-                    i.Status ?? "-",
+                    i.ItemName ?? "-",
+                    i.InstalledVersion ?? "-",
+                    i.CurrentStatus ?? "-",
                     i.SerialNumber ?? "-",
-                    i.Date?.ToString("yyyy-MM-dd") ?? "-");
+                    i.InstallDate?.ToString("yyyy-MM-dd") ?? "-");
             }
 
             AnsiConsole.Write(table);
@@ -174,7 +175,7 @@ public static class ReportMateCommand
 
                 foreach (var e in errors.OrderByDescending(e => e.ErrorCount))
                 {
-                    table.AddRow(e.SerialNumber ?? "-", e.Hostname ?? "-", e.ErrorCount.ToString());
+                    table.AddRow(e.SerialNumber ?? "-", e.DeviceName ?? "-", e.ErrorCount.ToString());
                 }
 
                 AnsiConsole.Write(table);
@@ -188,9 +189,9 @@ public static class ReportMateCommand
                 table.AddColumn("Name");
                 table.AddColumn("Error Count");
 
-                foreach (var e in errors.OrderByDescending(e => e.ErrorCount))
+                foreach (var e in errors.OrderByDescending(e => e.DeviceCount))
                 {
-                    table.AddRow(e.Name ?? "-", e.ErrorCount.ToString());
+                    table.AddRow(e.ItemName ?? "-", e.DeviceCount.ToString());
                 }
 
                 AnsiConsole.Write(table);
@@ -209,10 +210,10 @@ public static class ReportMateCommand
                 foreach (var e in errors.Take(100))
                 {
                     table.AddRow(
-                        e.Name ?? "-",
-                        e.Version ?? "-",
+                        e.ItemName ?? "-",
+                        e.InstalledVersion ?? "-",
                         e.SerialNumber ?? "-",
-                        e.Date?.ToString("yyyy-MM-dd") ?? "-");
+                        e.InstallDate?.ToString("yyyy-MM-dd") ?? "-");
                 }
 
                 AnsiConsole.Write(table);
@@ -243,10 +244,9 @@ public static class ReportMateCommand
                 table.AddColumn("Property");
                 table.AddColumn("Value");
 
-                table.AddRow("IP Address", info.IpAddress ?? "-");
-                table.AddRow("Subnet", info.Subnet ?? "-");
-                table.AddRow("SSID", info.Ssid ?? "-");
-                table.AddRow("Interface", info.InterfaceName ?? "-");
+                table.AddRow("IP Address", info.PrimaryIpv4 ?? "-");
+                table.AddRow("Interface", info.ActiveConnection?.InterfaceName ?? "-");
+                table.AddRow("Connection Type", info.ActiveConnection?.ConnectionType ?? "-");
 
                 AnsiConsole.Write(table);
             }
@@ -257,13 +257,12 @@ public static class ReportMateCommand
                 table.Border = TableBorder.Rounded;
                 table.Title = new TableTitle($"[cyan]Fleet Network ({fleet.Count})[/]");
                 table.AddColumn("Serial");
-                table.AddColumn("Hostname");
+                table.AddColumn("Device");
                 table.AddColumn("IP Address");
-                table.AddColumn("Subnet");
 
                 foreach (var d in fleet)
                 {
-                    table.AddRow(d.SerialNumber ?? "-", d.Hostname ?? "-", d.IpAddress ?? "-", d.Subnet ?? "-");
+                    table.AddRow(d.SerialNumber ?? "-", d.DeviceName ?? "-", d.PrimaryIp ?? "-");
                 }
 
                 AnsiConsole.Write(table);
