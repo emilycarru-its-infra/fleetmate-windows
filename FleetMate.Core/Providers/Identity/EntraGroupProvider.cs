@@ -48,7 +48,7 @@ public class EntraGroupProvider : IGroupProvider
             Id = m.Id,
             DisplayName = m.DisplayName,
             UserPrincipalName = m.UserPrincipalName,
-            MemberType = m.OdataType?.Replace("#microsoft.graph.", ""),
+            MemberType = "user",
         }).ToList();
     }
 
