@@ -169,7 +169,7 @@ public partial class IdentityPage : Page
 
         try
         {
-            var results = new List<FleetMate.Models.Graph.EntraUser>();
+            var results = new List<FleetMate.Core.Models.Identity.EntraUser>();
 
             // Try exact lookup first (for UPN, email, or UUID)
             if (query.Contains('@') || Guid.TryParse(query, out _))

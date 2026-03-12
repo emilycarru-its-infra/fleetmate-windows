@@ -12,6 +12,7 @@ using System.Windows.Interop;
 using Microsoft.Web.WebView2.Core;
 using ModernWpf.Controls;
 using Serilog;
+using FleetMate.Core.Services.Tickets;
 
 namespace FleetMate.GUI.Views.Tickets;
 
@@ -1143,21 +1144,3 @@ public partial class TdxSsoLoginWindow : Window
     #endregion
 }
 
-/// <summary>
-/// Result of a TDX SSO authentication attempt
-/// </summary>
-public class TdxSsoResult
-{
-    public bool Success { get; set; }
-    public string? Token { get; set; }
-    public string? UserName { get; set; }
-    public string? UserEmail { get; set; }
-    public string? Error { get; set; }
-    public DateTime Expiry { get; set; }
-    
-    public static TdxSsoResult Failed(string error) => new()
-    {
-        Success = false,
-        Error = error
-    };
-}
