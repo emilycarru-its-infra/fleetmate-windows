@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -433,7 +434,7 @@ public partial class DashboardPage : Page
                             Fill = new SolidColorPaint(new SKColor(33, 150, 243)), InnerRadius = 50 },
                         new PieSeries<int> { Values = new[] { onHold }, Name = $"On Hold ({onHold})",
                             Fill = new SolidColorPaint(new SKColor(255, 152, 0)), InnerRadius = 50 }
-                    }.Where(s => ((PieSeries<int>)s).Values!.First() > 0).ToArray()
+                    }.Where(s => ((PieSeries<int>)s).Values!.Cast<int>().First() > 0).ToArray()
                 };
                 panel.Children.Add(chart);
                 if (slaViolated > 0)
