@@ -20,8 +20,8 @@ public partial class CreateWorkItemDialog : Window
         var app = (App)Application.Current;
         if (app.Config.AzureDevOps != null)
         {
-            AreaPathBox.Text = app.Config.AzureDevOps.AreaPath ?? app.Config.AzureDevOps.Project ?? "";
-            IterationPathBox.Text = app.Config.AzureDevOps.IterationPath ?? "";
+            AreaPathBox.Text = app.Config.Tasks?.Providers?.AzDevOps?.AreaPath ?? app.Config.AzureDevOps?.Project ?? "";
+            IterationPathBox.Text = app.Config.Tasks?.Providers?.AzDevOps?.IterationPath ?? app.Config.AzureDevOps?.DefaultIterationPath ?? "";
         }
     }
 
