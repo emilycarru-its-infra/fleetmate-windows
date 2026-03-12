@@ -24,9 +24,7 @@ public class SnipeAssetProvider : IAssetProvider
 
     public async Task<List<UnifiedAsset>> ListAssetsAsync(AssetFilter? filter = null, CancellationToken ct = default)
     {
-        var assets = filter?.SearchQuery != null
-            ? await _snipeService.GetAssetsAsync(search: filter.SearchQuery)
-            : await _snipeService.GetAssetsAsync();
+        var assets = await _snipeService.GetAssetsAsync(search: filter?.SearchQuery);
 
         return assets.Select(ToUnified).ToList();
     }

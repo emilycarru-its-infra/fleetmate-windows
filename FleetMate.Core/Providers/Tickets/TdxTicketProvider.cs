@@ -56,7 +56,7 @@ public class TdxTicketProvider : ITicketProvider
         GroupName = t.ResponsibleGroupName,
         CreatedDate = t.CreatedDate,
         ModifiedDate = t.ModifiedDate,
-        DueDate = t.ResolveByDate,
+        DueDate = t.EndDate,
         TicketType = t.TypeName,
         Source = t.SourceName,
     };
