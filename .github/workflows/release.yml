@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~\.nuget\packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Build.props', '**/Directory.Packages.props') }}
+
+      - name: Derive version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag -replace '^v',''
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Publish CLI + GUI (unsigned)
+        shell: pwsh
+        run: .\build.ps1 -Publish -GUI
+
+      - name: Build .pkg packages
+        shell: pwsh
+        run: .\build.ps1 -PkgOnly
+
+      - name: Collect release artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release -Force | Out-Null
+          foreach ($dir in @('publish', 'dist', '.')) {
+            if (Test-Path $dir) {
+              Get-ChildItem $dir -Recurse -File -Include *.pkg,*.nupkg,*.msi -ErrorAction SilentlyContinue |
+                ForEach-Object { Copy-Item $_.FullName "release/" -Force }
+            }
+          }
+          if (Test-Path "publish") {
+            Get-ChildItem publish -Recurse -File -Include fleetmate.exe,fleetmate-gui.exe -ErrorAction SilentlyContinue |
+              Group-Object DirectoryName |
+              ForEach-Object {
+                $arch = if ($_.Name -match 'win-arm64') { 'arm64' } elseif ($_.Name -match 'win-x64') { 'x64' } else { 'unknown' }
+                $files = $_.Group | ForEach-Object { $_.FullName }
+                if ($files.Count -gt 0) {
+                  Compress-Archive -Path $files -DestinationPath "release/fleetmate-$arch.zip" -Force
+                }
+              }
+          }
+          Get-ChildItem release | Format-Table Name, Length
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = "${{ steps.version.outputs.version }}"
+          $dotnet = (dotnet --version).Trim()
+          $os = (Get-CimInstance Win32_OperatingSystem).Caption.Trim()
+          $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          $title = "FleetMate $version"
+
+          $buildInfo = @"
+          ## Build info
+
+          Built with .NET SDK $dotnet on $os, via GitHub Actions: $runUrl. Provided **unsigned**.
+          "@
+
+          $signing = @"
+          ## Signing for enterprise deployment
+
+          ``````powershell
+          signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /n "Your Certificate Name" fleetmate.exe
+          signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /n "Your Certificate Name" fleetmate-gui.exe
+          ``````
+
+          Built from commit ``$env:GITHUB_SHA``.
+          "@
+
+          $autoNotes = gh api -X POST "repos/$env:GITHUB_REPOSITORY/releases/generate-notes" -f tag_name=$tag --jq .body
+          $notes = "$buildInfo`n`n$autoNotes`n`n$signing"
+
+          $artifacts = Get-ChildItem -Path release -File | ForEach-Object { $_.FullName }
+          if ($artifacts.Count -eq 0) { throw 'No artifacts to upload' }
+          gh release create $tag @artifacts --title $title --notes $notes
