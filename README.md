@@ -21,7 +21,7 @@ FleetMate is a unified command-line interface for managing IT assets across mult
 Download the latest release `.pkg` file and install via sbin-installer, or build from source:
 
 ```powershell
-git clone https://github.com/fleetmate-qa/fleetmate-windows.git
+git clone https://github.com/emilycarru-its-infra/fleetmate-windows.git
 cd fleetmate-windows
 .\build.ps1 -Publish -Sign -PkgOnly
 ```
