@@ -353,6 +353,68 @@ public partial class IntunePage : Page
         }
     }
 
+    private async void OnRetireClicked(object sender, RoutedEventArgs e)
+    {
+        if (_graphService == null) return;
+
+        var deviceIds = GetSelectedDeviceIds().ToList();
+        var result = MessageBox.Show(
+            $"Remove company data and unenroll {deviceIds.Count} device(s)? Personal data is left intact.",
+            "Confirm Retire",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        ShowActionMessage($"Retiring {deviceIds.Count} device(s)...", isLoading: true);
+
+        try
+        {
+            var results = await _graphService.RetireDevicesAsync(deviceIds);
+            var successful = results.Count(r => r.Success);
+            var failed = results.Count - successful;
+
+            ShowActionMessage(failed == 0
+                ? $"Successfully sent retire to {successful} device(s)"
+                : $"Retired {successful}, {failed} failed");
+        }
+        catch (Exception ex)
+        {
+            ShowActionMessage($"Error: {ex.Message}", isError: true);
+        }
+    }
+
+    private async void OnWipeClicked(object sender, RoutedEventArgs e)
+    {
+        if (_graphService == null) return;
+
+        var deviceIds = GetSelectedDeviceIds().ToList();
+        var result = MessageBox.Show(
+            $"This will factory-reset {deviceIds.Count} device(s). This cannot be undone.",
+            "Confirm Wipe",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        ShowActionMessage($"Wiping {deviceIds.Count} device(s)...", isLoading: true);
+
+        try
+        {
+            var results = await _graphService.WipeDevicesAsync(deviceIds);
+            var successful = results.Count(r => r.Success);
+            var failed = results.Count - successful;
+
+            ShowActionMessage(failed == 0
+                ? $"Successfully sent wipe to {successful} device(s)"
+                : $"Wiped {successful}, {failed} failed");
+        }
+        catch (Exception ex)
+        {
+            ShowActionMessage($"Error: {ex.Message}", isError: true);
+        }
+    }
+
     private async void OnLockClicked(object sender, RoutedEventArgs e)
     {
         if (_graphService == null) return;

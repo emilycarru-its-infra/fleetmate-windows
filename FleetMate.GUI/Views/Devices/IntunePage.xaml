@@ -188,6 +188,24 @@
                                 </StackPanel>
                             </Expander>
 
+                            <!-- Retire Section -->
+                            <Expander Header="➖ Retire Device">
+                                <StackPanel Margin="8">
+                                    <TextBlock Text="Remove company data and unenroll the selected devices. Personal data is left intact."
+                                               TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
+                                    <Button Content="Retire Device" Click="OnRetireClicked" HorizontalAlignment="Stretch" Background="Red" Foreground="White" />
+                                </StackPanel>
+                            </Expander>
+
+                            <!-- Wipe Section -->
+                            <Expander Header="🗑 Wipe Device">
+                                <StackPanel Margin="8">
+                                    <TextBlock Text="Factory-reset the selected devices. This cannot be undone."
+                                               TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
+                                    <Button Content="Wipe Device" Click="OnWipeClicked" HorizontalAlignment="Stretch" Background="Red" Foreground="White" />
+                                </StackPanel>
+                            </Expander>
+
                             <!-- App Reinstall Section -->
                             <Expander Header="📦 Reinstall App">
                                 <StackPanel Margin="8">
