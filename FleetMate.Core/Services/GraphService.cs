@@ -38,16 +38,31 @@ public class GraphService : IDisposable
     // Microsoft Graph resource ID
     private const string GraphResourceId = "https://graph.microsoft.com";
 
+    // When true, Graph calls run inside an aze elevation session (the domain
+    // identity's token never leaves Azure). Default on; FLEETMATE_GRAPH_TRANSPORT=direct
+    // falls back to a local az-minted token + direct HTTP.
+    private readonly bool _useElevation;
+
     public GraphService(GraphConfig config)
     {
         _config = config;
         _cacheDuration = TimeSpan.FromMinutes(config.CacheMinutes);
 
-        _client = new HttpClient
-        {
-            BaseAddress = new Uri("https://graph.microsoft.com/v1.0/"),
-            Timeout = TimeSpan.FromSeconds(60)
-        };
+        _useElevation = !string.Equals(
+            Environment.GetEnvironmentVariable("FLEETMATE_GRAPH_TRANSPORT"), "direct",
+            StringComparison.OrdinalIgnoreCase);
+
+        _client = _useElevation
+            ? new HttpClient(new ElevationHttpHandler())
+            {
+                BaseAddress = new Uri("https://graph.microsoft.com/v1.0/"),
+                Timeout = TimeSpan.FromSeconds(120) // allow for the one-time ~30s container cold start
+            }
+            : new HttpClient
+            {
+                BaseAddress = new Uri("https://graph.microsoft.com/v1.0/"),
+                Timeout = TimeSpan.FromSeconds(60)
+            };
 
         _jsonOptions = new JsonSerializerOptions
         {
@@ -207,6 +222,10 @@ public class GraphService : IDisposable
 
     private async Task<bool> SetAuthorizationAsync()
     {
+        // In elevation mode the in-session `az rest` authenticates as the domain
+        // identity; no local token is needed and none is attached.
+        if (_useElevation) return true;
+
         var token = await GetAccessTokenAsync();
         if (string.IsNullOrEmpty(token))
         {
