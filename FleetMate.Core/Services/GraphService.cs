@@ -38,16 +38,31 @@ public class GraphService : IDisposable
     // Microsoft Graph resource ID
     private const string GraphResourceId = "https://graph.microsoft.com";
 
+    // When true, Graph calls run inside an aze elevation session (the domain
+    // identity's token never leaves Azure). Default on; FLEETMATE_GRAPH_TRANSPORT=direct
+    // falls back to a local az-minted token + direct HTTP.
+    private readonly bool _useElevation;
+
     public GraphService(GraphConfig config)
     {
         _config = config;
         _cacheDuration = TimeSpan.FromMinutes(config.CacheMinutes);
 
-        _client = new HttpClient
-        {
-            BaseAddress = new Uri("https://graph.microsoft.com/v1.0/"),
-            Timeout = TimeSpan.FromSeconds(60)
-        };
+        _useElevation = !string.Equals(
+            Environment.GetEnvironmentVariable("FLEETMATE_GRAPH_TRANSPORT"), "direct",
+            StringComparison.OrdinalIgnoreCase);
+
+        _client = _useElevation
+            ? new HttpClient(new ElevationHttpHandler())
+            {
+                BaseAddress = new Uri("https://graph.microsoft.com/v1.0/"),
+                Timeout = TimeSpan.FromSeconds(120) // allow for the one-time ~30s container cold start
+            }
+            : new HttpClient
+            {
+                BaseAddress = new Uri("https://graph.microsoft.com/v1.0/"),
+                Timeout = TimeSpan.FromSeconds(60)
+            };
 
         _jsonOptions = new JsonSerializerOptions
         {
@@ -207,6 +222,10 @@ public class GraphService : IDisposable
 
     private async Task<bool> SetAuthorizationAsync()
     {
+        // In elevation mode the in-session `az rest` authenticates as the domain
+        // identity; no local token is needed and none is attached.
+        if (_useElevation) return true;
+
         var token = await GetAccessTokenAsync();
         if (string.IsNullOrEmpty(token))
         {
@@ -619,6 +638,22 @@ public class GraphService : IDisposable
             Log.Error(ex, "Failed to retire device {DeviceId}", deviceId);
             return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "retire", Message = ex.Message };
         }
+    }
+
+    /// <summary>Factory-reset multiple devices.</summary>
+    public async Task<List<DeviceActionResult>> WipeDevicesAsync(IEnumerable<string> deviceIds, bool keepEnrollmentData = false, bool keepUserData = false)
+    {
+        var tasks = deviceIds.Select(id => WipeDeviceAsync(id, keepEnrollmentData, keepUserData));
+        var results = await Task.WhenAll(tasks);
+        return results.ToList();
+    }
+
+    /// <summary>Retire multiple devices (remove company data, unenroll).</summary>
+    public async Task<List<DeviceActionResult>> RetireDevicesAsync(IEnumerable<string> deviceIds)
+    {
+        var tasks = deviceIds.Select(RetireDeviceAsync);
+        var results = await Task.WhenAll(tasks);
+        return results.ToList();
     }
 
     /// <summary>
@@ -1052,6 +1087,88 @@ public class GraphService : IDisposable
             Log.Error(ex, "Failed to get members for group {GroupId}", groupId);
             return new List<EntraUser>();
         }
+    }
+
+    /// <summary>Resolve a group name or id to its object id (passes ids through).</summary>
+    private async Task<string?> ResolveGroupIdAsync(string groupNameOrId)
+    {
+        if (Guid.TryParse(groupNameOrId, out _)) return groupNameOrId;
+        return (await GetGroupByNameAsync(groupNameOrId))?.Id;
+    }
+
+    /// <summary>Resolve a user UPN or id to its object id (passes ids through).</summary>
+    private async Task<string?> ResolveUserIdAsync(string userPrincipalNameOrId)
+    {
+        if (Guid.TryParse(userPrincipalNameOrId, out _)) return userPrincipalNameOrId;
+        return (await GetUserAsync(userPrincipalNameOrId))?.Id;
+    }
+
+    /// <summary>Add a directory object (user or device) to a group.</summary>
+    public async Task<bool> AddGroupMemberAsync(string groupNameOrId, string objectId)
+    {
+        if (!await SetAuthorizationAsync()) return false;
+        var groupId = await ResolveGroupIdAsync(groupNameOrId);
+        if (string.IsNullOrEmpty(groupId)) { Log.Warning("Group not found: {Group}", groupNameOrId); return false; }
+        try
+        {
+            // Serialize so the object id is JSON-escaped (the literal "@odata.id" key is required by Graph).
+            var json = JsonSerializer.Serialize(new Dictionary<string, string>
+            {
+                ["@odata.id"] = $"{_client.BaseAddress}directoryObjects/{objectId}"
+            });
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var response = await _client.PostAsync($"groups/{groupId}/members/$ref", content);
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Warning("Add member failed: {Status} - {Error}", response.StatusCode, error);
+                return false;
+            }
+            return true;
+        }
+        catch (Exception ex) { Log.Error(ex, "Failed to add member to group {Group}", groupNameOrId); return false; }
+    }
+
+    /// <summary>Remove a directory object from a group.</summary>
+    public async Task<bool> RemoveGroupMemberAsync(string groupNameOrId, string objectId)
+    {
+        if (!await SetAuthorizationAsync()) return false;
+        var groupId = await ResolveGroupIdAsync(groupNameOrId);
+        if (string.IsNullOrEmpty(groupId)) { Log.Warning("Group not found: {Group}", groupNameOrId); return false; }
+        try
+        {
+            var response = await _client.DeleteAsync($"groups/{groupId}/members/{objectId}/$ref");
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Warning("Remove member failed: {Status} - {Error}", response.StatusCode, error);
+                return false;
+            }
+            return true;
+        }
+        catch (Exception ex) { Log.Error(ex, "Failed to remove member from group {Group}", groupNameOrId); return false; }
+    }
+
+    /// <summary>Enable or disable a user account (PATCH accountEnabled).</summary>
+    public async Task<bool> SetUserAccountEnabledAsync(string userPrincipalNameOrId, bool enabled)
+    {
+        if (!await SetAuthorizationAsync()) return false;
+        var userId = await ResolveUserIdAsync(userPrincipalNameOrId);
+        if (string.IsNullOrEmpty(userId)) { Log.Warning("User not found: {User}", userPrincipalNameOrId); return false; }
+        try
+        {
+            var json = $"{{\"accountEnabled\":{(enabled ? "true" : "false")}}}";
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var response = await _client.PatchAsync($"users/{userId}", content);
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Warning("Set accountEnabled failed: {Status} - {Error}", response.StatusCode, error);
+                return false;
+            }
+            return true;
+        }
+        catch (Exception ex) { Log.Error(ex, "Failed to set accountEnabled for {User}", userPrincipalNameOrId); return false; }
     }
 
     /// <summary>
