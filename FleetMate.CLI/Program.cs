@@ -84,15 +84,22 @@ class Program
                 adoService = new AzureDevOpsService(config.AzureDevOps);
             }
 
-            // Create Microsoft Graph service if configured
+            // Create Microsoft Graph service. In elevation mode (the default) no
+            // local Graph credentials are needed — the in-session identity handles
+            // auth — so construct it regardless. FLEETMATE_GRAPH_TRANSPORT=direct
+            // falls back to a locally-minted token and requires config.
+            var useElevation = !string.Equals(
+                Environment.GetEnvironmentVariable("FLEETMATE_GRAPH_TRANSPORT"), "direct",
+                StringComparison.OrdinalIgnoreCase);
             GraphService? graphService = null;
-            if (config.Graph != null &&
-                (config.Graph.UseAzureCliAuth ||
-                 (!string.IsNullOrWhiteSpace(config.Graph.TenantId) &&
-                  !string.IsNullOrWhiteSpace(config.Graph.ClientId) &&
-                  !string.IsNullOrWhiteSpace(config.Graph.ClientSecret))))
+            if (useElevation ||
+                (config.Graph != null &&
+                 (config.Graph.UseAzureCliAuth ||
+                  (!string.IsNullOrWhiteSpace(config.Graph.TenantId) &&
+                   !string.IsNullOrWhiteSpace(config.Graph.ClientId) &&
+                   !string.IsNullOrWhiteSpace(config.Graph.ClientSecret)))))
             {
-                graphService = new GraphService(config.Graph);
+                graphService = new GraphService(config.Graph ?? new GraphConfig());
             }
 
             // Create TeamDynamix service if configured
