@@ -1054,6 +1054,82 @@ public class GraphService : IDisposable
         }
     }
 
+    /// <summary>Resolve a group name or id to its object id (passes ids through).</summary>
+    private async Task<string?> ResolveGroupIdAsync(string groupNameOrId)
+    {
+        if (Guid.TryParse(groupNameOrId, out _)) return groupNameOrId;
+        return (await GetGroupByNameAsync(groupNameOrId))?.Id;
+    }
+
+    /// <summary>Resolve a user UPN or id to its object id (passes ids through).</summary>
+    private async Task<string?> ResolveUserIdAsync(string userPrincipalNameOrId)
+    {
+        if (Guid.TryParse(userPrincipalNameOrId, out _)) return userPrincipalNameOrId;
+        return (await GetUserAsync(userPrincipalNameOrId))?.Id;
+    }
+
+    /// <summary>Add a directory object (user or device) to a group.</summary>
+    public async Task<bool> AddGroupMemberAsync(string groupNameOrId, string objectId)
+    {
+        if (!await SetAuthorizationAsync()) return false;
+        var groupId = await ResolveGroupIdAsync(groupNameOrId);
+        if (string.IsNullOrEmpty(groupId)) { Log.Warning("Group not found: {Group}", groupNameOrId); return false; }
+        try
+        {
+            // Graph requires the literal key "@odata.id".
+            var json = $"{{\"@odata.id\":\"{_client.BaseAddress}directoryObjects/{objectId}\"}}";
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var response = await _client.PostAsync($"groups/{groupId}/members/$ref", content);
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Warning("Add member failed: {Status}", response.StatusCode);
+                return false;
+            }
+            return true;
+        }
+        catch (Exception ex) { Log.Error(ex, "Failed to add member to group {Group}", groupNameOrId); return false; }
+    }
+
+    /// <summary>Remove a directory object from a group.</summary>
+    public async Task<bool> RemoveGroupMemberAsync(string groupNameOrId, string objectId)
+    {
+        if (!await SetAuthorizationAsync()) return false;
+        var groupId = await ResolveGroupIdAsync(groupNameOrId);
+        if (string.IsNullOrEmpty(groupId)) { Log.Warning("Group not found: {Group}", groupNameOrId); return false; }
+        try
+        {
+            var response = await _client.DeleteAsync($"groups/{groupId}/members/{objectId}/$ref");
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Warning("Remove member failed: {Status}", response.StatusCode);
+                return false;
+            }
+            return true;
+        }
+        catch (Exception ex) { Log.Error(ex, "Failed to remove member from group {Group}", groupNameOrId); return false; }
+    }
+
+    /// <summary>Enable or disable a user account (PATCH accountEnabled).</summary>
+    public async Task<bool> SetUserAccountEnabledAsync(string userPrincipalNameOrId, bool enabled)
+    {
+        if (!await SetAuthorizationAsync()) return false;
+        var userId = await ResolveUserIdAsync(userPrincipalNameOrId);
+        if (string.IsNullOrEmpty(userId)) { Log.Warning("User not found: {User}", userPrincipalNameOrId); return false; }
+        try
+        {
+            var json = $"{{\"accountEnabled\":{(enabled ? "true" : "false")}}}";
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var response = await _client.PatchAsync($"users/{userId}", content);
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Warning("Set accountEnabled failed: {Status}", response.StatusCode);
+                return false;
+            }
+            return true;
+        }
+        catch (Exception ex) { Log.Error(ex, "Failed to set accountEnabled for {User}", userPrincipalNameOrId); return false; }
+    }
+
     /// <summary>
     /// Search groups by name pattern
     /// </summary>
