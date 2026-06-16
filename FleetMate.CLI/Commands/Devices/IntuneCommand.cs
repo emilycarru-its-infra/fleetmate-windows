@@ -44,6 +44,7 @@ public static class IntuneCommand
     /// <summary>Resolve a serial to a managedDevice id; pass an id straight through.</summary>
     private static async Task<string?> ResolveDeviceIdAsync(GraphService graph, string identifier)
     {
+        if (Guid.TryParse(identifier, out _)) return identifier;
         var device = await graph.GetDeviceBySerialAsync(identifier);
         return string.IsNullOrEmpty(device?.Id) ? identifier : device!.Id;
     }
@@ -51,7 +52,7 @@ public static class IntuneCommand
     private static void ReportAction(GraphService.DeviceActionResult result, string action)
     {
         if (result.Success) AnsiConsole.MarkupLine($"[green]Sent {action}[/]");
-        else AnsiConsole.MarkupLine($"[red]{action} failed:[/] {result.Message ?? "unknown error"}");
+        else AnsiConsole.MarkupLine($"[red]{action} failed:[/] {Markup.Escape(result.Message ?? "unknown error")}");
     }
 
     private static Command CreateSyncCommand(GraphService? graphService)
@@ -112,7 +113,7 @@ public static class IntuneCommand
             if (!EnsureConfigured(graphService)) return;
             if (!confirm)
             {
-                AnsiConsole.MarkupLine($"[yellow]This will factory-reset {identifier}. Re-run with --confirm to proceed.[/]");
+                AnsiConsole.MarkupLine($"[yellow]This will factory-reset {Markup.Escape(identifier)}. Re-run with --confirm to proceed.[/]");
                 return;
             }
             var id = await ResolveDeviceIdAsync(graphService!, identifier);
@@ -133,7 +134,7 @@ public static class IntuneCommand
             if (!EnsureConfigured(graphService)) return;
             if (!confirm)
             {
-                AnsiConsole.MarkupLine($"[yellow]This will unenroll {identifier}. Re-run with --confirm to proceed.[/]");
+                AnsiConsole.MarkupLine($"[yellow]This will unenroll {Markup.Escape(identifier)}. Re-run with --confirm to proceed.[/]");
                 return;
             }
             var id = await ResolveDeviceIdAsync(graphService!, identifier);
@@ -151,8 +152,8 @@ public static class IntuneCommand
         {
             if (!EnsureConfigured(graphService)) return;
             var result = await graphService!.DeployCimianPushRemediationAsync(group);
-            if (result.Success) AnsiConsole.MarkupLine($"[green]Deployed[/] Cimian push remediation to {group}");
-            else AnsiConsole.MarkupLine($"[red]Failed:[/] {result.Message ?? "unknown error"}");
+            if (result.Success) AnsiConsole.MarkupLine($"[green]Deployed[/] Cimian push remediation to {Markup.Escape(group)}");
+            else AnsiConsole.MarkupLine($"[red]Failed:[/] {Markup.Escape(result.Message ?? "unknown error")}");
         }, groupArg);
         return command;
     }

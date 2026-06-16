@@ -223,8 +223,8 @@ public static class EntraCommand
         {
             if (!EnsureConfigured(graphService)) return;
             var ok = await graphService!.AddGroupMemberAsync(group, objectId);
-            if (ok) AnsiConsole.MarkupLine($"[green]Added[/] {objectId} to {group}");
-            else AnsiConsole.MarkupLine($"[red]Failed[/] to add {objectId} to {group}");
+            if (ok) AnsiConsole.MarkupLine($"[green]Added[/] {Markup.Escape(objectId)} to {Markup.Escape(group)}");
+            else AnsiConsole.MarkupLine($"[red]Failed[/] to add {Markup.Escape(objectId)} to {Markup.Escape(group)}");
         }, groupArg, objectArg);
 
         return command;
@@ -242,8 +242,8 @@ public static class EntraCommand
         {
             if (!EnsureConfigured(graphService)) return;
             var ok = await graphService!.RemoveGroupMemberAsync(group, objectId);
-            if (ok) AnsiConsole.MarkupLine($"[green]Removed[/] {objectId} from {group}");
-            else AnsiConsole.MarkupLine($"[red]Failed[/] to remove {objectId} from {group}");
+            if (ok) AnsiConsole.MarkupLine($"[green]Removed[/] {Markup.Escape(objectId)} from {Markup.Escape(group)}");
+            else AnsiConsole.MarkupLine($"[red]Failed[/] to remove {Markup.Escape(objectId)} from {Markup.Escape(group)}");
         }, groupArg, objectArg);
 
         return command;
@@ -268,8 +268,8 @@ public static class EntraCommand
                 return;
             }
             var ok = await graphService!.SetUserAccountEnabledAsync(user, enable);
-            if (ok) AnsiConsole.MarkupLine($"[green]{(enable ? "Enabled" : "Disabled")}[/] account for {user}");
-            else AnsiConsole.MarkupLine($"[red]Failed[/] to update {user}");
+            if (ok) AnsiConsole.MarkupLine($"[green]{(enable ? "Enabled" : "Disabled")}[/] account for {Markup.Escape(user)}");
+            else AnsiConsole.MarkupLine($"[red]Failed[/] to update {Markup.Escape(user)}");
         }, userArg, enableOption, disableOption);
 
         return command;
