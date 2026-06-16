@@ -54,6 +54,10 @@ public sealed class ElevationSession
     public const int DefaultTtlHours = 8;
     private const string ExecApiVersion = "2023-05-01";
 
+    // Serializes EnsureSessionAsync so concurrent callers (bulk Task.WhenAll,
+    // parallel HttpClient requests) don't race to create the same container.
+    private readonly SemaphoreSlim _ensureGate = new(1, 1);
+
     private static string SessionName(GraphDomain domain)
     {
         var user = new string(Environment.UserName.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
@@ -64,6 +68,19 @@ public sealed class ElevationSession
     // MARK: container lifecycle (via az)
 
     public async Task EnsureSessionAsync(GraphDomain domain, int ttlHours = DefaultTtlHours)
+    {
+        await _ensureGate.WaitAsync();
+        try
+        {
+            await EnsureSessionCoreAsync(domain, ttlHours);
+        }
+        finally
+        {
+            _ensureGate.Release();
+        }
+    }
+
+    private async Task EnsureSessionCoreAsync(GraphDomain domain, int ttlHours)
     {
         var name = SessionName(domain);
 
@@ -116,7 +133,10 @@ public sealed class ElevationSession
         await EnsureSessionAsync(domain);
         var name = SessionName(domain);
 
-        var sub = (await RunAzAsync("account", "show", "--query", "id", "-o", "tsv")).Out.Trim();
+        var account = await RunAzAsync("account", "show", "--query", "id", "-o", "tsv");
+        var sub = account.Out.Trim();
+        if (account.Code != 0 || string.IsNullOrEmpty(sub))
+            throw new ElevationException($"Not logged in to az (run az login). {account.Err.Trim()}");
         var uri = $"https://management.azure.com/subscriptions/{sub}/resourceGroups/{SessionsResourceGroup}/providers/Microsoft.ContainerInstance/containerGroups/{name}/containers/{name}/exec?api-version={ExecApiVersion}";
         var body = "{\"command\":\"/bin/bash\",\"terminalSize\":{\"rows\":24,\"cols\":500}}";
 

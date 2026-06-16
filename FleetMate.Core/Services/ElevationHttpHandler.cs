@@ -20,7 +20,7 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
         var domain = RouteDomain(url);
 
         var sb = new StringBuilder();
-        sb.Append("az rest --method ").Append(method).Append(" --url ").Append(SingleQuote(url));
+        sb.Append("az rest --method ").Append(method).Append(" --uri ").Append(SingleQuote(url));
         if (request.Content != null)
         {
             var body = await request.Content.ReadAsStringAsync(cancellationToken);
