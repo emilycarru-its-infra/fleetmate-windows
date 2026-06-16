@@ -1111,13 +1111,17 @@ public class GraphService : IDisposable
         if (string.IsNullOrEmpty(groupId)) { Log.Warning("Group not found: {Group}", groupNameOrId); return false; }
         try
         {
-            // Graph requires the literal key "@odata.id".
-            var json = $"{{\"@odata.id\":\"{_client.BaseAddress}directoryObjects/{objectId}\"}}";
+            // Serialize so the object id is JSON-escaped (the literal "@odata.id" key is required by Graph).
+            var json = JsonSerializer.Serialize(new Dictionary<string, string>
+            {
+                ["@odata.id"] = $"{_client.BaseAddress}directoryObjects/{objectId}"
+            });
             using var content = new StringContent(json, Encoding.UTF8, "application/json");
             var response = await _client.PostAsync($"groups/{groupId}/members/$ref", content);
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Add member failed: {Status}", response.StatusCode);
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Warning("Add member failed: {Status} - {Error}", response.StatusCode, error);
                 return false;
             }
             return true;
@@ -1136,7 +1140,8 @@ public class GraphService : IDisposable
             var response = await _client.DeleteAsync($"groups/{groupId}/members/{objectId}/$ref");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Remove member failed: {Status}", response.StatusCode);
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Warning("Remove member failed: {Status} - {Error}", response.StatusCode, error);
                 return false;
             }
             return true;
@@ -1157,7 +1162,8 @@ public class GraphService : IDisposable
             var response = await _client.PatchAsync($"users/{userId}", content);
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Set accountEnabled failed: {Status}", response.StatusCode);
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Warning("Set accountEnabled failed: {Status} - {Error}", response.StatusCode, error);
                 return false;
             }
             return true;
