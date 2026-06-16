@@ -31,7 +31,130 @@ public static class IntuneCommand
         command.AddCommand(CreateDevicesCommand(graphService));
         command.AddCommand(CreateDeviceCommand(graphService));
         command.AddCommand(CreateComplianceCommand(graphService));
+        command.AddCommand(CreateSyncCommand(graphService));
+        command.AddCommand(CreateRebootCommand(graphService));
+        command.AddCommand(CreateLockCommand(graphService));
+        command.AddCommand(CreateWipeCommand(graphService));
+        command.AddCommand(CreateRetireCommand(graphService));
+        command.AddCommand(CreateCimianPushCommand(graphService));
 
+        return command;
+    }
+
+    /// <summary>Resolve a serial to a managedDevice id; pass an id straight through.</summary>
+    private static async Task<string?> ResolveDeviceIdAsync(GraphService graph, string identifier)
+    {
+        if (Guid.TryParse(identifier, out _)) return identifier;
+        var device = await graph.GetDeviceBySerialAsync(identifier);
+        return string.IsNullOrEmpty(device?.Id) ? identifier : device!.Id;
+    }
+
+    private static void ReportAction(GraphService.DeviceActionResult result, string action)
+    {
+        if (result.Success) AnsiConsole.MarkupLine($"[green]Sent {action}[/]");
+        else AnsiConsole.MarkupLine($"[red]{action} failed:[/] {Markup.Escape(result.Message ?? "unknown error")}");
+    }
+
+    private static Command CreateSyncCommand(GraphService? graphService)
+    {
+        var command = new Command("sync", "Force a device to sync with Intune");
+        var idArg = new Argument<string>(name: "identifier", description: "Serial number or managedDevice id");
+        command.AddArgument(idArg);
+        command.SetHandler(async (identifier) =>
+        {
+            if (!EnsureConfigured(graphService)) return;
+            var id = await ResolveDeviceIdAsync(graphService!, identifier);
+            ReportAction(await graphService!.SyncDeviceAsync(id!), "sync");
+        }, idArg);
+        return command;
+    }
+
+    private static Command CreateRebootCommand(GraphService? graphService)
+    {
+        var command = new Command("reboot", "Reboot a device");
+        var idArg = new Argument<string>(name: "identifier", description: "Serial number or managedDevice id");
+        command.AddArgument(idArg);
+        command.SetHandler(async (identifier) =>
+        {
+            if (!EnsureConfigured(graphService)) return;
+            var id = await ResolveDeviceIdAsync(graphService!, identifier);
+            ReportAction(await graphService!.RebootDeviceAsync(id!), "reboot");
+        }, idArg);
+        return command;
+    }
+
+    private static Command CreateLockCommand(GraphService? graphService)
+    {
+        var command = new Command("lock", "Remotely lock a device");
+        var idArg = new Argument<string>(name: "identifier", description: "Serial number or managedDevice id");
+        var pinOption = new Option<string?>(aliases: ["--pin"], description: "Optional PIN (macOS)");
+        command.AddArgument(idArg);
+        command.AddOption(pinOption);
+        command.SetHandler(async (identifier, pin) =>
+        {
+            if (!EnsureConfigured(graphService)) return;
+            var id = await ResolveDeviceIdAsync(graphService!, identifier);
+            ReportAction(await graphService!.RemoteLockDeviceAsync(id!, pin), "lock");
+        }, idArg, pinOption);
+        return command;
+    }
+
+    private static Command CreateWipeCommand(GraphService? graphService)
+    {
+        var command = new Command("wipe", "Factory-reset a device (DESTRUCTIVE)");
+        var idArg = new Argument<string>(name: "identifier", description: "Serial number or managedDevice id");
+        var keepUserDataOption = new Option<bool>(aliases: ["--keep-user-data"], description: "Keep user data");
+        var confirmOption = new Option<bool>(aliases: ["--confirm"], description: "Required to actually wipe");
+        command.AddArgument(idArg);
+        command.AddOption(keepUserDataOption);
+        command.AddOption(confirmOption);
+        command.SetHandler(async (identifier, keepUserData, confirm) =>
+        {
+            if (!EnsureConfigured(graphService)) return;
+            if (!confirm)
+            {
+                AnsiConsole.MarkupLine($"[yellow]This will factory-reset {Markup.Escape(identifier)}. Re-run with --confirm to proceed.[/]");
+                return;
+            }
+            var id = await ResolveDeviceIdAsync(graphService!, identifier);
+            ReportAction(await graphService!.WipeDeviceAsync(id!, keepUserData: keepUserData), "wipe");
+        }, idArg, keepUserDataOption, confirmOption);
+        return command;
+    }
+
+    private static Command CreateRetireCommand(GraphService? graphService)
+    {
+        var command = new Command("retire", "Remove company data and unenroll a device");
+        var idArg = new Argument<string>(name: "identifier", description: "Serial number or managedDevice id");
+        var confirmOption = new Option<bool>(aliases: ["--confirm"], description: "Required to actually retire");
+        command.AddArgument(idArg);
+        command.AddOption(confirmOption);
+        command.SetHandler(async (identifier, confirm) =>
+        {
+            if (!EnsureConfigured(graphService)) return;
+            if (!confirm)
+            {
+                AnsiConsole.MarkupLine($"[yellow]This will unenroll {Markup.Escape(identifier)}. Re-run with --confirm to proceed.[/]");
+                return;
+            }
+            var id = await ResolveDeviceIdAsync(graphService!, identifier);
+            ReportAction(await graphService!.RetireDeviceAsync(id!), "retire");
+        }, idArg, confirmOption);
+        return command;
+    }
+
+    private static Command CreateCimianPushCommand(GraphService? graphService)
+    {
+        var command = new Command("cimian-push", "Deploy the Cimian push-trigger remediation to a group");
+        var groupArg = new Argument<string>(name: "group", description: "Target group name or id");
+        command.AddArgument(groupArg);
+        command.SetHandler(async (group) =>
+        {
+            if (!EnsureConfigured(graphService)) return;
+            var result = await graphService!.DeployCimianPushRemediationAsync(group);
+            if (result.Success) AnsiConsole.MarkupLine($"[green]Deployed[/] Cimian push remediation to {Markup.Escape(group)}");
+            else AnsiConsole.MarkupLine($"[red]Failed:[/] {Markup.Escape(result.Message ?? "unknown error")}");
+        }, groupArg);
         return command;
     }
 

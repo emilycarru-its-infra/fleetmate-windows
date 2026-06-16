@@ -31,6 +31,9 @@ public static class EntraCommand
         command.AddCommand(CreateUserCommand(graphService));
         command.AddCommand(CreateGroupCommand(graphService));
         command.AddCommand(CreateCheckGroupCommand(graphService));
+        command.AddCommand(CreateAddMemberCommand(graphService));
+        command.AddCommand(CreateRemoveMemberCommand(graphService));
+        command.AddCommand(CreateSetUserCommand(graphService));
 
         return command;
     }
@@ -204,6 +207,70 @@ public static class EntraCommand
                 AnsiConsole.MarkupLine($"[red]No[/] - {upn} [red]IS NOT[/] a member of {group}");
             }
         }, upnArg, groupArg, jsonOption);
+
+        return command;
+    }
+
+    private static Command CreateAddMemberCommand(GraphService? graphService)
+    {
+        var command = new Command("add-member", "Add a directory object (user/device) to a group");
+        var groupArg = new Argument<string>(name: "group", description: "Group name or ID");
+        var objectArg = new Argument<string>(name: "object-id", description: "Object id of the user or device to add");
+        command.AddArgument(groupArg);
+        command.AddArgument(objectArg);
+
+        command.SetHandler(async (group, objectId) =>
+        {
+            if (!EnsureConfigured(graphService)) return;
+            var ok = await graphService!.AddGroupMemberAsync(group, objectId);
+            if (ok) AnsiConsole.MarkupLine($"[green]Added[/] {Markup.Escape(objectId)} to {Markup.Escape(group)}");
+            else AnsiConsole.MarkupLine($"[red]Failed[/] to add {Markup.Escape(objectId)} to {Markup.Escape(group)}");
+        }, groupArg, objectArg);
+
+        return command;
+    }
+
+    private static Command CreateRemoveMemberCommand(GraphService? graphService)
+    {
+        var command = new Command("remove-member", "Remove a directory object from a group");
+        var groupArg = new Argument<string>(name: "group", description: "Group name or ID");
+        var objectArg = new Argument<string>(name: "object-id", description: "Object id of the member to remove");
+        command.AddArgument(groupArg);
+        command.AddArgument(objectArg);
+
+        command.SetHandler(async (group, objectId) =>
+        {
+            if (!EnsureConfigured(graphService)) return;
+            var ok = await graphService!.RemoveGroupMemberAsync(group, objectId);
+            if (ok) AnsiConsole.MarkupLine($"[green]Removed[/] {Markup.Escape(objectId)} from {Markup.Escape(group)}");
+            else AnsiConsole.MarkupLine($"[red]Failed[/] to remove {Markup.Escape(objectId)} from {Markup.Escape(group)}");
+        }, groupArg, objectArg);
+
+        return command;
+    }
+
+    private static Command CreateSetUserCommand(GraphService? graphService)
+    {
+        var command = new Command("set-user", "Enable or disable a user account");
+        var userArg = new Argument<string>(name: "user", description: "User principal name or id");
+        var enableOption = new Option<bool>(aliases: ["--enable"], description: "Enable the account");
+        var disableOption = new Option<bool>(aliases: ["--disable"], description: "Disable the account");
+        command.AddArgument(userArg);
+        command.AddOption(enableOption);
+        command.AddOption(disableOption);
+
+        command.SetHandler(async (user, enable, disable) =>
+        {
+            if (!EnsureConfigured(graphService)) return;
+            if (enable == disable)
+            {
+                AnsiConsole.MarkupLine("[red]Specify exactly one of --enable or --disable.[/]");
+                return;
+            }
+            var ok = await graphService!.SetUserAccountEnabledAsync(user, enable);
+            if (ok) AnsiConsole.MarkupLine($"[green]{(enable ? "Enabled" : "Disabled")}[/] account for {Markup.Escape(user)}");
+            else AnsiConsole.MarkupLine($"[red]Failed[/] to update {Markup.Escape(user)}");
+        }, userArg, enableOption, disableOption);
 
         return command;
     }
