@@ -640,6 +640,22 @@ public class GraphService : IDisposable
         }
     }
 
+    /// <summary>Factory-reset multiple devices.</summary>
+    public async Task<List<DeviceActionResult>> WipeDevicesAsync(IEnumerable<string> deviceIds, bool keepEnrollmentData = false, bool keepUserData = false)
+    {
+        var tasks = deviceIds.Select(id => WipeDeviceAsync(id, keepEnrollmentData, keepUserData));
+        var results = await Task.WhenAll(tasks);
+        return results.ToList();
+    }
+
+    /// <summary>Retire multiple devices (remove company data, unenroll).</summary>
+    public async Task<List<DeviceActionResult>> RetireDevicesAsync(IEnumerable<string> deviceIds)
+    {
+        var tasks = deviceIds.Select(RetireDeviceAsync);
+        var results = await Task.WhenAll(tasks);
+        return results.ToList();
+    }
+
     /// <summary>
     /// Get mobile apps from Intune
     /// </summary>
