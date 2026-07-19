@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- WiX v6 installer for the FleetMate CLI (mgmt tool).
+     Mirrors bootstrapmate/windows packaging so cimian-bootstrap-mgmt can
+     fetch + sign + repack + deploy it as another mgmt tool. FleetMate is an
+     operator CLI, so this is deliberately lean: install the self-contained
+     exe to Program Files, put it on the system PATH, and write registry
+     values Intune uses for detection. No post-install run or self-heal task. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <?ifndef ProductVersion?>
+    <?define ProductVersion = "0.0.0"?>
+  <?endif?>
+
+  <Package Name="FleetMate"
+           Version="$(var.ProductVersion)"
+           Manufacturer="Emily Carr University of Art + Design"
+           UpgradeCode="{F79451F3-18A7-4A05-BF70-3B6297E7E4DD}"
+           Language="1033"
+           InstallerVersion="500"
+           Compressed="yes"
+           Scope="perMachine">
+
+    <Property Id="MSIUSEREALADMINDETECTION" Value="1" />
+
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  AllowDowngrades="no"
+                  MigrateFeatures="yes"
+                  DowngradeErrorMessage="A newer version of [ProductName] is already installed."
+                  Schedule="afterInstallInitialize" />
+
+    <Media Id="1" Cabinet="fleetmate.cab" EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLDIR" Name="FleetMate" />
+    </StandardDirectory>
+
+    <!-- The CLI is published self-contained single-file, so one exe is the
+         entire payload. -->
+    <Component Id="FleetMateExecutable" Directory="INSTALLDIR" Guid="{C4E6AECC-4EA4-4AEE-9ACE-C61D57B1C9E8}">
+      <File Id="FleetMateExe" Source="$(var.BIN_DIR)\fleetmate.exe" KeyPath="yes" Vital="yes" />
+      <RemoveFile Id="RemoveOldExecutable" Name="fleetmate.exe" On="both" />
+    </Component>
+
+    <!-- Registry entries for installation tracking AND Intune Win32 detection.
+         LastRunVersion must match the version the deploy pipeline's detection
+         rule checks. -->
+    <Component Id="RegistryEntries" Directory="INSTALLDIR" Guid="{E37F11C0-6104-467C-BAEF-5FF648C3DA77}">
+      <RegistryValue Root="HKLM" Key="SOFTWARE\FleetMate" Name="InstallPath" Value="[INSTALLDIR]" Type="string" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\FleetMate" Name="Version" Value="$(var.ProductVersion)" Type="string" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\FleetMate" Name="InstallDate" Value="[Date]" Type="string" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\FleetMate" Name="Architecture" Value="[ProcessorArchitecture]" Type="string" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\FleetMate" Name="LastRunVersion" Value="$(var.ProductVersion)" Type="string" />
+    </Component>
+
+    <!-- Put fleetmate.exe on the system PATH so operators can run `fleetmate`
+         from any shell. -->
+    <Component Id="SetPathComponent" Directory="INSTALLDIR" Guid="{5ED9326E-87CB-485F-A239-0F1D9720F7D6}">
+      <Environment Id="UpdatePath" Name="PATH" Value="[INSTALLDIR]" Permanent="no" Part="last" Action="set" Separator=";" System="yes" />
+    </Component>
+
+    <Feature Id="DefaultFeature" Level="1">
+      <ComponentRef Id="FleetMateExecutable" />
+      <ComponentRef Id="RegistryEntries" />
+      <ComponentRef Id="SetPathComponent" />
+    </Feature>
+
+  </Package>
+
+</Wix>

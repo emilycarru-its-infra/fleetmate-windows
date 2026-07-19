@@ -53,6 +53,8 @@ param(
     [switch]$GUIOnly,
     [switch]$CLIOnly,
     [switch]$PkgOnly,
+    [switch]$Msi,
+    [switch]$MsiOnly,
     [switch]$Launch
 )
 
@@ -164,12 +166,21 @@ function Invoke-SignArtifact {
 
 function Get-BuildVersion {
     $now = Get-Date
+    # Authoritative binary/release/pkgsinfo version: YYYY.MM.DD.HHMM. This is
+    # what appears in artifact filenames and what cimiimport derives the Cimian
+    # package version from.
     $fullVersion = $now.ToString("yyyy.MM.dd.HHmm")
     $semanticVersion = $now.ToString("yyyy.M.d")
-    
+    # MSI ProductVersion fields are capped (major/minor <= 255, build <= 65535),
+    # so the 4-digit-year calendar version is illegal there. Mirror the exact
+    # scheme CimianTools uses internally: yy.M.(day*100+hour) — e.g. calendar
+    # 2026.06.24.05xx -> MSI 26.6.2405. The filename/pkgsinfo still carry Full.
+    $msiVersion = "{0}.{1}.{2}" -f ($now.Year - 2000), $now.Month, ($now.Day * 100 + $now.Hour)
+
     return @{
         Full = $fullVersion
         Semantic = $semanticVersion
+        Msi = $msiVersion
     }
 }
 
@@ -336,6 +347,78 @@ installs:
     return $null
 }
 
+function Build-MsiPackage {
+    param(
+        [hashtable]$Version,
+        [switch]$Sign,
+        [string]$Thumbprint,
+        [string]$Store = "CurrentUser",
+        [string[]]$Arches = @('x64', 'arm64')
+    )
+
+    $msiVer = $Version.Msi        # MSI-safe internal ProductVersion (yy.M.ddHH)
+    $fileVer = $Version.Full      # calendar version for filename + pkgsinfo
+    Write-BuildLog "Creating MSI package(s) v$fileVer (MSI ProductVersion $msiVer)..." "INFO"
+
+    $wixproj = Join-Path $RootDir "FleetMate.Installer\FleetMate.Installer.wixproj"
+    if (-not (Test-Path $wixproj)) { throw "WiX project not found: $wixproj" }
+
+    $releaseDir = Join-Path $RootDir "release"
+    New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+
+    $results = @()
+    foreach ($arch in $Arches) {
+        $rid = "win-$arch"
+        $staging = Join-Path $RootDir "publish\msi-staging\$arch"
+
+        # Publish the self-contained single-file CLI (one exe = whole payload).
+        Write-BuildLog "Publishing CLI ($rid) into MSI staging..." "INFO"
+        # Pipe to Out-Host so dotnet's stdout does not pollute this function's
+        # return value (which must be only the MSI paths).
+        & dotnet publish "$RootDir\FleetMate.CLI\FleetMate.CLI.csproj" `
+            --configuration Release `
+            --runtime $rid `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:EnableCompressionInSingleFile=true `
+            --output $staging | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "CLI publish failed ($rid)" }
+
+        $exe = Join-Path $staging "fleetmate.exe"
+        if (-not (Test-Path $exe)) { throw "Published CLI exe not found: $exe" }
+
+        # Sign the payload exe BEFORE it is embedded in the MSI cab.
+        if ($Sign -and $Thumbprint) {
+            Invoke-SignArtifact -Path $exe -Thumbprint $Thumbprint -Store $Store
+        }
+
+        Write-BuildLog "Building MSI ($arch)..." "INFO"
+        & dotnet build $wixproj `
+            --configuration Release `
+            -p:Platform=$arch `
+            -p:ProductVersion=$msiVer `
+            -p:BinDir=$staging | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "MSI build failed ($arch)" }
+
+        $msi = Join-Path $RootDir "FleetMate.Installer\bin\$arch\Release\FleetMate-$arch.msi"
+        if (-not (Test-Path $msi)) { throw "MSI not found after build: $msi" }
+
+        # Sign the MSI itself.
+        if ($Sign -and $Thumbprint) {
+            Invoke-SignArtifact -Path $msi -Thumbprint $Thumbprint -Store $Store
+        }
+
+        # Versioned name the pipeline/cimiimport fetches, using the full calendar
+        # version: FleetMate-<arch>-YYYY.MM.DD.HHMM.msi (matches CimianTools).
+        $dest = Join-Path $releaseDir "FleetMate-$arch-$fileVer.msi"
+        Copy-Item $msi $dest -Force
+        Write-BuildLog "MSI saved to: $dest" "SUCCESS"
+        $results += $dest
+    }
+
+    return $results
+}
+
 # Main execution
 try {
     Write-Host "`n=== FleetMate Build ===" -ForegroundColor Cyan
@@ -349,7 +432,7 @@ try {
         $buildCLI = $true
         $buildGUI = $true
     }
-    if (-not $Sign -and -not $PkgOnly) {
+    if (-not $Sign -and -not $PkgOnly -and -not $MsiOnly) {
         Write-BuildLog "No -Sign flag specified — defaulting to signed build" "INFO"
         $Sign = $true
     }
@@ -374,7 +457,7 @@ try {
     }
 
     # --- Build CLI ---
-    if ($buildCLI -and -not $PkgOnly) {
+    if ($buildCLI -and -not $PkgOnly -and -not $MsiOnly) {
         Write-BuildLog "Building FleetMate CLI..."
         if ($Publish) {
             & dotnet publish "$RootDir\FleetMate.CLI\FleetMate.CLI.csproj" `
@@ -414,7 +497,7 @@ try {
     }
 
     # --- Build GUI ---
-    if ($buildGUI -and -not $PkgOnly) {
+    if ($buildGUI -and -not $PkgOnly -and -not $MsiOnly) {
         Write-BuildLog "Building FleetMate GUI..."
 
         # GUI must be published as self-contained single-file for WDAC-compliant signing.
@@ -466,6 +549,16 @@ try {
         if ($pkgPath) {
             Write-Host "`n=== Package Created ===" -ForegroundColor Green
             Write-Host "  $(Split-Path $pkgPath -Leaf)" -ForegroundColor Cyan
+        }
+    }
+
+    # Create MSI(s) if requested
+    if ($Msi -or $MsiOnly) {
+        $version = Get-BuildVersion
+        $msiPaths = Build-MsiPackage -Version $version -Sign:$Sign -Thumbprint $certInfo.Thumbprint -Store ($certInfo.Store ?? 'CurrentUser')
+        if ($msiPaths) {
+            Write-Host "`n=== MSI(s) Created ===" -ForegroundColor Green
+            foreach ($p in $msiPaths) { Write-Host "  $(Split-Path $p -Leaf)" -ForegroundColor Cyan }
         }
     }
 

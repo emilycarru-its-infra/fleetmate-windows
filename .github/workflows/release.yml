@@ -46,6 +46,13 @@ jobs:
         shell: pwsh
         run: .\build.ps1 -PkgOnly
 
+      - name: Build MSI packages (x64 + arm64)
+        shell: pwsh
+        # Unsigned MSIs land in release\FleetMate-<arch>-<version>.msi. The
+        # cimian-bootstrap-mgmt pipeline fetches these, signs them with the
+        # enterprise cert, repacks, and deploys as an Intune Win32 LOB.
+        run: .\build.ps1 -MsiOnly
+
       - name: Collect release artifacts
         shell: pwsh
         run: |
