@@ -43,7 +43,7 @@ class Program
         try
         {
             // Create services - use default URL if not configured
-            var reportMateUrl = config.ReportMateUrl ?? "https://reportmate-api.example.com";
+            var reportMateUrl = config.ReportMateUrl ?? "https://reportmate.example.com";
             using var reportMate = new ReportMateService(
                 reportMateUrl, 
                 config.ReportMatePassphrase,
