@@ -482,7 +482,7 @@ public class FleetMateConfig
 public class AzureDevOpsConfig
 {
     /// <summary>
-    /// Azure DevOps organization name (e.g., "emilycarru-its-infra")
+    /// Azure DevOps organization name (e.g., "contoso")
     /// </summary>
     public string? Organization { get; set; }
 

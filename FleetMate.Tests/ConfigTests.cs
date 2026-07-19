@@ -56,9 +56,9 @@ public class ConfigTests
     [Fact]
     public void AzureDevOpsConfig_BaseUrl_IsBuiltFromOrganization()
     {
-        var ado = new AzureDevOpsConfig { Organization = "emilycarru-its-infra" };
+        var ado = new AzureDevOpsConfig { Organization = "contoso" };
 
-        Assert.Equal("https://dev.azure.com/emilycarru-its-infra", ado.BaseUrl);
+        Assert.Equal("https://dev.azure.com/contoso", ado.BaseUrl);
     }
 
     [Fact]

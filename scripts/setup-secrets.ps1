@@ -37,10 +37,10 @@ $ErrorActionPreference = "Stop"
 $RegistryPath = "HKCU:\SOFTWARE\FleetMate"
 
 # Azure Key Vault Configuration
-$KeyVaultName = "assets-inventory-creds"
-$CimianKeyVaultName = "cimian-repo-secrets"
-$SubscriptionId = "59d35012-b593-4b2f-bd50-28e666ed12f7"
-$TenantId = "d22686a0-c1be-48e0-8f91-5bdd033f7dad"
+$KeyVaultName = "your-keyvault"
+$CimianKeyVaultName = "your-cimian-keyvault"
+$SubscriptionId = "00000000-0000-0000-0000-000000000000"
+$TenantId = "00000000-0000-0000-0000-000000000000"
 
 # Config file (non-sensitive settings only)
 $ConfigDir = Join-Path $env:USERPROFILE ".fleetmate"
@@ -179,10 +179,10 @@ Write-Host ""
 
 # Set defaults for missing values
 if ([string]::IsNullOrEmpty($ReportMateUrl)) { 
-    $ReportMateUrl = "https://reportmate-functions-api.blackdune-79551938.canadacentral.azurecontainerapps.io" 
+    $ReportMateUrl = "https://reportmate.example.com" 
 }
 if ([string]::IsNullOrEmpty($GraphTenantId)) { $GraphTenantId = $TenantId }
-if ([string]::IsNullOrEmpty($DevOpsOrg)) { $DevOpsOrg = "ecuad" }
+if ([string]::IsNullOrEmpty($DevOpsOrg)) { $DevOpsOrg = "your-org" }
 if ([string]::IsNullOrEmpty($DevOpsProject)) { $DevOpsProject = "DevOps" }
 
 # Validate required secrets
@@ -232,8 +232,8 @@ Store-Secret -Name "SnipeApiKey" -Value $SnipeApiKey
 Store-Secret -Name "GraphTenantId" -Value $GraphTenantId
 Store-Secret -Name "GraphClientId" -Value $GraphClientId
 Store-Secret -Name "GraphClientSecret" -Value $GraphClientSecret
-Store-Secret -Name "TdxBaseUrl" -Value "https://servicedesk.emilycarru.ca/TDWebApi"
-Store-Secret -Name "TdxAppId" -Value "116"
+Store-Secret -Name "TdxBaseUrl" -Value "https://tdx.example.com/TDWebApi"
+Store-Secret -Name "TdxAppId" -Value "123"
 Store-Secret -Name "TdxUsername" -Value $TdxUsername
 Store-Secret -Name "TdxPassword" -Value $TdxPassword
 Store-Secret -Name "TdxBeid" -Value $TdxBeid
@@ -271,8 +271,8 @@ snipe:
 # TeamDynamix (TDX) Ticketing
 # Credentials: Registry -> HKCU:\SOFTWARE\FleetMate -> TdxUsername, TdxPassword, TdxBeid, TdxWebServicesKey
 tdx:
-  base_url: https://servicedesk.emilycarru.ca/TDWebApi
-  app_id: 116
+  base_url: https://tdx.example.com/TDWebApi
+  app_id: 123
   enabled: true
 
 # Azure DevOps (Work Items)

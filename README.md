@@ -168,9 +168,9 @@ fleetmate intune device 16BQKQ3  # by serial
 fleetmate intune compliance <device-id>
 
 # Entra users
-fleetmate entra user bryan.wong@ecuad.ca
+fleetmate entra user jane.doe@example.com
 fleetmate entra groups
-fleetmate entra check-group bryan.wong@ecuad.ca "IT Staff"
+fleetmate entra check-group jane.doe@example.com "IT Staff"
 ```
 
 ### Azure DevOps
@@ -298,12 +298,12 @@ Log saved to: quality\fleetmate\logs\system-check-L003461-20260118-234126.log
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `REPORTMATE_URL` | ReportMate API endpoint | `https://reportmate.ecuad.ca` |
+| `REPORTMATE_URL` | ReportMate API endpoint | `https://reportmate.example.com` |
 | `REPORTMATE_PASSPHRASE` | ReportMate authentication token | `your-token` |
-| `SNIPE_URL` | Snipe-IT base URL | `https://snipe.ecuad.ca` |
+| `SNIPE_URL` | Snipe-IT base URL | `https://snipe.example.com` |
 | `SNIPE_API_KEY` | Snipe-IT API key | `your-api-key` |
-| `TDX_BASE_URL` | TeamDynamix API endpoint | `https://servicedesk.emilycarru.ca/TDWebApi` |
-| `TDX_APP_ID` | TeamDynamix application ID | `116` |
+| `TDX_BASE_URL` | TeamDynamix API endpoint | `https://tdx.example.com/TDWebApi` |
+| `TDX_APP_ID` | TeamDynamix application ID | `123` |
 | `TDX_BEID` | TeamDynamix BEID | `your-beid` |
 | `TDX_WEB_SERVICES_KEY` | TeamDynamix web services key | `your-key` |
 | `SECURE_SHELL_PRIVATE_KEY` | SSH private key (base64 or PEM) | `-----BEGIN RSA PRIVATE KEY-----...` |
@@ -323,16 +323,16 @@ Registry keys under `HKEY_CURRENT_USER\SOFTWARE\FleetMate`:
 
 ```yaml
 reportmate:
-  url: https://reportmate.ecuad.ca
+  url: https://reportmate.example.com
   passphrase: your-passphrase
 
 snipe:
-  url: https://snipe.ecuad.ca
+  url: https://snipe.example.com
   api_key: your-api-key
 
 tdx:
-  base_url: https://servicedesk.emilycarru.ca/TDWebApi
-  app_id: 116
+  base_url: https://tdx.example.com/TDWebApi
+  app_id: 123
   beid: your-beid
   web_services_key: your-key
 
@@ -398,7 +398,7 @@ If you see error 487 "unregistered host name":
 Get-ItemProperty HKCU:\SOFTWARE\FleetMate
 
 # Update if incorrect
-Set-ItemProperty HKCU:\SOFTWARE\FleetMate -Name TdxBaseUrl -Value "https://servicedesk.emilycarru.ca/TDWebApi"
+Set-ItemProperty HKCU:\SOFTWARE\FleetMate -Name TdxBaseUrl -Value "https://tdx.example.com/TDWebApi"
 Set-ItemProperty HKCU:\SOFTWARE\FleetMate -Name TdxAppId -Value "116"
 ```
 
