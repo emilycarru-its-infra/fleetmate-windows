@@ -55,6 +55,7 @@ param(
     [switch]$PkgOnly,
     [switch]$Msi,
     [switch]$MsiOnly,
+    [switch]$NoSign,
     [switch]$Launch
 )
 
@@ -432,7 +433,9 @@ try {
         $buildCLI = $true
         $buildGUI = $true
     }
-    if (-not $Sign -and -not $PkgOnly -and -not $MsiOnly) {
+    # Default to a signed build for local dev, but never in CI: -NoSign (used by
+    # release.yml) keeps the build unsigned — the internal pipeline signs later.
+    if (-not $Sign -and -not $NoSign -and -not $PkgOnly -and -not $MsiOnly) {
         Write-BuildLog "No -Sign flag specified — defaulting to signed build" "INFO"
         $Sign = $true
     }
