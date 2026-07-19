@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="WixToolset.Sdk/6.0.2">
+
+  <PropertyGroup>
+    <OutputName>FleetMate-$(Platform)</OutputName>
+    <OutputType>Package</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <Platform>x64</Platform>
+    <InstallerPlatform>x64</InstallerPlatform>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- ProductVersion must be MSI-safe (major/minor <= 255). Supplied by
+         build.ps1 as yy.M.d (e.g. 26.7.18); defaults keep local msbuild happy. -->
+    <ProductVersion Condition="'$(ProductVersion)' == ''">0.0.0</ProductVersion>
+    <!-- Directory holding the published single-file self-contained fleetmate.exe
+         for this $(Platform). build.ps1 publishes to publish\msi-staging\<arch>. -->
+    <BinDir Condition="'$(BinDir)' == ''">$(MSBuildProjectDirectory)\..\publish\msi-staging\$(Platform)</BinDir>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <DefineConstants>BIN_DIR=$(BinDir);ProductVersion=$(ProductVersion)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Product.wxs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="6.0.2" />
+  </ItemGroup>
+
+  <!-- Fail early with an actionable message if the CLI hasn't been published. -->
+  <Target Name="BeforeBuild">
+    <Error Text="FleetMate CLI executable not found at $(BinDir)\fleetmate.exe. Run build.ps1 -Msi (which publishes the self-contained CLI) before building the MSI."
+           Condition="!Exists('$(BinDir)\fleetmate.exe')" />
+  </Target>
+
+</Project>
