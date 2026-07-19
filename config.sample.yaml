@@ -45,9 +45,19 @@ azureDevOps:
 # - GRAPH_CLIENT_ID: Azure AD application client ID
 # - GRAPH_CLIENT_SECRET: Azure AD client secret (optional, uses Azure CLI SSO if not set)
 graph:
-  useAzureCliAuth: true                   # Use Azure CLI for authentication
+  useAzureCliAuth: true                   # Use Azure CLI SSO for authentication (no client secret)
   cacheMinutes: 10                        # Cache duration for user/group lookups
   pageSize: 100                           # Max results per API page
+
+# aze secretless elevation (Graph writes run in-session; the token never leaves
+# Azure). All values are org-specific and MUST be set here — there are no
+# hardcoded defaults. Elevation fails fast with a clear message if unset.
+elevation:
+  resourceGroup:                          # RG holding the elevation containers + per-domain managed identities
+  acrImage:                               # e.g. myregistry.azurecr.io/elevation-session:latest
+  transcriptAccount:                      # storage account for elevation transcripts
+  identityPrefix:                         # e.g. "DevOps-" -> identity "DevOps-Devices" for the devices domain
+  defaultTtlHours: 8
 
 # TeamDynamix Configuration - Set via environment variables:
 # - TDX_BASE_URL: TDX Web API base URL

@@ -84,6 +84,9 @@ public class FleetMateConfig
     // Microsoft Graph Configuration
     public GraphConfig? Graph { get; set; }
 
+    // aze secretless elevation infrastructure (env/org-specific; no hardcoded defaults)
+    public ElevationConfig? Elevation { get; set; }
+
     // TeamDynamix Configuration
     public TdxConfig? Tdx { get; set; }
 
@@ -705,5 +708,35 @@ public class MarkdownSyncConfig
 
     /// <summary>Path to the markdown file (single file mode)</summary>
     public string? FilePath { get; set; }
+}
+
+/// <summary>
+/// aze secretless elevation infrastructure. All values are environment/org-specific
+/// and come from app settings (config.yaml / registry / env) — there are no hardcoded
+/// defaults. Elevation fails fast with a clear message when these are unset.
+/// </summary>
+public class ElevationConfig
+{
+    /// <summary>Resource group holding the elevation session containers AND the per-domain managed identities.</summary>
+    public string? ResourceGroup { get; set; }
+
+    /// <summary>Container image for the elevation session (e.g. an ACR image reference).</summary>
+    public string? AcrImage { get; set; }
+
+    /// <summary>Storage account name for elevation transcripts (passed into the container).</summary>
+    public string? TranscriptAccount { get; set; }
+
+    /// <summary>Managed-identity name prefix; the per-domain identity is {Prefix}{Domain} (e.g. prefix "DevOps-" → "DevOps-Devices").</summary>
+    public string? IdentityPrefix { get; set; }
+
+    /// <summary>Default elevation session TTL in hours.</summary>
+    public int DefaultTtlHours { get; set; } = 8;
+
+    /// <summary>True only when every required field is set — elevation refuses to run otherwise.</summary>
+    public bool IsConfigured =>
+        !string.IsNullOrWhiteSpace(ResourceGroup) &&
+        !string.IsNullOrWhiteSpace(AcrImage) &&
+        !string.IsNullOrWhiteSpace(TranscriptAccount) &&
+        !string.IsNullOrWhiteSpace(IdentityPrefix);
 }
 

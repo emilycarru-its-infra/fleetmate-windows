@@ -43,7 +43,7 @@ public class GraphService : IDisposable
     // falls back to a local az-minted token + direct HTTP.
     private readonly bool _useElevation;
 
-    public GraphService(GraphConfig config)
+    public GraphService(GraphConfig config, ElevationConfig? elevation = null)
     {
         _config = config;
         _cacheDuration = TimeSpan.FromMinutes(config.CacheMinutes);
@@ -53,7 +53,7 @@ public class GraphService : IDisposable
             StringComparison.OrdinalIgnoreCase);
 
         _client = _useElevation
-            ? new HttpClient(new ElevationHttpHandler())
+            ? new HttpClient(new ElevationHttpHandler(elevation ?? new ElevationConfig()))
             {
                 BaseAddress = new Uri("https://graph.microsoft.com/v1.0/"),
                 Timeout = TimeSpan.FromSeconds(120) // allow for the one-time ~30s container cold start
