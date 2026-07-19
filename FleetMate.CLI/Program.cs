@@ -99,7 +99,7 @@ class Program
                    !string.IsNullOrWhiteSpace(config.Graph.ClientId) &&
                    !string.IsNullOrWhiteSpace(config.Graph.ClientSecret)))))
             {
-                graphService = new GraphService(config.Graph ?? new GraphConfig());
+                graphService = new GraphService(config.Graph ?? new GraphConfig(), config.Elevation);
             }
 
             // Create TeamDynamix service if configured

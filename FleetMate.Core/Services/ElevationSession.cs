@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using FleetMate.Core.Config;
 
 namespace FleetMate.Core.Services;
 
@@ -21,14 +22,16 @@ public static class GraphDomainExtensions
         _ => "devices"
     };
 
-    public static string IdentityName(this GraphDomain d) => d switch
+    /// <summary>Structural aze domain name (PascalCase). The org-specific managed-identity
+    /// name is built as {ElevationConfig.IdentityPrefix}{DomainName} — see ElevationSession.</summary>
+    public static string DomainName(this GraphDomain d) => d switch
     {
-        GraphDomain.Terraform => "DevOps-Terraform",
-        GraphDomain.Devices => "DevOps-Devices",
-        GraphDomain.Identity => "DevOps-Identity",
-        GraphDomain.Systems => "DevOps-Systems",
-        GraphDomain.Cloud => "DevOps-Cloud",
-        _ => "DevOps-Devices"
+        GraphDomain.Terraform => "Terraform",
+        GraphDomain.Devices => "Devices",
+        GraphDomain.Identity => "Identity",
+        GraphDomain.Systems => "Systems",
+        GraphDomain.Cloud => "Cloud",
+        _ => "Devices"
     };
 }
 
@@ -47,12 +50,27 @@ public sealed class ElevationException : Exception
 /// </summary>
 public sealed class ElevationSession
 {
-    private const string SessionsResourceGroup = "Entra";
-    private const string IdentityResourceGroup = "Entra";
-    private const string Image = "elevationregistryecu.azurecr.io/elevation-session:latest";
-    private const string TranscriptAccount = "elevationtranscripts";
-    public const int DefaultTtlHours = 8;
-    private const string ExecApiVersion = "2023-05-01";
+    private const string ExecApiVersion = "2023-05-01";  // Azure ARM containers exec API version (global)
+
+    // All aze infrastructure (resource group, container image, transcript account,
+    // identity prefix, TTL) is env/org-specific and comes from app settings — no
+    // hardcoded defaults. See ElevationConfig.
+    private readonly ElevationConfig _config;
+
+    public ElevationSession(ElevationConfig config)
+    {
+        _config = config ?? throw new ArgumentNullException(nameof(config));
+    }
+
+    private void EnsureConfigured()
+    {
+        if (!_config.IsConfigured)
+            throw new ElevationException(
+                "aze elevation is not configured. Set elevation.resourceGroup, elevation.acrImage, " +
+                "elevation.transcriptAccount, and elevation.identityPrefix in your FleetMate config.");
+    }
+
+    private string IdentityName(GraphDomain domain) => _config.IdentityPrefix + domain.DomainName();
 
     // Serializes EnsureSessionAsync so concurrent callers (bulk Task.WhenAll,
     // parallel HttpClient requests) don't race to create the same container.
@@ -67,12 +85,13 @@ public sealed class ElevationSession
 
     // MARK: container lifecycle (via az)
 
-    public async Task EnsureSessionAsync(GraphDomain domain, int ttlHours = DefaultTtlHours)
+    public async Task EnsureSessionAsync(GraphDomain domain, int? ttlHours = null)
     {
+        EnsureConfigured();
         await _ensureGate.WaitAsync();
         try
         {
-            await EnsureSessionCoreAsync(domain, ttlHours);
+            await EnsureSessionCoreAsync(domain, ttlHours ?? _config.DefaultTtlHours);
         }
         finally
         {
@@ -84,14 +103,14 @@ public sealed class ElevationSession
     {
         var name = SessionName(domain);
 
-        var show = await RunAzAsync("container", "show", "--resource-group", SessionsResourceGroup, "--name", name, "--query", "instanceView.state", "-o", "tsv");
+        var show = await RunAzAsync("container", "show", "--resource-group", _config.ResourceGroup!, "--name", name, "--query", "instanceView.state", "-o", "tsv");
         var state = show.Out.Trim();
         if (state == "Running") return;
 
         if (!string.IsNullOrEmpty(state))
-            await RunAzAsync("container", "delete", "--resource-group", SessionsResourceGroup, "--name", name, "--yes", "-o", "none");
+            await RunAzAsync("container", "delete", "--resource-group", _config.ResourceGroup!, "--name", name, "--yes", "-o", "none");
 
-        var idShow = await RunAzAsync("identity", "show", "--resource-group", IdentityResourceGroup, "--name", domain.IdentityName(), "--query", "[id,clientId]", "-o", "tsv");
+        var idShow = await RunAzAsync("identity", "show", "--resource-group", _config.ResourceGroup!, "--name", IdentityName(domain), "--query", "[id,clientId]", "-o", "tsv");
         var parts = idShow.Out.Split(new[] { '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length < 2) throw new ElevationException($"Could not resolve managed identity for domain {domain.Slug()}");
         var identityId = parts[0];
@@ -102,9 +121,9 @@ public sealed class ElevationSession
 
         var create = await RunAzAsync(
             "container", "create",
-            "--resource-group", SessionsResourceGroup,
+            "--resource-group", _config.ResourceGroup!,
             "--name", name,
-            "--image", Image,
+            "--image", _config.AcrImage!,
             "--assign-identity", identityId,
             "--acr-identity", identityId,
             "--os-type", "Linux",
@@ -112,12 +131,12 @@ public sealed class ElevationSession
             "--memory", "1.5",
             "--restart-policy", "Never",
             "--command-line", commandLine,
-            "--environment-variables", $"ELEVATION_CLIENT_ID={clientId}", $"ELEVATION_TRANSCRIPT_ACCOUNT={TranscriptAccount}",
+            "--environment-variables", $"ELEVATION_CLIENT_ID={clientId}", $"ELEVATION_TRANSCRIPT_ACCOUNT={_config.TranscriptAccount}",
             "--output", "none");
         if (create.Code != 0)
             throw new ElevationException($"Failed to create elevation session: {(string.IsNullOrEmpty(create.Err) ? create.Out : create.Err)}");
 
-        var idLookup = await RunAzAsync("container", "show", "--resource-group", SessionsResourceGroup, "--name", name, "--query", "id", "-o", "tsv");
+        var idLookup = await RunAzAsync("container", "show", "--resource-group", _config.ResourceGroup!, "--name", name, "--query", "id", "-o", "tsv");
         var containerId = idLookup.Out.Trim();
         if (!string.IsNullOrEmpty(containerId))
         {
@@ -137,7 +156,7 @@ public sealed class ElevationSession
         var sub = account.Out.Trim();
         if (account.Code != 0 || string.IsNullOrEmpty(sub))
             throw new ElevationException($"Not logged in to az (run az login). {account.Err.Trim()}");
-        var uri = $"https://management.azure.com/subscriptions/{sub}/resourceGroups/{SessionsResourceGroup}/providers/Microsoft.ContainerInstance/containerGroups/{name}/containers/{name}/exec?api-version={ExecApiVersion}";
+        var uri = $"https://management.azure.com/subscriptions/{sub}/resourceGroups/{_config.ResourceGroup!}/providers/Microsoft.ContainerInstance/containerGroups/{name}/containers/{name}/exec?api-version={ExecApiVersion}";
         var body = "{\"command\":\"/bin/bash\",\"terminalSize\":{\"rows\":24,\"cols\":500}}";
 
         var execResp = await RunAzAsync("rest", "--method", "post", "--uri", uri, "--body", body);
