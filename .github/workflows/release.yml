@@ -57,9 +57,13 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path release -Force | Out-Null
-          foreach ($dir in @('publish', 'dist', '.')) {
+          # build.ps1 -PkgOnly/-MsiOnly already drop .pkg/.msi into release/, so
+          # only pull extras from build output dirs — NOT '.' (which contains
+          # release/ and would copy those files onto themselves).
+          foreach ($dir in @('publish', 'dist')) {
             if (Test-Path $dir) {
               Get-ChildItem $dir -Recurse -File -Include *.pkg,*.nupkg,*.msi -ErrorAction SilentlyContinue |
+                Where-Object { $_.DirectoryName -notlike (Join-Path (Resolve-Path 'release') '*') } |
                 ForEach-Object { Copy-Item $_.FullName "release/" -Force }
             }
           }
