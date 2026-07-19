@@ -186,7 +186,17 @@ public sealed class ElevationSession
         }
         try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None); } catch { }
 
-        var text = AnsiRe.Replace(sb.ToString(), "").Replace("\r\n", "\n").Replace("\r", "\n");
+        return ParseExecOutput(sb.ToString());
+    }
+
+    /// <summary>
+    /// Extract command output and exit code from a raw aze session stream:
+    /// strip ANSI escapes, normalize newlines, then pull the payload between the
+    /// AZE_BEGIN/AZE_END markers. Throws if the end marker is absent.
+    /// </summary>
+    internal static (string Out, int Code) ParseExecOutput(string raw)
+    {
+        var text = AnsiRe.Replace(raw, "").Replace("\r\n", "\n").Replace("\r", "\n");
         var m = MarkerRe.Match(text);
         if (!m.Success) throw new ElevationException("Could not find output markers in session output:\n" + text);
         var output = m.Groups[1].Value.Trim('\n');
