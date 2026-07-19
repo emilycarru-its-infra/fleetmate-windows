@@ -40,7 +40,7 @@ jobs:
 
       - name: Publish CLI + GUI (unsigned)
         shell: pwsh
-        run: .\build.ps1 -Publish -GUI
+        run: .\build.ps1 -Publish -GUI -NoSign
 
       - name: Build .pkg packages
         shell: pwsh
