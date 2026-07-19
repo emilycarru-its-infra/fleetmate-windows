@@ -152,14 +152,14 @@ Examples:
         // Handle --check-installer-type
         if (checkInstallerType)
         {
-            await CheckInstallerTypesAsync(qaService, fix, showDetails);
+            await CheckInstallerTypesAsync(config, fix, showDetails);
             return;
         }
-        
+
         // Handle bulk operations
         if (repkg || importAll)
         {
-            await RunBulkOperationsAsync(qaService, repkg, importAll, showDetails, dryRun);
+            await RunBulkOperationsAsync(config, repkg, importAll, showDetails, dryRun);
             return;
         }
         
@@ -346,71 +346,62 @@ Examples:
         }
     }
     
-    private static async Task CheckInstallerTypesAsync(QaService qaService, bool fix, bool showDetails)
+    private static async Task CheckInstallerTypesAsync(FleetMateConfig config, bool fix, bool showDetails)
     {
         AnsiConsole.Write(new Rule("[cyan]Installer-Type Package Validation[/]").RuleStyle("grey"));
         AnsiConsole.WriteLine();
-        
-        if (fix)
+        if (fix) { AnsiConsole.MarkupLine("[yellow]🔧 AUTO-FIX MODE ENABLED[/]"); AnsiConsole.WriteLine(); }
+
+        var maint = new InstallerMaintenanceService(config);
+        var result = maint.CheckInstallerTypes(fix);
+
+        foreach (var issue in result.Issues)
         {
-            AnsiConsole.MarkupLine("[yellow]🔧 AUTO-FIX MODE ENABLED[/]");
-            AnsiConsole.WriteLine();
+            var tag = issue.Fixed ? "[green]FIXED[/]" : "[red]ISSUE[/]";
+            AnsiConsole.MarkupLine($"  {tag} [white]{Markup.Escape(issue.Package)}[/] ([grey]{issue.Location}[/]) — {Markup.Escape(issue.Issue)}");
         }
-        
-        // TODO: Implement full installer type checking
-        AnsiConsole.MarkupLine("[dim]Scanning packages and installers directories...[/]");
-        
-        var packages = qaService.GetAllPackages();
-        AnsiConsole.MarkupLine($"[dim]Found {packages.Count} packages[/]");
-        
-        // For now, show what would be checked
-        AnsiConsole.MarkupLine("[yellow]Full installer-type validation coming soon![/]");
-        AnsiConsole.MarkupLine("[dim]Use quality/control.ps1 -CheckInstallerType for now[/]");
-        
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"[dim]Installer-type packages:[/] {result.Total} — " +
+            $"[green]{result.Passed} ok[/], [red]{result.Failed} issues[/]" + (fix ? $", [yellow]{result.Fixed} fixed[/]" : ""));
         await Task.CompletedTask;
     }
-    
+
     private static async Task RunBulkOperationsAsync(
-        QaService qaService, 
-        bool repkg, 
-        bool importAll, 
-        bool showDetails, 
-        bool dryRun)
+        FleetMateConfig config, bool repkg, bool importAll, bool showDetails, bool dryRun)
     {
+        var maint = new InstallerMaintenanceService(config);
+
         if (repkg)
         {
-            AnsiConsole.Write(new Rule("[cyan]Bulk Repackaging[/]").RuleStyle("grey"));
+            AnsiConsole.Write(new Rule("[cyan]Bulk Repackaging (cimipkg)[/]").RuleStyle("grey"));
             AnsiConsole.WriteLine();
-            
-            if (dryRun)
-            {
-                AnsiConsole.MarkupLine("[yellow]DRY RUN: Would repackage all installer packages[/]");
-            }
-            else
-            {
-                AnsiConsole.MarkupLine("[yellow]Bulk repackaging coming soon![/]");
-                AnsiConsole.MarkupLine("[dim]Use quality/control.ps1 -RepkgInstallers for now[/]");
-            }
+            var r = await maint.RepkgInstallersAsync(dryRun);
+            ReportBulk(r, dryRun ? "Would repackage" : "Repackaged", showDetails);
         }
-        
+
         if (importAll)
         {
             AnsiConsole.WriteLine();
-            AnsiConsole.Write(new Rule("[cyan]Bulk Import[/]").RuleStyle("grey"));
+            AnsiConsole.Write(new Rule("[cyan]Bulk Import (cimiimport --auto)[/]").RuleStyle("grey"));
             AnsiConsole.WriteLine();
-            
-            if (dryRun)
-            {
-                AnsiConsole.MarkupLine("[yellow]DRY RUN: Would import all installer packages[/]");
-            }
-            else
-            {
-                AnsiConsole.MarkupLine("[yellow]Bulk import coming soon![/]");
-                AnsiConsole.MarkupLine("[dim]Use quality/control.ps1 -CimiImportAll for now[/]");
-            }
+            var r = await maint.CimiImportAllAsync(dryRun);
+            ReportBulk(r, dryRun ? "Would import" : "Imported", showDetails);
         }
-        
-        await Task.CompletedTask;
+    }
+
+    private static void ReportBulk(BulkOpResult r, string verb, bool showDetails)
+    {
+        foreach (var item in r.Items)
+        {
+            var tag = r.DryRun ? "[yellow]DRY[/]" : item.Success ? "[green]✓[/]" : "[red]✗[/]";
+            AnsiConsole.MarkupLine($"  {tag} {Markup.Escape(item.Name)}" + (r.DryRun ? "" : $" [grey](exit {item.ExitCode})[/]"));
+            if (showDetails && !item.Success && !r.DryRun)
+                foreach (var line in item.Output.Take(5)) AnsiConsole.MarkupLine($"      [grey]{Markup.Escape(line)}[/]");
+        }
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine(r.DryRun
+            ? $"[yellow]DRY RUN:[/] {verb} {r.Items.Count} package(s)"
+            : $"[dim]{verb}:[/] [green]{r.Succeeded} ok[/], [red]{r.Failed} failed[/] of {r.Items.Count}");
     }
     
     private static void ShowHelp()
