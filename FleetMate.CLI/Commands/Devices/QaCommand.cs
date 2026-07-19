@@ -234,22 +234,19 @@ Examples:
         }
         AnsiConsole.WriteLine();
         
-        // Run QA with progress
-        QaResult result;
-        
+        // Run QA with progress. The status lambda captures `result` by reference,
+        // so a single run is enough — re-running here would execute the real
+        // installer/build twice.
+        QaResult result = null!;
+
         await AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .StartAsync("Running quality control...", async ctx =>
             {
                 result = await qaService.RunPackageQaAsync(package, options);
-                
-                // Display results as they complete
                 ctx.Status("Completed");
             });
-        
-        // We need to re-run to get the result (Status() doesn't return values well)
-        result = await qaService.RunPackageQaAsync(package, options);
-        
+
         // Check for versioned package error
         if (!result.Location.Found && result.Location.IsVersioned)
         {

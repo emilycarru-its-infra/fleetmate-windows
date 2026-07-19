@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using FleetMate.Core.Config;
 
 namespace FleetMate.Core.Services;
 
@@ -11,7 +12,12 @@ namespace FleetMate.Core.Services;
 /// </summary>
 public sealed class ElevationHttpHandler : HttpMessageHandler
 {
-    private readonly ElevationSession _session = new();
+    private readonly ElevationSession _session;
+
+    public ElevationHttpHandler(ElevationConfig config)
+    {
+        _session = new ElevationSession(config);
+    }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
