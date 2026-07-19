@@ -267,7 +267,7 @@ public static class ConfigureCommand
         
         var url = AnsiConsole.Prompt(
             new TextPrompt<string>("ReportMate API URL:")
-                .DefaultValue("https://reportmate-api.example.com")
+                .DefaultValue("https://reportmate.example.com")
                 .ShowDefaultValue());
         
         var passphrase = AnsiConsole.Prompt(
