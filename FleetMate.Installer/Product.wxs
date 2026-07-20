@@ -12,6 +12,12 @@
   <?ifndef ProductVersion?>
     <?define ProductVersion = "0.0.0"?>
   <?endif?>
+  <!-- Human-facing calendar version (YYYY.MM.DD.HHMM) for the registry. The MSI
+       ProductVersion above must stay <=255-per-field, so it's the compressed form;
+       CalendarVersion carries the real version everything else displays. -->
+  <?ifndef CalendarVersion?>
+    <?define CalendarVersion = "$(var.ProductVersion)"?>
+  <?endif?>
 
   <Package Name="FleetMate"
            Version="$(var.ProductVersion)"
@@ -48,10 +54,10 @@
          rule checks. -->
     <Component Id="RegistryEntries" Directory="INSTALLDIR" Guid="{E37F11C0-6104-467C-BAEF-5FF648C3DA77}">
       <RegistryValue Root="HKLM" Key="SOFTWARE\FleetMate" Name="InstallPath" Value="[INSTALLDIR]" Type="string" />
-      <RegistryValue Root="HKLM" Key="SOFTWARE\FleetMate" Name="Version" Value="$(var.ProductVersion)" Type="string" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\FleetMate" Name="Version" Value="$(var.CalendarVersion)" Type="string" />
       <RegistryValue Root="HKLM" Key="SOFTWARE\FleetMate" Name="InstallDate" Value="[Date]" Type="string" />
       <RegistryValue Root="HKLM" Key="SOFTWARE\FleetMate" Name="Architecture" Value="[ProcessorArchitecture]" Type="string" />
-      <RegistryValue Root="HKLM" Key="SOFTWARE\FleetMate" Name="LastRunVersion" Value="$(var.ProductVersion)" Type="string" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\FleetMate" Name="LastRunVersion" Value="$(var.CalendarVersion)" Type="string" />
     </Component>
 
     <!-- Put fleetmate.exe on the system PATH so operators can run `fleetmate`
