@@ -22,7 +22,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <DefineConstants>BIN_DIR=$(BinDir);ProductVersion=$(ProductVersion)</DefineConstants>
+    <DefineConstants>BIN_DIR=$(BinDir);ProductVersion=$(ProductVersion);CalendarVersion=$(CalendarVersion)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
