@@ -14,6 +14,8 @@
     <!-- ProductVersion must be MSI-safe (major/minor <= 255). Supplied by
          build.ps1 as yy.M.d (e.g. 26.7.18); defaults keep local msbuild happy. -->
     <ProductVersion Condition="'$(ProductVersion)' == ''">0.0.0</ProductVersion>
+    <!-- Human-facing calendar version (YYYY.MM.DD.HHMM) written to the registry. -->
+    <CalendarVersion Condition="'$(CalendarVersion)' == ''">$(ProductVersion)</CalendarVersion>
     <!-- Directory holding the published single-file self-contained fleetmate.exe
          for this $(Platform). build.ps1 publishes to publish\msi-staging\<arch>. -->
     <BinDir Condition="'$(BinDir)' == ''">$(MSBuildProjectDirectory)\..\publish\msi-staging\$(Platform)</BinDir>

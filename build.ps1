@@ -376,7 +376,12 @@ function Build-MsiPackage {
         $staging = Join-Path $RootDir "publish\msi-staging\$arch"
 
         # Publish the self-contained single-file CLI (one exe = whole payload).
-        Write-BuildLog "Publishing CLI ($rid) into MSI staging..." "INFO"
+        # Inject the calendar version so `fleetmate --version` reports YYYY.MM.DD.HHMM.
+        # AssemblyVersion/FileVersion need numeric fields (<=65535), so derive a
+        # numeric form; InformationalVersion is a free string (the exact calendar
+        # version) and IncludeSourceRevision... off drops the +githash suffix.
+        $asmVer = (($fileVer -split '\.') | ForEach-Object { [int]$_ }) -join '.'
+        Write-BuildLog "Publishing CLI ($rid) into MSI staging (v$fileVer)..." "INFO"
         # Pipe to Out-Host so dotnet's stdout does not pollute this function's
         # return value (which must be only the MSI paths).
         & dotnet publish "$RootDir\FleetMate.CLI\FleetMate.CLI.csproj" `
@@ -385,6 +390,9 @@ function Build-MsiPackage {
             --self-contained true `
             -p:PublishSingleFile=true `
             -p:EnableCompressionInSingleFile=true `
+            -p:Version=$asmVer `
+            -p:InformationalVersion=$fileVer `
+            -p:IncludeSourceRevisionInInformationalVersion=false `
             --output $staging | Out-Host
         if ($LASTEXITCODE -ne 0) { throw "CLI publish failed ($rid)" }
 
@@ -401,6 +409,7 @@ function Build-MsiPackage {
             --configuration Release `
             -p:Platform=$arch `
             -p:ProductVersion=$msiVer `
+            -p:CalendarVersion=$fileVer `
             -p:BinDir=$staging | Out-Host
         if ($LASTEXITCODE -ne 0) { throw "MSI build failed ($arch)" }
 
