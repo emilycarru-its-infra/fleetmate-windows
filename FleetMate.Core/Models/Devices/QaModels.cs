@@ -112,7 +112,8 @@ public class QaResult
     public int Skipped { get; set; }
     public bool Success => Failed == 0 && Total > 0;
     
-    public double SuccessRate => Total > 0 ? Math.Round((double)Passed / Total * 100, 1) : 0;
+    // Rate over executed (non-skipped) steps, so a clean run with skipped steps reads 100%.
+    public double SuccessRate => (Total - Skipped) > 0 ? Math.Round((double)Passed / (Total - Skipped) * 100, 1) : 0;
     
     public List<QaStepResult> Steps { get; set; } = new();
     
@@ -325,6 +326,9 @@ public class PackageBuildResult
     public string? OutputPackagePath { get; set; }
     public long PackageSize { get; set; }
     public TimeSpan Duration { get; set; }
+
+    /// <summary>Non-fatal build note (e.g. signing failed locally but the artifact built).</summary>
+    public string? Warning { get; set; }
 }
 
 /// <summary>
