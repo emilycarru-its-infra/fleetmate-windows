@@ -153,7 +153,10 @@ function Invoke-SignArtifact {
                 $Path
             )
             Write-BuildLog "Signing [$tsa] (attempt $attempt): $(Split-Path $Path -Leaf)"
-            & $signToolExe @signArgs
+            # Pipe to Out-Host so signtool's /v output (cert details) goes to the
+            # host, not the success stream — otherwise it pollutes the return value
+            # of any function that calls this (e.g. Build-MsiPackage).
+            & $signToolExe @signArgs | Out-Host
             if ($LASTEXITCODE -eq 0) {
                 Write-BuildLog "Signed: $(Split-Path $Path -Leaf)" "SUCCESS"
                 return
