@@ -30,6 +30,12 @@
 
     <Property Id="MSIUSEREALADMINDETECTION" Value="1" />
 
+    <!-- cimiimport derives a package's version from CIMIAN_PKG_FULL_VERSION,
+         falling back to the (255-capped, compressed) ProductVersion. Set it to
+         the real calendar version so the Cimian repo pkgsinfo/filename use
+         YYYY.MM.DD.HHMM, matching cimipkg-built tools. -->
+    <Property Id="CIMIAN_PKG_FULL_VERSION" Value="$(var.CalendarVersion)" />
+
     <MajorUpgrade AllowSameVersionUpgrades="yes"
                   AllowDowngrades="no"
                   MigrateFeatures="yes"
