@@ -40,8 +40,8 @@ public static class StatusCommand
         configTable.AddRow("Repo Root", config.RepoRoot ?? "[dim](not found)[/]");
         configTable.AddRow("Deployment Path", config.ResolvePath(config.DeploymentPath));
         configTable.AddRow("Quality Path", config.ResolvePath(config.QualityPath));
-        configTable.AddRow("Log Path", config.LogPath);
-        configTable.AddRow("ReportMate URL", config.ReportMateUrl);
+        configTable.AddRow("Log Path", config.LogPath ?? "[dim](not set)[/]");
+        configTable.AddRow("ReportMate URL", string.IsNullOrEmpty(config.ReportMateUrl) ? "[dim](not configured)[/]" : config.ReportMateUrl);
         configTable.AddRow("ReportMate Auth", string.IsNullOrEmpty(config.ReportMatePassphrase) ? "[red]Not configured[/]" : "[green]Configured[/]");
         
         AnsiConsole.Write(configTable);
