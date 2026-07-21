@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Application
+    x:Class="FleetMate.WinUI.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Auth / status colors, reused across pages -->
+            <SolidColorBrush x:Key="StatusOkBrush" Color="#107C10" />
+            <SolidColorBrush x:Key="StatusInfoBrush" Color="#0078D4" />
+            <SolidColorBrush x:Key="StatusWarnBrush" Color="#CA5010" />
+            <SolidColorBrush x:Key="StatusErrorBrush" Color="#D13438" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

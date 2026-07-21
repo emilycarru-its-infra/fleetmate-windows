@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <RootNamespace>FleetMate.WinUI</RootNamespace>
+    <AssemblyName>FleetMate</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <!-- Platform target must match runtime identifier -->
+    <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">ARM64</PlatformTarget>
+    <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-x64'">x64</PlatformTarget>
+    <PlatformTarget Condition="'$(RuntimeIdentifier)' == ''">AnyCPU</PlatformTarget>
+
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishReadyToRun>true</PublishReadyToRun>
+
+    <!-- MSC ships its own Program.Main for early crash logging -->
+    <DefineConstants>DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+
+    <Product>FleetMate</Product>
+    <Company>Emily Carr University</Company>
+    <Description>FleetMate — device fleet management for Windows</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <!-- 1.8 is required for the .NET 10 SDK (1.7's PRI-gen MSBuild task path is absent on net10). Matches Cimian MSC. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FleetMate.Core\FleetMate.Core.csproj" />
+  </ItemGroup>
+
+</Project>
