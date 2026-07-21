@@ -33,6 +33,7 @@ public static class TestCommand
         var installOnlyOption = new Option<bool>(new[] { "--install-only" }, "Skip build, test installation only");
         var uninstallFirstOption = new Option<bool>(new[] { "--uninstall-first" }, "Uninstall before testing installation");
         var noChecklistOption = new Option<bool>(new[] { "--no-checklist" }, "Do not record results in checklist.md");
+        var noBoardOption = new Option<bool>(new[] { "--no-board" }, "Do not sync the result to the DevOps package-readiness board");
 
         command.AddArgument(packageArg);
         command.AddOption(categoryOption);
@@ -41,6 +42,7 @@ public static class TestCommand
         command.AddOption(installOnlyOption);
         command.AddOption(uninstallFirstOption);
         command.AddOption(noChecklistOption);
+        command.AddOption(noBoardOption);
 
         command.SetHandler(async (context) =>
         {
@@ -51,7 +53,8 @@ public static class TestCommand
             var installOnly = context.ParseResult.GetValueForOption(installOnlyOption);
             var uninstallFirst = context.ParseResult.GetValueForOption(uninstallFirstOption);
             var noChecklist = context.ParseResult.GetValueForOption(noChecklistOption);
-            await ExecuteAsync(config, package, category, fix, dryRun, installOnly, uninstallFirst, noChecklist);
+            var noBoard = context.ParseResult.GetValueForOption(noBoardOption);
+            await ExecuteAsync(config, package, category, fix, dryRun, installOnly, uninstallFirst, noChecklist, noBoard);
         });
 
         return command;
@@ -59,7 +62,7 @@ public static class TestCommand
 
     private static async Task ExecuteAsync(
         FleetMateConfig config, string? package, string category,
-        bool fix, bool dryRun, bool installOnly, bool uninstallFirst, bool noChecklist)
+        bool fix, bool dryRun, bool installOnly, bool uninstallFirst, bool noChecklist, bool noBoard)
     {
         var qa = new QaService(config);
         var checklistPath = Path.Combine(config.ResolvePath(config.QualityPath), "checklist.md");
@@ -105,6 +108,7 @@ public static class TestCommand
             DisplayValidation(package, result);
             var status = StatusOf(result);
             if (!noChecklist && !dryRun) TryUpdateChecklist(checklist, checklistPath, package, status, user);
+            await BoardSyncHelper.ReportAsync(config, package, null, status, dryRun, noBoard);
             return;
         }
 
@@ -138,6 +142,7 @@ public static class TestCommand
             : qaResult.Steps.Any(s => s.Warnings.Any()) ? ChecklistStatus.Warning
             : ChecklistStatus.Passed;
         if (!noChecklist && !dryRun) TryUpdateChecklist(checklist, checklistPath, package, qaStatus, user);
+        await BoardSyncHelper.ReportAsync(config, package, qaResult.Location.Version, qaStatus, dryRun, noBoard);
     }
 
     private static ChecklistStatus StatusOf(YamlValidationResult v)

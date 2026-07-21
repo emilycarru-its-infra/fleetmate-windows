@@ -527,6 +527,50 @@ public class AzureDevOpsConfig
     /// Base URL for Azure DevOps API
     /// </summary>
     public string BaseUrl => $"https://dev.azure.com/{Organization}";
+
+    /// <summary>
+    /// Package-readiness board sync (fleetmate test/qa -> DevOps work items).
+    /// </summary>
+    public PackageReadinessConfig PackageReadiness { get; set; } = new();
+}
+
+/// <summary>
+/// Configuration for syncing QA results to an Azure DevOps board as work items.
+/// One upserted work item per package; its State reflects the latest QA outcome.
+/// Everything is config-driven (no hardcoded board/type/state) so it ports to any
+/// process. Sync is a no-op unless AzureDevOps.Organization and .Project are set.
+/// </summary>
+public class PackageReadinessConfig
+{
+    /// <summary>Master switch. When false, test/qa never touch the board.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Work item type to create/update (e.g. "Issue", "Task", "Bug").</summary>
+    public string WorkItemType { get; set; } = "Issue";
+
+    /// <summary>Title prefix; the package name is appended to form the (unique) title.</summary>
+    public string TitlePrefix { get; set; } = "[Package Readiness]";
+
+    /// <summary>Tag applied to every readiness item (used to find them again).</summary>
+    public string Tag { get; set; } = "PackageReadiness";
+
+    /// <summary>Optional area path for created items (e.g. "Devices\\Windows"). Null = project default.</summary>
+    public string? AreaPath { get; set; }
+
+    /// <summary>Optional iteration path for created items (e.g. "Devices\\Fall '26 Term"). Null = default.</summary>
+    public string? IterationPath { get; set; }
+
+    /// <summary>Board State for a passing package.</summary>
+    public string StatePassed { get; set; } = "Done";
+
+    /// <summary>Board State for a package with warnings.</summary>
+    public string StateWarning { get; set; } = "Doing";
+
+    /// <summary>Board State for a failing package.</summary>
+    public string StateFailed { get; set; } = "Planned";
+
+    /// <summary>Board State for an untested/unknown package.</summary>
+    public string StateUntested { get; set; } = "Planned";
 }
 
 /// <summary>
