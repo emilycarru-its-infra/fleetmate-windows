@@ -67,6 +67,10 @@ public class FleetMateConfig
     public string QualityPath { get; set; } = "quality";
     public string PackagesPath { get; set; } = "packages";
     public string InstallersPath { get; set; } = "installers";
+
+    // Cimian tooling. cimipkg builds .msi by default (.pkg/.nupkg are fallbacks);
+    // sbin-installer installs .pkg/.nupkg, msiexec installs .msi.
+    public string SbinInstallerPath { get; set; } = @"C:\Program Files\sbin\installer.exe";
     
     // Logging
     public string LogPath { get; set; } = @"C:\ProgramData\Cimian\Logs";
