@@ -80,7 +80,11 @@ Examples:
         var importAllOption = new Option<bool>(
             aliases: new[] { "--import-all" },
             description: "Run cimiimport --auto on all installer packages");
-        
+
+        var noBoardOption = new Option<bool>(
+            aliases: new[] { "--no-board" },
+            description: "Do not sync the result to the DevOps package-readiness board");
+
         command.AddArgument(packageArg);
         command.AddOption(dryRunOption);
         command.AddOption(fixOption);
@@ -92,7 +96,8 @@ Examples:
         command.AddOption(checkInstallerTypeOption);
         command.AddOption(repkgOption);
         command.AddOption(importAllOption);
-        
+        command.AddOption(noBoardOption);
+
         // Use SetHandler with InvocationContext to handle many options
         command.SetHandler(async (context) =>
         {
@@ -107,7 +112,8 @@ Examples:
             var checkInstallerType = context.ParseResult.GetValueForOption(checkInstallerTypeOption);
             var repkg = context.ParseResult.GetValueForOption(repkgOption);
             var importAll = context.ParseResult.GetValueForOption(importAllOption);
-            
+            var noBoard = context.ParseResult.GetValueForOption(noBoardOption);
+
             await ExecuteAsync(
                 config,
                 package,
@@ -120,12 +126,13 @@ Examples:
                 list,
                 checkInstallerType,
                 repkg,
-                importAll);
+                importAll,
+                noBoard);
         });
-        
+
         return command;
     }
-    
+
     private static async Task ExecuteAsync(
         FleetMateConfig config,
         string? package,
@@ -138,7 +145,8 @@ Examples:
         bool list,
         bool checkInstallerType,
         bool repkg,
-        bool importAll)
+        bool importAll,
+        bool noBoard)
     {
         var qaService = new QaService(config);
         
@@ -176,10 +184,17 @@ Examples:
                 Category = category
             };
             
-            await RunPackageQaAsync(qaService, package, options);
+            var result = await RunPackageQaAsync(qaService, package, options);
+            if (result != null && result.Location.Found)
+            {
+                var status = !result.Success ? ChecklistStatus.Failed
+                    : result.Steps.Any(s => s.Warnings.Any()) ? ChecklistStatus.Warning
+                    : ChecklistStatus.Passed;
+                await BoardSyncHelper.ReportAsync(config, package, result.Location.Version, status, options.DryRun, noBoard);
+            }
             return;
         }
-        
+
         // No package specified - show help
         ShowHelp();
     }
@@ -219,7 +234,7 @@ Examples:
         AnsiConsole.MarkupLine($"[dim]Total: {packages.Count} packages[/]");
     }
     
-    private static async Task RunPackageQaAsync(QaService qaService, string package, QaOptions options)
+    private static async Task<QaResult?> RunPackageQaAsync(QaService qaService, string package, QaOptions options)
     {
         // Header
         var mode = options.InstallOnly ? "INSTALL-ONLY" : "COMPREHENSIVE";
@@ -258,11 +273,12 @@ Examples:
             }
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine($"[red]Please specify version:[/] fleetmate qa {package}\\<version>");
-            return;
+            return null;
         }
-        
+
         // Display results
         DisplayQaResults(result, options.ShowDetails);
+        return result;
     }
     
     private static void DisplayQaResults(QaResult result, bool showDetails)
