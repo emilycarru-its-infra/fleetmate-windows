@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="FleetMate.WinUI.Views.DevicesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Padding="32" Spacing="8" VerticalAlignment="Top">
+        <TextBlock Text="Devices" Style="{StaticResource TitleLargeTextBlockStyle}"/>
+        <TextBlock Text="Intune managed devices — WinUI 3 parity build in progress."
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+    </StackPanel>
+</Page>
