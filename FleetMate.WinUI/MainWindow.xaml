@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="FleetMate.WinUI.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="FleetMate">
+
+    <Grid x:Name="RootGrid">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Custom title bar (drag region) -->
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="40" Background="Transparent">
+            <TextBlock x:Name="AppTitleText"
+                       Text="FleetMate"
+                       Style="{StaticResource CaptionTextBlockStyle}"
+                       VerticalAlignment="Center"
+                       Margin="16,0,0,0"/>
+        </Grid>
+
+        <!-- Top-tab navigation shell -->
+        <NavigationView x:Name="NavView"
+                        Grid.Row="1"
+                        PaneDisplayMode="Top"
+                        IsBackButtonVisible="Collapsed"
+                        IsSettingsVisible="True"
+                        SelectionChanged="NavView_SelectionChanged"
+                        Loaded="NavView_Loaded">
+
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="Dashboard" Tag="dashboard">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE80F;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Devices" Tag="devices">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE977;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Inventory" Tag="inventory">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE7B8;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Tickets" Tag="tickets">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE8F2;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Projects" Tag="projects">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE821;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Identity" Tag="identity">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE716;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+
+            <Frame x:Name="ContentFrame" />
+        </NavigationView>
+    </Grid>
+</Window>

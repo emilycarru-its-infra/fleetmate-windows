@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using FleetMate.Core.Config;
+using FleetMate.Core.Services;
 
 namespace FleetMate.GUI.Views.Shared;
 
