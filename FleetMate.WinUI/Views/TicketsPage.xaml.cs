@@ -95,7 +95,7 @@ public sealed partial class TicketsPage : Page
         AddRow("Created", t.CreatedDate.ToLocalTime().ToString("yyyy-MM-dd HH:mm"));
         AddRow("Modified", row.Modified);
 
-        DetailDescription.Text = StripHtml(t.Description);
+        DetailDescription.Text = TextUtil.StripHtml(t.Description);
     }
 
     private void AddRow(string label, string value)
@@ -119,16 +119,4 @@ public sealed partial class TicketsPage : Page
         string.IsNullOrEmpty(name) ? "—"
         : string.IsNullOrEmpty(email) ? name
         : $"{name} ({email})";
-
-    /// <summary>TDX descriptions are HTML; flatten to readable plain text.</summary>
-    private static string StripHtml(string? html)
-    {
-        if (string.IsNullOrWhiteSpace(html)) return "—";
-        var text = Regex.Replace(html, "<br\\s*/?>", "\n", RegexOptions.IgnoreCase);
-        text = Regex.Replace(text, "</p>", "\n\n", RegexOptions.IgnoreCase);
-        text = Regex.Replace(text, "<[^>]+>", "");
-        text = WebUtility.HtmlDecode(text);
-        text = Regex.Replace(text, "\n{3,}", "\n\n").Trim();
-        return text.Length == 0 ? "—" : text;
-    }
 }
