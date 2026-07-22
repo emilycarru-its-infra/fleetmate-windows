@@ -109,6 +109,15 @@
                         <StackPanel x:Name="DetailPanel" Spacing="10" Visibility="Collapsed">
                             <TextBlock x:Name="DetailName" Style="{StaticResource SubtitleTextBlockStyle}" TextWrapping="Wrap"/>
 
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="CheckOutButton" Content="Check out" Click="CheckOut_Click" Visibility="Collapsed"/>
+                                <Button x:Name="CheckInButton" Content="Check in" Click="CheckIn_Click" Visibility="Collapsed"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <ComboBox x:Name="StatusCombo" MinWidth="150" DisplayMemberPath="Name"/>
+                                <Button x:Name="SaveStatusButton" Content="Update status" Click="SaveStatus_Click"/>
+                            </StackPanel>
+
                             <TextBlock Text="Status &amp; assignment" FontWeight="SemiBold" Margin="0,6,0,0"/>
                             <StackPanel x:Name="StatusRows" Spacing="3"/>
 
