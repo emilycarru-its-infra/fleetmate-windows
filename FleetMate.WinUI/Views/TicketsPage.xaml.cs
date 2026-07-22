@@ -30,6 +30,9 @@ public sealed partial class TicketsPage : Page
             return;
         }
 
+        // Show a sign-in affordance when TDX uses browser SSO and isn't authenticated yet.
+        SignInButton.Visibility = tdx.RequiresSsoLogin ? Visibility.Visible : Visibility.Collapsed;
+
         RefreshButton.IsEnabled = false;
         LoadingRing.IsActive = true;
         TicketList.ItemsSource = null;
@@ -66,6 +69,30 @@ public sealed partial class TicketsPage : Page
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyFilter();
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await LoadAsync();
+
+    private async void SignIn_Click(object sender, RoutedEventArgs e)
+    {
+        var tdx = App.Current.TdxService;
+        var baseUrl = App.Current.Config.Tdx?.BaseUrl;
+        if (tdx == null || string.IsNullOrEmpty(baseUrl)) return;
+
+        SignInButton.IsEnabled = false;
+        try
+        {
+            var window = new TdxSsoLoginWindow(baseUrl);
+            var result = await window.ShowAndAuthenticateAsync();
+            if (result is { Success: true, Token: not null })
+            {
+                tdx.SetSsoToken(result.Token, result.Expiry, result.UserEmail, result.UserName);
+                SignInButton.Visibility = Visibility.Collapsed;
+                await LoadAsync();
+            }
+        }
+        finally
+        {
+            SignInButton.IsEnabled = true;
+        }
+    }
 
     private void TicketList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
