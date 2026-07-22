@@ -4,19 +4,17 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using FleetMate.Core.Config;
 using FleetMate.Core.Models;
-using FleetMate.Core.Services;
-using FleetMate.Core.Services.Devices;
 using FleetMate.Core.Services.Inventory;
 using FleetMate.Core.Services.Tickets;
 using FleetMate.Core.Services.Projects;
-using FleetMate.Core.Services.Reporting;
 using Serilog;
 
-namespace FleetMate.GUI;
+namespace FleetMate.Core.Services;
 
 /// <summary>
 /// Centralized manager that tracks authentication state for every configured system.
-/// Implements INotifyPropertyChanged for WPF data binding.
+/// Implements INotifyPropertyChanged for data binding (WPF and WinUI 3).
+/// Lives in Core so both GUIs share one auth-status source of truth.
 /// </summary>
 public class AuthManager : INotifyPropertyChanged
 {

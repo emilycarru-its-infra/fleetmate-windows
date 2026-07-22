@@ -20,6 +20,7 @@ public partial class App : Application
     public static new App Current => (App)Application.Current;
 
     public FleetMateConfig Config { get; private set; } = null!;
+    public AuthManager AuthManager { get; private set; } = null!;
     public GraphService? GraphService { get; private set; }
     public SnipeService? SnipeService { get; private set; }
     public TdxService? TdxService { get; private set; }
@@ -39,6 +40,7 @@ public partial class App : Application
         {
             Config = FleetMateConfig.Load();
             InitializeServices();
+            AuthManager = new AuthManager(Config);
 
             _window = new MainWindow();
             _window.Activate();
