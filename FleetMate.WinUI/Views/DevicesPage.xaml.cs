@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using FleetMate.Core.Models.Devices;
+using FleetMate.Core.Services;
 using FleetMate.WinUI.ViewModels;
 
 namespace FleetMate.WinUI.Views;
@@ -16,6 +17,8 @@ public sealed partial class DevicesPage : Page
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e) => await LoadAsync();
+
+    // MARK: - Load / filter
 
     private async Task LoadAsync()
     {
@@ -59,24 +62,53 @@ public sealed partial class DevicesPage : Page
         CountText.Text = _all.Count == 0 ? "No devices."
             : rows.Count == _all.Count ? $"{_all.Count} devices"
             : $"{rows.Count} of {_all.Count} devices";
+        UpdateSelectionUi();
     }
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyFilter();
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await LoadAsync();
 
+    // MARK: - Selection
+
+    private List<IntuneDevice> SelectedDevices() =>
+        DeviceList.SelectedItems.OfType<DeviceRowViewModel>().Select(r => r.Device).ToList();
+
     private async void DeviceList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (DeviceList.SelectedItem is not DeviceRowViewModel row)
+        UpdateSelectionUi();
+
+        var selected = DeviceList.SelectedItems.OfType<DeviceRowViewModel>().ToList();
+        if (selected.Count == 1)
+        {
+            EmptyDetail.Visibility = Visibility.Collapsed;
+            MultiDetail.Visibility = Visibility.Collapsed;
+            DetailPanel.Visibility = Visibility.Visible;
+            await ShowDetailAsync(selected[0]);
+        }
+        else
         {
             DetailPanel.Visibility = Visibility.Collapsed;
-            EmptyDetail.Visibility = Visibility.Visible;
-            return;
+            EmptyDetail.Visibility = selected.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            MultiDetail.Visibility = selected.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+            MultiDetail.Text = $"{selected.Count} devices selected. Use the toolbar to run a bulk action.";
         }
+    }
 
+    private void UpdateSelectionUi()
+    {
+        var n = DeviceList.SelectedItems.Count;
+        var has = n >= 1;
+        SyncButton.IsEnabled = RestartButton.IsEnabled = LockButton.IsEnabled =
+            RetireButton.IsEnabled = WipeButton.IsEnabled = has;
+        SelectionText.Text = n == 0 ? "" : n == 1 ? "1 selected" : $"{n} selected";
+    }
+
+    // MARK: - Detail
+
+    private async Task ShowDetailAsync(DeviceRowViewModel row)
+    {
         var d = row.Device;
-        EmptyDetail.Visibility = Visibility.Collapsed;
-        DetailPanel.Visibility = Visibility.Visible;
         DetailName.Text = row.Name;
 
         SummaryRows.Children.Clear();
@@ -94,7 +126,7 @@ public sealed partial class DevicesPage : Page
         AddRow("Storage", Storage(d));
         AddRow("Category", d.DeviceCategoryDisplayName ?? "—");
 
-        await LoadComplianceAsync(d.Id);
+        await Task.WhenAll(LoadComplianceAsync(d.Id), LoadAppsAsync(d.Id));
     }
 
     private async Task LoadComplianceAsync(string deviceId)
@@ -108,25 +140,209 @@ public sealed partial class DevicesPage : Page
         try
         {
             var policies = await graph.GetDeviceComplianceAsync(deviceId);
-            // Guard against a slower request landing after the user picked another device.
-            if (DeviceList.SelectedItem is DeviceRowViewModel cur && cur.Device.Id != deviceId) return;
-
+            if (!IsStillSelected(deviceId)) return;
             if (policies.Count == 0)
                 ComplianceEmpty.Visibility = Visibility.Visible;
             else
                 ComplianceList.ItemsSource = policies
-                    .Select(p => $"{p.DisplayName ?? "(policy)"} — {p.State ?? "unknown"}")
-                    .ToList();
+                    .Select(p => $"{p.DisplayName ?? "(policy)"} — {p.State ?? "unknown"}").ToList();
         }
         catch (Exception ex)
         {
             ComplianceList.ItemsSource = new[] { $"Failed to load: {ex.Message}" };
         }
+        finally { ComplianceRing.IsActive = false; }
+    }
+
+    private async Task LoadAppsAsync(string deviceId)
+    {
+        AppsList.ItemsSource = null;
+        AppsEmpty.Visibility = Visibility.Collapsed;
+        var graph = App.Current.GraphService;
+        if (graph == null || string.IsNullOrEmpty(deviceId)) return;
+
+        AppsRing.IsActive = true;
+        try
+        {
+            var apps = await graph.GetDetectedAppsAsync(deviceId);
+            if (!IsStillSelected(deviceId)) return;
+            if (apps.Count == 0)
+                AppsEmpty.Visibility = Visibility.Visible;
+            else
+                AppsList.ItemsSource = apps
+                    .OrderBy(a => a.DisplayName, StringComparer.OrdinalIgnoreCase)
+                    .Take(100)
+                    .Select(a => string.IsNullOrEmpty(a.Version) ? a.DisplayName ?? "(app)" : $"{a.DisplayName} — {a.Version}")
+                    .ToList();
+        }
+        catch (Exception ex)
+        {
+            AppsList.ItemsSource = new[] { $"Failed to load: {ex.Message}" };
+        }
+        finally { AppsRing.IsActive = false; }
+    }
+
+    /// <summary>True if the given device is still the sole selection (guards stale async responses).</summary>
+    private bool IsStillSelected(string deviceId) =>
+        DeviceList.SelectedItems.OfType<DeviceRowViewModel>().ToList() is { Count: 1 } sel && sel[0].Device.Id == deviceId;
+
+    // MARK: - Bulk actions
+
+    private async void Sync_Click(object sender, RoutedEventArgs e)
+    {
+        var devices = SelectedDevices();
+        if (devices.Count == 0) return;
+        if (!await ConfirmAsync("Sync devices", $"Trigger a sync on {devices.Count} device(s)?", "Sync", false)) return;
+        await RunAsync("Sync", g => g.SyncDevicesAsync(devices.Select(d => d.Id)));
+    }
+
+    private async void Restart_Click(object sender, RoutedEventArgs e)
+    {
+        var devices = SelectedDevices();
+        if (devices.Count == 0) return;
+        if (!await ConfirmAsync("Restart devices", $"Restart {devices.Count} device(s)? Users may lose unsaved work.", "Restart", true)) return;
+        await RunAsync("Restart", g => g.RebootDevicesAsync(devices.Select(d => d.Id)));
+    }
+
+    private async void Lock_Click(object sender, RoutedEventArgs e)
+    {
+        var devices = SelectedDevices();
+        if (devices.Count == 0) return;
+        var pin = await PromptPinAsync(devices.Count);
+        if (pin is null) return; // cancelled
+        await RunAsync("Lock", g => g.RemoteLockDevicesAsync(devices.Select(d => d.Id), string.IsNullOrWhiteSpace(pin) ? null : pin));
+    }
+
+    private async void Retire_Click(object sender, RoutedEventArgs e)
+    {
+        var devices = SelectedDevices();
+        if (devices.Count == 0) return;
+        if (!await ConfirmAsync("Retire devices",
+            $"Retire {devices.Count} device(s)? This removes company data and unenrolls them from Intune.", "Retire", true)) return;
+        await RunAsync("Retire", g => g.RetireDevicesAsync(devices.Select(d => d.Id)), reload: true);
+    }
+
+    private async void Wipe_Click(object sender, RoutedEventArgs e)
+    {
+        var devices = SelectedDevices();
+        if (devices.Count == 0) return;
+        var keep = await PromptWipeAsync(devices.Count);
+        if (keep is null) return; // cancelled
+        await RunAsync("Wipe", g => g.WipeDevicesAsync(devices.Select(d => d.Id), keepEnrollmentData: keep.Value), reload: true);
+    }
+
+    private async Task RunAsync(string name, Func<GraphService, Task<List<GraphService.DeviceActionResult>>> action, bool reload = false)
+    {
+        var graph = App.Current.GraphService;
+        if (graph == null) return;
+
+        SetToolbarEnabled(false);
+        try
+        {
+            var results = await action(graph);
+            var ok = results.Count(r => r.Success);
+            var fail = results.Count - ok;
+            var msg = $"{name}: {ok} succeeded" + (fail > 0 ? $", {fail} failed." : ".");
+            if (fail > 0)
+            {
+                var failed = results.Where(r => !r.Success).Take(10).Select(r => $"• {r.Message ?? r.DeviceId}");
+                msg += "\n\n" + string.Join("\n", failed);
+            }
+            await MessageAsync($"{name} complete", msg);
+        }
+        catch (Exception ex)
+        {
+            await MessageAsync($"{name} failed", ex.Message);
+        }
         finally
         {
-            ComplianceRing.IsActive = false;
+            SetToolbarEnabled(true);
+            UpdateSelectionUi();
+            if (reload) await LoadAsync();
         }
     }
+
+    private void SetToolbarEnabled(bool on) =>
+        SyncButton.IsEnabled = RestartButton.IsEnabled = LockButton.IsEnabled =
+            RetireButton.IsEnabled = WipeButton.IsEnabled = on;
+
+    // MARK: - Dialogs
+
+    private async Task<bool> ConfirmAsync(string title, string message, string primary, bool dangerous)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = message,
+            PrimaryButtonText = primary,
+            CloseButtonText = "Cancel",
+            DefaultButton = dangerous ? ContentDialogButton.Close : ContentDialogButton.Primary,
+            XamlRoot = XamlRoot,
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    /// <summary>Returns the PIN (possibly empty), or null if cancelled.</summary>
+    private async Task<string?> PromptPinAsync(int count)
+    {
+        var box = new TextBox { PlaceholderText = "Optional PIN (leave blank for none)", MaxLength = 8 };
+        var dialog = new ContentDialog
+        {
+            Title = "Lock devices",
+            Content = new StackPanel
+            {
+                Spacing = 10,
+                Children =
+                {
+                    new TextBlock { Text = $"Remote-lock {count} device(s). Optionally set a recovery PIN.", TextWrapping = TextWrapping.Wrap },
+                    box,
+                },
+            },
+            PrimaryButtonText = "Lock",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot,
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary ? box.Text ?? "" : null;
+    }
+
+    /// <summary>Returns keepEnrollmentData, or null if cancelled.</summary>
+    private async Task<bool?> PromptWipeAsync(int count)
+    {
+        var keep = new CheckBox { Content = "Keep enrollment data" };
+        var dialog = new ContentDialog
+        {
+            Title = "Wipe devices",
+            Content = new StackPanel
+            {
+                Spacing = 10,
+                Children =
+                {
+                    new TextBlock { Text = $"Factory-reset {count} device(s)? This erases all data and cannot be undone.", TextWrapping = TextWrapping.Wrap },
+                    keep,
+                },
+            },
+            PrimaryButtonText = "Wipe",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot,
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary ? keep.IsChecked == true : null;
+    }
+
+    private async Task MessageAsync(string title, string message)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
+            CloseButtonText = "OK",
+            XamlRoot = XamlRoot,
+        };
+        await dialog.ShowAsync();
+    }
+
+    // MARK: - Detail row helpers
 
     private void AddRow(string label, string value)
     {
