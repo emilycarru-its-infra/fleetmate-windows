@@ -55,6 +55,13 @@ public class FleetMateConfig
     // Snipe-IT API settings
     public string? SnipeUrl { get; set; }
     public string? SnipeApiKey { get; set; }
+
+    /// <summary>
+    /// Snipe-IT's Entra app/client id (GUID) or api:// URI. When set, FleetMate can
+    /// acquire a delegated OIDC bearer via az (SnipeSsoService) instead of the static
+    /// API key — the secretless "OIDC-default" path.
+    /// </summary>
+    public string? SnipeResourceId { get; set; }
     
     // Deployment repo paths (relative to repo root or absolute)
     public string DeploymentPath { get; set; } = "deployment";
@@ -213,7 +220,11 @@ public class FleetMateConfig
             var snipeApiKey = key.GetValue("SnipeApiKey") as string;
             if (!string.IsNullOrEmpty(snipeApiKey))
                 config.SnipeApiKey = snipeApiKey;
-            
+
+            var snipeResourceId = key.GetValue("SnipeResourceId") as string;
+            if (!string.IsNullOrEmpty(snipeResourceId))
+                config.SnipeResourceId = snipeResourceId;
+
             // Graph/Entra ID credentials
             config.Graph ??= new GraphConfig();
             var graphTenantId = key.GetValue("GraphTenantId") as string;
