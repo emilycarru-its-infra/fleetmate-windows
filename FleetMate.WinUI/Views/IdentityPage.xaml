@@ -121,9 +121,35 @@
                             <TextBlock Text="Details" FontWeight="SemiBold" Margin="0,6,0,0"/>
                             <StackPanel x:Name="DetailRows" Spacing="3"/>
 
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+                                <Button x:Name="AddMemberButton" Content="Add member" Click="AddMember_Click" Visibility="Collapsed"/>
+                                <Button x:Name="EnableDisableButton" Click="EnableDisable_Click" Visibility="Collapsed"/>
+                            </StackPanel>
+
                             <TextBlock x:Name="ListHeader" FontWeight="SemiBold" Margin="0,10,0,0"/>
                             <ProgressRing x:Name="SubRing" IsActive="False" Width="20" Height="20" HorizontalAlignment="Left"/>
+
+                            <!-- User's group memberships (plain strings) -->
                             <ItemsControl x:Name="SubList"/>
+
+                            <!-- Group members (with per-row Remove) -->
+                            <ItemsControl x:Name="MembersList" Visibility="Collapsed">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid ColumnSpacing="8" Margin="0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Label}" TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center" FontSize="13"/>
+                                            <Button Grid.Column="1" Content="Remove" Click="RemoveMember_Click" Tag="{Binding}"
+                                                    FontSize="12" Padding="8,2"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
                             <TextBlock x:Name="SubEmpty" FontSize="12"
                                        Foreground="{ThemeResource TextFillColorTertiaryBrush}" Visibility="Collapsed"/>
                         </StackPanel>
