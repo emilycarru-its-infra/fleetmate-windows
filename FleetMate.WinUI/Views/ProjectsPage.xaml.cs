@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using FleetMate.Core.Models.Projects;
 using FleetMate.WinUI.ViewModels;
 
 namespace FleetMate.WinUI.Views;
@@ -7,6 +8,10 @@ namespace FleetMate.WinUI.Views;
 public sealed partial class ProjectsPage : Page
 {
     private List<WorkItemRowViewModel> _all = new();
+    private WorkItemRowViewModel? _current;
+
+    private static readonly string[] DefaultStates =
+        { "New", "Active", "Resolved", "Closed", "Removed", "Planned", "Doing", "Done", "To Do", "In Progress", "Committed" };
 
     public ProjectsPage()
     {
@@ -71,14 +76,17 @@ public sealed partial class ProjectsPage : Page
         {
             DetailPanel.Visibility = Visibility.Collapsed;
             EmptyDetail.Visibility = Visibility.Visible;
+            _current = null;
             return;
         }
 
         var f = row.Item.Fields;
+        _current = row;
         EmptyDetail.Visibility = Visibility.Collapsed;
         DetailPanel.Visibility = Visibility.Visible;
         DetailId.Text = $"{row.IdText}  ·  {row.Type}";
         DetailTitle.Text = row.Title;
+        PopulateStates(row.State);
 
         DetailRows.Children.Clear();
         AddRow("Type", row.Type);
@@ -93,6 +101,60 @@ public sealed partial class ProjectsPage : Page
         AddRow("Changed", Created(f.ChangedDate, f.ChangedBy?.DisplayName));
 
         DetailDescription.Text = TextUtil.StripHtml(f.Description);
+    }
+
+    private void PopulateStates(string current)
+    {
+        var states = new List<string>(DefaultStates);
+        if (!string.IsNullOrEmpty(current) && current != "—"
+            && !states.Contains(current, StringComparer.OrdinalIgnoreCase))
+            states.Insert(0, current);
+
+        StateCombo.ItemsSource = states;
+        StateCombo.SelectedItem = states.FirstOrDefault(s => s.Equals(current, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async void SaveState_Click(object sender, RoutedEventArgs e)
+    {
+        var devops = App.Current.DevOpsService;
+        if (_current == null || devops == null) return;
+        if (StateCombo.SelectedItem is not string newState || string.IsNullOrEmpty(newState)) return;
+        if (newState.Equals(_current.State, StringComparison.OrdinalIgnoreCase)) return;
+
+        SaveStateButton.IsEnabled = false;
+        try
+        {
+            var updated = await devops.UpdateWorkItemAsync(_current.Item.Id, new UpdateWorkItemRequest
+            {
+                State = newState,
+                Comment = $"State → {newState} via FleetMate",
+            });
+            if (updated != null)
+            {
+                _current.Item.Fields.State = newState;
+                var keep = _current;
+                ApplyFilter();               // refresh the row's state cell
+                WorkItemList.SelectedItem = keep; // keep the detail open on the same item
+            }
+            else await MessageAsync("Update failed", "Could not update the work item state.");
+        }
+        catch (Exception ex)
+        {
+            await MessageAsync("Update failed", ex.Message);
+        }
+        finally { SaveStateButton.IsEnabled = true; }
+    }
+
+    private async Task MessageAsync(string title, string message)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
+            CloseButtonText = "OK",
+            XamlRoot = XamlRoot,
+        };
+        await dialog.ShowAsync();
     }
 
     private void AddRow(string label, string value)
