@@ -14,6 +14,10 @@ public sealed partial class IdentityPage : Page
 
     private List<GroupRowViewModel> _groups = new();
     private List<UserRowViewModel> _users = new();
+    private EntraGroup? _currentGroup;
+    private EntraUser? _currentUser;
+
+    private sealed record MemberRow(string Label, string UserId);
 
     public IdentityPage()
     {
@@ -122,6 +126,8 @@ public sealed partial class IdentityPage : Page
     {
         if (GroupList.SelectedItem is not GroupRowViewModel row) { ClearDetail(); return; }
         var g = row.Group;
+        _currentGroup = g;
+        _currentUser = null;
         ShowDetailHeader(row.Name, g.Mail ?? g.Description ?? "");
 
         DetailRows.Children.Clear();
@@ -132,10 +138,36 @@ public sealed partial class IdentityPage : Page
         AddRow("Members", g.MemberCount?.ToString() ?? "—");
         AddRow("Created", g.CreatedDateTime?.ToLocalTime().ToString("yyyy-MM-dd") ?? "—");
 
+        // Dynamic membership can't be edited by hand.
+        AddMemberButton.Visibility = string.IsNullOrEmpty(g.MembershipRule) ? Visibility.Visible : Visibility.Collapsed;
+        EnableDisableButton.Visibility = Visibility.Collapsed;
         ListHeader.Text = "Members";
-        await LoadSubAsync(async graph =>
-            (await graph.GetGroupMembersAsync(g.Id, 200)).Select(m => $"{m.DisplayName} · {m.UserPrincipalName}").ToList(),
-            () => GroupList.SelectedItem == row);
+        SubList.Visibility = Visibility.Collapsed;
+        MembersList.Visibility = Visibility.Visible;
+        await LoadMembersAsync(g.Id);
+    }
+
+    private async Task LoadMembersAsync(string groupId)
+    {
+        MembersList.ItemsSource = null;
+        SubEmpty.Visibility = Visibility.Collapsed;
+        var graph = App.Current.GraphService;
+        if (graph == null) return;
+
+        SubRing.IsActive = true;
+        try
+        {
+            var members = await graph.GetGroupMembersAsync(groupId, 200);
+            if (_currentGroup?.Id != groupId) return; // stale
+            if (members.Count == 0) { SubEmpty.Text = "No members."; SubEmpty.Visibility = Visibility.Visible; }
+            else MembersList.ItemsSource = members
+                .Select(m => new MemberRow($"{m.DisplayName} · {m.UserPrincipalName}", m.Id)).ToList();
+        }
+        catch (Exception ex)
+        {
+            MembersList.ItemsSource = new[] { new MemberRow($"Failed to load: {ex.Message}", "") };
+        }
+        finally { SubRing.IsActive = false; }
     }
 
     // MARK: - User detail
@@ -144,6 +176,8 @@ public sealed partial class IdentityPage : Page
     {
         if (UserList.SelectedItem is not UserRowViewModel row) { ClearDetail(); return; }
         var u = row.User;
+        _currentUser = u;
+        _currentGroup = null;
         ShowDetailHeader(row.Name, u.UserPrincipalName);
 
         DetailRows.Children.Clear();
@@ -156,10 +190,98 @@ public sealed partial class IdentityPage : Page
         AddRow("Created", u.CreatedDateTime?.ToLocalTime().ToString("yyyy-MM-dd") ?? "—");
         AddRow("Last sign-in", u.LastSignInDateTime?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—");
 
+        AddMemberButton.Visibility = Visibility.Collapsed;
+        EnableDisableButton.Visibility = Visibility.Visible;
+        EnableDisableButton.Content = u.AccountEnabled == false ? "Enable account" : "Disable account";
         ListHeader.Text = "Group memberships";
+        MembersList.Visibility = Visibility.Collapsed;
+        SubList.Visibility = Visibility.Visible;
         await LoadSubAsync(async graph =>
             (await graph.GetUserGroupsAsync(u.Id)).Select(gr => gr.DisplayName).ToList(),
             () => UserList.SelectedItem == row);
+    }
+
+    // MARK: - Identity actions
+
+    private async void AddMember_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentGroup == null) return;
+        var upn = await PromptTextAsync("Add member", "Enter the user's UPN or object id:", "user@ecuad.ca");
+        if (string.IsNullOrWhiteSpace(upn)) return;
+
+        var ok = await App.Current.GraphService!.AddGroupMemberAsync(_currentGroup.Id, upn.Trim());
+        if (ok) await LoadMembersAsync(_currentGroup.Id);
+        else await MessageAsync("Add member failed", $"Could not add {upn} to {_currentGroup.DisplayName}.");
+    }
+
+    private async void RemoveMember_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentGroup == null || (sender as Button)?.Tag is not MemberRow m || string.IsNullOrEmpty(m.UserId)) return;
+        if (!await ConfirmAsync("Remove member", $"Remove {m.Label} from {_currentGroup.DisplayName}?", "Remove")) return;
+
+        var ok = await App.Current.GraphService!.RemoveGroupMemberAsync(_currentGroup.Id, m.UserId);
+        if (ok) await LoadMembersAsync(_currentGroup.Id);
+        else await MessageAsync("Remove failed", "Could not remove the member.");
+    }
+
+    private async void EnableDisable_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentUser == null) return;
+        var enable = _currentUser.AccountEnabled == false;
+        var verb = enable ? "Enable" : "Disable";
+        if (!await ConfirmAsync($"{verb} account", $"{verb} {_currentUser.DisplayName}'s account?", verb)) return;
+
+        var ok = await App.Current.GraphService!.SetUserAccountEnabledAsync(_currentUser.Id, enable);
+        if (ok)
+        {
+            _currentUser.AccountEnabled = enable;
+            EnableDisableButton.Content = enable ? "Disable account" : "Enable account";
+            ApplyFilter(); // refresh the list's status dot
+        }
+        else await MessageAsync($"{verb} failed", "Could not update the account.");
+    }
+
+    // MARK: - Dialogs
+
+    private async Task<bool> ConfirmAsync(string title, string message, string primary)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = message,
+            PrimaryButtonText = primary,
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot,
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    private async Task<string?> PromptTextAsync(string title, string message, string placeholder)
+    {
+        var box = new TextBox { PlaceholderText = placeholder };
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = new StackPanel { Spacing = 10, Children = { new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap }, box } },
+            PrimaryButtonText = "Add",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot,
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary ? box.Text : null;
+    }
+
+    private async Task MessageAsync(string title, string message)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
+            CloseButtonText = "OK",
+            XamlRoot = XamlRoot,
+        };
+        await dialog.ShowAsync();
     }
 
     // MARK: - Shared detail helpers
@@ -176,6 +298,10 @@ public sealed partial class IdentityPage : Page
     {
         DetailPanel.Visibility = Visibility.Collapsed;
         EmptyDetail.Visibility = Visibility.Visible;
+        AddMemberButton.Visibility = Visibility.Collapsed;
+        EnableDisableButton.Visibility = Visibility.Collapsed;
+        _currentGroup = null;
+        _currentUser = null;
     }
 
     private async Task LoadSubAsync(Func<Core.Services.GraphService, Task<List<string>>> fetch, Func<bool> stillSelected)
