@@ -21,6 +21,31 @@ public sealed partial class MainWindow : Window
 
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1600, 1000));
         CenterOnScreen();
+
+        RootGrid.Loaded += OnRootLoaded;
+    }
+
+    private async void OnRootLoaded(object sender, RoutedEventArgs e)
+    {
+        RootGrid.Loaded -= OnRootLoaded;
+
+        // First run: nothing configured -> launch the setup wizard.
+        var app = App.Current;
+        var anyConfigured = app.GraphService != null || app.SnipeService != null
+            || app.TdxService != null || app.DevOpsService != null || app.ReportMateService != null;
+        if (!anyConfigured)
+            await RunSetupAsync();
+    }
+
+    /// <summary>Show the onboarding wizard; on finish, reload services and refresh the shell.</summary>
+    public async Task RunSetupAsync()
+    {
+        var dialog = new OnboardingDialog(RootGrid.XamlRoot);
+        if (await dialog.ShowAsync())
+        {
+            App.Current.ReloadConfigAndServices();
+            NavView.SelectedItem = NavView.MenuItems[0]; // re-navigate to Dashboard with fresh services
+        }
     }
 
     private void CenterOnScreen()
