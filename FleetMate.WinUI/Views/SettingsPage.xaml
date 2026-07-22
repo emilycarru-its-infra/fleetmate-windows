@@ -9,7 +9,11 @@
             <TextBlock Text="Settings" Style="{StaticResource TitleLargeTextBlockStyle}"/>
 
             <!-- Modules -->
-            <TextBlock Text="Modules" Style="{StaticResource SubtitleTextBlockStyle}"/>
+            <Grid>
+                <TextBlock Text="Modules" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center"/>
+                <Button x:Name="SetupButton" Content="Run setup wizard" Click="SetupButton_Click"
+                        HorizontalAlignment="Right" VerticalAlignment="Center"/>
+            </Grid>
             <TextBlock Text="A module is available when its service is configured below."
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="13"/>
             <ItemsControl x:Name="ModulesList">
