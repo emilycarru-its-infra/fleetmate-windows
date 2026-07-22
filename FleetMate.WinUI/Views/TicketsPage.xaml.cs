@@ -10,6 +10,7 @@ namespace FleetMate.WinUI.Views;
 public sealed partial class TicketsPage : Page
 {
     private List<TicketRowViewModel> _all = new();
+    private TdxTicket? _currentTicket;
 
     public TicketsPage()
     {
@@ -94,16 +95,18 @@ public sealed partial class TicketsPage : Page
         }
     }
 
-    private void TicketList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void TicketList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (TicketList.SelectedItem is not TicketRowViewModel row)
         {
             DetailPanel.Visibility = Visibility.Collapsed;
             EmptyDetail.Visibility = Visibility.Visible;
+            _currentTicket = null;
             return;
         }
 
         var t = row.Ticket;
+        _currentTicket = t;
         EmptyDetail.Visibility = Visibility.Collapsed;
         DetailPanel.Visibility = Visibility.Visible;
         DetailId.Text = $"{row.IdText}  ·  {t.TypeName ?? "Ticket"}";
@@ -123,6 +126,93 @@ public sealed partial class TicketsPage : Page
         AddRow("Modified", row.Modified);
 
         DetailDescription.Text = TextUtil.StripHtml(t.Description);
+
+        await LoadFeedAsync(t.Id);
+    }
+
+    private async Task LoadFeedAsync(int ticketId)
+    {
+        FeedList.ItemsSource = null;
+        FeedEmpty.Visibility = Visibility.Collapsed;
+        var tdx = App.Current.TdxService;
+        if (tdx == null) return;
+
+        FeedRing.IsActive = true;
+        try
+        {
+            var feed = await tdx.GetTicketFeedAsync(ticketId);
+            if (_currentTicket?.Id != ticketId) return; // stale
+            if (feed.Count == 0) { FeedEmpty.Visibility = Visibility.Visible; return; }
+            FeedList.ItemsSource = feed
+                .OrderByDescending(f => f.CreatedDate)
+                .Select(f => new FeedItem(
+                    f.CreatedFullName ?? "(system)",
+                    f.CreatedDate.ToLocalTime().ToString("yyyy-MM-dd HH:mm"),
+                    TextUtil.StripHtml(f.Body),
+                    f.IsPrivate))
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            FeedEmpty.Text = $"Failed to load activity: {ex.Message}";
+            FeedEmpty.Visibility = Visibility.Visible;
+        }
+        finally { FeedRing.IsActive = false; }
+    }
+
+    private async void AddComment_Click(object sender, RoutedEventArgs e)
+    {
+        var tdx = App.Current.TdxService;
+        if (_currentTicket is not { } t || tdx == null) return;
+
+        var box = new TextBox { PlaceholderText = "Comment…", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 100 };
+        var isPrivate = new CheckBox { Content = "Private" };
+        var notify = new CheckBox { Content = "Notify requestor & responsible" };
+        var dialog = new ContentDialog
+        {
+            Title = $"Comment on #{t.Id}",
+            Content = new StackPanel { Spacing = 10, Width = 380, Children = { box, isPrivate, notify } },
+            PrimaryButtonText = "Post",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (string.IsNullOrWhiteSpace(box.Text)) return;
+
+        List<Guid>? notifyUids = null;
+        if (notify.IsChecked == true)
+        {
+            notifyUids = new[] { t.RequestorUid, t.ResponsibleUid }
+                .Where(g => g is { } gg && gg != Guid.Empty).Select(g => g!.Value).ToList();
+            if (notifyUids.Count == 0) notifyUids = null;
+        }
+
+        AddCommentButton.IsEnabled = false;
+        try
+        {
+            var ok = await tdx.AddCommentAsync(t.Id, box.Text.Trim(), isPrivate.IsChecked == true, notifyUids);
+            if (ok) await LoadFeedAsync(t.Id);
+            else await MessageAsync("Comment failed", "Could not post the comment.");
+        }
+        finally { AddCommentButton.IsEnabled = true; }
+    }
+
+    private async Task MessageAsync(string title, string message)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
+            CloseButtonText = "OK",
+            XamlRoot = XamlRoot,
+        };
+        await dialog.ShowAsync();
+    }
+
+    private sealed record FeedItem(string Author, string When, string Body, bool IsPrivate)
+    {
+        public Visibility PrivateVisibility => IsPrivate ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void AddRow(string label, string value)
