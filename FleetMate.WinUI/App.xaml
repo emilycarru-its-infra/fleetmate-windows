@@ -14,6 +14,32 @@
             <SolidColorBrush x:Key="StatusInfoBrush" Color="#0078D4" />
             <SolidColorBrush x:Key="StatusWarnBrush" Color="#CA5010" />
             <SolidColorBrush x:Key="StatusErrorBrush" Color="#D13438" />
+
+            <!-- One connected-system auth card. Bound to AuthCardViewModel. Shared by Dashboard + Settings. -->
+            <DataTemplate x:Key="AuthCardTemplate">
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="8"
+                        Padding="16" Margin="0,0,12,12" Width="300">
+                    <StackPanel Spacing="8">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <FontIcon Glyph="{Binding Icon}" FontSize="18"/>
+                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Ellipse Width="10" Height="10" Fill="{Binding StatusBrush}" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding StatusLabel}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding User}" FontSize="12"
+                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                   Visibility="{Binding UserVisibility}"/>
+                        <TextBlock Text="{Binding Category}" FontSize="11"
+                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                    </StackPanel>
+                </Border>
+            </DataTemplate>
         </ResourceDictionary>
     </Application.Resources>
 </Application>
