@@ -126,6 +126,35 @@
                             <TextBlock Text="Description" FontWeight="SemiBold" Margin="0,10,0,0"/>
                             <TextBlock x:Name="DetailDescription" TextWrapping="Wrap" FontSize="13"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+                            <Grid Margin="0,12,0,0">
+                                <TextBlock Text="Activity" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                <Button x:Name="AddCommentButton" Content="Add comment" Click="AddComment_Click"
+                                        FontSize="12" Padding="10,2" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <ProgressRing x:Name="FeedRing" IsActive="False" Width="20" Height="20" HorizontalAlignment="Left"/>
+                            <ItemsControl x:Name="FeedList">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                                CornerRadius="6" Padding="10" Margin="0,0,0,6">
+                                            <StackPanel Spacing="3">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock Text="{Binding Author}" FontWeight="SemiBold" FontSize="12"/>
+                                                    <TextBlock Text="{Binding When}" FontSize="11"
+                                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                               VerticalAlignment="Center"/>
+                                                    <TextBlock Text="Private" FontSize="10" Foreground="{ThemeResource StatusWarnBrush}"
+                                                               VerticalAlignment="Center" Visibility="{Binding PrivateVisibility}"/>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding Body}" FontSize="13" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock x:Name="FeedEmpty" Text="No activity yet." FontSize="12"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}" Visibility="Collapsed"/>
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
