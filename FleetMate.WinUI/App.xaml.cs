@@ -23,6 +23,7 @@ public partial class App : Application
     public AuthManager AuthManager { get; private set; } = null!;
     public GraphService? GraphService { get; private set; }
     public SnipeService? SnipeService { get; private set; }
+    public SnipeSsoService? SnipeSso { get; private set; }
     public TdxService? TdxService { get; private set; }
     public AzureDevOpsService? DevOpsService { get; private set; }
     public DevOpsSsoService? DevOpsSsoService { get; private set; }
@@ -44,11 +45,31 @@ public partial class App : Application
 
             _window = new MainWindow();
             _window.Activate();
+
+            // Prefer a delegated OIDC bearer for Snipe when configured (secretless path).
+            if (SnipeSso != null && SnipeService != null)
+                _ = ApplySnipeSsoAsync();
         }
         catch (Exception ex)
         {
             Program.Log($"CRASH in OnLaunched: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}\n");
             throw;
+        }
+    }
+
+    private async Task ApplySnipeSsoAsync()
+    {
+        try
+        {
+            var result = await SnipeSso!.AcquireTokenAsync();
+            if (result.Success && result.Token != null)
+                SnipeService!.SetBearerToken(result.Token);
+            else
+                Program.Log($"Snipe SSO not applied: {result.Error}");
+        }
+        catch (Exception ex)
+        {
+            Program.Log($"Snipe SSO failed: {ex.Message}");
         }
     }
 
@@ -63,8 +84,14 @@ public partial class App : Application
             if (Config.Graph != null && !string.IsNullOrEmpty(Config.Graph.TenantId))
                 GraphService = new GraphService(Config.Graph);
 
-            if (!string.IsNullOrEmpty(Config.SnipeUrl) && !string.IsNullOrEmpty(Config.SnipeApiKey))
+            // Snipe: needs a URL plus either a static API key or an OIDC resource id.
+            if (!string.IsNullOrEmpty(Config.SnipeUrl) &&
+                (!string.IsNullOrEmpty(Config.SnipeApiKey) || !string.IsNullOrEmpty(Config.SnipeResourceId)))
+            {
                 SnipeService = new SnipeService(Config.SnipeUrl, Config.SnipeApiKey, Config.CacheMinutes);
+                if (!string.IsNullOrEmpty(Config.SnipeResourceId))
+                    SnipeSso = new SnipeSsoService(Config.SnipeResourceId);
+            }
 
             if (Config.Tdx != null && !string.IsNullOrEmpty(Config.Tdx.BaseUrl))
                 TdxService = new TdxService(Config.Tdx);

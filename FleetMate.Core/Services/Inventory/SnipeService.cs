@@ -59,7 +59,16 @@ public class SnipeService : IDisposable
         
         _cacheDuration = TimeSpan.FromMinutes(cacheMinutes);
     }
-    
+
+    /// <summary>
+    /// Swap the Authorization header to a delegated SSO bearer at runtime (from
+    /// <see cref="SnipeSsoService"/>). Overrides the static API key for this client.
+    /// </summary>
+    public void SetBearerToken(string token)
+    {
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+    }
+
     #region Hardware/Assets
     
     /// <summary>
