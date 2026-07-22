@@ -57,6 +57,18 @@ public sealed partial class SettingsPage : Page
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await ProbeAsync();
 
+    private async void SetupButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OnboardingDialog(XamlRoot);
+        if (await dialog.ShowAsync())
+        {
+            App.Current.ReloadConfigAndServices();
+            RenderModules();
+            RenderAuth();
+            await ProbeAsync();
+        }
+    }
+
     private sealed record ModuleRow(string Name, bool IsConfigured, string Backing)
     {
         public string Caption => IsConfigured ? $"{Backing} — configured" : $"{Backing} — not configured";

@@ -57,6 +57,32 @@ public partial class App : Application
         }
     }
 
+    /// <summary>
+    /// Reload config from the registry and rebuild the Core services — called after the
+    /// onboarding wizard saves, so new settings apply without a restart. Re-navigate the
+    /// shell afterwards to pick up the fresh services.
+    /// </summary>
+    public void ReloadConfigAndServices()
+    {
+        GraphService?.Dispose();
+        DevOpsService?.Dispose();
+        ReportMateService?.Dispose();
+        GraphService = null;
+        SnipeService = null;
+        SnipeSso = null;
+        TdxService = null;
+        DevOpsService = null;
+        DevOpsSsoService = null;
+        ReportMateService = null;
+
+        Config = FleetMateConfig.Load();
+        InitializeServices();
+        AuthManager = new AuthManager(Config);
+
+        if (SnipeSso != null && SnipeService != null)
+            _ = ApplySnipeSsoAsync();
+    }
+
     private async Task ApplySnipeSsoAsync()
     {
         try

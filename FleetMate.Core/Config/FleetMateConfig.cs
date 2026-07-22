@@ -301,7 +301,43 @@ public class FleetMateConfig
     /// Save credentials to Windows Registry
     /// Called by 'fleetmate configure' command
     /// </summary>
-    public static void SaveToRegistry(string? reportMateUrl, string? reportMatePassphrase, 
+    /// <summary>
+    /// Write (or clear) arbitrary FleetMate registry values under HKCU\SOFTWARE\FleetMate.
+    /// Keys must match the names read by <see cref="LoadFromRegistry"/> (e.g. "GraphTenantId",
+    /// "SnipeUrl", "DevOpsOrganization"). A null/empty value deletes that key. Used by the
+    /// onboarding wizard to persist collected settings.
+    /// </summary>
+    public static void SaveSettings(IReadOnlyDictionary<string, string?> values)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(RegistryPath);
+            if (key == null)
+            {
+                Log.Error("Failed to create registry key: HKCU\\{Path}", RegistryPath);
+                return;
+            }
+            foreach (var (name, value) in values)
+            {
+                if (string.IsNullOrEmpty(value))
+                {
+                    try { key.DeleteValue(name, throwOnMissingValue: false); } catch { /* absent is fine */ }
+                }
+                else
+                {
+                    key.SetValue(name, value);
+                }
+            }
+            Log.Information("Saved {Count} setting(s) to registry: HKCU\\{Path}", values.Count, RegistryPath);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to save settings to registry");
+            throw;
+        }
+    }
+
+    public static void SaveToRegistry(string? reportMateUrl, string? reportMatePassphrase,
         string? snipeUrl = null, string? snipeApiKey = null)
     {
         try
