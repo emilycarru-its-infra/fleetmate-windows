@@ -40,11 +40,24 @@
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
+                    <!-- Action toolbar -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Padding="12,10"
+                                Background="{ThemeResource LayerFillColorDefaultBrush}">
+                        <Button x:Name="SyncButton" Content="Sync" Click="Sync_Click" IsEnabled="False"/>
+                        <Button x:Name="RestartButton" Content="Restart" Click="Restart_Click" IsEnabled="False"/>
+                        <Button x:Name="LockButton" Content="Lock" Click="Lock_Click" IsEnabled="False"/>
+                        <Button x:Name="RetireButton" Content="Retire" Click="Retire_Click" IsEnabled="False"/>
+                        <Button x:Name="WipeButton" Content="Wipe" Click="Wipe_Click" IsEnabled="False"/>
+                        <TextBlock x:Name="SelectionText" VerticalAlignment="Center" Margin="8,0,0,0"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="13"/>
+                    </StackPanel>
+
                     <!-- Column header -->
-                    <Grid Grid.Row="0" Padding="16,10" ColumnSpacing="8"
+                    <Grid Grid.Row="1" Padding="16,10" ColumnSpacing="8"
                           Background="{ThemeResource SubtleFillColorSecondaryBrush}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="2*"/>
@@ -62,10 +75,10 @@
                         <TextBlock Grid.Column="5" Text="Last Sync" FontWeight="SemiBold" FontSize="12"/>
                     </Grid>
 
-                    <ProgressRing x:Name="LoadingRing" Grid.Row="1" IsActive="False"
+                    <ProgressRing x:Name="LoadingRing" Grid.Row="2" IsActive="False"
                                   Width="36" Height="36" HorizontalAlignment="Center" VerticalAlignment="Center"/>
 
-                    <ListView x:Name="DeviceList" Grid.Row="1" SelectionMode="Single"
+                    <ListView x:Name="DeviceList" Grid.Row="2" SelectionMode="Extended"
                               SelectionChanged="DeviceList_SelectionChanged"
                               HorizontalContentAlignment="Stretch">
                         <ListView.ItemContainerStyle>
@@ -113,6 +126,9 @@
                     <StackPanel Padding="20" Spacing="6">
                         <TextBlock x:Name="EmptyDetail" Text="Select a device to see details."
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <TextBlock x:Name="MultiDetail" Visibility="Collapsed"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
                         <StackPanel x:Name="DetailPanel" Spacing="10" Visibility="Collapsed">
                             <TextBlock x:Name="DetailName" Style="{StaticResource SubtitleTextBlockStyle}" TextWrapping="Wrap"/>
 
@@ -123,6 +139,12 @@
                             <ProgressRing x:Name="ComplianceRing" IsActive="False" Width="20" Height="20" HorizontalAlignment="Left"/>
                             <ItemsControl x:Name="ComplianceList"/>
                             <TextBlock x:Name="ComplianceEmpty" Text="No policy states." FontSize="12"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}" Visibility="Collapsed"/>
+
+                            <TextBlock Text="Detected apps" FontWeight="SemiBold" Margin="0,10,0,0"/>
+                            <ProgressRing x:Name="AppsRing" IsActive="False" Width="20" Height="20" HorizontalAlignment="Left"/>
+                            <ItemsControl x:Name="AppsList"/>
+                            <TextBlock x:Name="AppsEmpty" Text="No detected apps." FontSize="12"
                                        Foreground="{ThemeResource TextFillColorTertiaryBrush}" Visibility="Collapsed"/>
                         </StackPanel>
                     </StackPanel>
