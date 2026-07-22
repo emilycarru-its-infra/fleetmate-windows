@@ -7,6 +7,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWinUI>true</UseWinUI>
+    <!-- Declare real platforms (no AnyCPU) so the solution can map to x64/ARM64.
+         WinUI 3 can't build AnyCPU (PRI tooling needs a concrete arch). -->
+    <Platforms>x64;ARM64</Platforms>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <RootNamespace>FleetMate.WinUI</RootNamespace>
