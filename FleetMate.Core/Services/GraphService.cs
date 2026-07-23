@@ -236,6 +236,23 @@ public class GraphService : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Read a response body for error logging (truncated). In elevation mode the
+    /// <see cref="ElevationHttpHandler"/> packs the real failure — e.g. "aze elevation
+    /// is not configured" or the underlying Graph error — into a BadGateway body, so
+    /// surfacing it here stops elevation/auth failures from silently looking like a
+    /// missing user or group.
+    /// </summary>
+    private static async Task<string> ReadErrorBodyAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var body = (await response.Content.ReadAsStringAsync())?.Trim() ?? "";
+            return body.Length > 600 ? body[..600] + "…" : body;
+        }
+        catch { return "(no body)"; }
+    }
+
     private static string? FindAzureCli()
     {
         var candidates = new[]
@@ -408,7 +425,7 @@ public class GraphService : IDisposable
 
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get device {DeviceId}: {Status}", deviceId, response.StatusCode);
+                Log.Warning("Failed to get device {DeviceId}: {Status} - {Error}", deviceId, response.StatusCode, await ReadErrorBodyAsync(response));
                 return null;
             }
 
@@ -779,7 +796,7 @@ public class GraphService : IDisposable
 
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get user {User}: {Status}", userPrincipalNameOrId, response.StatusCode);
+                Log.Warning("Failed to get user {User}: {Status} - {Error}", userPrincipalNameOrId, response.StatusCode, await ReadErrorBodyAsync(response));
                 return null;
             }
 
@@ -824,7 +841,7 @@ public class GraphService : IDisposable
             var response = await _client.GetAsync(url);
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to search users with query '{Query}': {Status}", query, response.StatusCode);
+                Log.Warning("Failed to search users with query '{Query}': {Status} - {Error}", query, response.StatusCode, await ReadErrorBodyAsync(response));
                 return new List<EntraUser>();
             }
 
@@ -860,7 +877,7 @@ public class GraphService : IDisposable
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    Log.Warning("Failed to get groups for user {User}: {Status}", userPrincipalNameOrId, response.StatusCode);
+                    Log.Warning("Failed to get groups for user {User}: {Status} - {Error}", userPrincipalNameOrId, response.StatusCode, await ReadErrorBodyAsync(response));
                     break;
                 }
 
@@ -978,7 +995,7 @@ public class GraphService : IDisposable
 
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get group {Group}: {Status}", displayName, response.StatusCode);
+                Log.Warning("Failed to get group {Group}: {Status} - {Error}", displayName, response.StatusCode, await ReadErrorBodyAsync(response));
                 return null;
             }
 
@@ -1016,7 +1033,7 @@ public class GraphService : IDisposable
 
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get group {GroupId}: {Status}", groupId, response.StatusCode);
+                Log.Warning("Failed to get group {GroupId}: {Status} - {Error}", groupId, response.StatusCode, await ReadErrorBodyAsync(response));
                 return null;
             }
 
