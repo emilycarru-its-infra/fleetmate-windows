@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using FleetMate.Core.Config;
+using Serilog;
 
 namespace FleetMate.Core.Services;
 
@@ -38,6 +39,13 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
         try
         {
             var (output, code) = await _session.ExecAsync(domain, sb.ToString());
+            // Log the real failure once, at the transport boundary. Callers turn a
+            // non-success status into null/empty (e.g. "User not found"), so without
+            // this the underlying error — a Graph 4xx/5xx surfaced by the in-session
+            // az rest — would be invisible.
+            if (code != 0)
+                Log.Warning("Elevation {Domain} call to {Method} {Url} exited {Code}: {Body}",
+                    domain.Slug(), method, url, code, Truncate(output));
             var status = code == 0 ? HttpStatusCode.OK : HttpStatusCode.BadGateway;
             return new HttpResponseMessage(status)
             {
@@ -47,6 +55,10 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
         }
         catch (Exception ex)
         {
+            // Elevation infra failure (not configured, container/exec error, network).
+            // This is the message that was previously masked as a benign "not found".
+            Log.Warning("Elevation {Domain} call to {Method} {Url} failed: {Message}",
+                domain.Slug(), method, url, ex.Message);
             return new HttpResponseMessage(HttpStatusCode.BadGateway)
             {
                 Content = new StringContent(ex.Message),
@@ -67,4 +79,11 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
 
     // Single-quote so the container shell does not expand $top/$filter/$ref/etc.
     private static string SingleQuote(string s) => "'" + s.Replace("'", "'\\''") + "'";
+
+    // Keep log lines bounded — Graph error bodies can be large.
+    private static string Truncate(string s)
+    {
+        s = s?.Trim() ?? "";
+        return s.Length > 600 ? s[..600] + "…" : s;
+    }
 }

@@ -277,7 +277,27 @@ public class FleetMateConfig
             var devOpsTenantId = key.GetValue("DevOpsTenantId") as string;
             if (!string.IsNullOrEmpty(devOpsTenantId))
                 config.AzureDevOps.TenantId = devOpsTenantId;
-            
+
+            // aze secretless elevation infrastructure (org-specific). Without these
+            // keys, elevation is unconfigured and every Graph call fails as a masked
+            // BadGateway — so managed boxes provisioned via the registry get them here,
+            // the same way the Mac gets them from ~/.fleetmate/config.yaml.
+            var elevationResourceGroup = key.GetValue("ElevationResourceGroup") as string;
+            var elevationAcrImage = key.GetValue("ElevationAcrImage") as string;
+            var elevationTranscriptAccount = key.GetValue("ElevationTranscriptAccount") as string;
+            var elevationIdentityPrefix = key.GetValue("ElevationIdentityPrefix") as string;
+            if (!string.IsNullOrEmpty(elevationResourceGroup) || !string.IsNullOrEmpty(elevationAcrImage) ||
+                !string.IsNullOrEmpty(elevationTranscriptAccount) || !string.IsNullOrEmpty(elevationIdentityPrefix))
+            {
+                config.Elevation ??= new ElevationConfig();
+                if (!string.IsNullOrEmpty(elevationResourceGroup)) config.Elevation.ResourceGroup = elevationResourceGroup;
+                if (!string.IsNullOrEmpty(elevationAcrImage)) config.Elevation.AcrImage = elevationAcrImage;
+                if (!string.IsNullOrEmpty(elevationTranscriptAccount)) config.Elevation.TranscriptAccount = elevationTranscriptAccount;
+                if (!string.IsNullOrEmpty(elevationIdentityPrefix)) config.Elevation.IdentityPrefix = elevationIdentityPrefix;
+                if (key.GetValue("ElevationDefaultTtlHours") is string ttlRaw && int.TryParse(ttlRaw, out var ttl))
+                    config.Elevation.DefaultTtlHours = ttl;
+            }
+
             Log.Debug("Loaded credentials from registry: HKCU\\{Path}", RegistryPath);
         }
         catch (Exception ex)
