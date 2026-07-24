@@ -540,8 +540,26 @@ public class GraphService : IDisposable
     /// <summary>
     /// Remote lock a device with optional PIN
     /// </summary>
-    public async Task<DeviceActionResult> RemoteLockDeviceAsync(string deviceId, string? pin = null)
+    // Defense-in-depth: destructive fleet actions (remoteLock/wipe/retire/remediation)
+    // must be invoked with an explicit confirmed flag. Callers gate on their own
+    // confirmation first (CLI --confirm, GUI MessageBox) then pass confirmed: true; a
+    // caller that forgets is refused here rather than silently firing the action.
+    private static DeviceActionResult? RequireConfirmation(bool confirmed, string action, string? deviceId = null)
     {
+        if (confirmed) return null;
+        Log.Warning("Refused unconfirmed destructive action {Action} for {Target}", action, deviceId ?? "(fleet)");
+        return new DeviceActionResult
+        {
+            Success = false, DeviceId = deviceId ?? string.Empty, Action = action,
+            Message = "Confirmation required: this destructive action must be invoked with confirmed: true."
+        };
+    }
+
+    public async Task<DeviceActionResult> RemoteLockDeviceAsync(string deviceId, string? pin = null, bool confirmed = false)
+    {
+        var guard = RequireConfirmation(confirmed, "remoteLock", deviceId);
+        if (guard != null) return guard;
+
         if (!await SetAuthorizationAsync())
         {
             return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "remoteLock", Message = "Not authenticated" };
@@ -583,9 +601,9 @@ public class GraphService : IDisposable
     /// <summary>
     /// Remote lock multiple devices
     /// </summary>
-    public async Task<List<DeviceActionResult>> RemoteLockDevicesAsync(IEnumerable<string> deviceIds, string? pin = null)
+    public async Task<List<DeviceActionResult>> RemoteLockDevicesAsync(IEnumerable<string> deviceIds, string? pin = null, bool confirmed = false)
     {
-        var tasks = deviceIds.Select(id => RemoteLockDeviceAsync(id, pin));
+        var tasks = deviceIds.Select(id => RemoteLockDeviceAsync(id, pin, confirmed));
         var results = await Task.WhenAll(tasks);
         return results.ToList();
     }
@@ -593,8 +611,11 @@ public class GraphService : IDisposable
     /// <summary>
     /// Wipe a device (factory reset)
     /// </summary>
-    public async Task<DeviceActionResult> WipeDeviceAsync(string deviceId, bool keepEnrollmentData = false, bool keepUserData = false)
+    public async Task<DeviceActionResult> WipeDeviceAsync(string deviceId, bool keepEnrollmentData = false, bool keepUserData = false, bool confirmed = false)
     {
+        var guard = RequireConfirmation(confirmed, "wipe", deviceId);
+        if (guard != null) return guard;
+
         if (!await SetAuthorizationAsync())
         {
             return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "wipe", Message = "Not authenticated" };
@@ -628,8 +649,11 @@ public class GraphService : IDisposable
     /// <summary>
     /// Retire a device (remove company data)
     /// </summary>
-    public async Task<DeviceActionResult> RetireDeviceAsync(string deviceId)
+    public async Task<DeviceActionResult> RetireDeviceAsync(string deviceId, bool confirmed = false)
     {
+        var guard = RequireConfirmation(confirmed, "retire", deviceId);
+        if (guard != null) return guard;
+
         if (!await SetAuthorizationAsync())
         {
             return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "retire", Message = "Not authenticated" };
@@ -658,17 +682,17 @@ public class GraphService : IDisposable
     }
 
     /// <summary>Factory-reset multiple devices.</summary>
-    public async Task<List<DeviceActionResult>> WipeDevicesAsync(IEnumerable<string> deviceIds, bool keepEnrollmentData = false, bool keepUserData = false)
+    public async Task<List<DeviceActionResult>> WipeDevicesAsync(IEnumerable<string> deviceIds, bool keepEnrollmentData = false, bool keepUserData = false, bool confirmed = false)
     {
-        var tasks = deviceIds.Select(id => WipeDeviceAsync(id, keepEnrollmentData, keepUserData));
+        var tasks = deviceIds.Select(id => WipeDeviceAsync(id, keepEnrollmentData, keepUserData, confirmed));
         var results = await Task.WhenAll(tasks);
         return results.ToList();
     }
 
     /// <summary>Retire multiple devices (remove company data, unenroll).</summary>
-    public async Task<List<DeviceActionResult>> RetireDevicesAsync(IEnumerable<string> deviceIds)
+    public async Task<List<DeviceActionResult>> RetireDevicesAsync(IEnumerable<string> deviceIds, bool confirmed = false)
     {
-        var tasks = deviceIds.Select(RetireDeviceAsync);
+        var tasks = deviceIds.Select(id => RetireDeviceAsync(id, confirmed));
         var results = await Task.WhenAll(tasks);
         return results.ToList();
     }
@@ -1325,8 +1349,14 @@ public class GraphService : IDisposable
         string detectionScript,
         string remediationScript,
         string groupId,
-        string? description = null)
+        string? description = null,
+        bool confirmed = false)
     {
+        // Most destructive path: runs PowerShell as SYSTEM across every device in the
+        // target group. Requires explicit confirmation, like wipe/retire.
+        var guard = RequireConfirmation(confirmed, "deployRemediation", groupId);
+        if (guard != null) return guard;
+
         if (!await SetAuthorizationAsync())
         {
             return new DeviceActionResult { Success = false, Action = "deployRemediation", Message = "Not authenticated" };
@@ -1438,7 +1468,7 @@ public class GraphService : IDisposable
     /// Deploy the Cimian push trigger remediation to a group.
     /// Creates a proactive remediation that writes .cimian.headless on target devices.
     /// </summary>
-    public async Task<DeviceActionResult> DeployCimianPushRemediationAsync(string groupNameOrId)
+    public async Task<DeviceActionResult> DeployCimianPushRemediationAsync(string groupNameOrId, bool confirmed = false)
     {
         // Resolve group ID
         var groupId = groupNameOrId;
@@ -1517,7 +1547,8 @@ if ($svc -and $svc.Status -ne 'Running') {
             detectionScript,
             remediationScript,
             groupId,
-            "FleetMate-initiated Cimian push trigger. Creates .cimian.headless to force an immediate managed software update run.");
+            "FleetMate-initiated Cimian push trigger. Creates .cimian.headless to force an immediate managed software update run.",
+            confirmed);
     }
 
     #endregion
