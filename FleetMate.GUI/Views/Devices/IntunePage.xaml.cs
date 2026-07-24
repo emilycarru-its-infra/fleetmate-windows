@@ -370,7 +370,7 @@ public partial class IntunePage : Page
 
         try
         {
-            var results = await _graphService.RetireDevicesAsync(deviceIds);
+            var results = await _graphService.RetireDevicesAsync(deviceIds, confirmed: true);
             var successful = results.Count(r => r.Success);
             var failed = results.Count - successful;
 
@@ -401,7 +401,7 @@ public partial class IntunePage : Page
 
         try
         {
-            var results = await _graphService.WipeDevicesAsync(deviceIds);
+            var results = await _graphService.WipeDevicesAsync(deviceIds, confirmed: true);
             var successful = results.Count(r => r.Success);
             var failed = results.Count - successful;
 
@@ -433,7 +433,7 @@ public partial class IntunePage : Page
 
         try
         {
-            var results = await _graphService.RemoteLockDevicesAsync(deviceIds, pin);
+            var results = await _graphService.RemoteLockDevicesAsync(deviceIds, pin, confirmed: true);
             var successful = results.Count(r => r.Success);
             var failed = results.Count - successful;
 

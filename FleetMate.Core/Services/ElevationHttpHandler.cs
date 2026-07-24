@@ -56,12 +56,15 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
         catch (Exception ex)
         {
             // Elevation infra failure (not configured, container/exec error, network).
-            // This is the message that was previously masked as a benign "not found".
-            Log.Warning("Elevation {Domain} call to {Method} {Url} failed: {Message}",
-                domain.Slug(), method, url, ex.Message);
+            // The full detail is logged at debug level only — ex.Message can still carry
+            // elevated output in edge cases, and GraphService re-logs the response body.
+            // The body callers receive is therefore a fixed, non-sensitive string.
+            Log.Debug(ex, "Elevation {Domain} call to {Method} {Url} failed", domain.Slug(), method, url);
+            Log.Warning("Elevation {Domain} call to {Method} {Url} failed (detail at debug level)",
+                domain.Slug(), method, url);
             return new HttpResponseMessage(HttpStatusCode.BadGateway)
             {
-                Content = new StringContent(ex.Message),
+                Content = new StringContent("Elevation request failed; see FleetMate debug log for detail."),
                 RequestMessage = request,
             };
         }
