@@ -684,8 +684,9 @@ exit 0
 
         Log.Information("Pushing Cimian run via Intune remediation to group '{Group}'", groupNameOrId);
 
-        // Deploy the proactive remediation
-        var deployResult = await graphService.DeployCimianPushRemediationAsync(groupNameOrId);
+        // Deploy the proactive remediation. This entry point is a deliberate,
+        // explicitly-invoked push, so it confirms the destructive-action guard.
+        var deployResult = await graphService.DeployCimianPushRemediationAsync(groupNameOrId, confirmed: true);
 
         if (!deployResult.Success)
         {
