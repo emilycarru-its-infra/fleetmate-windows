@@ -94,7 +94,7 @@ public static class IntuneCommand
         {
             if (!EnsureConfigured(graphService)) return;
             var id = await ResolveDeviceIdAsync(graphService!, identifier);
-            ReportAction(await graphService!.RemoteLockDeviceAsync(id!, pin), "lock");
+            ReportAction(await graphService!.RemoteLockDeviceAsync(id!, pin, confirmed: true), "lock");
         }, idArg, pinOption);
         return command;
     }
@@ -117,7 +117,7 @@ public static class IntuneCommand
                 return;
             }
             var id = await ResolveDeviceIdAsync(graphService!, identifier);
-            ReportAction(await graphService!.WipeDeviceAsync(id!, keepUserData: keepUserData), "wipe");
+            ReportAction(await graphService!.WipeDeviceAsync(id!, keepUserData: keepUserData, confirmed: true), "wipe");
         }, idArg, keepUserDataOption, confirmOption);
         return command;
     }
@@ -138,7 +138,7 @@ public static class IntuneCommand
                 return;
             }
             var id = await ResolveDeviceIdAsync(graphService!, identifier);
-            ReportAction(await graphService!.RetireDeviceAsync(id!), "retire");
+            ReportAction(await graphService!.RetireDeviceAsync(id!, confirmed: true), "retire");
         }, idArg, confirmOption);
         return command;
     }
@@ -151,7 +151,7 @@ public static class IntuneCommand
         command.SetHandler(async (group) =>
         {
             if (!EnsureConfigured(graphService)) return;
-            var result = await graphService!.DeployCimianPushRemediationAsync(group);
+            var result = await graphService!.DeployCimianPushRemediationAsync(group, confirmed: true);
             if (result.Success) AnsiConsole.MarkupLine($"[green]Deployed[/] Cimian push remediation to {Markup.Escape(group)}");
             else AnsiConsole.MarkupLine($"[red]Failed:[/] {Markup.Escape(result.Message ?? "unknown error")}");
         }, groupArg);
