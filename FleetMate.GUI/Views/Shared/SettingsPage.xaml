@@ -43,8 +43,9 @@
                         </StackPanel>
 
                         <StackPanel Grid.Column="0" Grid.Row="1" Grid.ColumnSpan="2">
-                            <TextBlock Text="Client Secret" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                            <PasswordBox x:Name="ClientSecretBox" Margin="0,4,0,0" />
+                            <TextBlock Text="Graph signs in as you through the Windows account broker — there is no client secret to configure."
+                                       TextWrapping="Wrap" Margin="0,4,0,0"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                         </StackPanel>
                     </Grid>
                 </StackPanel>
@@ -88,8 +89,9 @@
                         <TextBox x:Name="SnipeUrlTextBox" Margin="0,4,0,0" />
                     </StackPanel>
                     <StackPanel>
-                        <TextBlock Text="API Key" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                        <PasswordBox x:Name="SnipeApiKeyBox" Margin="0,4,0,0" />
+                        <TextBlock Text="Snipe-IT authenticates with your Entra session — no API key required."
+                                   TextWrapping="Wrap" Margin="0,4,0,0"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                     </StackPanel>
                 </StackPanel>
             </Border>

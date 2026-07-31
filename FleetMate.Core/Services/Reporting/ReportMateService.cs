@@ -21,19 +21,42 @@ public class ReportMateService : IDisposable
     private DateTime _installCacheExpiry = DateTime.MinValue;
     private readonly TimeSpan _cacheDuration;
     
-    public ReportMateService(string baseUrl, string? passphrase = null, int cacheMinutes = 5)
+    /// <summary>
+    /// True when ReportMate authenticates with an Entra bearer minted off the
+    /// operator's Windows sign-in rather than the shared passphrase.
+    /// </summary>
+    public bool UsesOidc { get; }
+
+    /// <summary>
+    /// Build from config so every call site authenticates the same way — Entra
+    /// SSO by default, the legacy passphrase only where no audience is configured.
+    /// </summary>
+    public static ReportMateService FromConfig(FleetMate.Core.Config.FleetMateConfig config)
     {
-        _client = new HttpClient
-        {
-            BaseAddress = new Uri(baseUrl.TrimEnd('/')),
-            Timeout = TimeSpan.FromSeconds(120)
-        };
-        
-        if (!string.IsNullOrEmpty(passphrase))
+#pragma warning disable CS0618 // legacy fallback for unmigrated configs
+        var passphrase = config.ReportMatePassphrase;
+#pragma warning restore CS0618
+        return new ReportMateService(
+            config.ReportMateUrl ?? string.Empty, passphrase, config.CacheMinutes, config.ReportMateOidcAudience);
+    }
+
+    public ReportMateService(string baseUrl, string? passphrase = null, int cacheMinutes = 5, string? oidcAudience = null)
+    {
+        UsesOidc = !string.IsNullOrWhiteSpace(oidcAudience);
+
+        // Prefer-bearer: an Entra audience beats the shared passphrase wherever
+        // both are set, so migration is additive rather than a flag day.
+        _client = UsesOidc
+            ? new HttpClient(new EntraBearerHandler(oidcAudience!))
+            : new HttpClient();
+        _client.BaseAddress = new Uri(baseUrl.TrimEnd('/'));
+        _client.Timeout = TimeSpan.FromSeconds(120);
+
+        if (!UsesOidc && !string.IsNullOrEmpty(passphrase))
         {
             _client.DefaultRequestHeaders.Add("X-Client-Passphrase", passphrase);
         }
-        
+
         _jsonOptions = new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,

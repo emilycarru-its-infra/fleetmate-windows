@@ -50,8 +50,10 @@ public class AuthManager : INotifyPropertyChanged
             systems[AuthSystemId.Graph] = new AuthSystemStatus { SystemId = AuthSystemId.Graph, State = AuthTokenState.Configured() };
         }
 
-        // Assets — Snipe-IT
-        if (!string.IsNullOrEmpty(_config.SnipeUrl) && !string.IsNullOrEmpty(_config.SnipeApiKey))
+        // Assets — Snipe-IT. A URL is enough: auth is the operator's Entra
+        // session, so gating this on an API key hid a working SSO Snipe from the
+        // panel entirely.
+        if (!string.IsNullOrEmpty(_config.SnipeUrl))
         {
             systems[AuthSystemId.Snipe] = new AuthSystemStatus { SystemId = AuthSystemId.Snipe, State = AuthTokenState.Configured() };
         }
@@ -62,17 +64,24 @@ public class AuthManager : INotifyPropertyChanged
             systems[AuthSystemId.Tdx] = new AuthSystemStatus { SystemId = AuthSystemId.Tdx, State = AuthTokenState.Configured() };
         }
 
-        // Projects — DevOps
-        if (_config.AzureDevOps != null && !string.IsNullOrEmpty(_config.AzureDevOps.Organization))
+        // Projects — DevOps and GitHub are always listed, even before they are
+        // configured. Gating them on their own config made the panel unusable:
+        // the Settings ▸ Projects toggle sends you here to enter the DevOps
+        // organization, but with no row to edit there was nothing to fill in and
+        // the toggle silently did nothing. An unconfigured row shows as
+        // NotConfigured with its edit affordance, which is the way in.
+        var devOpsConfigured = _config.AzureDevOps != null && !string.IsNullOrEmpty(_config.AzureDevOps.Organization);
+        systems[AuthSystemId.DevOps] = new AuthSystemStatus
         {
-            systems[AuthSystemId.DevOps] = new AuthSystemStatus { SystemId = AuthSystemId.DevOps, State = AuthTokenState.Configured() };
-        }
+            SystemId = AuthSystemId.DevOps,
+            State = devOpsConfigured ? AuthTokenState.Configured() : AuthTokenState.NotConfigured()
+        };
 
-        // Projects — GitHub
-        if (_config.Tasks?.Providers?.GitHub is { Enabled: true })
-        {
-            systems[AuthSystemId.GitHub] = new AuthSystemStatus { SystemId = AuthSystemId.GitHub, State = AuthTokenState.Configured() };
-        }
+        // GitHub authenticates through the `gh` CLI rather than anything stored
+        // here, so `Enabled` says nothing about whether it works — ProbeGitHubAsync
+        // resolves the real state. Listing it unconditionally is what lets the
+        // panel report a GitHub session that is already live.
+        systems[AuthSystemId.GitHub] = new AuthSystemStatus { SystemId = AuthSystemId.GitHub, State = AuthTokenState.Configured() };
 
         // Projects — Gitea
         if (_config.Tasks?.Providers?.Gitea is { Enabled: true })
@@ -105,10 +114,39 @@ public class AuthManager : INotifyPropertyChanged
         OnPropertyChanged(nameof(HasServicePrincipalWarning));
     }
 
+    /// <summary>
+    /// Report that an <em>optional</em> auth path failed — a silent SSO attempt,
+    /// say — without contradicting a system that is already authenticated by some
+    /// other means.
+    ///
+    /// These systems have more than one way in: Snipe-IT and ReportMate ride an
+    /// Entra bearer, and TeamDynamix a service-account JWT. The cookie/silent-SSO
+    /// attempt runs anyway and, on failure, used to overwrite a perfectly good
+    /// Valid with "Silent SSO failed" — the panel claiming TDX was broken while
+    /// the row underneath said "signed in as Service Account" in green.
+    /// </summary>
+    public void ReportOptionalAuthFailure(AuthSystemId id, string message)
+    {
+        if (!_systems.TryGetValue(id, out var status)) return;
+
+        if (status.State.IsHealthy)
+        {
+            Log.Information("[auth] {System}: optional SSO path failed ({Message}) — " +
+                            "keeping the working auth state", id, message);
+            return;
+        }
+
+        Update(id, AuthTokenState.Failed(message));
+    }
+
     public void SignOut()
     {
         foreach (var id in _systems.Keys.ToList())
             Update(id, AuthTokenState.Configured());
+
+        // Drop brokered tokens too, or "sign out" leaves the next call silently
+        // succeeding on a cached credential.
+        EntraTokenSource.Shared?.Invalidate();
     }
 
     // MARK: - Queries
@@ -155,8 +193,8 @@ public class AuthManager : INotifyPropertyChanged
                 try
                 {
                     await graphService.GetManagedDevicesAsync(limit: 1);
-                    Update(AuthSystemId.Graph, AuthTokenState.Valid("Service Credential"));
-                    Update(AuthSystemId.Intune, AuthTokenState.Valid("Service Credential"));
+                    Update(AuthSystemId.Graph, AuthTokenState.Valid("Entra SSO"));
+                    Update(AuthSystemId.Intune, AuthTokenState.Valid("Entra SSO"));
                 }
                 catch (Exception ex)
                 {
@@ -175,7 +213,7 @@ public class AuthManager : INotifyPropertyChanged
                 try
                 {
                     await graphService.SearchGroupsAsync("test", 1);
-                    Update(AuthSystemId.Entra, AuthTokenState.Valid("Service Credential"));
+                    Update(AuthSystemId.Entra, AuthTokenState.Valid("Entra SSO"));
                 }
                 catch (Exception ex)
                 {
@@ -193,7 +231,11 @@ public class AuthManager : INotifyPropertyChanged
                 try
                 {
                     await snipeService.GetAssetsAsync();
-                    Update(AuthSystemId.Snipe, AuthTokenState.Valid(_config.SnipeUrl ?? "Snipe-IT"));
+                    // Name the credential, not the host. "Snipe-IT" told you
+                    // nothing about *how* you were authenticated, which is the
+                    // one thing this panel exists to answer.
+                    Update(AuthSystemId.Snipe, AuthTokenState.Valid(
+                        snipeService.UsesOidc ? "SSO bearer (Entra)" : _config.SnipeUrl ?? "Snipe-IT"));
                 }
                 catch (Exception ex)
                 {

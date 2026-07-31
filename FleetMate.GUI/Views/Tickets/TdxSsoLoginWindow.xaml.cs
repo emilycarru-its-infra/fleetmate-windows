@@ -219,9 +219,11 @@ public partial class TdxSsoLoginWindow : Window
     {
         InitializeComponent();
         
-        // Build SSO login URL - navigate to TDWorkManagement to trigger SAML redirect chain
+        // Build SSO login URL - navigate to TDWorkManagement to trigger SAML redirect chain.
+        // Both URLs come from TdxSsoService so the GUI and the headless path can
+        // never disagree about where loginsso lives.
         _rootUrl = baseUrl.TrimEnd('/').Replace("/TDWebApi", "");
-        _ssoLoginUrl = _rootUrl + "/TDWorkManagement/";
+        _ssoLoginUrl = TdxSsoService.BuildEntryUrl(baseUrl);
         
         // Detect UPN from Windows identity (domain\user → user@domain or UPN from AD)
         _detectedUpn = DetectWindowsUpn();
@@ -536,7 +538,7 @@ public partial class TdxSsoLoginWindow : Window
     {
         try
         {
-            var loginSsoUrl = _rootUrl + "/TDWebApi/api/auth/loginSSO";
+            var loginSsoUrl = TdxSsoService.BuildLoginSsoUrl(_rootUrl);
             Log.Debug("[JWT] Requesting bearer token from {Url}", loginSsoUrl);
             
             // Get all cookies from WebView2 for the TDX domain
