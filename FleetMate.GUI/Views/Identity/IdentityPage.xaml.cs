@@ -163,7 +163,7 @@ public partial class IdentityPage : Page
         }
 
         UsersLoadingPanel.Visibility = Visibility.Visible;
-        UsersListView.Visibility = Visibility.Collapsed;
+        UsersSplit.Visibility = Visibility.Collapsed;
         UsersPlaceholderText.Visibility = Visibility.Collapsed;
         UsersNotConfiguredText.Visibility = Visibility.Collapsed;
 
@@ -189,8 +189,14 @@ public partial class IdentityPage : Page
 
             if (results.Count > 0)
             {
-                UsersListView.ItemsSource = results;
-                UsersListView.Visibility = Visibility.Visible;
+                UsersListView.ItemsSource = results
+                    .Select(u => new EntraUserViewModel { User = u })
+                    .ToList();
+                UsersSplit.Visibility = Visibility.Visible;
+
+                // Open the first result. A single hit is the common case, and
+                // making the operator click it again is a step for nothing.
+                UsersListView.SelectedIndex = 0;
             }
             else
             {
@@ -206,6 +212,85 @@ public partial class IdentityPage : Page
         finally
         {
             UsersLoadingPanel.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    // MARK: - User inspector
+
+    private async void OnUserSelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (UsersListView.SelectedItem is not EntraUserViewModel vm)
+        {
+            UserDetailPane.Visibility = Visibility.Collapsed;
+            UserDetailPlaceholder.Visibility = Visibility.Visible;
+            return;
+        }
+
+        UserDetailPlaceholder.Visibility = Visibility.Collapsed;
+        UserDetailPane.Visibility = Visibility.Visible;
+
+        UserInitialsText.Text = vm.Initials;
+        UserNameText.Text = vm.DisplayName;
+        UserUpnText.Text = vm.UserPrincipalName;
+        UserSubtitleText.Text = vm.Subtitle;
+        UserBadgeText.Text = vm.AccountBadgeText;
+        UserBadgeText.Foreground = vm.AccountBadgeBrush;
+        UserPropertiesControl.ItemsSource = vm.Sections;
+
+        await LoadUserRelationsAsync(vm);
+    }
+
+    /// <summary>
+    /// Fill in the Devices and Groups tabs.
+    ///
+    /// Both are fetched per selection rather than with the search results: the
+    /// search can return many users and neither tab is visible until one is
+    /// picked, so doing this eagerly would be N round trips to render one.
+    /// </summary>
+    private async Task LoadUserRelationsAsync(EntraUserViewModel vm)
+    {
+        if (_graphService == null) return;
+
+        var upn = vm.UserPrincipalName;
+
+        UserDevicesEmpty.Text = "Loading devices…";
+        UserDevicesEmpty.Visibility = Visibility.Visible;
+        UserGroupsEmpty.Text = "Loading groups…";
+        UserGroupsEmpty.Visibility = Visibility.Visible;
+        UserDevicesList.ItemsSource = null;
+        UserGroupsList.ItemsSource = null;
+
+        try
+        {
+            var devicesTask = _graphService.GetUserDevicesAsync(upn);
+            var groupsTask = vm.User.MemberOf is { Count: > 0 } cached
+                ? Task.FromResult(cached)
+                : _graphService.GetUserGroupsAsync(upn);
+
+            await Task.WhenAll(devicesTask, groupsTask);
+
+            // The selection can move while these are in flight; a late reply
+            // must not overwrite the pane with another user's data.
+            if (UsersListView.SelectedItem is not EntraUserViewModel current
+                || current.UserPrincipalName != upn)
+            {
+                return;
+            }
+
+            var devices = await devicesTask;
+            UserDevicesList.ItemsSource = devices;
+            UserDevicesEmpty.Text = "No Intune devices are assigned to this user.";
+            UserDevicesEmpty.Visibility = devices.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+
+            var groups = await groupsTask;
+            UserGroupsList.ItemsSource = groups;
+            UserGroupsEmpty.Text = "This user is not a member of any groups.";
+            UserGroupsEmpty.Visibility = groups.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
+        }
+        catch (Exception ex)
+        {
+            UserDevicesEmpty.Text = $"Could not load devices: {ex.Message}";
+            UserGroupsEmpty.Text = $"Could not load groups: {ex.Message}";
         }
     }
 }
