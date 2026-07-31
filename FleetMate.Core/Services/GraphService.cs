@@ -23,6 +23,25 @@ public class GraphService : IDisposable
     // Token caching lives in EntraTokenSource, which is shared across services
     // so one broker call serves every consumer of a given audience.
 
+    /// <summary>
+    /// Graph's hard ceiling for <c>$top</c> on directory collections.
+    ///
+    /// Asking for more is not merely capped — the request fails outright with
+    /// <c>Request_UnsupportedQuery</c> ("Invalid page size specified: '1000'.
+    /// Must be between 1 and 999 inclusive"), so a caller wanting 1000 groups
+    /// gets zero of them and the UI shows an empty state.
+    /// </summary>
+    private const int MaxGraphPageSize = 999;
+
+    /// <summary>
+    /// Page size for a request that wants <paramref name="limit"/> results in
+    /// total. This is a <em>page</em> size, not a cap on the result: the paged
+    /// calls here follow <c>@odata.nextLink</c> until they reach the limit, so
+    /// the 999 ceiling bounds a page rather than the answer.
+    /// </summary>
+    private int PageSizeFor(int limit) =>
+        Math.Min(Math.Min(limit, _config.PageSize), MaxGraphPageSize);
+
     // Caches
     private readonly Dictionary<string, (EntraUser user, DateTime expiry)> _userCache = new();
     private readonly Dictionary<string, (EntraGroup group, DateTime expiry)> _groupCache = new();
@@ -150,7 +169,7 @@ public class GraphService : IDisposable
         var allDevices = new List<IntuneDevice>();
         var url = "deviceManagement/managedDevices";
 
-        var queryParams = new List<string> { $"$top={Math.Min(limit, _config.PageSize)}" };
+        var queryParams = new List<string> { $"$top={PageSizeFor(limit)}" };
         if (!string.IsNullOrEmpty(filter))
         {
             queryParams.Add($"$filter={Uri.EscapeDataString(filter)}");
@@ -565,7 +584,7 @@ public class GraphService : IDisposable
         var allApps = new List<MobileApp>();
         var url = "deviceAppManagement/mobileApps";
 
-        var queryParams = new List<string> { $"$top={Math.Min(limit, _config.PageSize)}" };
+        var queryParams = new List<string> { $"$top={PageSizeFor(limit)}" };
         if (!string.IsNullOrEmpty(filter))
         {
             queryParams.Add($"$filter={Uri.EscapeDataString(filter)}");
@@ -715,7 +734,7 @@ public class GraphService : IDisposable
             var escaped = query.Replace("'", "''");
             var filter = $"startswith(displayName,'{escaped}') or startswith(userPrincipalName,'{escaped}') or startswith(mail,'{escaped}')";
             var select = "id,displayName,userPrincipalName,mail,jobTitle,department,officeLocation";
-            var url = $"users?$filter={Uri.EscapeDataString(filter)}&$select={select}&$top={limit}";
+            var url = $"users?$filter={Uri.EscapeDataString(filter)}&$select={select}&$top={PageSizeFor(limit)}";
 
             var response = await _client.GetAsync(url);
             if (!response.IsSuccessStatusCode)
@@ -951,7 +970,7 @@ public class GraphService : IDisposable
 
         try
         {
-            var url = $"groups/{groupId}/members?$top={Math.Min(limit, _config.PageSize)}";
+            var url = $"groups/{groupId}/members?$top={PageSizeFor(limit)}";
 
             while (!string.IsNullOrEmpty(url) && members.Count < limit)
             {
@@ -1080,7 +1099,7 @@ public class GraphService : IDisposable
         try
         {
             var filter = $"startswith(displayName, '{query}')";
-            var url = $"groups?$filter={Uri.EscapeDataString(filter)}&$top={limit}";
+            var url = $"groups?$filter={Uri.EscapeDataString(filter)}&$top={PageSizeFor(limit)}";
 
             var response = await _client.GetAsync(url);
 
@@ -1129,7 +1148,7 @@ public class GraphService : IDisposable
         try
         {
             // Get device members from the group (filters for device objects)
-            var url = $"groups/{groupId}/members?$top={Math.Min(limit, _config.PageSize)}";
+            var url = $"groups/{groupId}/members?$top={PageSizeFor(limit)}";
 
             while (!string.IsNullOrEmpty(url) && devices.Count < limit)
             {

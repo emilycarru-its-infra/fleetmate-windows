@@ -580,7 +580,7 @@ public partial class App : Application
             {
                 try
                 {
-                    var groups = await GraphService.SearchGroupsAsync("Devices-", 100);
+                    var groups = await GraphService.SearchGroupsAsync("Devices-", DeviceGroupFetch.Limit);
                     Dispatcher.Invoke(() => UpdateGroupsCache(groups));
                     Log.Information("Preloaded {Count} groups", groups.Count);
                 }
