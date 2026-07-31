@@ -581,6 +581,389 @@ public class AzureDevOpsService : IDisposable
     /// <summary>
     /// List all projects in the organization.
     /// </summary>
+    #region My Pull Requests (organization-wide)
+
+    private DevOpsIdentitySummary? _identityCache;
+
+    /// <summary>Organization root, used to build web links to pull requests.</summary>
+    private string OrgUrl => $"https://azure-devops.example.com/{_config.Organization}";
+
+    /// <summary>
+    /// Cached identity of the signed-in user. Returns an unresolved summary if it
+    /// cannot be determined, which pushes <see cref="GetMyPullRequestsAsync"/>
+    /// onto its client-side matching fallback rather than returning nothing.
+    /// </summary>
+    public async Task<DevOpsIdentitySummary> GetCurrentIdentityAsync()
+    {
+        if (_identityCache != null) return _identityCache;
+
+        try
+        {
+            if (!await SetAuthorizationAsync()) return new DevOpsIdentitySummary();
+
+            var response = await _client.GetAsync("_apis/connectionData?api-version=7.1-preview");
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Warning("[azdo] connectionData failed: {Status}", response.StatusCode);
+                return new DevOpsIdentitySummary();
+            }
+
+            var data = await response.Content.ReadFromJsonAsync<DevOpsConnectionData>(_jsonOptions);
+            var identity = data?.AuthorizedUser ?? data?.AuthenticatedUser;
+
+            _identityCache = new DevOpsIdentitySummary
+            {
+                Id = identity?.Id,
+                DisplayName = identity?.DisplayName,
+                Account = identity?.UniqueName,
+            };
+
+            Log.Information("[azdo] identity: id={Id} account={Account}",
+                _identityCache.Id ?? "(unresolved)", _identityCache.Account ?? "(unknown)");
+            return _identityCache;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[azdo] Failed to resolve the signed-in identity");
+            return new DevOpsIdentitySummary();
+        }
+    }
+
+    /// <summary>
+    /// The signed-in user's pull requests across <em>every</em> project in the
+    /// organization, split into "Created by me" and "Assigned to me" the same way
+    /// the Azure DevOps web queue does.
+    /// </summary>
+    /// <param name="status">active, completed, abandoned, or all.</param>
+    /// <param name="topPerQuery">Page size per project query.</param>
+    public async Task<PullRequestQueue> GetMyPullRequestsAsync(
+        string status = "active", int topPerQuery = 100)
+    {
+        var queue = new PullRequestQueue();
+
+        try
+        {
+            var identity = await GetCurrentIdentityAsync();
+            var projects = await ListProjectsAsync();
+
+            Log.Information("[azdo] Building the PR queue across {Count} projects (identity={Identity})",
+                projects.Count, identity.Id ?? "unresolved");
+
+            // Fan out per project — each is an independent REST call, and one
+            // project the user cannot read must not sink the whole queue.
+            var perProject = await Task.WhenAll(projects.Select(p =>
+                PullRequestsForProjectAsync(p.Name ?? "", identity, status, topPerQuery)));
+
+            foreach (var pr in perProject.SelectMany(x => x)) queue.Insert(pr);
+
+            Log.Information("[azdo] PR queue → {Count} pull requests", queue.PullRequests.Count);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[azdo] Failed to build the pull request queue");
+            queue.Errors.Add(new PullRequestQueueError
+            {
+                Source = PullRequestSource.AzureDevOps,
+                Message = ex.Message,
+            });
+        }
+
+        return queue;
+    }
+
+    private async Task<List<UnifiedPullRequest>> PullRequestsForProjectAsync(
+        string projectName, DevOpsIdentitySummary identity, string status, int top)
+    {
+        var byId = new Dictionary<int, UnifiedPullRequest>();
+
+        void Absorb(IEnumerable<GitPullRequest> prs, PullRequestRelation relation)
+        {
+            foreach (var pr in prs)
+            {
+                if (byId.TryGetValue(pr.PullRequestId, out var existing))
+                {
+                    existing.Relations.Add(relation);
+                    continue;
+                }
+
+                var unified = MapPullRequest(pr, projectName, relation, OrgUrl);
+                if (unified != null) byId[pr.PullRequestId] = unified;
+            }
+        }
+
+        if (identity.IsResolved)
+        {
+            var encodedId = Uri.EscapeDataString(identity.Id!);
+            var created = FetchProjectPullRequestsAsync(
+                projectName, $"&searchCriteria.creatorId={encodedId}", status, top);
+            var reviewing = FetchProjectPullRequestsAsync(
+                projectName, $"&searchCriteria.reviewerId={encodedId}", status, top);
+
+            Absorb(await created, PullRequestRelation.CreatedByMe);
+            Absorb(await reviewing, PullRequestRelation.AssignedToMe);
+        }
+        else
+        {
+            // Identity GUID unavailable — pull the project's PRs and match on
+            // whatever account name we do know.
+            var all = await FetchProjectPullRequestsAsync(projectName, "", status, top);
+
+            Absorb(all.Where(pr => MatchesMe(pr.CreatedBy, identity)), PullRequestRelation.CreatedByMe);
+            Absorb(
+                all.Where(pr => (pr.Reviewers ?? new List<GitPullRequestReviewer>())
+                    .Any(r => r.IsContainer != true && MatchesReviewer(r, identity))),
+                PullRequestRelation.AssignedToMe);
+        }
+
+        return byId.Values.ToList();
+    }
+
+    /// <summary>
+    /// One PR search against one project. Swallows failures deliberately — a
+    /// project the user cannot read should not sink the whole queue.
+    /// </summary>
+    private async Task<List<GitPullRequest>> FetchProjectPullRequestsAsync(
+        string projectName, string criteria, string status, int top)
+    {
+        try
+        {
+            var path = $"{Uri.EscapeDataString(projectName)}/_apis/git/pullrequests" +
+                       $"?searchCriteria.status={status}{criteria}&$top={top}&api-version=7.0";
+
+            var response = await _client.GetAsync(path);
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Debug("[azdo] PR query for {Project} returned {Status}", projectName, response.StatusCode);
+                return new List<GitPullRequest>();
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<GitPullRequestsResponse>(_jsonOptions);
+            return result?.Value ?? new List<GitPullRequest>();
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[azdo] PR query failed for {Project}", projectName);
+            return new List<GitPullRequest>();
+        }
+    }
+
+    private static bool MatchesMe(IdentityRef? reference, DevOpsIdentitySummary identity)
+    {
+        if (reference == null) return false;
+
+        static bool Same(string? a, string? b) =>
+            !string.IsNullOrEmpty(a) && !string.IsNullOrEmpty(b)
+            && string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+        return Same(identity.Id, reference.Id)
+            || Same(identity.Account, reference.UniqueName)
+            || Same(identity.DisplayName, reference.DisplayName);
+    }
+
+    private static bool MatchesReviewer(GitPullRequestReviewer reviewer, DevOpsIdentitySummary identity) =>
+        MatchesMe(
+            new IdentityRef
+            {
+                Id = reviewer.Id ?? string.Empty,
+                DisplayName = reviewer.DisplayName ?? string.Empty,
+                UniqueName = reviewer.UniqueName ?? string.Empty,
+            },
+            identity);
+
+    /// <summary>
+    /// Convert an Azure DevOps PR into the unified shape. Returns null when the
+    /// payload lacks the repository context needed to build a web URL — a row
+    /// nobody can open is worse than no row.
+    /// </summary>
+    internal static UnifiedPullRequest? MapPullRequest(
+        GitPullRequest pr, string project, PullRequestRelation relation, string? orgUrl = null)
+    {
+        var repo = pr.Repository?.Name;
+        if (string.IsNullOrEmpty(repo)) return null;
+
+        var projectName = pr.Repository?.Project?.Name ?? project;
+
+        // Draft wins over status: Azure DevOps reports a draft as "active".
+        var state = pr.IsDraft == true
+            ? PullRequestState.Draft
+            : pr.Status?.ToLowerInvariant() switch
+            {
+                "completed" => PullRequestState.Merged,
+                "abandoned" => PullRequestState.Closed,
+                _ => PullRequestState.Open,
+            };
+
+        var reviewers = (pr.Reviewers ?? new List<GitPullRequestReviewer>())
+            .Where(r => r.IsContainer != true)
+            .Select(r => new PullRequestReviewer
+            {
+                Id = r.Id ?? r.DisplayName ?? Guid.NewGuid().ToString(),
+                DisplayName = r.DisplayName ?? r.UniqueName ?? "Unknown",
+                Vote = PullRequestReviewVoteExtensions.FromAzureDevOps(r.Vote),
+                IsRequired = r.IsRequired ?? false,
+            })
+            .ToList();
+
+        return new UnifiedPullRequest
+        {
+            Source = PullRequestSource.AzureDevOps,
+            Number = pr.PullRequestId,
+            Title = pr.Title ?? "(untitled)",
+            AuthorName = pr.CreatedBy?.DisplayName ?? pr.CreatedBy?.UniqueName ?? "Unknown",
+            Container = projectName,
+            Repository = repo,
+            SourceBranch = ShortBranchName(pr.SourceRefName),
+            TargetBranch = ShortBranchName(pr.TargetRefName),
+            CreatedAt = PullRequestDateParser.Parse(pr.CreationDate),
+            UpdatedAt = PullRequestDateParser.Parse(pr.ClosedDate),
+            State = state,
+            HasConflicts = pr.HasConflicts,
+            Reviewers = reviewers,
+            WebUrl = PullRequestWebUrl(orgUrl, projectName, repo, pr.PullRequestId),
+            Relations = new HashSet<PullRequestRelation> { relation },
+        };
+    }
+
+    /// <summary>Strip the <c>refs/heads/</c> prefix Azure DevOps puts on branch names.</summary>
+    internal static string ShortBranchName(string? refName)
+    {
+        if (string.IsNullOrEmpty(refName)) return string.Empty;
+        const string prefix = "refs/heads/";
+        return refName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            ? refName[prefix.Length..]
+            : refName;
+    }
+
+    internal static string PullRequestWebUrl(string? orgUrl, string project, string repository, int pullRequestId)
+    {
+        var root = (orgUrl ?? "https://azure-devops.example.com").TrimEnd('/');
+        return $"{root}/{Uri.EscapeDataString(project)}/_git/{Uri.EscapeDataString(repository)}/pullrequest/{pullRequestId}";
+    }
+
+    /// <summary>
+    /// Abandon a pull request.
+    ///
+    /// Reversible in Azure DevOps — an abandoned PR can be reactivated — but it
+    /// notifies reviewers, so callers should confirm first.
+    /// </summary>
+    public async Task<PullRequestActionResult> AbandonPullRequestAsync(
+        string repository, int pullRequestId, string? project = null)
+    {
+        if (!await SetAuthorizationAsync())
+            return PullRequestActionResult.Failed("Not authenticated to Azure DevOps");
+
+        Log.Information("[azdo] Abandoning {Repository}#{Id}", repository, pullRequestId);
+
+        try
+        {
+            var path = PullRequestPath(repository, pullRequestId, project);
+            var body = new StringContent(
+                JsonSerializer.Serialize(new { status = "abandoned" }, _jsonOptions),
+                Encoding.UTF8, "application/json");
+
+            var response = await _client.SendAsync(
+                new HttpRequestMessage(HttpMethod.Patch, path) { Content = body });
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Warning("[azdo] Abandon failed for {Repository}#{Id}: {Status} - {Error}",
+                    repository, pullRequestId, response.StatusCode, error);
+                return PullRequestActionResult.Failed($"{(int)response.StatusCode}: {Truncate(error)}");
+            }
+
+            return PullRequestActionResult.Ok();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[azdo] Abandon failed for {Repository}#{Id}", repository, pullRequestId);
+            return PullRequestActionResult.Failed(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Complete (merge) a pull request.
+    ///
+    /// Two calls, because Azure DevOps requires <c>lastMergeSourceCommit</c> to be
+    /// echoed back on completion and rejects the request if the source branch has
+    /// moved since — so the current value has to be read immediately beforehand.
+    ///
+    /// <c>completionOptions</c> is deliberately omitted. The PR already carries
+    /// the merge strategy and delete-source-branch settings chosen when it was
+    /// opened, and sending our own would silently override branch policy.
+    /// </summary>
+    public async Task<PullRequestActionResult> CompletePullRequestAsync(
+        string repository, int pullRequestId, string? project = null)
+    {
+        if (!await SetAuthorizationAsync())
+            return PullRequestActionResult.Failed("Not authenticated to Azure DevOps");
+
+        Log.Information("[azdo] Completing {Repository}#{Id}", repository, pullRequestId);
+
+        try
+        {
+            var path = PullRequestPath(repository, pullRequestId, project);
+
+            var currentResponse = await _client.GetAsync(path);
+            if (!currentResponse.IsSuccessStatusCode)
+            {
+                var error = await currentResponse.Content.ReadAsStringAsync();
+                return PullRequestActionResult.Failed(
+                    $"Could not read the pull request: {(int)currentResponse.StatusCode}: {Truncate(error)}");
+            }
+
+            var current = await currentResponse.Content.ReadFromJsonAsync<GitPullRequest>(_jsonOptions);
+            var commitId = current?.LastMergeSourceCommit?.CommitId;
+
+            if (string.IsNullOrEmpty(commitId))
+            {
+                // Reporting this beats sending a completion that is certain to
+                // fail, and names the likely cause rather than surfacing a raw 409.
+                return PullRequestActionResult.Failed(
+                    "Azure DevOps has not produced a merge commit for this pull request yet. " +
+                    "This usually means it still has conflicts, or the merge is still being evaluated.");
+            }
+
+            var body = new StringContent(
+                JsonSerializer.Serialize(new
+                {
+                    status = "completed",
+                    lastMergeSourceCommit = new { commitId },
+                }, _jsonOptions),
+                Encoding.UTF8, "application/json");
+
+            var response = await _client.SendAsync(
+                new HttpRequestMessage(HttpMethod.Patch, path) { Content = body });
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Warning("[azdo] Complete failed for {Repository}#{Id}: {Status} - {Error}",
+                    repository, pullRequestId, response.StatusCode, error);
+                return PullRequestActionResult.Failed($"{(int)response.StatusCode}: {Truncate(error)}");
+            }
+
+            return PullRequestActionResult.Ok();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[azdo] Complete failed for {Repository}#{Id}", repository, pullRequestId);
+            return PullRequestActionResult.Failed(ex.Message);
+        }
+    }
+
+    internal static string PullRequestPath(string repository, int pullRequestId, string? project)
+    {
+        var repoSegment = Uri.EscapeDataString(repository);
+        var prefix = string.IsNullOrWhiteSpace(project) ? "" : $"{Uri.EscapeDataString(project)}/";
+        return $"{prefix}_apis/git/repositories/{repoSegment}/pullrequests/{pullRequestId}?api-version=7.0";
+    }
+
+    private static string Truncate(string s) =>
+        string.IsNullOrEmpty(s) ? "(no body)" : (s.Length > 300 ? s[..300] + "…" : s);
+
+    #endregion
+
     public async Task<List<DevOpsProject>> ListProjectsAsync()
     {
         if (!await SetAuthorizationAsync()) return new List<DevOpsProject>();
