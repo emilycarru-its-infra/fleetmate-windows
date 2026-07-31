@@ -136,6 +136,7 @@ class Program
             rootCommand.AddCommand(QaCommand.Create(config));
             
             // Utility commands
+            rootCommand.AddCommand(LoginCommand.Create(config));
             rootCommand.AddCommand(StatusCommand.Create(config, reportMate));
             rootCommand.AddCommand(ConfigureCommand.Create(config));
             
