@@ -19,6 +19,18 @@ public partial class TicketsPage : Page
     private readonly App? _app;
     private readonly TdxService? _tdxService;
     private ObservableCollection<TdxTicket> _filteredTickets = new();
+
+    /// <summary>
+    /// Rows actually rendered by the list — the filtered tickets as an outline,
+    /// with collapsed subtrees omitted.
+    /// </summary>
+    private readonly ObservableCollection<TicketRowViewModel> _ticketRows = new();
+
+    /// <summary>
+    /// Folded parents, shared by the list and the board. One set rather than one
+    /// per view, so switching modes does not silently re-expand everything.
+    /// </summary>
+    private readonly HashSet<int> _collapsedTickets = new();
     private List<TdxFeedEntry> _ticketFeed = new();
     private TdxTicket? _selectedTicket;
     private bool _sortAscending = false;  // Default descending (newest first)
@@ -58,7 +70,7 @@ public partial class TicketsPage : Page
             _tdxService = app.TdxService;
         }
 
-        TicketsListView.ItemsSource = _filteredTickets;
+        TicketsListView.ItemsSource = _ticketRows;
 
         Loaded += async (s, e) => 
         {
@@ -72,12 +84,7 @@ public partial class TicketsPage : Page
             if (_app?.PendingNavigateTicketId is { } ticketId)
             {
                 _app.PendingNavigateTicketId = null;
-                var ticket = _filteredTickets.FirstOrDefault(t => t.Id == ticketId);
-                if (ticket != null)
-                {
-                    TicketsListView.SelectedItem = ticket;
-                    TicketsListView.ScrollIntoView(ticket);
-                }
+                RevealTicket(ticketId);
             }
         };
     }
@@ -259,8 +266,11 @@ public partial class TicketsPage : Page
         {
             _filteredTickets.Add(ticket);
         }
-        
-        // Update ticket count display
+
+        RebuildOutline();
+
+        // Count the tickets, not the visible rows — a folded subtree must not
+        // read as work that disappeared.
         TicketCountText.Text = $"{_filteredTickets.Count} of {_allTickets.Count}";
         
         // Update board view if active
@@ -270,6 +280,91 @@ public partial class TicketsPage : Page
         }
     }
     
+    /// <summary>
+    /// Rebuild the visible rows from the filtered tickets and the current fold
+    /// state, preserving the selection across the swap.
+    /// </summary>
+    private void RebuildOutline()
+    {
+        // ItemsSource is replaced wholesale, so WPF drops the selection. Losing
+        // the open ticket every time a filter changes would close the detail
+        // pane out from under the operator.
+        var selectedId = (TicketsListView.SelectedItem as TicketRowViewModel)?.Id
+                         ?? _selectedTicket?.Id;
+
+        var tree = TicketHierarchy.Build(_filteredTickets);
+        var rows = TicketHierarchy.Flatten(tree, _collapsedTickets);
+
+        _ticketRows.Clear();
+        foreach (var row in rows) _ticketRows.Add(new TicketRowViewModel { Row = row });
+
+        if (selectedId is { } id)
+        {
+            var match = _ticketRows.FirstOrDefault(r => r.Id == id);
+            if (match != null) TicketsListView.SelectedItem = match;
+        }
+    }
+
+    /// <summary>
+    /// Select and scroll to a ticket, unfolding whatever hides it.
+    ///
+    /// A deep link to a child ticket lands on nothing if its parent is
+    /// collapsed, so the ancestors are expanded first rather than the link
+    /// silently doing nothing.
+    /// </summary>
+    private void RevealTicket(int ticketId)
+    {
+        var ticket = _filteredTickets.FirstOrDefault(t => t.Id == ticketId);
+        if (ticket == null) return;
+
+        var byId = _filteredTickets.ToDictionary(t => t.Id);
+        var cursor = TicketHierarchy.ParentTicketId(ticket);
+        var guard = new HashSet<int>();
+
+        while (cursor is { } parentId && guard.Add(parentId))
+        {
+            _collapsedTickets.Remove(parentId);
+            cursor = byId.TryGetValue(parentId, out var parent)
+                ? TicketHierarchy.ParentTicketId(parent)
+                : null;
+        }
+
+        RebuildOutline();
+
+        var row = _ticketRows.FirstOrDefault(r => r.Id == ticketId);
+        if (row == null) return;
+
+        TicketsListView.SelectedItem = row;
+        TicketsListView.ScrollIntoView(row);
+    }
+
+    private void OnToggleTicketFold(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: TicketRowViewModel row }) return;
+
+        if (!_collapsedTickets.Remove(row.Id)) _collapsedTickets.Add(row.Id);
+
+        RebuildOutline();
+        if (_isBoardView) UpdateBoardView();
+    }
+
+    private void OnCollapseAllClicked(object sender, RoutedEventArgs e)
+    {
+        foreach (var id in TicketHierarchy.AllParentIds(TicketHierarchy.Build(_filteredTickets)))
+            _collapsedTickets.Add(id);
+
+        RebuildOutline();
+        if (_isBoardView) UpdateBoardView();
+    }
+
+    private void OnExpandAllClicked(object sender, RoutedEventArgs e)
+    {
+        _collapsedTickets.Clear();
+
+        RebuildOutline();
+        if (_isBoardView) UpdateBoardView();
+    }
+
     private void OnViewModeChanged(object sender, RoutedEventArgs e)
     {
         _isBoardView = BoardViewRadio.IsChecked == true;
@@ -293,8 +388,13 @@ public partial class TicketsPage : Page
             {
                 StatusName = g.Key,
                 HeaderColor = GetStatusColor(g.Key),
+                // The count is of tickets in the column, not visible cards — a
+                // folded subtree must not read as work that disappeared.
                 Count = g.Count(),
-                Tickets = g.ToList()
+                Rows = TicketHierarchy
+                    .Flatten(TicketHierarchy.Build(g), _collapsedTickets)
+                    .Select(row => new TicketRowViewModel { Row = row })
+                    .ToList(),
             })
             .ToList();
         
@@ -494,7 +594,7 @@ public partial class TicketsPage : Page
 
     private async void OnTicketSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (TicketsListView.SelectedItem is TdxTicket ticket)
+        if (TicketsListView.SelectedItem is TicketRowViewModel { Ticket: { } ticket })
         {
             _selectedTicket = ticket;
             
@@ -782,5 +882,12 @@ public class BoardColumn
     public string StatusName { get; set; } = "";
     public SolidColorBrush HeaderColor { get; set; } = new(Colors.Gray);
     public int Count { get; set; }
-    public List<TdxTicket> Tickets { get; set; } = new();
+
+    /// <summary>
+    /// Cards as an outline, so children indent under their parent here too.
+    /// A child whose parent sits in another status column has no parent to nest
+    /// under and renders as a root — which is the honest reading, since the
+    /// parent genuinely is not in this column.
+    /// </summary>
+    public List<TicketRowViewModel> Rows { get; set; } = new();
 }
