@@ -19,16 +19,9 @@ public class GraphService : IDisposable
     private readonly HttpClient _client;
     private readonly GraphConfig _config;
     private readonly JsonSerializerOptions _jsonOptions;
-    private string? _cachedToken;
-    private DateTime _tokenExpiry = DateTime.MinValue;
 
-    // Multi-SP: per-scope token caches
-    private string? _devicesToken;
-    private DateTime _devicesTokenExpiry = DateTime.MinValue;
-    private string? _systemsToken;
-    private DateTime _systemsTokenExpiry = DateTime.MinValue;
-
-    private const string GraphScope = "https://graph.microsoft.com/.default";
+    // Token caching lives in EntraTokenSource, which is shared across services
+    // so one broker call serves every consumer of a given audience.
 
     // Caches
     private readonly Dictionary<string, (EntraUser user, DateTime expiry)> _userCache = new();
@@ -74,148 +67,33 @@ public class GraphService : IDisposable
     #region Authentication
 
     /// <summary>
-    /// Get access token using service principal or Azure CLI SSO
+    /// Get a Graph access token for the operator, brokered from their Windows
+    /// sign-in.
+    ///
+    /// Graph is secretless. There are exactly two ways FleetMate reaches it:
+    /// this delegated token, and — for privileged Intune/Entra writes — an
+    /// <see cref="ElevationSession"/> running as a managed identity, whose token
+    /// never leaves Azure. Client secrets and per-scope service principals were
+    /// removed deliberately; a secret sitting in the registry of every admin
+    /// workstation is the thing this design exists to avoid.
     /// </summary>
     private async Task<string?> GetAccessTokenAsync()
     {
-        if (_cachedToken != null && DateTime.UtcNow < _tokenExpiry)
-        {
-            return _cachedToken;
-        }
+        var source = EntraTokenSource.Shared
+            ?? EntraTokenSource.Configure(_config.TenantId, _config.ClientId);
 
         try
         {
-            if (!_config.UseAzureCliAuth &&
-                !string.IsNullOrWhiteSpace(_config.TenantId) &&
-                !string.IsNullOrWhiteSpace(_config.ClientId) &&
-                !string.IsNullOrWhiteSpace(_config.ClientSecret))
-            {
-                var clientToken = await GetClientCredentialTokenAsync(
-                    _config.TenantId,
-                    _config.ClientId,
-                    _config.ClientSecret);
-
-                if (!string.IsNullOrEmpty(clientToken))
-                {
-                    _cachedToken = clientToken;
-                    _tokenExpiry = DateTime.UtcNow.AddMinutes(55);
-                    Log.Debug("Acquired Microsoft Graph access token via client credentials");
-                    return _cachedToken;
-                }
-            }
-
-            var azPath = FindAzureCli();
-            if (azPath == null)
-            {
-                Log.Error("Azure CLI (az) not found. Please install Azure CLI.");
-                return null;
-            }
-
-            var psi = new ProcessStartInfo
-            {
-                FileName = azPath,
-                Arguments = $"account get-access-token --resource {GraphResourceId} --query accessToken -o tsv",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            using var process = Process.Start(psi);
-            if (process == null)
-            {
-                Log.Error("Failed to start az CLI process");
-                return null;
-            }
-
-            var token = await process.StandardOutput.ReadToEndAsync();
-            var error = await process.StandardError.ReadToEndAsync();
-
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode != 0)
-            {
-                Log.Error("Azure CLI failed: {Error}", error);
-                return null;
-            }
-
-            _cachedToken = token.Trim();
-            _tokenExpiry = DateTime.UtcNow.AddMinutes(55);
-
-            Log.Debug("Acquired Microsoft Graph access token via Azure CLI");
-            return _cachedToken;
+            return await source.GetTokenAsync(GraphResourceId);
+        }
+        catch (EntraTokenException ex)
+        {
+            Log.Error("Failed to get Microsoft Graph access token: {Message}", ex.Message);
+            return null;
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to get Microsoft Graph access token");
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Get an access token scoped to a specific purpose.
-    /// Falls back to the default SP / az CLI if no dedicated SP is configured.
-    /// </summary>
-    private async Task<string?> GetScopedAccessTokenAsync(string scope)
-    {
-        switch (scope)
-        {
-            case "devices" when _config.IsDevicesSpConfigured:
-                if (_devicesToken != null && DateTime.UtcNow < _devicesTokenExpiry) return _devicesToken;
-                var dt = await GetClientCredentialTokenAsync(_config.TenantId!, _config.DevicesClientId!, _config.DevicesClientSecret!);
-                if (!string.IsNullOrEmpty(dt)) { _devicesToken = dt; _devicesTokenExpiry = DateTime.UtcNow.AddMinutes(55); }
-                return _devicesToken ?? await GetAccessTokenAsync();
-
-            case "systems" when _config.IsSystemsSpConfigured:
-                if (_systemsToken != null && DateTime.UtcNow < _systemsTokenExpiry) return _systemsToken;
-                var st = await GetClientCredentialTokenAsync(_config.TenantId!, _config.SystemsClientId!, _config.SystemsClientSecret!);
-                if (!string.IsNullOrEmpty(st)) { _systemsToken = st; _systemsTokenExpiry = DateTime.UtcNow.AddMinutes(55); }
-                return _systemsToken ?? await GetAccessTokenAsync();
-
-            default:
-                return await GetAccessTokenAsync();
-        }
-    }
-
-    private async Task<string?> GetClientCredentialTokenAsync(string tenantId, string clientId, string clientSecret)
-    {
-        try
-        {
-            using var tokenClient = new HttpClient
-            {
-                Timeout = TimeSpan.FromSeconds(30)
-            };
-
-            var tokenEndpoint = $"https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token";
-            var content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["client_id"] = clientId,
-                ["client_secret"] = clientSecret,
-                ["grant_type"] = "client_credentials",
-                ["scope"] = GraphScope
-            });
-
-            var response = await tokenClient.PostAsync(tokenEndpoint, content);
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                Log.Error("Graph token request failed: {Status} - {Error}", response.StatusCode, error);
-                return null;
-            }
-
-            using var stream = await response.Content.ReadAsStreamAsync();
-            using var doc = await JsonDocument.ParseAsync(stream);
-            if (doc.RootElement.TryGetProperty("access_token", out var tokenProp))
-            {
-                return tokenProp.GetString();
-            }
-
-            Log.Error("Graph token response missing access_token");
-            return null;
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Failed to get Microsoft Graph access token via client credentials");
             return null;
         }
     }
@@ -253,29 +131,6 @@ public class GraphService : IDisposable
         catch { return "(no body)"; }
     }
 
-    private static string? FindAzureCli()
-    {
-        var candidates = new[]
-        {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft SDKs", "Azure", "CLI2", "wbin", "az.cmd"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft SDKs", "Azure", "CLI2", "wbin", "az.cmd"),
-            @"C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd",
-            @"C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
-        };
-
-        foreach (var candidate in candidates)
-        {
-            if (File.Exists(candidate)) return candidate;
-        }
-
-        var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";
-        foreach (var dir in pathEnv.Split(Path.PathSeparator))
-        {
-            var azCmd = Path.Combine(dir, "az.cmd");
-            if (File.Exists(azCmd)) return azCmd;
-        }
-        return null;
-    }
 
     #endregion
 

@@ -34,21 +34,17 @@ public partial class SettingsPage : Page
             ".fleetmate", "config.yaml");
         ConfigPathTextBox.Text = cfgPath;
 
-        // Microsoft Graph
+        // Microsoft Graph — tenant and client ID only; there is no secret to enter.
         TenantIdTextBox.Text  = config.Graph?.TenantId  ?? "";
         ClientIdTextBox.Text  = config.Graph?.ClientId  ?? "";
-        if (!string.IsNullOrEmpty(config.Graph?.ClientSecret))
-            ClientSecretBox.Password = config.Graph.ClientSecret;
 
         // Azure DevOps
         AdoOrgTextBox.Text     = config.AzureDevOps?.Organization ?? "";
         AdoProjectTextBox.Text = config.AzureDevOps?.Project      ?? "";
         // NO PAT — Azure DevOps uses SSO only (browser OAuth2 PKCE or Azure CLI)
 
-        // Snipe-IT
+        // Snipe-IT — auth is the operator's Entra session; no key to enter.
         SnipeUrlTextBox.Text = config.SnipeUrl ?? "";
-        if (!string.IsNullOrEmpty(config.SnipeApiKey))
-            SnipeApiKeyBox.Password = config.SnipeApiKey;
 
         // TDX
         TdxUrlTextBox.Text      = config.Tdx?.BaseUrl  ?? "";
@@ -73,18 +69,17 @@ public partial class SettingsPage : Page
             using var key = Registry.CurrentUser.CreateSubKey(RegistryPath)
                 ?? throw new InvalidOperationException("Cannot open registry key");
 
-            // Graph
+            // Graph — no secret is written; Graph authenticates via the broker.
             SetReg(key, "GraphTenantId",    TenantIdTextBox.Text);
             SetReg(key, "GraphClientId",    ClientIdTextBox.Text);
-            SetReg(key, "GraphClientSecret", ClientSecretBox.Password);
+            key.DeleteValue("GraphClientSecret", throwOnMissingValue: false);
 
             // AzDO — NO PAT, SSO only
             SetReg(key, "DevOpsOrganization", AdoOrgTextBox.Text);
             SetReg(key, "DevOpsProject",      AdoProjectTextBox.Text);
 
-            // Snipe
-            SetReg(key, "SnipeUrl",    SnipeUrlTextBox.Text);
-            SetReg(key, "SnipeApiKey", SnipeApiKeyBox.Password);
+            // Snipe — no API key is written; auth is the operator's Entra session.
+            SetReg(key, "SnipeUrl", SnipeUrlTextBox.Text);
 
             // TDX
             SetReg(key, "TdxBaseUrl",  TdxUrlTextBox.Text);
@@ -122,19 +117,18 @@ public partial class SettingsPage : Page
         if (Application.Current is not App app) return;
         var config = app.Config;
 
-        // Microsoft Graph (Intune / Entra)
+        // Microsoft Graph (Intune / Entra) — secretless: the operator's own
+        // brokered token, with managed identity for privileged elevation.
         var graphConfigured = config.Graph != null && !string.IsNullOrEmpty(config.Graph.TenantId);
-        var graphHasSecret = !string.IsNullOrEmpty(config.Graph?.ClientSecret);
-        AddAuthCard("Microsoft Graph", "Service Principal (client credentials)",
-            graphConfigured ? (graphHasSecret ? "configured" : "missing secret") : "not configured",
-            graphConfigured && graphHasSecret ? AuthState.Configured : AuthState.NotConfigured,
+        AddAuthCard("Microsoft Graph", "Entra SSO (Windows broker)",
+            graphConfigured ? "signed in as you" : "not configured",
+            graphConfigured ? AuthState.Configured : AuthState.NotConfigured,
             new[]
             {
                 ("Tenant ID", ShortId(config.Graph?.TenantId)),
                 ("Client ID", ShortId(config.Graph?.ClientId)),
-                ("Client Secret", graphHasSecret ? "● configured" : "✗ missing"),
-                ("Devices SP", ShortId(config.Graph?.DevicesClientId)),
-                ("Systems SP", ShortId(config.Graph?.SystemsClientId))
+                ("Credential", "none — device PRT via WAM"),
+                ("Elevation", "managed identity (aze)")
             });
 
         // Azure DevOps
@@ -177,15 +171,31 @@ public partial class SettingsPage : Page
                 BuildAuthCards();
             });
 
-        // Snipe-IT
-        var snipeConfigured = !string.IsNullOrEmpty(config.SnipeUrl) && !string.IsNullOrEmpty(config.SnipeApiKey);
-        AddAuthCard("Snipe-IT", "API key (Bearer token)",
-            snipeConfigured ? "configured" : "not configured",
+        // Snipe-IT — Entra SSO by default; the API key is legacy and only
+        // consulted where no audience is configured.
+        var snipeConfigured = !string.IsNullOrEmpty(config.SnipeUrl);
+        var snipeSso = config.SnipeUsesOidc;
+        AddAuthCard("Snipe-IT", snipeSso ? "Entra SSO (bearer)" : "API key (legacy)",
+            snipeConfigured ? (snipeSso ? "signed in as you" : "configured") : "not configured",
             snipeConfigured ? AuthState.Configured : AuthState.NotConfigured,
             new[]
             {
                 ("Instance URL", config.SnipeUrl),
-                ("API Key", !string.IsNullOrEmpty(config.SnipeApiKey) ? MaskedToken(config.SnipeApiKey) : "✗ missing")
+                ("Audience", snipeSso ? ShortId(config.SnipeOidcAudience) : "✗ not set"),
+                ("Credential", snipeSso ? "none — Entra token" : "shared API key")
+            });
+
+        // ReportMate
+        var rmConfigured = !string.IsNullOrEmpty(config.ReportMateUrl);
+        var rmSso = config.ReportMateUsesOidc;
+        AddAuthCard("ReportMate", rmSso ? "Entra SSO (bearer)" : "Passphrase (legacy)",
+            rmConfigured ? (rmSso ? "signed in as you" : "configured") : "not configured",
+            rmConfigured ? AuthState.Configured : AuthState.NotConfigured,
+            new[]
+            {
+                ("API URL", config.ReportMateUrl),
+                ("Audience", rmSso ? ShortId(config.ReportMateOidcAudience) : "✗ not set"),
+                ("Credential", rmSso ? "none — Entra token" : "shared passphrase")
             });
 
         // GitHub
