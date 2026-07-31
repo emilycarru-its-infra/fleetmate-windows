@@ -372,13 +372,20 @@ public partial class App : Application
         }
         
         Log.Information("[devops-sso] Phase 1.5 failed or timed out — falling back to interactive login (Phase 2)");
-        
+
         // Only auto-prompt once; subsequent attempts require user action
         if (!_hasAutoPromptedDevOpsSso)
         {
             _hasAutoPromptedDevOpsSso = true;
             ShowDevOpsSsoLogin();
+            return;
         }
+
+        // Nothing else is going to resolve this now. Without it the row sits on
+        // "Authenticating" for the rest of the session — a spinner that never
+        // stops reads as "working on it", not as "this needs you".
+        AuthManager.ReportOptionalAuthFailure(
+            AuthSystemId.DevOps, "Silent SSO failed — sign in to continue");
     }
     
     /// <summary>
@@ -501,6 +508,18 @@ public partial class App : Application
 
         var mainWindow = new MainWindow();
         mainWindow.Show();
+
+        // Give the broker a window to parent to. Only consulted if the silent
+        // PRT path fails — on a managed device it never is — but without it an
+        // account that genuinely needs consent would fail with no way forward.
+        EntraTokenSource.ParentWindowProvider = () =>
+            Current.Dispatcher.Invoke(() =>
+            {
+                var window = Current.MainWindow;
+                return window == null
+                    ? IntPtr.Zero
+                    : new System.Windows.Interop.WindowInteropHelper(window).Handle;
+            });
 
         // Attempt silent TDX SSO, then preload all data in the background
         _ = InitializeAndPreloadAsync();
@@ -643,11 +662,13 @@ public partial class App : Application
                 Log.Information("GraphService initialized");
             }
 
-            // Initialize SnipeService if configured
-            if (!string.IsNullOrEmpty(Config.SnipeUrl) && !string.IsNullOrEmpty(Config.SnipeApiKey))
+            // Initialize SnipeService if configured. A URL is enough now: auth is
+            // the operator's Entra session, so there is no API key to wait for.
+            if (!string.IsNullOrEmpty(Config.SnipeUrl))
             {
-                SnipeService = new SnipeService(Config.SnipeUrl, Config.SnipeApiKey, Config.CacheMinutes);
-                Log.Information("SnipeService initialized");
+                SnipeService = SnipeService.FromConfig(Config);
+                Log.Information("SnipeService initialized ({Auth})",
+                    SnipeService.UsesOidc ? "Entra SSO" : "legacy API key");
             }
 
             // Initialize TdxService if configured
@@ -674,8 +695,9 @@ public partial class App : Application
             // Initialize ReportMateService if configured
             if (!string.IsNullOrEmpty(Config.ReportMateUrl))
             {
-                ReportMateService = new ReportMateService(Config.ReportMateUrl, Config.ReportMatePassphrase, Config.CacheMinutes);
-                Log.Information("ReportMateService initialized");
+                ReportMateService = ReportMateService.FromConfig(Config);
+                Log.Information("ReportMateService initialized ({Auth})",
+                    ReportMateService.UsesOidc ? "Entra SSO" : "legacy passphrase");
             }
         }
         catch (Exception ex)

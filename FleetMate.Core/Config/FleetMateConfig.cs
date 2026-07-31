@@ -6,6 +6,7 @@ using FleetMate.Core.Models;
 using FleetMate.Core.Models.Devices;
 using FleetMate.Core.Models.Identity;
 using FleetMate.Core.Config;
+using FleetMate.Core.Services;
 using FleetMate.Core.Models.Tickets;
 using FleetMate.Core.Models.Projects;
 
@@ -48,14 +49,57 @@ public class FleetMateConfig
     // Registry path for FleetMate credentials (OMA-URI style CSP path)
     private const string RegistryPath = @"SOFTWARE\FleetMate";
     
-    // ReportMate API settings (required: REPORTMATE_URL, REPORTMATE_PASSPHRASE)
+    // ReportMate API settings
     public string? ReportMateUrl { get; set; }
+
+    /// <summary>
+    /// Legacy shared-secret auth. Deprecated: ReportMate authenticates with an
+    /// Entra bearer minted off the operator's own sign-in
+    /// (<see cref="ReportMateOidcAudience"/>). Kept only so an unmigrated config
+    /// keeps working, and ignored whenever an audience is set.
+    /// </summary>
+    [Obsolete("ReportMate uses Entra SSO (reportmate_oidc_audience). Shared passphrases are being retired.")]
     public string? ReportMatePassphrase { get; set; }
-    
+
     // Snipe-IT API settings
     public string? SnipeUrl { get; set; }
+
+    /// <summary>
+    /// Legacy shared-secret auth. Deprecated in favour of Entra SSO — see
+    /// <see cref="SnipeOidcAudience"/>. Ignored whenever an audience is set.
+    /// </summary>
+    [Obsolete("Snipe-IT uses Entra SSO (snipe_oidc_audience). API keys are being retired.")]
     public string? SnipeApiKey { get; set; }
-    
+
+    // --- Entra SSO (secretless) ---------------------------------------------
+    //
+    // Every resource API FleetMate talks to authenticates as the operator, with a
+    // short-lived Entra token brokered from their Windows sign-in. The audience
+    // identifies the target API; the operator's role assignment on that API is
+    // what grants access, so nothing here is a secret.
+
+    /// <summary>Entra audience for the ReportMate API.</summary>
+    public string? ReportMateOidcAudience { get; set; }
+
+    /// <summary>Entra audience for the Snipe-IT API.</summary>
+    public string? SnipeOidcAudience { get; set; }
+
+    /// <summary>
+    /// Client ID FleetMate presents to the broker. Defaults to the Azure CLI's
+    /// public client so tenants that already consented keep working.
+    /// </summary>
+    public string? EntraClientId { get; set; }
+
+    public const string DefaultReportMateOidcAudience = "26c197e0-3c53-4c52-b104-2f84b1669105";
+    public const string DefaultSnipeOidcAudience = "4d6abdd9-5380-40a5-8f8e-fe41f317a29f";
+
+    /// <summary>True when Snipe-IT is set up to authenticate via Entra SSO.</summary>
+    public bool SnipeUsesOidc => !string.IsNullOrWhiteSpace(SnipeOidcAudience);
+
+    /// <summary>True when ReportMate is set up to authenticate via Entra SSO.</summary>
+    public bool ReportMateUsesOidc => !string.IsNullOrWhiteSpace(ReportMateOidcAudience);
+
+
     // Deployment repo paths (relative to repo root or absolute)
     public string DeploymentPath { get; set; } = "deployment";
     public string PkgsinfoPath { get; set; } = "deployment/pkgsinfo";
@@ -162,25 +206,62 @@ public class FleetMateConfig
         if (!string.IsNullOrEmpty(envUrl))
             config.ReportMateUrl = envUrl;
         
+#pragma warning disable CS0618 // legacy secrets still load so unmigrated configs keep working
         var envPassphrase = Environment.GetEnvironmentVariable("REPORTMATE_PASSPHRASE");
         if (!string.IsNullOrEmpty(envPassphrase))
             config.ReportMatePassphrase = envPassphrase;
-        
+
         // Snipe-IT environment variables
         var snipeUrl = Environment.GetEnvironmentVariable("SNIPE_URL");
         if (!string.IsNullOrEmpty(snipeUrl))
             config.SnipeUrl = snipeUrl;
-        
+
         var snipeApiKey = Environment.GetEnvironmentVariable("SNIPE_API_KEY");
         if (!string.IsNullOrEmpty(snipeApiKey))
             config.SnipeApiKey = snipeApiKey;
-        
+#pragma warning restore CS0618
+
+        // Entra SSO audiences
+        var rmAudience = Environment.GetEnvironmentVariable("REPORTMATE_OIDC_AUDIENCE");
+        if (!string.IsNullOrEmpty(rmAudience))
+            config.ReportMateOidcAudience = rmAudience;
+
+        var snipeAudience = Environment.GetEnvironmentVariable("SNIPE_OIDC_AUDIENCE");
+        if (!string.IsNullOrEmpty(snipeAudience))
+            config.SnipeOidcAudience = snipeAudience;
+
+        var entraClientId = Environment.GetEnvironmentVariable("ENTRA_CLIENT_ID");
+        if (!string.IsNullOrEmpty(entraClientId))
+            config.EntraClientId = entraClientId;
+
+        ApplySsoDefaults(config);
+
         // Try to find repo root
         config.RepoRoot = FindRepoRoot();
-        
+
         return config;
     }
     
+    /// <summary>
+    /// Make Entra SSO the default for every resource API.
+    ///
+    /// An estate that has configured nothing lands on SSO rather than on a
+    /// shared secret — the secretless path has to be what you get by not
+    /// choosing, or it never becomes the norm. An explicitly configured
+    /// audience always wins; a legacy secret is only consulted when no audience
+    /// resolves at all.
+    /// </summary>
+    private static void ApplySsoDefaults(FleetMateConfig config)
+    {
+        if (string.IsNullOrWhiteSpace(config.ReportMateOidcAudience))
+            config.ReportMateOidcAudience = DefaultReportMateOidcAudience;
+
+        if (string.IsNullOrWhiteSpace(config.SnipeOidcAudience))
+            config.SnipeOidcAudience = DefaultSnipeOidcAudience;
+
+        EntraTokenSource.Configure(config.Graph?.TenantId, config.EntraClientId);
+    }
+
     /// <summary>
     /// Load credentials from Windows Registry (HKCU\SOFTWARE\FleetMate)
     /// This is the CSP OMA-URI style approach for persistent credential storage
@@ -196,25 +277,44 @@ public class FleetMateConfig
                 return;
             }
             
-            // ReportMate credentials
+            // ReportMate
             var reportMateUrl = key.GetValue("ReportMateUrl") as string;
             if (!string.IsNullOrEmpty(reportMateUrl))
                 config.ReportMateUrl = reportMateUrl;
-            
+
+#pragma warning disable CS0618 // legacy secrets still load so unmigrated machines keep working
             var reportMatePassphrase = key.GetValue("ReportMatePassphrase") as string;
             if (!string.IsNullOrEmpty(reportMatePassphrase))
                 config.ReportMatePassphrase = reportMatePassphrase;
-            
-            // Snipe-IT credentials
+#pragma warning restore CS0618
+
+            // Snipe-IT
             var snipeUrl = key.GetValue("SnipeUrl") as string;
             if (!string.IsNullOrEmpty(snipeUrl))
                 config.SnipeUrl = snipeUrl;
-            
+
+#pragma warning disable CS0618
             var snipeApiKey = key.GetValue("SnipeApiKey") as string;
             if (!string.IsNullOrEmpty(snipeApiKey))
                 config.SnipeApiKey = snipeApiKey;
-            
-            // Graph/Entra ID credentials
+#pragma warning restore CS0618
+
+            // Entra SSO audiences — the secretless path
+            var reportMateAudience = key.GetValue("ReportMateOidcAudience") as string;
+            if (!string.IsNullOrEmpty(reportMateAudience))
+                config.ReportMateOidcAudience = reportMateAudience;
+
+            var snipeAudience = key.GetValue("SnipeOidcAudience") as string;
+            if (!string.IsNullOrEmpty(snipeAudience))
+                config.SnipeOidcAudience = snipeAudience;
+
+            var entraClientId = key.GetValue("EntraClientId") as string;
+            if (!string.IsNullOrEmpty(entraClientId))
+                config.EntraClientId = entraClientId;
+
+            // Graph/Entra ID. Tenant and client ID only — Graph authenticates
+            // through the broker or through a managed-identity elevation session,
+            // so there is no secret to read here.
             config.Graph ??= new GraphConfig();
             var graphTenantId = key.GetValue("GraphTenantId") as string;
             if (!string.IsNullOrEmpty(graphTenantId))
@@ -222,18 +322,16 @@ public class FleetMateConfig
 
             var graphClientId = key.GetValue("GraphClientId") as string;
             if (!string.IsNullOrEmpty(graphClientId))
-            {
                 config.Graph.ClientId = graphClientId;
-                config.Graph.UseAzureCliAuth = false;
+
+            if (key.GetValue("GraphClientSecret") is string staleSecret && !string.IsNullOrEmpty(staleSecret))
+            {
+                Log.Warning("[auth] Ignoring HKCU\\{Path}\\GraphClientSecret — Graph is secretless now " +
+                            "(Entra SSO, or managed identity for elevation). Delete the value to silence this.",
+                            RegistryPath);
             }
 
-            var graphClientSecret = key.GetValue("GraphClientSecret") as string;
-            if (!string.IsNullOrEmpty(graphClientSecret))
-            {
-                config.Graph.ClientSecret = graphClientSecret;
-                config.Graph.UseAzureCliAuth = false;
-            }
-            
+
             // TeamDynamix credentials
             config.Tdx ??= new TdxConfig();
             var tdxBaseUrl = key.GetValue("TdxBaseUrl") as string;
@@ -416,19 +514,15 @@ public class FleetMateConfig
                     case "GRAPH_CLIENT_ID":
                         config.Graph ??= new GraphConfig();
                         config.Graph.ClientId = value;
-                        config.Graph.UseAzureCliAuth = false;
                         break;
                     case "GRAPH_CLIENT_SECRET":
-                        config.Graph ??= new GraphConfig();
-                        config.Graph.ClientSecret = value;
-                        config.Graph.UseAzureCliAuth = false;
+                        Log.Warning("[auth] Ignoring GRAPH_CLIENT_SECRET — Graph is secretless now " +
+                                    "(Entra SSO, or managed identity for elevation).");
                         break;
                     case "GRAPH_USE_AZURE_CLI":
-                        config.Graph ??= new GraphConfig();
-                        if (bool.TryParse(value, out var useCli))
-                        {
-                            config.Graph.UseAzureCliAuth = useCli;
-                        }
+                        // Graph no longer shells out to az; the broker is the only
+                        // local token path. Accepted and ignored so existing .env
+                        // files don't fail to load.
                         break;
                     case "TDX_BASE_URL":
                         config.Tdx ??= new TdxConfig();
