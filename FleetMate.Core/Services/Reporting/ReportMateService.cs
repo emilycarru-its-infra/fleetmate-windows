@@ -87,7 +87,7 @@ public class ReportMateService : IDisposable
             
             while (true)
             {
-                var response = await _client.GetAsync($"/api/devices?offset={offset}&limit={limit}");
+                var response = await _client.GetAsync($"/api/v1/devices?offset={offset}&limit={limit}");
                 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -154,7 +154,7 @@ public class ReportMateService : IDisposable
         
         try
         {
-            var response = await _client.GetAsync("/api/devices/installs");
+            var response = await _client.GetAsync("/api/v1/installs");
             
             if (!response.IsSuccessStatusCode)
             {
@@ -261,7 +261,7 @@ public class ReportMateService : IDisposable
         
         try
         {
-            var response = await _client.GetAsync($"/api/device/{serialNumber}/installs/log");
+            var response = await _client.GetAsync($"/api/v1/device/{serialNumber}/installs/log");
             
             if (!response.IsSuccessStatusCode)
             {
@@ -288,7 +288,7 @@ public class ReportMateService : IDisposable
         
         try
         {
-            var response = await _client.GetAsync($"/api/device/{serialNumber}/modules/network");
+            var response = await _client.GetAsync($"/api/v1/device/{serialNumber}/modules/network");
             
             if (!response.IsSuccessStatusCode)
             {
@@ -308,7 +308,13 @@ public class ReportMateService : IDisposable
     }
     
     /// <summary>
-    /// Get fleet-wide network data (all devices with network info)
+    /// Get fleet-wide network data (all devices with network info).
+    ///
+    /// NOTE: the ReportMate v1 API has no fleet-wide network endpoint — this
+    /// 404s today. Per-device network data is available via
+    /// <see cref="GetDeviceNetworkAsync"/>. The call is kept, pointed at the v1
+    /// path, so it starts working the day a fleet endpoint ships; until then it
+    /// logs the failure and returns empty rather than throwing.
     /// </summary>
     public async Task<List<DeviceNetworkInfo>> GetFleetNetworkAsync()
     {
@@ -316,7 +322,7 @@ public class ReportMateService : IDisposable
         
         try
         {
-            var response = await _client.GetAsync("/api/devices/network");
+            var response = await _client.GetAsync("/api/v1/devices/network");
             
             if (!response.IsSuccessStatusCode)
             {
@@ -344,7 +350,7 @@ public class ReportMateService : IDisposable
         
         try
         {
-            var response = await _client.GetAsync($"/api/device/{serialNumber}");
+            var response = await _client.GetAsync($"/api/v1/device/{serialNumber}");
             
             if (!response.IsSuccessStatusCode)
             {
