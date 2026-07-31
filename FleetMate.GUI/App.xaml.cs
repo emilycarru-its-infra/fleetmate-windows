@@ -35,7 +35,16 @@ public partial class App : Application
     public AzureDevOpsService? DevOpsService { get; private set; }
     public DevOpsSsoService? DevOpsSsoService { get; private set; }
     public ReportMateService? ReportMateService { get; private set; }
-    
+
+    /// <summary>
+    /// The loaded pull request queue, cached here rather than in the view.
+    ///
+    /// A WPF page is rebuilt on navigation, so a queue held by the control dies
+    /// on every tab switch and is refetched — which meant the tab sat on a
+    /// spinner each time you came back to it.
+    /// </summary>
+    public FleetMate.Core.Models.Projects.PullRequestQueue? PullRequestQueue { get; set; }
+
     // MARK: - TDX SSO State
     public bool IsTdxSsoAuthenticated => TdxService?.IsSsoAuthenticated ?? false;
     public string? TdxAuthenticatedUserName => TdxService?.AuthenticatedUserName;

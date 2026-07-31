@@ -1,0 +1,137 @@
+<UserControl x:Class="FleetMate.GUI.Views.Shared.PullRequestQueueView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.modernwpf.com/2019">
+
+    <UserControl.Resources>
+        <!-- One template for both sections; the section header supplies the context. -->
+        <DataTemplate x:Key="PullRequestRowTemplate">
+            <Border BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                    BorderThickness="0,0,0,0.5" Padding="10,7">
+                <DockPanel>
+
+                    <!-- Actions sit as a sibling of the row body, not inside it:
+                         a clickable row wrapping buttons swallows their clicks. -->
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                                VerticalAlignment="Center" Margin="8,0,0,0"
+                                Visibility="{Binding ActionVisibility}">
+                        <Button Content="Complete" Margin="0,0,4,0" Padding="8,2" FontSize="11"
+                                Click="OnCompleteClicked" Tag="{Binding}"
+                                ToolTip="Merge this pull request into its target branch" />
+                        <Button Content="Abandon" Padding="8,2" FontSize="11"
+                                Click="OnAbandonClicked" Tag="{Binding}"
+                                ToolTip="Close this pull request without merging" />
+                    </StackPanel>
+
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                                VerticalAlignment="Center" Margin="8,0,0,0">
+                        <TextBlock Text="{Binding ReviewerLabel}" FontSize="10"
+                                   Visibility="{Binding ReviewerVisibility}"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <ui:FontIcon Glyph="&#xE90A;" FontSize="11" Margin="0,0,3,0"
+                                     Visibility="{Binding CommentVisibility}"
+                                     Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBlock Text="{Binding CommentLabel}" FontSize="10" VerticalAlignment="Center"
+                                   Visibility="{Binding CommentVisibility}"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+
+                    <!-- Row body: opens the PR in the browser. -->
+                    <StackPanel Cursor="Hand" MouseLeftButtonUp="OnRowClicked" Tag="{Binding}"
+                                Background="Transparent">
+                        <DockPanel>
+                            <Border DockPanel.Dock="Left" CornerRadius="3" Padding="4,1" Margin="0,0,6,0"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
+                                <TextBlock Text="{Binding SourceLabel}" FontSize="9"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            </Border>
+                            <TextBlock Text="{Binding StateLabel}" DockPanel.Dock="Right" FontSize="10"
+                                       VerticalAlignment="Center" Margin="6,0,0,0"
+                                       Foreground="{Binding StateBrush}" />
+                            <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding Title}" />
+                        </DockPanel>
+                        <TextBlock Text="{Binding Byline}" FontSize="10" Margin="0,2,0,0"
+                                   TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBlock Text="{Binding RepositoryLabel}" FontSize="10"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding BranchLabel}"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Title, count, and controls together on one line. The filters belong
+             beside the thing they filter, not stranded at the far right. -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,6">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <ui:ProgressRing x:Name="QueueProgress" IsActive="True" Width="14" Height="14"
+                                 Margin="0,0,6,0" Visibility="Collapsed" />
+                <Button Content="Refresh" Click="OnRefreshClicked" Padding="8,2" FontSize="11" />
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="My Pull Requests" Style="{StaticResource SectionHeaderStyle}"
+                           VerticalAlignment="Center" />
+                <TextBlock x:Name="QueueCountText" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Source chips. Real filters, not decoration. -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,6">
+            <ToggleButton x:Name="AllChip" Content="All" IsChecked="True" Padding="10,2" FontSize="11"
+                          Margin="0,0,4,0" Click="OnSourceChipClicked" Tag="all" />
+            <ToggleButton x:Name="DevOpsChip" Content="DevOps" Padding="10,2" FontSize="11"
+                          Margin="0,0,4,0" Click="OnSourceChipClicked" Tag="devops" />
+            <ToggleButton x:Name="GitHubChip" Content="GitHub" Padding="10,2" FontSize="11"
+                          Click="OnSourceChipClicked" Tag="github" />
+        </StackPanel>
+
+        <Border Grid.Row="2" Style="{StaticResource CardStyle}" Padding="0">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+
+                    <!-- Provider failures are reported, not hidden: a short queue
+                         that looks complete is worse than one that says why. -->
+                    <ItemsControl x:Name="QueueErrors">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="#33FF6600" Padding="10,6">
+                                    <TextBlock Text="{Binding}" FontSize="11" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock x:Name="CreatedHeader" Text="Created by me" FontSize="11" FontWeight="SemiBold"
+                               Padding="10,6,10,4" Visibility="Collapsed"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    <ItemsControl x:Name="CreatedList" ItemTemplate="{StaticResource PullRequestRowTemplate}" />
+
+                    <TextBlock x:Name="AssignedHeader" Text="Assigned to me" FontSize="11" FontWeight="SemiBold"
+                               Padding="10,10,10,4" Visibility="Collapsed"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    <ItemsControl x:Name="AssignedList" ItemTemplate="{StaticResource PullRequestRowTemplate}" />
+
+                    <TextBlock x:Name="EmptyState" Padding="10,8" FontSize="11" Visibility="Collapsed"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+    </Grid>
+</UserControl>
