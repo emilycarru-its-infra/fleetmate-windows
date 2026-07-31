@@ -42,6 +42,20 @@ public class GraphService : IDisposable
     private int PageSizeFor(int limit) =>
         Math.Min(Math.Min(limit, _config.PageSize), MaxGraphPageSize);
 
+    /// <summary>
+    /// Fields to request for a user.
+    ///
+    /// Graph's default projection for /users omits most of this — including
+    /// <c>accountEnabled</c>, which then decodes to null and renders every
+    /// single user as Disabled. An explicit $select is not an optimisation here;
+    /// without it the data is silently wrong.
+    /// </summary>
+    private const string UserSelect =
+        "id,displayName,userPrincipalName,mail,givenName,surname,jobTitle,department," +
+        "officeLocation,mobilePhone,businessPhones,accountEnabled,createdDateTime," +
+        "employeeId,employeeType,companyName,usageLocation," +
+        "onPremisesSamAccountName,onPremisesDistinguishedName,onPremisesSyncEnabled";
+
     // Caches
     private readonly Dictionary<string, (EntraUser user, DateTime expiry)> _userCache = new();
     private readonly Dictionary<string, (EntraGroup group, DateTime expiry)> _groupCache = new();
@@ -689,7 +703,7 @@ public class GraphService : IDisposable
 
         try
         {
-            var url = $"users/{Uri.EscapeDataString(userPrincipalNameOrId)}";
+            var url = $"users/{Uri.EscapeDataString(userPrincipalNameOrId)}?$select={UserSelect}";
             var response = await _client.GetAsync(url);
 
             if (!response.IsSuccessStatusCode)
@@ -733,8 +747,10 @@ public class GraphService : IDisposable
         {
             var escaped = query.Replace("'", "''");
             var filter = $"startswith(displayName,'{escaped}') or startswith(userPrincipalName,'{escaped}') or startswith(mail,'{escaped}')";
-            var select = "id,displayName,userPrincipalName,mail,jobTitle,department,officeLocation";
-            var url = $"users?$filter={Uri.EscapeDataString(filter)}&$select={select}&$top={PageSizeFor(limit)}";
+            // Same $select as GetUserAsync — the list renders the enabled badge
+            // too, and a narrower projection here put every result in the list
+            // at odds with its own detail pane.
+            var url = $"users?$filter={Uri.EscapeDataString(filter)}&$select={UserSelect}&$top={PageSizeFor(limit)}";
 
             var response = await _client.GetAsync(url);
             if (!response.IsSuccessStatusCode)
@@ -756,6 +772,55 @@ public class GraphService : IDisposable
     /// <summary>
     /// Get groups a user is a member of
     /// </summary>
+    /// <summary>
+    /// The user's manager, or null when they have none.
+    ///
+    /// Graph answers 404 rather than an empty body for a user with no manager,
+    /// which is a normal state and not an error worth logging loudly.
+    /// </summary>
+    public async Task<EntraUser?> GetUserManagerAsync(string userPrincipalNameOrId)
+    {
+        if (!await SetAuthorizationAsync()) return null;
+
+        try
+        {
+            var url = $"users/{Uri.EscapeDataString(userPrincipalNameOrId)}/manager?$select={UserSelect}";
+            var response = await _client.GetAsync(url);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                if (response.StatusCode != System.Net.HttpStatusCode.NotFound)
+                {
+                    Log.Debug("[graph] Manager lookup for {User} returned {Status}",
+                        userPrincipalNameOrId, response.StatusCode);
+                }
+                return null;
+            }
+
+            return await response.Content.ReadFromJsonAsync<EntraUser>(_jsonOptions);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[graph] Failed to get the manager for {User}", userPrincipalNameOrId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Intune devices whose primary user is this person.
+    ///
+    /// Filtered server-side on userPrincipalName rather than fetching the estate
+    /// and matching locally — the managed device collection is the largest thing
+    /// in the tenant and an inspector pane must not pull all of it.
+    /// </summary>
+    public async Task<List<IntuneDevice>> GetUserDevicesAsync(string userPrincipalName, int limit = 100)
+    {
+        if (string.IsNullOrWhiteSpace(userPrincipalName)) return new List<IntuneDevice>();
+
+        var escaped = userPrincipalName.Replace("'", "''");
+        return await GetManagedDevicesAsync($"userPrincipalName eq '{escaped}'", limit);
+    }
+
     public async Task<List<EntraGroup>> GetUserGroupsAsync(string userPrincipalNameOrId)
     {
         if (!await SetAuthorizationAsync())
@@ -1096,26 +1161,43 @@ public class GraphService : IDisposable
             return new List<EntraGroup>();
         }
 
+        var groups = new List<EntraGroup>();
+
         try
         {
-            var filter = $"startswith(displayName, '{query}')";
+            var escaped = query.Replace("'", "''");
+            var filter = $"startswith(displayName, '{escaped}')";
             var url = $"groups?$filter={Uri.EscapeDataString(filter)}&$top={PageSizeFor(limit)}";
 
-            var response = await _client.GetAsync(url);
-
-            if (!response.IsSuccessStatusCode)
+            // Follow @odata.nextLink until the caller's limit is met. A single
+            // page silently truncated the result at the page ceiling, so a
+            // tenant with more than 999 Devices-* groups lost the tail — and the
+            // client-side filter could not match what was never fetched.
+            while (!string.IsNullOrEmpty(url) && groups.Count < limit)
             {
-                Log.Warning("Failed to search groups: {Status}", response.StatusCode);
-                return new List<EntraGroup>();
+                var response = await _client.GetAsync(url);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    Log.Warning("Failed to search groups: {Status} - {Error}",
+                        response.StatusCode, await ReadErrorBodyAsync(response));
+                    break;
+                }
+
+                var result = await response.Content.ReadFromJsonAsync<EntraGroupListResponse>(_jsonOptions);
+                if (result?.Value == null || result.Value.Count == 0) break;
+
+                groups.AddRange(result.Value);
+                url = result.NextLink;
             }
 
-            var result = await response.Content.ReadFromJsonAsync<EntraGroupListResponse>(_jsonOptions);
-            return result?.Value ?? new List<EntraGroup>();
+            // nextLink pages are whole, so the last one can overshoot the limit.
+            return groups.Count > limit ? groups.Take(limit).ToList() : groups;
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to search groups");
-            return new List<EntraGroup>();
+            return groups;
         }
     }
 
