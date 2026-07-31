@@ -24,7 +24,7 @@ public class EntraGroupProvider : IGroupProvider
 
     public async Task<List<UnifiedGroup>> ListGroupsAsync(string? prefix = null, int? limit = null, CancellationToken ct = default)
     {
-        var groups = await _graphService.SearchGroupsAsync(prefix ?? "", limit ?? 100);
+        var groups = await _graphService.SearchGroupsAsync(prefix ?? "", limit ?? DeviceGroupFetch.Limit);
         return groups.Select(ToUnified).ToList();
     }
 

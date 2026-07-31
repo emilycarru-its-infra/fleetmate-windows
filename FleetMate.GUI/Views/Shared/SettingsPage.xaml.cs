@@ -46,11 +46,8 @@ public partial class SettingsPage : Page
         // Snipe-IT — auth is the operator's Entra session; no key to enter.
         SnipeUrlTextBox.Text = config.SnipeUrl ?? "";
 
-        // TDX
-        TdxUrlTextBox.Text      = config.Tdx?.BaseUrl  ?? "";
-        TdxUsernameTextBox.Text = config.Tdx?.Username ?? "";
-        if (!string.IsNullOrEmpty(config.Tdx?.Password))
-            TdxPasswordBox.Password = config.Tdx.Password;
+        // TDX — SSO only; there is no username or password to enter.
+        TdxUrlTextBox.Text = config.Tdx?.BaseUrl ?? "";
 
         // About
         var version = Assembly.GetExecutingAssembly().GetName().Version;
@@ -82,9 +79,11 @@ public partial class SettingsPage : Page
             SetReg(key, "SnipeUrl", SnipeUrlTextBox.Text);
 
             // TDX
-            SetReg(key, "TdxBaseUrl",  TdxUrlTextBox.Text);
-            SetReg(key, "TdxUsername", TdxUsernameTextBox.Text);
-            SetReg(key, "TdxPassword", TdxPasswordBox.Password);
+            // TDX — SSO only. Clear any service-account credential left behind by
+            // an older build rather than leaving a live secret in the registry.
+            SetReg(key, "TdxBaseUrl", TdxUrlTextBox.Text);
+            foreach (var retired in new[] { "TdxUsername", "TdxPassword", "TdxBeid", "TdxWebServicesKey" })
+                key.DeleteValue(retired, throwOnMissingValue: false);
 
             MessageBox.Show(
                 "Settings saved. Restart FleetMate to apply changes.",
@@ -358,12 +357,7 @@ public partial class SettingsPage : Page
     private enum AuthState { Valid, Configured, NotConfigured }
 
     private static string TdxAuthDescription(FleetMateConfig config, bool ssoActive)
-    {
-        if (ssoActive) return "Browser SSO (active)";
-        if (config.Tdx?.Beid != null) return "Service account + SSO available";
-        if (!string.IsNullOrEmpty(config.Tdx?.Username)) return "Username / password";
-        return "Browser SSO (Entra ID / Shibboleth)";
-    }
+        => ssoActive ? "SSO — signed in" : "SSO (Entra ID / Shibboleth)";
 
     private static string ShortId(string? s)
     {
