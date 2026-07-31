@@ -243,6 +243,24 @@ public class FleetMateConfig
     }
     
     /// <summary>
+    /// Flag a stored credential that FleetMate no longer honours.
+    ///
+    /// Silence would be worse than a warning here: a secret nobody reads is
+    /// still a secret sitting in the registry of every admin workstation, and
+    /// whoever provisioned it needs to know to go revoke it.
+    /// </summary>
+    private static void WarnOnRetiredSecret(RegistryKey key, string valueName)
+    {
+        if (key.GetValue(valueName) is string value && !string.IsNullOrEmpty(value))
+        {
+            Log.Warning("[auth] Ignoring HKCU\\{Path}\\{Value} — FleetMate authenticates with SSO " +
+                        "(or managed identity for elevation) and never uses this. " +
+                        "Delete the value, and revoke the credential if it is still live.",
+                        RegistryPath, valueName);
+        }
+    }
+
+    /// <summary>
     /// Make Entra SSO the default for every resource API.
     ///
     /// An estate that has configured nothing lands on SSO rather than on a
@@ -324,12 +342,7 @@ public class FleetMateConfig
             if (!string.IsNullOrEmpty(graphClientId))
                 config.Graph.ClientId = graphClientId;
 
-            if (key.GetValue("GraphClientSecret") is string staleSecret && !string.IsNullOrEmpty(staleSecret))
-            {
-                Log.Warning("[auth] Ignoring HKCU\\{Path}\\GraphClientSecret — Graph is secretless now " +
-                            "(Entra SSO, or managed identity for elevation). Delete the value to silence this.",
-                            RegistryPath);
-            }
+            WarnOnRetiredSecret(key, "GraphClientSecret");
 
 
             // TeamDynamix credentials
@@ -342,22 +355,15 @@ public class FleetMateConfig
             if (!string.IsNullOrEmpty(tdxAppId) && int.TryParse(tdxAppId, out var appId))
                 config.Tdx.AppId = appId;
             
-            var tdxUsername = key.GetValue("TdxUsername") as string;
-            if (!string.IsNullOrEmpty(tdxUsername))
-                config.Tdx.Username = tdxUsername;
-            
-            var tdxPassword = key.GetValue("TdxPassword") as string;
-            if (!string.IsNullOrEmpty(tdxPassword))
-                config.Tdx.Password = tdxPassword;
-            
-            var tdxBeid = key.GetValue("TdxBeid") as string;
-            if (!string.IsNullOrEmpty(tdxBeid))
-                config.Tdx.Beid = tdxBeid;
-            
-            var tdxWebServicesKey = key.GetValue("TdxWebServicesKey") as string;
-            if (!string.IsNullOrEmpty(tdxWebServicesKey))
-                config.Tdx.WebServicesKey = tdxWebServicesKey;
-            
+            // TDX service-account credentials are gone — SSO is the only path in.
+            // Warn rather than silently ignore, so anyone still provisioning
+            // these finds out they are dead weight (and a live secret to revoke).
+            WarnOnRetiredSecret(key, "TdxUsername");
+            WarnOnRetiredSecret(key, "TdxPassword");
+            WarnOnRetiredSecret(key, "TdxBeid");
+            WarnOnRetiredSecret(key, "TdxWebServicesKey");
+
+
             // Azure DevOps credentials
             config.AzureDevOps ??= new AzureDevOpsConfig();
             var devOpsOrganization = key.GetValue("DevOpsOrganization") as string;
@@ -535,21 +541,16 @@ public class FleetMateConfig
                             config.Tdx.AppId = appId;
                         }
                         break;
+                    // TDX service-account credentials. Accepted and ignored so an
+                    // existing .env still loads, but never used — TDX is SSO only.
                     case "TDX_USERNAME":
-                        config.Tdx ??= new TdxConfig();
-                        config.Tdx.Username = value;
-                        break;
                     case "TDX_PASSWORD":
-                        config.Tdx ??= new TdxConfig();
-                        config.Tdx.Password = value;
-                        break;
                     case "TDX_BEID":
-                        config.Tdx ??= new TdxConfig();
-                        config.Tdx.Beid = value;
-                        break;
                     case "TDX_WEB_SERVICES_KEY":
-                        config.Tdx ??= new TdxConfig();
-                        config.Tdx.WebServicesKey = value;
+                    case "TDX_BEID_SECRET":
+                    case "TDX_KEY_VAULT_NAME":
+                        Log.Warning("[auth] Ignoring {Key} — TeamDynamix authenticates as the signed-in " +
+                                    "operator via SSO. Remove it, and revoke the credential if still live.", key);
                         break;
                     case "SECURE_SHELL_PRIVATE_KEY":
                         config.SecureShell ??= new SecureShellConfig();
@@ -782,7 +783,11 @@ public class GitHubProviderConfig
     /// <summary>Repository name</summary>
     public string? Repo { get; set; }
 
-    /// <summary>Personal access token (or use 'gh auth token')</summary>
+    /// <summary>
+    /// Deprecated static personal access token. Prefer `gh auth login` or the
+    /// OAuth Device Flow, which sign in the operator individually; this is
+    /// consulted last and logs a warning when used.
+    /// </summary>
     public string? Token { get; set; }
 
     /// <summary>Default labels to apply to created issues</summary>

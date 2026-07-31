@@ -104,20 +104,9 @@
                         <TextBlock Text="Base URL" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                         <TextBox x:Name="TdxUrlTextBox" Margin="0,4,0,0" />
                     </StackPanel>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" Margin="0,0,8,0">
-                            <TextBlock Text="Username" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                            <TextBox x:Name="TdxUsernameTextBox" Margin="0,4,0,0" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Margin="8,0,0,0">
-                            <TextBlock Text="Password" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                            <PasswordBox x:Name="TdxPasswordBox" Margin="0,4,0,0" />
-                        </StackPanel>
-                    </Grid>
+                    <TextBlock Text="TeamDynamix signs you in with your own Entra account, so your actions are attributed to you. There is no service account or password to configure."
+                               TextWrapping="Wrap" Margin="0,4,0,0"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                 </StackPanel>
             </Border>
 

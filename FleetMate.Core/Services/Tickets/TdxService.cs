@@ -17,8 +17,8 @@ public class TdxService : IDisposable
     private readonly HttpClient _client;
     private readonly TdxConfig _config;
     private readonly JsonSerializerOptions _jsonOptions;
-    private string? _cachedToken;
-    private DateTime _tokenExpiry = DateTime.MinValue;
+    // The service-account token cache is gone with the service account itself —
+    // the operator's SSO token in _ssoToken is the only credential now.
     
     // SSO authentication state
     private string? _ssoToken;
@@ -49,14 +49,15 @@ public class TdxService : IDisposable
     public string? AuthenticatedUserId => IsSsoAuthenticated ? _ssoUserId : null;
     
     /// <summary>
-    /// Returns true if SSO login is required based on config
+    /// True when TDX is configured but nobody is signed in. SSO is the only way
+    /// in, so an unauthenticated TDX is always waiting on a sign-in.
     /// </summary>
-    public bool RequiresSsoLogin => _config.AuthMethod == TdxAuthMethod.BrowserSSO && !IsSsoAuthenticated;
-    
+    public bool RequiresSsoLogin => _config.SsoEnabled && !IsSsoAuthenticated;
+
     /// <summary>
-    /// Returns true if SSO should be attempted (based on config)
+    /// Always true where TDX is configured — there is no other credential to try.
     /// </summary>
-    public bool ShouldAttemptSso => _config.AuthMethod == TdxAuthMethod.BrowserSSO || _config.AuthMethod == TdxAuthMethod.Auto;
+    public bool ShouldAttemptSso => _config.SsoEnabled;
 
     public TdxService(TdxConfig config)
     {
@@ -108,110 +109,46 @@ public class TdxService : IDisposable
     /// </summary>
     private async Task<string?> GetAccessTokenAsync()
     {
-        var authMethod = _config.AuthMethod;
-        
-        // Check for valid SSO token first (if SSO is configured)
-        if (authMethod == TdxAuthMethod.BrowserSSO || authMethod == TdxAuthMethod.Auto)
+        // The operator's own SSO token is the only credential. If it is valid,
+        // use it; if it is not, there is nothing to fall back to, and saying so
+        // is the honest answer.
+        //
+        // There used to be a service-account chain here — loginadmin with a
+        // BEID/WebServicesKey pair, then a username/password login, both sourced
+        // from config, environment or Key Vault. It made every TDX action look
+        // like it came from one shared identity, which is exactly what an audit
+        // trail must not do. It also silently masked SSO failures: a broken
+        // sign-in still "worked", so nobody noticed until attribution mattered.
+        if (!string.IsNullOrEmpty(_ssoToken) && DateTime.UtcNow < _ssoTokenExpiry)
         {
-            if (!string.IsNullOrEmpty(_ssoToken) && DateTime.UtcNow < _ssoTokenExpiry)
-            {
-                return _ssoToken;
-            }
-            
-            // If browserSSO is required and no valid token, return null
-            if (authMethod == TdxAuthMethod.BrowserSSO)
-            {
-                Log.Warning("TDX SSO authentication required but no valid token available");
-                return null;
-            }
-        }
-        
-        // Check cached service account / password token
-        if (_cachedToken != null && DateTime.UtcNow < _tokenExpiry)
-        {
-            return _cachedToken;
-        }
-        
-        // For SSO-only mode, don't fall back to service account
-        if (authMethod == TdxAuthMethod.BrowserSSO)
-        {
-            return null;
+            return _ssoToken;
         }
 
-        try
+        // Try the silent SSO chain — Negotiate/Kerberos into loginsso — before
+        // giving up. On a domain-joined machine this needs no interaction.
+        if (!string.IsNullOrEmpty(_config.BaseUrl))
         {
-            // Try admin login first (BEID + WebServicesKey)
-            if (authMethod == TdxAuthMethod.ServiceAccount || authMethod == TdxAuthMethod.Auto)
+            try
             {
-                var (beid, webServicesKey) = _config.GetAdminCredentials();
-                if (!string.IsNullOrEmpty(beid) && !string.IsNullOrEmpty(webServicesKey))
+                var sso = new TdxSsoService(_config.BaseUrl);
+                var result = await sso.TrySilentSsoAsync();
+                if (result.Success && !string.IsNullOrEmpty(result.Token))
                 {
-                    var loginUrl = "api/auth/loginadmin";
-                    var loginBody = new
-                    {
-                        BEID = beid,
-                        WebServicesKey = webServicesKey
-                    };
-
-                    var content = new StringContent(JsonSerializer.Serialize(loginBody), Encoding.UTF8, "application/json");
-                    var response = await _client.PostAsync(loginUrl, content);
-
-                    if (response.IsSuccessStatusCode)
-                    {
-                        _cachedToken = await response.Content.ReadAsStringAsync();
-                        _cachedToken = _cachedToken.Trim('"');
-                        _tokenExpiry = DateTime.UtcNow.AddHours(23);
-                        Log.Debug("Acquired TDX JWT token via admin login (BEID)");
-                        return _cachedToken;
-                    }
-
-                    var error = await response.Content.ReadAsStringAsync();
-                    Log.Warning("TDX admin login failed: {Status} - {Error}, trying regular login", response.StatusCode, error);
+                    SetSsoToken(result.Token, result.Expiry, result.UserEmail, result.UserName);
+                    Log.Information("[tdx] Acquired a TDX token via silent SSO as {User}",
+                        result.UserName ?? "(unknown)");
+                    return _ssoToken;
                 }
             }
-
-            // Fallback to regular login (Username + Password)
-            if (authMethod == TdxAuthMethod.UserPassword || authMethod == TdxAuthMethod.Auto)
+            catch (Exception ex)
             {
-                var (username, password) = _config.GetRegularCredentials();
-                if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
-                {
-                    Log.Error("TDX credentials not configured. Set BEID/WebServicesKey or Username/Password in config, environment variables, or Key Vault.");
-                    return null;
-                }
-
-                var regularLoginUrl = "api/auth/login";
-                var regularLoginBody = new
-                {
-                    UserName = username,
-                    Password = password
-                };
-                var regularContent = new StringContent(JsonSerializer.Serialize(regularLoginBody), Encoding.UTF8, "application/json");
-                var regularResponse = await _client.PostAsync(regularLoginUrl, regularContent);
-
-                if (!regularResponse.IsSuccessStatusCode)
-                {
-                    var error = await regularResponse.Content.ReadAsStringAsync();
-                    Log.Error("TDX authentication failed: {Status} - {Error}", regularResponse.StatusCode, error);
-                    return null;
-                }
-
-                // Response body is the JWT token as a string
-                _cachedToken = await regularResponse.Content.ReadAsStringAsync();
-                _cachedToken = _cachedToken.Trim('"');
-                _tokenExpiry = DateTime.UtcNow.AddHours(23);
-
-                Log.Debug("Acquired TDX JWT token via regular login");
-                return _cachedToken;
+                Log.Warning(ex, "[tdx] Silent SSO failed");
             }
-            
-            return null;
         }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Failed to authenticate with TDX");
-            return null;
-        }
+
+        Log.Warning("[tdx] No TDX credential — sign in to TeamDynamix. " +
+                    "There is no service account to fall back to by design.");
+        return null;
     }
 
     private async Task<bool> SetAuthorizationAsync()
