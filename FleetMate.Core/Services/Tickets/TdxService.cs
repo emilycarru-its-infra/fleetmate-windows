@@ -437,21 +437,61 @@ public class TdxService : IDisposable
     }
 
     /// <summary>
-    /// Update a ticket
+    /// Convert a sparse set of field updates into an RFC 6902 JSON Patch document.
+    ///
+    /// TDX's PATCH takes a JsonPatchDocument — an <em>array</em> of operations —
+    /// not an object of field/value pairs. Posting the bare object is what
+    /// produced:
+    ///   "patch must not be null. Errors: The JsonPatchDocument was malformed
+    ///    and could not be parsed."
+    ///
+    /// A null value is preserved as an explicit JSON null rather than dropped:
+    /// clearing a field is a legitimate edit, and silently omitting it would
+    /// turn "unset the assignee" into a no-op that reports success.
     /// </summary>
-    public async Task<TdxTicket?> UpdateTicketAsync(int ticketId, object updates)
+    internal static List<Dictionary<string, object?>> ToJsonPatch(IDictionary<string, object?> updates)
+    {
+        return updates
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .Select(kv => new Dictionary<string, object?>
+            {
+                ["op"] = "replace",
+                // RFC 6902 pointers are /-prefixed, and ~ and / inside a field
+                // name have to be escaped or the pointer silently addresses
+                // something else.
+                ["path"] = "/" + kv.Key.Replace("~", "~0").Replace("/", "~1"),
+                ["value"] = kv.Value,
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Update a ticket. <paramref name="updates"/> is a sparse map of field name
+    /// to new value; it is sent as a JSON Patch document.
+    /// </summary>
+    public async Task<TdxTicket?> UpdateTicketAsync(int ticketId, IDictionary<string, object?> updates)
     {
         if (!await SetAuthorizationAsync())
         {
             return null;
         }
 
+        if (updates.Count == 0)
+        {
+            Log.Debug("No changes for ticket {Id}; skipping the PATCH", ticketId);
+            return await GetTicketAsync(ticketId);
+        }
+
         try
         {
             var url = _config.GetTicketsUrl(ticketId.ToString());
-            var content = new StringContent(JsonSerializer.Serialize(updates, _jsonOptions), Encoding.UTF8, "application/json");
+            var patch = ToJsonPatch(updates);
+            Log.Information("TDX PATCH ticket {Id} fields: {Fields}",
+                ticketId, string.Join(", ", updates.Keys.OrderBy(k => k, StringComparer.Ordinal)));
 
-            // Use PATCH for partial updates
+            var content = new StringContent(
+                JsonSerializer.Serialize(patch, _jsonOptions), Encoding.UTF8, "application/json-patch+json");
+
             var request = new HttpRequestMessage(HttpMethod.Patch, url) { Content = content };
             var response = await _client.SendAsync(request);
 
