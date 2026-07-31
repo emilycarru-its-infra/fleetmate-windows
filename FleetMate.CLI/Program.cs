@@ -135,6 +135,9 @@ class Program
             // Quality control (port of quality/control.ps1)
             rootCommand.AddCommand(QaCommand.Create(config));
             
+            // Projects — my pull request queue across DevOps and GitHub
+            rootCommand.AddCommand(FleetMate.Commands.Projects.PullRequestsCommand.Create(config));
+
             // Utility commands
             rootCommand.AddCommand(LoginCommand.Create(config));
             rootCommand.AddCommand(StatusCommand.Create(config, reportMate));
