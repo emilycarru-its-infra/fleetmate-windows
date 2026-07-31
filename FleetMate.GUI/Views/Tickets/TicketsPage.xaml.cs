@@ -675,24 +675,23 @@ public partial class TicketsPage : Page
 
         try
         {
-            var success = await _tdxService.AddCommentAsync(
+            await _tdxService.AddCommentAsync(
                 _selectedTicket.Id,
                 comment,
                 PrivateCheckBox.IsChecked == true);
 
-            if (success)
-            {
-                ShowActionMessage("Comment added successfully");
-                CommentTextBox.Text = "";
-                
-                // Refresh feed
-                _ticketFeed = await _tdxService.GetTicketFeedAsync(_selectedTicket.Id);
-                UpdateFeedPanel();
-            }
-            else
-            {
-                ShowActionMessage("Failed to add comment", isError: true);
-            }
+            ShowActionMessage("Comment added successfully");
+            CommentTextBox.Text = "";
+
+            // Refresh feed
+            _ticketFeed = await _tdxService.GetTicketFeedAsync(_selectedTicket.Id);
+            UpdateFeedPanel();
+        }
+        catch (TdxCommentException ex)
+        {
+            // Only clear the box on success — the comment is the operator's
+            // work, and losing it to a rejected post is worse than the failure.
+            ShowActionMessage(ex.Message, isError: true);
         }
         catch (Exception ex)
         {
