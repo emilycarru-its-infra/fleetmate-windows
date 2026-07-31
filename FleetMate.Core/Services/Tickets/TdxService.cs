@@ -520,9 +520,13 @@ public class TdxService : IDisposable
     }
 
     /// <summary>
-    /// Get feed entries (comments) for a ticket
+    /// Get feed entries (comments) for a ticket.
     /// </summary>
-    public async Task<List<TdxFeedEntry>> GetTicketFeedAsync(int ticketId)
+    /// <param name="includeReplies">
+    /// Hydrate threaded replies. One extra request per threaded entry and none
+    /// for the rest; pass false for a faster first paint.
+    /// </param>
+    public async Task<List<TdxFeedEntry>> GetTicketFeedAsync(int ticketId, bool includeReplies = true)
     {
         if (!await SetAuthorizationAsync())
         {
@@ -541,8 +545,10 @@ public class TdxService : IDisposable
                 return new List<TdxFeedEntry>();
             }
 
-            var feed = await response.Content.ReadFromJsonAsync<List<TdxFeedEntry>>(_jsonOptions);
-            return feed ?? new List<TdxFeedEntry>();
+            var feed = await response.Content.ReadFromJsonAsync<List<TdxFeedEntry>>(_jsonOptions)
+                       ?? new List<TdxFeedEntry>();
+
+            return includeReplies ? await HydrateRepliesAsync(feed) : feed;
         }
         catch (Exception ex)
         {
@@ -552,45 +558,124 @@ public class TdxService : IDisposable
     }
 
     /// <summary>
-    /// Add a comment to a ticket
+    /// Replace entries that have unloaded replies with copies carrying them.
+    ///
+    /// The ticket feed collection reports RepliesCount but always sends
+    /// <c>Replies: []</c>, so without this every thread renders as nothing.
     /// </summary>
-    public async Task<bool> AddCommentAsync(int ticketId, string comment, bool isPrivate = false, List<Guid>? notify = null)
+    private async Task<List<TdxFeedEntry>> HydrateRepliesAsync(List<TdxFeedEntry> feed)
     {
-        if (!await SetAuthorizationAsync())
+        var pending = feed.Where(e => e.HasUnloadedReplies).ToList();
+        if (pending.Count == 0) return feed;
+
+        Log.Debug("[tdx] Hydrating replies for {Count} feed entries", pending.Count);
+
+        var loaded = await Task.WhenAll(pending.Select(async entry =>
         {
-            return false;
-        }
+            var full = await GetFeedEntryAsync(entry.Id);
+            return (entry.Id, Replies: full?.ReplyList.ToList() ?? new List<TdxFeedEntry>());
+        }));
+
+        var byId = loaded
+            .Where(x => x.Replies.Count > 0)
+            .ToDictionary(x => x.Id, x => x.Replies);
+
+        return feed
+            .Select(entry => byId.TryGetValue(entry.Id, out var replies) ? entry.WithReplies(replies) : entry)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Fetch one feed entry from the tenant-level Feed API, which is the only
+    /// endpoint that carries reply bodies.
+    /// </summary>
+    public async Task<TdxFeedEntry?> GetFeedEntryAsync(int feedEntryId)
+    {
+        if (!await SetAuthorizationAsync()) return null;
 
         try
         {
-            var request = new CreateFeedEntryRequest
-            {
-                Comments = comment,
-                IsPrivate = isPrivate,
-                IsRichHtml = false,
-                Notify = notify
-            };
-
-            var url = _config.GetTicketsUrl($"{ticketId}/feed");
-            var content = new StringContent(JsonSerializer.Serialize(request, _jsonOptions), Encoding.UTF8, "application/json");
-
-            var response = await _client.PostAsync(url, content);
-
+            var response = await _client.GetAsync(_config.GetApiUrl($"feed/{feedEntryId}"));
             if (!response.IsSuccessStatusCode)
             {
-                var error = await response.Content.ReadAsStringAsync();
-                Log.Warning("Failed to add comment to ticket {Id}: {Status} - {Error}", ticketId, response.StatusCode, error);
-                return false;
+                Log.Debug("[tdx] Feed entry {Id} returned {Status}", feedEntryId, response.StatusCode);
+                return null;
             }
 
-            Log.Debug("Added comment to ticket {Id}", ticketId);
-            return true;
+            return await response.Content.ReadFromJsonAsync<TdxFeedEntry>(_jsonOptions);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[tdx] Failed to fetch feed entry {Id}", feedEntryId);
+            return null;
+        }
+    }
+
+    // Posting a threaded reply is not possible through the TDX Web API, and no
+    // method for it belongs here. Verified against the live API on 2026-07-28:
+    //
+    //   • OPTIONS /api/feed/{id} answers `Allow: GET,DELETE` — there is no POST
+    //     route under a feed entry at all, under any suffix.
+    //   • POST /api/{appId}/tickets/{id}/feed accepts ParentID,
+    //     ParentFeedEntryID, ReplyToID and ItemUpdateID without complaint and
+    //     ignores every one of them: each returns 201 having created another
+    //     top-level entry, with the named parent's RepliesCount still 0.
+    //
+    // Existing threads *are* readable — see GetTicketFeedAsync(includeReplies).
+    // The UI offers quoting into a new comment instead. This note is here so the
+    // route does not get re-added a third time.
+
+    /// <summary>
+    /// Post a top-level comment on a ticket, returning the created feed entry.
+    ///
+    /// Throws rather than reporting failure as a <c>false</c> return: a
+    /// swallowed failure here looks exactly like a successful post the feed has
+    /// not caught up with yet, so the operator retypes a comment that was in
+    /// fact rejected.
+    /// </summary>
+    /// <exception cref="TdxCommentException">The comment was not accepted.</exception>
+    public async Task<TdxFeedEntry?> AddCommentAsync(
+        int ticketId, string comment, bool isPrivate = false,
+        bool isRichHtml = false, List<Guid>? notify = null)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            throw new TdxCommentException(ticketId, "not authenticated to TeamDynamix");
+        }
+
+        var request = new CreateFeedEntryRequest
+        {
+            Comments = comment,
+            IsPrivate = isPrivate,
+            IsRichHtml = isRichHtml,
+            Notify = notify,
+        };
+
+        var url = _config.GetTicketsUrl($"{ticketId}/feed");
+        var content = new StringContent(
+            JsonSerializer.Serialize(request, _jsonOptions), Encoding.UTF8, "application/json");
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _client.PostAsync(url, content);
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to add comment to ticket {Id}", ticketId);
-            return false;
+            throw new TdxCommentException(ticketId, ex.Message, ex);
         }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            Log.Warning("Failed to add comment to ticket {Id}: {Status} - {Error}",
+                ticketId, response.StatusCode, error);
+            throw new TdxCommentException(ticketId, $"{(int)response.StatusCode}: {error}");
+        }
+
+        Log.Debug("Added comment to ticket {Id}", ticketId);
+        return await response.Content.ReadFromJsonAsync<TdxFeedEntry>(_jsonOptions);
     }
 
     #endregion
