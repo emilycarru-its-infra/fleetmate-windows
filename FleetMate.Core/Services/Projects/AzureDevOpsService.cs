@@ -11,8 +11,10 @@ namespace FleetMate.Core.Services.Projects;
 
 /// <summary>
 /// Azure DevOps service for work item management.
-/// Authentication: SSO token (browser OAuth2 PKCE) → Azure CLI (uses system Platform SSO).
-/// **NO PAT (Personal Access Token) authentication** — enterprise SSO only.
+///
+/// Authentication: an SSO token injected from the browser OAuth2 PKCE flow, or
+/// one minted silently by the Windows account broker. No PAT, no service
+/// account — every call is attributed to the operator who made it.
 /// </summary>
 public class AzureDevOpsService : IDisposable
 {
@@ -102,55 +104,53 @@ public class AzureDevOpsService : IDisposable
             return _cachedToken;
         }
 
+        // Re-acquire silently through the Windows broker.
+        //
+        // This is what makes a mid-session 401 recoverable. Previously the
+        // service was handed a token from outside and had no way to ask for
+        // another, so one rejection was terminal: the board stayed populated
+        // from cache while opening any item reported "Not authenticated to Azure
+        // DevOps. SSO login required." — even though a fresh token was available
+        // for the asking.
         try
         {
-            // Find Azure CLI - on Windows it's az.cmd in Program Files
-            var azPath = FindAzureCli();
-            if (azPath == null)
+            var source = EntraTokenSource.Shared;
+            if (source == null)
             {
-                Log.Error("Azure CLI (az) not found. Please install Azure CLI.");
+                Log.Error("[azdo] Entra sign-in is not configured — cannot acquire an Azure DevOps token");
                 return null;
             }
 
-            var psi = new ProcessStartInfo
-            {
-                FileName = azPath,
-                Arguments = $"account get-access-token --resource {AdoResourceId} --query accessToken -o tsv",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            using var process = Process.Start(psi);
-            if (process == null)
-            {
-                Log.Error("Failed to start az CLI process");
-                return null;
-            }
-
-            var token = await process.StandardOutput.ReadToEndAsync();
-            var error = await process.StandardError.ReadToEndAsync();
-
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode != 0)
-            {
-                Log.Error("Azure CLI failed: {Error}", error);
-                return null;
-            }
-
-            _cachedToken = token.Trim();
-            _tokenExpiry = DateTime.UtcNow.AddMinutes(55); // Tokens typically expire in 60 min
-
-            Log.Debug("Acquired Azure DevOps access token via Azure CLI");
+            _cachedToken = await source.GetTokenAsync(AdoResourceId);
+            _tokenExpiry = DateTime.UtcNow.AddMinutes(55);
+            Log.Debug("[azdo] Acquired an Azure DevOps access token via the Entra broker");
             return _cachedToken;
+        }
+        catch (EntraTokenException ex)
+        {
+            Log.Error("[azdo] Could not acquire an Azure DevOps token: {Message}", ex.Message);
+            return null;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to get Azure DevOps access token");
+            Log.Error(ex, "[azdo] Failed to get Azure DevOps access token");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Force the next request to mint a fresh token.
+    ///
+    /// Called when Azure DevOps rejects the token we hold. A 401 is not
+    /// necessarily expiry — Azure DevOps has been observed answering TF400813
+    /// for the anonymous user on a token with 40 minutes left — so the local
+    /// staleness check cannot be trusted to catch it.
+    /// </summary>
+    public void InvalidateToken()
+    {
+        _cachedToken = null;
+        _tokenExpiry = DateTime.MinValue;
+        EntraTokenSource.Shared?.Invalidate();
     }
 
     /// <summary>
@@ -551,43 +551,6 @@ public class AzureDevOpsService : IDisposable
         };
 
         return await CreateWorkItemAsync(request);
-    }
-
-    /// <summary>
-    /// Find Azure CLI executable path
-    /// </summary>
-    private static string? FindAzureCli()
-    {
-        // Try common paths on Windows
-        var candidates = new[]
-        {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft SDKs", "Azure", "CLI2", "wbin", "az.cmd"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft SDKs", "Azure", "CLI2", "wbin", "az.cmd"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Microsoft SDKs", "Azure", "CLI2", "wbin", "az.cmd"),
-            @"C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd",
-            @"C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
-        };
-
-        foreach (var candidate in candidates)
-        {
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        // Try to find in PATH
-        var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";
-        foreach (var dir in pathEnv.Split(Path.PathSeparator))
-        {
-            var azCmd = Path.Combine(dir, "az.cmd");
-            var azExe = Path.Combine(dir, "az.exe");
-
-            if (File.Exists(azCmd)) return azCmd;
-            if (File.Exists(azExe)) return azExe;
-        }
-
-        return null;
     }
 
     // MARK: - Auth Verification

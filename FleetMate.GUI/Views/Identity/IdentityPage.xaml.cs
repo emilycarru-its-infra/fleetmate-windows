@@ -61,7 +61,7 @@ public partial class IdentityPage : Page
 
         try
         {
-            var groups = await _graphService.SearchGroupsAsync("Devices-", 100);
+            var groups = await _graphService.SearchGroupsAsync("Devices-", DeviceGroupFetch.Limit);
             
             GroupsTreeView.Items.Clear();
             foreach (var group in groups.OrderBy(g => g.DisplayName))
