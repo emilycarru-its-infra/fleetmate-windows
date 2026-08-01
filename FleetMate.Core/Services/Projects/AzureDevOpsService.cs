@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using FleetMate.Core.Config;
 using FleetMate.Core.Models.Projects;
+using FleetMate.Core.Shared;
 using Serilog;
 
 namespace FleetMate.Core.Services.Projects;
@@ -951,6 +952,235 @@ public class AzureDevOpsService : IDisposable
             return PullRequestActionResult.Failed(ex.Message);
         }
     }
+
+    /// <summary>
+    /// Everything the in-app viewer needs: description, commits, comment
+    /// threads and per-file diffs.
+    ///
+    /// Azure DevOps has no unified-diff endpoint of any kind, so the diffs are
+    /// computed here from the blob contents at either end of the pull request.
+    /// That means two extra reads per file, which is why the file list is capped
+    /// and the cap is reported rather than silently applied.
+    /// </summary>
+    public async Task<PullRequestDetail> GetPullRequestDetailAsync(
+        string repository, int pullRequestId, string? project = null, int fileCap = 40)
+    {
+        if (!await SetAuthorizationAsync())
+            throw new InvalidOperationException("Not authenticated to Azure DevOps");
+
+        var repo = Uri.EscapeDataString(repository);
+        var prefix = string.IsNullOrWhiteSpace(project) ? "" : $"{Uri.EscapeDataString(project)}/";
+        var prBase = $"{prefix}_apis/git/repositories/{repo}/pullRequests/{pullRequestId}";
+
+        var headTask = GetJsonAsync($"{prBase}?api-version=7.0");
+        var commitsTask = GetJsonAsync($"{prBase}/commits?api-version=7.0");
+        var threadsTask = GetJsonAsync($"{prBase}/threads?api-version=7.0");
+
+        await Task.WhenAll(headTask, commitsTask, threadsTask);
+
+        var head = await headTask;
+        var commits = await commitsTask;
+        var threads = await threadsTask;
+
+        var (files, truncated) = await BuildPullRequestDiffsAsync(prBase, repo, prefix, head, fileCap);
+
+        return new PullRequestDetail
+        {
+            Body = Str(head, "description"),
+            Commits = ParseDevOpsCommits(commits),
+            Comments = ParseDevOpsComments(threads),
+            Files = files,
+            Truncated = truncated,
+        };
+    }
+
+    private async Task<(List<DiffFile> Files, bool Truncated)> BuildPullRequestDiffsAsync(
+        string prBase, string repo, string prefix, JsonElement head, int fileCap)
+    {
+        var files = new List<DiffFile>();
+
+        var source = head.TryGetProperty("lastMergeSourceCommit", out var s) ? Str(s, "commitId") : null;
+        var target = head.TryGetProperty("lastMergeTargetCommit", out var t) ? Str(t, "commitId") : null;
+
+        // Without both ends there is nothing to compare — an unmergeable PR or
+        // one whose merge is still being evaluated.
+        if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(target)) return (files, false);
+
+        var iterations = await GetJsonAsync($"{prBase}/iterations?api-version=7.0");
+        var latest = 0;
+
+        if (iterations.TryGetProperty("value", out var iterationList) && iterationList.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var iteration in iterationList.EnumerateArray())
+            {
+                if (iteration.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number)
+                    latest = Math.Max(latest, id.GetInt32());
+            }
+        }
+
+        if (latest == 0) return (files, false);
+
+        var changes = await GetJsonAsync(
+            $"{prBase}/iterations/{latest}/changes?api-version=7.0&$compareTo=0");
+
+        if (!changes.TryGetProperty("changeEntries", out var entries) || entries.ValueKind != JsonValueKind.Array)
+            return (files, false);
+
+        var all = entries.EnumerateArray().ToList();
+        var truncated = all.Count > fileCap;
+
+        foreach (var entry in all.Take(fileCap))
+        {
+            if (!entry.TryGetProperty("item", out var item)) continue;
+
+            var path = Str(item, "path");
+            if (string.IsNullOrEmpty(path)) continue;
+
+            // Folder entries carry no content to diff.
+            if (item.TryGetProperty("isFolder", out var isFolder) && isFolder.ValueKind == JsonValueKind.True)
+                continue;
+
+            var changeType = (Str(entry, "changeType") ?? "").ToLowerInvariant();
+            var isAdd = changeType.Contains("add");
+            var isDelete = changeType.Contains("delete");
+
+            // An added file has no old side and a deleted one has no new side;
+            // asking for the missing blob would 404 for every such file.
+            var oldContent = isAdd ? "" : await ItemContentAsync(repo, prefix, path, target!);
+            var newContent = isDelete ? "" : await ItemContentAsync(repo, prefix, path, source!);
+
+            if (oldContent == null && newContent == null) continue;
+
+            var name = path.StartsWith('/') ? path[1..] : path;
+            var file = DiffBuilder.Build(name, oldContent ?? "", newContent ?? "");
+
+            files.Add(isDelete
+                ? new DiffFile
+                {
+                    HeaderLines = file.HeaderLines,
+                    OldPath = file.OldPath,
+                    NewPath = "/dev/null",
+                    Hunks = file.Hunks,
+                }
+                : file);
+        }
+
+        return (files, truncated);
+    }
+
+    /// <summary>
+    /// Text of one file at one commit, or null for binary, oversized or missing.
+    ///
+    /// Failures degrade to null deliberately: one unreadable file must not sink
+    /// the whole diff, and a 400KB ceiling keeps a vendored bundle from stalling
+    /// the viewer.
+    /// </summary>
+    private async Task<string?> ItemContentAsync(string repo, string prefix, string path, string commit)
+    {
+        try
+        {
+            var url = $"{prefix}_apis/git/repositories/{repo}/items" +
+                      $"?path={Uri.EscapeDataString(path)}" +
+                      $"&versionDescriptor.versionType=commit&versionDescriptor.version={commit}" +
+                      "&includeContent=true&$format=json&api-version=7.0";
+
+            var response = await _client.GetAsync(url);
+            if (!response.IsSuccessStatusCode) return null;
+
+            var item = await response.Content.ReadFromJsonAsync<JsonElement>(_jsonOptions);
+            var content = Str(item, "content");
+
+            return content is { Length: < 400_000 } ? content : null;
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[azdo] Could not read {Path} at {Commit}", path, commit);
+            return null;
+        }
+    }
+
+    private static List<PullRequestCommit> ParseDevOpsCommits(JsonElement commits)
+    {
+        var result = new List<PullRequestCommit>();
+        if (!commits.TryGetProperty("value", out var list) || list.ValueKind != JsonValueKind.Array) return result;
+
+        foreach (var node in list.EnumerateArray())
+        {
+            var author = node.TryGetProperty("author", out var a) ? a : default;
+
+            result.Add(new PullRequestCommit
+            {
+                Id = Str(node, "commitId") ?? "",
+                Message = Str(node, "comment") ?? "",
+                AuthorName = Str(author, "name"),
+                Date = PullRequestDateParser.Parse(Str(author, "date")),
+            });
+        }
+
+        return result;
+    }
+
+    private static List<PullRequestComment> ParseDevOpsComments(JsonElement threads)
+    {
+        var result = new List<PullRequestComment>();
+        if (!threads.TryGetProperty("value", out var list) || list.ValueKind != JsonValueKind.Array) return result;
+
+        foreach (var thread in list.EnumerateArray())
+        {
+            // A deleted thread still comes back; rendering it would resurrect
+            // something someone chose to remove.
+            if (thread.TryGetProperty("isDeleted", out var deleted) && deleted.ValueKind == JsonValueKind.True)
+                continue;
+
+            var threadId = thread.TryGetProperty("id", out var tid) && tid.ValueKind == JsonValueKind.Number
+                ? tid.GetInt32()
+                : 0;
+
+            if (!thread.TryGetProperty("comments", out var comments) || comments.ValueKind != JsonValueKind.Array)
+                continue;
+
+            foreach (var comment in comments.EnumerateArray())
+            {
+                var content = Str(comment, "content");
+                if (string.IsNullOrEmpty(content)) continue;
+
+                var commentId = comment.TryGetProperty("id", out var cid) && cid.ValueKind == JsonValueKind.Number
+                    ? cid.GetInt32()
+                    : 0;
+
+                result.Add(new PullRequestComment
+                {
+                    Id = $"{threadId}-{commentId}",
+                    AuthorName = comment.TryGetProperty("author", out var author)
+                        ? Str(author, "displayName") ?? "unknown"
+                        : "unknown",
+                    Body = content,
+                    Date = PullRequestDateParser.Parse(Str(comment, "publishedDate")),
+                    // Azure DevOps folds vote changes into the thread list as
+                    // system comments; they are noise beside real conversation.
+                    IsSystem = string.Equals(Str(comment, "commentType"), "system", StringComparison.OrdinalIgnoreCase),
+                });
+            }
+        }
+
+        return result
+            .OrderBy(c => c.Date ?? DateTime.MinValue)
+            .ToList();
+    }
+
+    private async Task<JsonElement> GetJsonAsync(string url)
+    {
+        var response = await _client.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<JsonElement>(_jsonOptions);
+    }
+
+    private static string? Str(JsonElement element, string property) =>
+        element.ValueKind == JsonValueKind.Object
+        && element.TryGetProperty(property, out var value)
+        && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
     internal static string PullRequestPath(string repository, int pullRequestId, string? project)
     {
