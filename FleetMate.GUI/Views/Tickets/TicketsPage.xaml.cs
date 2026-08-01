@@ -31,6 +31,15 @@ public partial class TicketsPage : Page
     /// per view, so switching modes does not silently re-expand everything.
     /// </summary>
     private readonly HashSet<int> _collapsedTickets = new();
+
+    /// <summary>Unsent comments, keyed by ticket. A draft belongs to its ticket.</summary>
+    private readonly Dictionary<int, string> _commentDrafts = new();
+
+    /// <summary>
+    /// Filter entry for tickets nobody has picked up. Not a real responsible
+    /// name, so it is matched by identity rather than compared as one.
+    /// </summary>
+    internal const string UnassignedFilterLabel = "(Unassigned)";
     private List<TdxFeedEntry> _ticketFeed = new();
     private TdxTicket? _selectedTicket;
     private bool _sortAscending = false;  // Default descending (newest first)
@@ -200,7 +209,16 @@ public partial class TicketsPage : Page
         GroupFilterComboBox.ItemsSource = groups.OrderBy(s => s == "All" ? "" : s).ToList();
         GroupFilterComboBox.SelectedIndex = 0;
         
-        ResponsibleFilterComboBox.ItemsSource = responsible.OrderBy(s => s == "All" ? "" : s).ToList();
+        // Unassigned is offered explicitly. Tickets nobody has picked up are
+        // the ones most worth finding, and they were unreachable through a
+        // filter built only from names that exist.
+        var responsibleOptions = responsible.OrderBy(s => s == "All" ? "" : s).ToList();
+        if (_allTickets.Any(t => string.IsNullOrWhiteSpace(t.ResponsibleFullName)))
+        {
+            responsibleOptions.Add(UnassignedFilterLabel);
+        }
+
+        ResponsibleFilterComboBox.ItemsSource = responsibleOptions;
         ResponsibleFilterComboBox.SelectedIndex = 0;
     }
 
@@ -235,7 +253,9 @@ public partial class TicketsPage : Page
         var responsibleFilter = ResponsibleFilterComboBox.SelectedItem?.ToString();
         if (!string.IsNullOrEmpty(responsibleFilter) && responsibleFilter != "All")
         {
-            filtered = filtered.Where(t => t.ResponsibleFullName == responsibleFilter);
+            filtered = responsibleFilter == UnassignedFilterLabel
+                ? filtered.Where(t => string.IsNullOrWhiteSpace(t.ResponsibleFullName))
+                : filtered.Where(t => t.ResponsibleFullName == responsibleFilter);
         }
 
         // Filter by search text
@@ -596,8 +616,15 @@ public partial class TicketsPage : Page
     {
         if (TicketsListView.SelectedItem is TicketRowViewModel { Ticket: { } ticket })
         {
+            // A draft belongs to the ticket it was written on. The box used to
+            // persist across selections, so half-written text followed you to
+            // the next ticket and Post sent it there — the worst kind of bug,
+            // because it looks like it worked.
+            StashCommentDraft();
+
             _selectedTicket = ticket;
-            
+            RestoreCommentDraft(ticket.Id);
+
             // Show detail panel if not already visible
             if (!_detailPanelVisible)
             {
@@ -605,9 +632,66 @@ public partial class TicketsPage : Page
                 DetailPanel.Visibility = Visibility.Visible;
                 DetailPanelColumn.Width = new GridLength(360);
             }
-            
+
             await LoadTicketDetailAsync(ticket.Id);
         }
+    }
+
+    /// <summary>
+    /// Keep the current ticket's unsent comment so it comes back if the
+    /// operator returns to it. Losing typed work on a stray click is worse than
+    /// carrying a few strings.
+    /// </summary>
+    private void StashCommentDraft()
+    {
+        if (_selectedTicket is not { } previous) return;
+
+        var draft = CommentTextBox.Text?.Trim();
+
+        if (string.IsNullOrEmpty(draft)) _commentDrafts.Remove(previous.Id);
+        else _commentDrafts[previous.Id] = CommentTextBox.Text;
+    }
+
+    private void RestoreCommentDraft(int ticketId)
+    {
+        CommentTextBox.Text = _commentDrafts.TryGetValue(ticketId, out var draft) ? draft : "";
+    }
+
+    /// <summary>
+    /// Seed the comment box with the selected entry, quoted.
+    ///
+    /// Quote rather than Reply because the TDX Web API has no route for a
+    /// threaded reply — posting one creates another top-level entry with the
+    /// named parent's reply count still zero. Quoting is the closest thing the
+    /// API actually supports, so it is what the button offers.
+    /// </summary>
+    private void OnQuoteFeedEntry(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: FeedDisplayItem entry }) return;
+
+        var quoted = BuildQuote(entry);
+        var existing = CommentTextBox.Text ?? "";
+
+        // Append rather than replace — quoting a second comment into a reply
+        // already being written must not discard what is there.
+        CommentTextBox.Text = string.IsNullOrWhiteSpace(existing)
+            ? quoted
+            : existing.TrimEnd() + "\n\n" + quoted;
+
+        CommentTextBox.Focus();
+        CommentTextBox.CaretIndex = CommentTextBox.Text.Length;
+    }
+
+    internal static string BuildQuote(FeedDisplayItem entry)
+    {
+        var author = string.IsNullOrWhiteSpace(entry.CreatedFullName) ? "someone" : entry.CreatedFullName;
+
+        // The body is already stripped for display, so quoting it gives plain
+        // text rather than a block of markup nobody wants in their comment.
+        var quoted = string.Join("\n",
+            (entry.StrippedBody ?? "").Split('\n').Select(line => $"> {line.TrimEnd()}"));
+
+        return $"{author} wrote:\n{quoted}";
     }
 
     private async Task LoadTicketDetailAsync(int ticketId)
@@ -782,6 +866,10 @@ public partial class TicketsPage : Page
 
             ShowActionMessage("Comment added successfully");
             CommentTextBox.Text = "";
+
+            // Drop the stashed copy too, or navigating away and back would
+            // resurrect a comment that was already posted.
+            _commentDrafts.Remove(_selectedTicket.Id);
 
             // Refresh feed
             _ticketFeed = await _tdxService.GetTicketFeedAsync(_selectedTicket.Id);
