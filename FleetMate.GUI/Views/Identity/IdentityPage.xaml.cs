@@ -41,6 +41,10 @@ public partial class IdentityPage : Page
 
     private void OnTabChanged(object sender, RoutedEventArgs e)
     {
+        // GroupsRadio is checked in markup, so this fires mid-parse — before
+        // the panels it toggles have been created.
+        if (!IsInitialized) return;
+
         var isGroups = GroupsRadio.IsChecked == true;
         GroupsPanel.Visibility = isGroups ? Visibility.Visible : Visibility.Collapsed;
         UsersPanel.Visibility = isGroups ? Visibility.Collapsed : Visibility.Visible;

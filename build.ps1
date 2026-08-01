@@ -56,7 +56,12 @@ param(
     [switch]$Msi,
     [switch]$MsiOnly,
     [switch]$NoSign,
-    [switch]$Launch
+    [switch]$Launch,
+    # Runtime identifier for the GUI publish. Defaults to the host's
+    # architecture; set explicitly to cross-build (e.g. win-arm64 from an x64
+    # box for the ARM fleet).
+    [ValidateSet('win-x64', 'win-arm64')]
+    [string]$GuiRuntime
 )
 
 $ErrorActionPreference = 'Stop'
@@ -519,9 +524,23 @@ try {
         # A regular dotnet build produces a dotnet host stub that WDAC blocks signtool from modifying.
         $guiOutDir = "$RootDir\publish\gui"
 
+        # Follow the host architecture unless told otherwise. This was pinned to
+        # win-arm64, which meant the GUI could be built and signed on an x64 box
+        # and then refused to start: "not a valid application for this OS
+        # platform". Use -GuiRuntime to cross-build for the other architecture.
+        $guiRid = if ($GuiRuntime) {
+            $GuiRuntime
+        } elseif ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') {
+            'win-arm64'
+        } else {
+            'win-x64'
+        }
+
+        Write-BuildLog "  runtime: $guiRid"
+
         & dotnet publish "$RootDir\FleetMate.GUI\FleetMate.GUI.csproj" `
             --configuration Release `
-            --runtime win-arm64 `
+            --runtime $guiRid `
             --self-contained true `
             -p:PublishSingleFile=true `
             --output $guiOutDir
