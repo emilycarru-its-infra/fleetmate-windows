@@ -1,4 +1,4 @@
-using FleetMate.GUI;
+using FleetMate.Core.Services;
 using Xunit;
 
 namespace FleetMate.Tests;

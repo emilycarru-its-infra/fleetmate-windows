@@ -49,7 +49,7 @@ public sealed partial class SettingsPage : Page
         Set(key, "ElevationIdentityPrefix", ElevationIdentityPrefix.Text);
         foreach (var secret in new[] { "GraphClientSecret", "SnipeApiKey", "ReportMatePassphrase", "TdxUsername", "TdxPassword", "TdxBeid", "TdxWebServicesKey" })
             key.DeleteValue(secret, false);
-        App.Runtime.Reload();
+        App.Current.ReloadConfigAndServices();
         SaveResult.Severity = InfoBarSeverity.Success;
         SaveResult.Title = "Settings saved";
         SaveResult.Message = "The active service configuration has reloaded; no app restart is required.";
@@ -72,8 +72,8 @@ public sealed partial class SettingsPage : Page
 
     private void OnTdxSignInClicked(object sender, RoutedEventArgs e)
     {
-        App.Runtime.Reload();
-        var baseUrl = App.Runtime.Config.Tdx?.BaseUrl;
+        App.Current.ReloadConfigAndServices();
+        var baseUrl = App.Current.Config.Tdx?.BaseUrl;
         if (string.IsNullOrWhiteSpace(baseUrl))
         {
             TdxSignInStatus.Text = "Enter and save the TeamDynamix base URL first.";
@@ -83,7 +83,8 @@ public sealed partial class SettingsPage : Page
         _tdxSignInWindow = new TdxSignInWindow(baseUrl);
         _tdxSignInWindow.AuthenticationCompleted += (_, result) =>
         {
-            App.Runtime.SetTdxSession(result);
+            if (result.Token is not null && App.Current.TdxService is not null)
+                App.Current.TdxService.SetSsoToken(result.Token, result.Expiry, result.UserEmail, result.UserName);
             TdxSignInStatus.Text = $"Signed in as {result.UserName ?? result.UserEmail ?? "operator"}; ticket API will be checked on the dashboard.";
             _tdxSignInWindow = null;
         };

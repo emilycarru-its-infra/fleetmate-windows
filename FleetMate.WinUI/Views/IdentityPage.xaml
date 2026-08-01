@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="FleetMate.WinUI.Views.IdentityPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid Padding="24" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="Identity" Style="{StaticResource TitleLargeTextBlockStyle}"/>
+                <TextBlock x:Name="CountText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="13"/>
+            </StackPanel>
+            <TextBox x:Name="SearchBox" Grid.Column="1" PlaceholderText="Type to filter · Enter to search the directory"
+                     VerticalAlignment="Bottom" TextChanged="SearchBox_TextChanged" KeyDown="SearchBox_KeyDown"/>
+            <Button x:Name="RefreshButton" Grid.Column="2" Content="Search" Click="RefreshButton_Click"
+                    VerticalAlignment="Bottom"/>
+        </Grid>
+
+        <SelectorBar x:Name="ModeBar" Grid.Row="1" SelectionChanged="ModeBar_SelectionChanged">
+            <SelectorBarItem x:Name="GroupsTab" Text="Groups" IsSelected="True"/>
+            <SelectorBarItem x:Name="UsersTab" Text="Users"/>
+        </SelectorBar>
+
+        <!-- Master + detail -->
+        <Grid Grid.Row="2" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="400"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- List -->
+            <Border Grid.Column="0" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8">
+                <Grid>
+                    <ProgressRing x:Name="LoadingRing" IsActive="False"
+                                  Width="36" Height="36" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+
+                    <!-- Groups -->
+                    <ListView x:Name="GroupList" SelectionMode="Single" SelectionChanged="GroupList_SelectionChanged"
+                              HorizontalContentAlignment="Stretch">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Padding" Value="16,10"/>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding TypeLabel}" FontSize="12" Margin="0,0,8,0"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding Members}" FontSize="12"
+                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+
+                    <!-- Users -->
+                    <ListView x:Name="UserList" SelectionMode="Single" SelectionChanged="UserList_SelectionChanged"
+                              HorizontalContentAlignment="Stretch" Visibility="Collapsed">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Padding" Value="16,10"/>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.6*"/>
+                                        <ColumnDefinition Width="2*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Upn}" TextTrimming="CharacterEllipsis"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                                        <Ellipse Width="9" Height="9" Fill="{Binding StatusBrush}" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding StatusLabel}" FontSize="12" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </Border>
+
+            <!-- Detail -->
+            <Border Grid.Column="1" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8">
+                <ScrollViewer>
+                    <StackPanel Padding="20" Spacing="6">
+                        <TextBlock x:Name="EmptyDetail" Text="Select a group or user to see details."
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+
+                        <StackPanel x:Name="DetailPanel" Spacing="10" Visibility="Collapsed">
+                            <TextBlock x:Name="DetailTitle" Style="{StaticResource SubtitleTextBlockStyle}" TextWrapping="Wrap"/>
+                            <TextBlock x:Name="DetailSubtitle" FontSize="12"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+
+                            <TextBlock Text="Details" FontWeight="SemiBold" Margin="0,6,0,0"/>
+                            <StackPanel x:Name="DetailRows" Spacing="3"/>
+
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+                                <Button x:Name="AddMemberButton" Content="Add member" Click="AddMember_Click" Visibility="Collapsed"/>
+                                <Button x:Name="EnableDisableButton" Click="EnableDisable_Click" Visibility="Collapsed"/>
+                            </StackPanel>
+
+                            <TextBlock x:Name="ListHeader" FontWeight="SemiBold" Margin="0,10,0,0"/>
+                            <ProgressRing x:Name="SubRing" IsActive="False" Width="20" Height="20" HorizontalAlignment="Left"/>
+
+                            <!-- User's group memberships (plain strings) -->
+                            <ItemsControl x:Name="SubList"/>
+
+                            <!-- Group members (with per-row Remove) -->
+                            <ItemsControl x:Name="MembersList" Visibility="Collapsed">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid ColumnSpacing="8" Margin="0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Label}" TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center" FontSize="13"/>
+                                            <Button Grid.Column="1" Content="Remove" Click="RemoveMember_Click" Tag="{Binding}"
+                                                    FontSize="12" Padding="8,2"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <TextBlock x:Name="SubEmpty" FontSize="12"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}" Visibility="Collapsed"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+    </Grid>
+</Page>

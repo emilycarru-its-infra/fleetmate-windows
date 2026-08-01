@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using FleetMate.Core.Models;
+using FleetMate.Core.Services;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Models.Devices;
 using FleetMate.Core.Models.Identity;
