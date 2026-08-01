@@ -159,8 +159,11 @@ public partial class TicketsPage : Page
         if (_tdxService == null || _app == null)
         {
             NotConfiguredText.Visibility = Visibility.Visible;
+            TicketsListView.Visibility = Visibility.Collapsed;
             return;
         }
+
+        TicketsListView.Visibility = Visibility.Visible;
         
         // Use cache if valid
         if (_app.IsTicketsCacheValid && _app.CachedTickets.Count > 0)

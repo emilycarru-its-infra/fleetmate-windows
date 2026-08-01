@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.Json;
 using System.Windows;
 using FleetMate.Core.Config;
 using FleetMate.GUI.Views;
@@ -22,6 +23,8 @@ using FleetMate.Core.Services.Tickets;
 using FleetMate.Core.Services.Projects;
 using FleetMate.Core.Services.Reporting;
 using Serilog;
+using Microsoft.Win32;
+using ModernWpf;
 
 namespace FleetMate.GUI;
 
@@ -53,7 +56,6 @@ public partial class App : Application
     public bool IsDevOpsSsoAuthenticated => DevOpsService?.IsSsoAuthenticated ?? false;
     public string? DevOpsAuthenticatedUserName => DevOpsService?.SsoUserName;
     public bool DevOpsProjectReady { get; private set; }
-    private bool _hasAutoPromptedDevOpsSso;
     
     // MARK: - Deep Navigation
     public string? PendingNavigateDeviceId { get; set; }
@@ -199,9 +201,12 @@ public partial class App : Application
             return;
         }
         
-        // Phase 2: Fall back to interactive window (user will see a login prompt)
-        Log.Information("[tdx-sso] Phase 1.5 failed — falling back to interactive login (Phase 2)");
-        ShowTdxSsoLogin();
+        // Broker-only desktop policy: do not turn a silent failure into a login
+        // window. The status card exposes the failure and can be re-checked
+        // after the Windows session is repaired.
+        Log.Warning("[tdx-sso] Silent Windows SSO failed; no interactive fallback will be shown");
+        AuthManager.Update(AuthSystemId.Tdx,
+            AuthTokenState.Failed("Silent Windows SSO unavailable"));
     }
     
     /// <summary>
@@ -380,21 +385,9 @@ public partial class App : Application
             return;
         }
         
-        Log.Information("[devops-sso] Phase 1.5 failed or timed out — falling back to interactive login (Phase 2)");
-
-        // Only auto-prompt once; subsequent attempts require user action
-        if (!_hasAutoPromptedDevOpsSso)
-        {
-            _hasAutoPromptedDevOpsSso = true;
-            ShowDevOpsSsoLogin();
-            return;
-        }
-
-        // Nothing else is going to resolve this now. Without it the row sits on
-        // "Authenticating" for the rest of the session — a spinner that never
-        // stops reads as "working on it", not as "this needs you".
-        AuthManager.ReportOptionalAuthFailure(
-            AuthSystemId.DevOps, "Silent SSO failed — sign in to continue");
+        Log.Warning("[devops-sso] Silent Windows SSO failed or timed out; no interactive fallback will be shown");
+        AuthManager.Update(AuthSystemId.DevOps,
+            AuthTokenState.Failed("Silent Windows SSO unavailable"));
     }
     
     /// <summary>
@@ -507,13 +500,32 @@ public partial class App : Application
             .CreateLogger();
 
         // Load configuration
-        Config = FleetMateConfig.Load();
+        Config = LoadDesktopConfiguration();
+
+        // Apply the saved UI theme before constructing the main window so the
+        // app never flashes through the system theme on launch.
+        using (var appearanceKey = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\FleetMate"))
+        {
+            ThemeManager.Current.ApplicationTheme = appearanceKey?.GetValue("UiTheme")?.ToString() switch
+            {
+                "Light" => ApplicationTheme.Light,
+                "Dark" => ApplicationTheme.Dark,
+                _ => null
+            };
+        }
 
         // Initialize auth manager
         AuthManager = new AuthManager(Config);
 
         // Initialize services
         InitializeServices();
+
+        if (e.Args.Contains("--headless-tdx-sso", StringComparer.OrdinalIgnoreCase))
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            _ = Dispatcher.InvokeAsync(RunHeadlessTdxSmokeAsync);
+            return;
+        }
 
         var mainWindow = new MainWindow();
         mainWindow.Show();
@@ -715,9 +727,92 @@ public partial class App : Application
         }
     }
 
+    /// <summary>
+    /// Rebuild the runtime service graph after Settings writes new values.
+    /// Views resolve services when they are constructed, so MainWindow also
+    /// drops its page cache before the user returns to a module.
+    /// </summary>
+    public void ReloadConfiguration()
+    {
+        GraphService?.Dispose();
+        SnipeService?.Dispose();
+        TdxService?.Dispose();
+        DevOpsService?.Dispose();
+        ReportMateService?.Dispose();
+
+        GraphService = null;
+        SnipeService = null;
+        TdxService = null;
+        DevOpsService = null;
+        DevOpsSsoService = null;
+        ReportMateService = null;
+        DevOpsProjectReady = false;
+        PullRequestQueue = null;
+        InvalidateAllCaches();
+
+        Config = LoadDesktopConfiguration();
+        AuthManager = new AuthManager(Config);
+        InitializeServices();
+
+        if (Current.MainWindow is MainWindow mainWindow)
+            mainWindow.ResetPageCache();
+
+        // Authentication and data probes continue in the background. The new
+        // configuration is already active when this method returns.
+        _ = InitializeAndPreloadAsync();
+    }
+
+    private async Task RunHeadlessTdxSmokeAsync()
+    {
+        var exitCode = 1;
+        object payload;
+        try
+        {
+            if (TdxService == null || string.IsNullOrWhiteSpace(Config.Tdx?.BaseUrl))
+                throw new InvalidOperationException("TeamDynamix is not configured");
+
+            var result = await TdxSsoLoginWindow.TryPhase1SilentAsync(Config.Tdx.BaseUrl)
+                ?? await TdxSsoLoginWindow.TryPhase15HeadlessAsync(Config.Tdx.BaseUrl);
+            if (result == null || !result.Success || string.IsNullOrEmpty(result.Token))
+                throw new InvalidOperationException(
+                    result?.Error ?? "The persistent WebView2 profile could not complete Shibboleth/Entra SSO silently; interactive consent or Windows Hello is required once in Settings.");
+
+            TdxService.SetSsoToken(result.Token, result.Expiry, result.UserEmail, result.UserName);
+            var ticketCount = await TdxService.VerifyTicketAccessAsync();
+            payload = new
+            {
+                system = "TeamDynamix",
+                status = "ok",
+                detail = $"SSO as {result.UserName ?? result.UserEmail ?? "operator"}; ticket API readable",
+                records = ticketCount
+            };
+            exitCode = 0;
+        }
+        catch (Exception ex)
+        {
+            payload = new
+            {
+                system = "TeamDynamix",
+                status = "failed",
+                detail = ex.Message.Split('\r', '\n')[0]
+            };
+        }
+
+        Console.WriteLine(JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
+        Environment.ExitCode = exitCode;
+        Shutdown(exitCode);
+    }
+
+    private static FleetMateConfig LoadDesktopConfiguration()
+    {
+        return FleetMateConfig.LoadDesktop();
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
         GraphService?.Dispose();
+        SnipeService?.Dispose();
+        TdxService?.Dispose();
         DevOpsService?.Dispose();
         ReportMateService?.Dispose();
         Log.CloseAndFlush();

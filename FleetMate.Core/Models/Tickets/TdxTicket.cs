@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using FleetMate.Core.Converters;
 
 namespace FleetMate.Core.Models.Tickets;
 
@@ -56,6 +57,7 @@ public class TdxTicket
     public string? StatusName { get; set; }
 
     [JsonPropertyName("StatusClass")]
+    [JsonConverter(typeof(StringOrNumberConverter))]
     public string? StatusClass { get; set; }
 
     [JsonPropertyName("ImpactID")]
@@ -86,12 +88,15 @@ public class TdxTicket
     public string? SlaName { get; set; }
 
     [JsonPropertyName("IsSlaViolated")]
+    [JsonConverter(typeof(FlexibleBooleanConverter))]
     public bool IsSlaViolated { get; set; }
 
     [JsonPropertyName("IsSlaRespondByViolated")]
+    [JsonConverter(typeof(FlexibleBooleanConverter))]
     public bool IsSlaRespondByViolated { get; set; }
 
     [JsonPropertyName("IsSlaResolveByViolated")]
+    [JsonConverter(typeof(FlexibleBooleanConverter))]
     public bool IsSlaResolveByViolated { get; set; }
 
     [JsonPropertyName("RespondByDate")]
@@ -104,6 +109,7 @@ public class TdxTicket
     public DateTime? SlaBeginDate { get; set; }
 
     [JsonPropertyName("IsOnHold")]
+    [JsonConverter(typeof(FlexibleBooleanConverter))]
     public bool IsOnHold { get; set; }
 
     [JsonPropertyName("GoesOffHoldDate")]

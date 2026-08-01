@@ -341,19 +341,19 @@ public class AuthManager : INotifyPropertyChanged
                 return;
             }
             
-            // If we already have a valid SSO token, verify it works
-            if (devOpsService.HasValidToken)
+            // VerifyAuthAsync acquires through the Windows broker when the
+            // service has no cached token. Merely checking HasValidToken first
+            // reported "configured" forever and never gave WAM a chance.
+            try
             {
-                try
-                {
-                    await devOpsService.VerifyAuthAsync();
-                    Update(AuthSystemId.DevOps, AuthTokenState.Valid(devOpsService.SsoUserName ?? "SSO User"));
-                    return;
-                }
-                catch
-                {
-                    // Token is expired or invalid — fall through to az CLI check
-                }
+                await devOpsService.VerifyAuthAsync();
+                Update(AuthSystemId.DevOps, AuthTokenState.Valid(
+                    devOpsService.SsoUserName ?? "Windows account"));
+                return;
+            }
+            catch (Exception ex)
+            {
+                Log.Debug(ex, "[auth] Azure DevOps broker probe failed");
             }
             
             // Fall back to az CLI check for service principal detection

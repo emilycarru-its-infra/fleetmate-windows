@@ -3,7 +3,9 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using FleetMate.Core.Converters;
 using FleetMate.Core.Models.Tickets;
+using FleetMate.Core.Services;
 using Serilog;
 
 namespace FleetMate.Core.Services.Tickets;
@@ -64,9 +66,12 @@ public class TdxService : IDisposable
         _config = config;
         _cacheDuration = TimeSpan.FromMinutes(config.CacheMinutes);
 
+        var baseUrl = ServiceUri.Normalize(config.BaseUrl);
+        if (!baseUrl.EndsWith("/TDWebApi", StringComparison.OrdinalIgnoreCase))
+            baseUrl += "/TDWebApi";
         _client = new HttpClient
         {
-            BaseAddress = new Uri(config.BaseUrl.TrimEnd('/') + "/"),
+            BaseAddress = new Uri(baseUrl + "/"),
             Timeout = TimeSpan.FromSeconds(60)
         };
 
@@ -76,6 +81,10 @@ public class TdxService : IDisposable
         {
             PropertyNameCaseInsensitive = true
         };
+        // TDX response contracts contain several legacy fields whose wire type
+        // varies by application/version (for example enum values as numbers).
+        _jsonOptions.Converters.Add(new StringOrNumberConverter());
+        _jsonOptions.Converters.Add(new FlexibleBooleanConverter());
     }
 
     #region Authentication
@@ -318,6 +327,32 @@ public class TdxService : IDisposable
     #endregion
 
     #region Tickets
+
+    /// <summary>
+    /// Performs a strict, read-only ticket probe for desktop diagnostics.
+    /// Unlike the user-facing list methods, this never converts authentication,
+    /// transport, or HTTP failures into an indistinguishable empty result.
+    /// </summary>
+    public async Task<int> VerifyTicketAccessAsync()
+    {
+        if (!await SetAuthorizationAsync())
+            throw new UnauthorizedAccessException("TeamDynamix SSO did not provide a bearer token");
+
+        var search = new TicketSearchRequest { MaxResults = 1 };
+        var content = new StringContent(JsonSerializer.Serialize(search, _jsonOptions), Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync(_config.GetTicketsUrl("search"), content);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = (await response.Content.ReadAsStringAsync()).Trim();
+            if (body.Length > 300) body = body[..300] + "…";
+            throw new HttpRequestException(
+                $"TeamDynamix ticket probe returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
+                null, response.StatusCode);
+        }
+
+        var tickets = await response.Content.ReadFromJsonAsync<List<TdxTicket>>(_jsonOptions);
+        return tickets?.Count ?? 0;
+    }
 
     /// <summary>
     /// Search for tickets
