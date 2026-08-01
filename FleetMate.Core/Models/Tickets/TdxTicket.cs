@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using FleetMate.Core.Converters;
 
 namespace FleetMate.Core.Models.Tickets;
 
@@ -56,6 +57,7 @@ public class TdxTicket
     public string? StatusName { get; set; }
 
     [JsonPropertyName("StatusClass")]
+    [JsonConverter(typeof(StringOrNumberConverter))]
     public string? StatusClass { get; set; }
 
     [JsonPropertyName("ImpactID")]
@@ -86,12 +88,15 @@ public class TdxTicket
     public string? SlaName { get; set; }
 
     [JsonPropertyName("IsSlaViolated")]
+    [JsonConverter(typeof(FlexibleBooleanConverter))]
     public bool IsSlaViolated { get; set; }
 
     [JsonPropertyName("IsSlaRespondByViolated")]
+    [JsonConverter(typeof(FlexibleBooleanConverter))]
     public bool IsSlaRespondByViolated { get; set; }
 
     [JsonPropertyName("IsSlaResolveByViolated")]
+    [JsonConverter(typeof(FlexibleBooleanConverter))]
     public bool IsSlaResolveByViolated { get; set; }
 
     [JsonPropertyName("RespondByDate")]
@@ -104,6 +109,7 @@ public class TdxTicket
     public DateTime? SlaBeginDate { get; set; }
 
     [JsonPropertyName("IsOnHold")]
+    [JsonConverter(typeof(FlexibleBooleanConverter))]
     public bool IsOnHold { get; set; }
 
     [JsonPropertyName("GoesOffHoldDate")]
@@ -560,6 +566,49 @@ public class TdxFeedEntry
 
     [JsonPropertyName("IsRichHtml")]
     public bool IsRichHtml { get; set; }
+
+    /// <summary>Address of this entry in the tenant-level Feed API.</summary>
+    [JsonPropertyName("Uri")]
+    public string? Uri { get; set; }
+
+    /// <summary>
+    /// How many replies TDX says this entry has. The ticket feed collection
+    /// reports a real number here while always sending an empty
+    /// <see cref="Replies"/>, so this is the only signal that a thread exists.
+    /// </summary>
+    [JsonPropertyName("RepliesCount")]
+    public int? RepliesCount { get; set; }
+
+    [JsonPropertyName("Replies")]
+    public List<TdxFeedEntry>? Replies { get; set; }
+
+    [JsonIgnore]
+    public IReadOnlyList<TdxFeedEntry> ReplyList => Replies ?? new List<TdxFeedEntry>();
+
+    /// <summary>
+    /// True when TDX says this entry has replies but has not sent their bodies.
+    ///
+    /// <c>GET /api/{appId}/tickets/{id}/feed</c> reports RepliesCount but always
+    /// returns <c>Replies: []</c>; only <c>GET /api/feed/{id}</c> carries the
+    /// bodies. Without hydrating these, every thread renders as nothing.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasUnloadedReplies => (RepliesCount ?? 0) > 0 && ReplyList.Count == 0;
+
+    /// <summary>A copy of this entry carrying loaded replies.</summary>
+    public TdxFeedEntry WithReplies(List<TdxFeedEntry> replies) => new()
+    {
+        Id = Id,
+        Body = Body,
+        CreatedDate = CreatedDate,
+        CreatedUid = CreatedUid,
+        CreatedFullName = CreatedFullName,
+        IsPrivate = IsPrivate,
+        IsRichHtml = IsRichHtml,
+        Uri = Uri,
+        Replies = replies,
+        RepliesCount = RepliesCount ?? replies.Count,
+    };
 }
 
 /// <summary>

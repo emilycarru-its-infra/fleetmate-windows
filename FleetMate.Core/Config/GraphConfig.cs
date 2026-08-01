@@ -11,19 +11,10 @@ public class GraphConfig
     public string? TenantId { get; set; }
 
     /// <summary>
-    /// Azure application (client) ID for service principal auth
+    /// Client ID FleetMate presents to the Entra broker. Optional — defaults to
+    /// the Azure CLI's public client. This is not a credential.
     /// </summary>
     public string? ClientId { get; set; }
-
-    /// <summary>
-    /// Azure application client secret for service principal auth
-    /// </summary>
-    public string? ClientSecret { get; set; }
-
-    /// <summary>
-    /// Use Azure CLI for authentication (default: true)
-    /// </summary>
-    public bool UseAzureCliAuth { get; set; } = true;
 
     /// <summary>
     /// Cache duration in minutes for user/group lookups
@@ -35,25 +26,8 @@ public class GraphConfig
     /// </summary>
     public int PageSize { get; set; } = 100;
 
-    // Multi-SP: separate credentials for Devices vs Systems scopes (matches macOS)
-
-    /// <summary>Client ID for the Devices-scoped service principal.</summary>
-    public string? DevicesClientId { get; set; }
-
-    /// <summary>Client secret for the Devices-scoped service principal.</summary>
-    public string? DevicesClientSecret { get; set; }
-
-    /// <summary>Client ID for the Systems-scoped service principal.</summary>
-    public string? SystemsClientId { get; set; }
-
-    /// <summary>Client secret for the Systems-scoped service principal.</summary>
-    public string? SystemsClientSecret { get; set; }
-
-    /// <summary>True when a dedicated Devices SP is configured.</summary>
-    public bool IsDevicesSpConfigured =>
-        !string.IsNullOrWhiteSpace(DevicesClientId) && !string.IsNullOrWhiteSpace(DevicesClientSecret);
-
-    /// <summary>True when a dedicated Systems SP is configured.</summary>
-    public bool IsSystemsSpConfigured =>
-        !string.IsNullOrWhiteSpace(SystemsClientId) && !string.IsNullOrWhiteSpace(SystemsClientSecret);
+    // The per-scope Devices/Systems service principals were removed along with
+    // the rest of the secret-bearing auth. Scope separation is now the operator's
+    // own Entra role assignments, and privileged writes go through the
+    // managed-identity elevation session rather than a second set of app creds.
 }

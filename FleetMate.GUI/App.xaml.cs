@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.Json;
 using System.Windows;
 using FleetMate.Core.Config;
 using FleetMate.GUI.Views;
@@ -22,6 +23,8 @@ using FleetMate.Core.Services.Tickets;
 using FleetMate.Core.Services.Projects;
 using FleetMate.Core.Services.Reporting;
 using Serilog;
+using Microsoft.Win32;
+using ModernWpf;
 
 namespace FleetMate.GUI;
 
@@ -35,7 +38,16 @@ public partial class App : Application
     public AzureDevOpsService? DevOpsService { get; private set; }
     public DevOpsSsoService? DevOpsSsoService { get; private set; }
     public ReportMateService? ReportMateService { get; private set; }
-    
+
+    /// <summary>
+    /// The loaded pull request queue, cached here rather than in the view.
+    ///
+    /// A WPF page is rebuilt on navigation, so a queue held by the control dies
+    /// on every tab switch and is refetched — which meant the tab sat on a
+    /// spinner each time you came back to it.
+    /// </summary>
+    public FleetMate.Core.Models.Projects.PullRequestQueue? PullRequestQueue { get; set; }
+
     // MARK: - TDX SSO State
     public bool IsTdxSsoAuthenticated => TdxService?.IsSsoAuthenticated ?? false;
     public string? TdxAuthenticatedUserName => TdxService?.AuthenticatedUserName;
@@ -44,7 +56,6 @@ public partial class App : Application
     public bool IsDevOpsSsoAuthenticated => DevOpsService?.IsSsoAuthenticated ?? false;
     public string? DevOpsAuthenticatedUserName => DevOpsService?.SsoUserName;
     public bool DevOpsProjectReady { get; private set; }
-    private bool _hasAutoPromptedDevOpsSso;
     
     // MARK: - Deep Navigation
     public string? PendingNavigateDeviceId { get; set; }
@@ -190,9 +201,12 @@ public partial class App : Application
             return;
         }
         
-        // Phase 2: Fall back to interactive window (user will see a login prompt)
-        Log.Information("[tdx-sso] Phase 1.5 failed — falling back to interactive login (Phase 2)");
-        ShowTdxSsoLogin();
+        // Broker-only desktop policy: do not turn a silent failure into a login
+        // window. The status card exposes the failure and can be re-checked
+        // after the Windows session is repaired.
+        Log.Warning("[tdx-sso] Silent Windows SSO failed; no interactive fallback will be shown");
+        AuthManager.Update(AuthSystemId.Tdx,
+            AuthTokenState.Failed("Silent Windows SSO unavailable"));
     }
     
     /// <summary>
@@ -371,14 +385,9 @@ public partial class App : Application
             return;
         }
         
-        Log.Information("[devops-sso] Phase 1.5 failed or timed out — falling back to interactive login (Phase 2)");
-        
-        // Only auto-prompt once; subsequent attempts require user action
-        if (!_hasAutoPromptedDevOpsSso)
-        {
-            _hasAutoPromptedDevOpsSso = true;
-            ShowDevOpsSsoLogin();
-        }
+        Log.Warning("[devops-sso] Silent Windows SSO failed or timed out; no interactive fallback will be shown");
+        AuthManager.Update(AuthSystemId.DevOps,
+            AuthTokenState.Failed("Silent Windows SSO unavailable"));
     }
     
     /// <summary>
@@ -491,7 +500,19 @@ public partial class App : Application
             .CreateLogger();
 
         // Load configuration
-        Config = FleetMateConfig.Load();
+        Config = LoadDesktopConfiguration();
+
+        // Apply the saved UI theme before constructing the main window so the
+        // app never flashes through the system theme on launch.
+        using (var appearanceKey = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\FleetMate"))
+        {
+            ThemeManager.Current.ApplicationTheme = appearanceKey?.GetValue("UiTheme")?.ToString() switch
+            {
+                "Light" => ApplicationTheme.Light,
+                "Dark" => ApplicationTheme.Dark,
+                _ => null
+            };
+        }
 
         // Initialize auth manager
         AuthManager = new AuthManager(Config);
@@ -499,8 +520,27 @@ public partial class App : Application
         // Initialize services
         InitializeServices();
 
+        if (e.Args.Contains("--headless-tdx-sso", StringComparer.OrdinalIgnoreCase))
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            _ = Dispatcher.InvokeAsync(RunHeadlessTdxSmokeAsync);
+            return;
+        }
+
         var mainWindow = new MainWindow();
         mainWindow.Show();
+
+        // Give the broker a window to parent to. Only consulted if the silent
+        // PRT path fails — on a managed device it never is — but without it an
+        // account that genuinely needs consent would fail with no way forward.
+        EntraTokenSource.ParentWindowProvider = () =>
+            Current.Dispatcher.Invoke(() =>
+            {
+                var window = Current.MainWindow;
+                return window == null
+                    ? IntPtr.Zero
+                    : new System.Windows.Interop.WindowInteropHelper(window).Handle;
+            });
 
         // Attempt silent TDX SSO, then preload all data in the background
         _ = InitializeAndPreloadAsync();
@@ -561,7 +601,7 @@ public partial class App : Application
             {
                 try
                 {
-                    var groups = await GraphService.SearchGroupsAsync("Devices-", 100);
+                    var groups = await GraphService.SearchGroupsAsync("Devices-", DeviceGroupFetch.Limit);
                     Dispatcher.Invoke(() => UpdateGroupsCache(groups));
                     Log.Information("Preloaded {Count} groups", groups.Count);
                 }
@@ -643,11 +683,13 @@ public partial class App : Application
                 Log.Information("GraphService initialized");
             }
 
-            // Initialize SnipeService if configured
-            if (!string.IsNullOrEmpty(Config.SnipeUrl) && !string.IsNullOrEmpty(Config.SnipeApiKey))
+            // Initialize SnipeService if configured. A URL is enough now: auth is
+            // the operator's Entra session, so there is no API key to wait for.
+            if (!string.IsNullOrEmpty(Config.SnipeUrl))
             {
-                SnipeService = new SnipeService(Config.SnipeUrl, Config.SnipeApiKey, Config.CacheMinutes);
-                Log.Information("SnipeService initialized");
+                SnipeService = SnipeService.FromConfig(Config);
+                Log.Information("SnipeService initialized ({Auth})",
+                    SnipeService.UsesOidc ? "Entra SSO" : "legacy API key");
             }
 
             // Initialize TdxService if configured
@@ -674,8 +716,9 @@ public partial class App : Application
             // Initialize ReportMateService if configured
             if (!string.IsNullOrEmpty(Config.ReportMateUrl))
             {
-                ReportMateService = new ReportMateService(Config.ReportMateUrl, Config.ReportMatePassphrase, Config.CacheMinutes);
-                Log.Information("ReportMateService initialized");
+                ReportMateService = ReportMateService.FromConfig(Config);
+                Log.Information("ReportMateService initialized ({Auth})",
+                    ReportMateService.UsesOidc ? "Entra SSO" : "legacy passphrase");
             }
         }
         catch (Exception ex)
@@ -684,9 +727,92 @@ public partial class App : Application
         }
     }
 
+    /// <summary>
+    /// Rebuild the runtime service graph after Settings writes new values.
+    /// Views resolve services when they are constructed, so MainWindow also
+    /// drops its page cache before the user returns to a module.
+    /// </summary>
+    public void ReloadConfiguration()
+    {
+        GraphService?.Dispose();
+        SnipeService?.Dispose();
+        TdxService?.Dispose();
+        DevOpsService?.Dispose();
+        ReportMateService?.Dispose();
+
+        GraphService = null;
+        SnipeService = null;
+        TdxService = null;
+        DevOpsService = null;
+        DevOpsSsoService = null;
+        ReportMateService = null;
+        DevOpsProjectReady = false;
+        PullRequestQueue = null;
+        InvalidateAllCaches();
+
+        Config = LoadDesktopConfiguration();
+        AuthManager = new AuthManager(Config);
+        InitializeServices();
+
+        if (Current.MainWindow is MainWindow mainWindow)
+            mainWindow.ResetPageCache();
+
+        // Authentication and data probes continue in the background. The new
+        // configuration is already active when this method returns.
+        _ = InitializeAndPreloadAsync();
+    }
+
+    private async Task RunHeadlessTdxSmokeAsync()
+    {
+        var exitCode = 1;
+        object payload;
+        try
+        {
+            if (TdxService == null || string.IsNullOrWhiteSpace(Config.Tdx?.BaseUrl))
+                throw new InvalidOperationException("TeamDynamix is not configured");
+
+            var result = await TdxSsoLoginWindow.TryPhase1SilentAsync(Config.Tdx.BaseUrl)
+                ?? await TdxSsoLoginWindow.TryPhase15HeadlessAsync(Config.Tdx.BaseUrl);
+            if (result == null || !result.Success || string.IsNullOrEmpty(result.Token))
+                throw new InvalidOperationException(
+                    result?.Error ?? "The persistent WebView2 profile could not complete Shibboleth/Entra SSO silently; interactive consent or Windows Hello is required once in Settings.");
+
+            TdxService.SetSsoToken(result.Token, result.Expiry, result.UserEmail, result.UserName);
+            var ticketCount = await TdxService.VerifyTicketAccessAsync();
+            payload = new
+            {
+                system = "TeamDynamix",
+                status = "ok",
+                detail = $"SSO as {result.UserName ?? result.UserEmail ?? "operator"}; ticket API readable",
+                records = ticketCount
+            };
+            exitCode = 0;
+        }
+        catch (Exception ex)
+        {
+            payload = new
+            {
+                system = "TeamDynamix",
+                status = "failed",
+                detail = ex.Message.Split('\r', '\n')[0]
+            };
+        }
+
+        Console.WriteLine(JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
+        Environment.ExitCode = exitCode;
+        Shutdown(exitCode);
+    }
+
+    private static FleetMateConfig LoadDesktopConfiguration()
+    {
+        return FleetMateConfig.LoadDesktop();
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
         GraphService?.Dispose();
+        SnipeService?.Dispose();
+        TdxService?.Dispose();
         DevOpsService?.Dispose();
         ReportMateService?.Dispose();
         Log.CloseAndFlush();

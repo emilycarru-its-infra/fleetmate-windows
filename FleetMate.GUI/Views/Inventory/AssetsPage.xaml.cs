@@ -51,7 +51,7 @@ public partial class AssetsPage : Page
     public AssetsPage()
     {
         InitializeComponent();
-        _config = FleetMateConfig.Load();
+        _config = Application.Current is App currentApp ? currentApp.Config : FleetMateConfig.Load();
 
         if (Application.Current is App app && app.SnipeService != null)
         {
@@ -364,7 +364,7 @@ public partial class AssetsPage : Page
             var label = new TextBlock
             {
                 Text = $"{fieldName}:",
-                FontSize = 18,
+                FontSize = 12,
                 Opacity = 0.7,
                 Margin = new Thickness(0, 0, 8, 0)
             };
@@ -373,7 +373,7 @@ public partial class AssetsPage : Page
             var value = new TextBlock
             {
                 Text = fieldValue,
-                FontSize = 18,
+                FontSize = 12,
                 TextWrapping = TextWrapping.Wrap
             };
             Grid.SetColumn(value, 1);

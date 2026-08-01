@@ -69,7 +69,7 @@ public sealed partial class MainWindow : Window
     {
         if (args.IsSettingsSelected)
         {
-            Navigate(typeof(SettingsPage));
+            Navigate(typeof(global::FleetMate.WinUI.SettingsPage));
             return;
         }
 

@@ -25,7 +25,48 @@ public class TdxSsoService
 
     public TdxSsoService(string baseUrl)
     {
-        _baseUrl = baseUrl.TrimEnd('/');
+        _baseUrl = ServiceUri.Normalize(baseUrl);
+    }
+
+    /// <summary>
+    /// The Web API's own SSO entry point, whether or not the configured base URL
+    /// already names <c>/TDWebApi</c>.
+    ///
+    /// This must be the API endpoint, not the web UI. Pointing at
+    /// <c>/TDWorkManagement/</c> logs you into TDNext and leaves a *web session
+    /// cookie* behind — not an API credential, which is why a scraped "SSO token"
+    /// gets rejected with a 400 and the app silently falls back to the service
+    /// account.
+    ///
+    /// <c>GET /TDWebApi/api/auth/loginsso</c> redirects into Shibboleth → Entra
+    /// and, once the assertion comes back, returns a real Bearer JWT as the
+    /// response body. That token carries the signed-in person's identity, so
+    /// their actions are attributed to them rather than to a shared account.
+    /// </summary>
+    public static string BuildLoginSsoUrl(string baseUrl)
+    {
+        var root = ServiceUri.Normalize(baseUrl);
+
+        // Strip a trailing /TDWebApi (any casing) so appending it back is
+        // idempotent. Previously the root was computed and then thrown away, so
+        // a base URL *without* /TDWebApi produced a 404 that looked like an
+        // auth failure.
+        const string apiSegment = "/TDWebApi";
+        if (root.EndsWith(apiSegment, StringComparison.OrdinalIgnoreCase))
+            root = root[..^apiSegment.Length];
+
+        return $"{root.TrimEnd('/')}{apiSegment}/api/auth/loginsso";
+    }
+
+    /// <summary>The TDX web entry point that drives the SAML redirect chain.</summary>
+    public static string BuildEntryUrl(string baseUrl)
+    {
+        var root = ServiceUri.Normalize(baseUrl);
+        const string apiSegment = "/TDWebApi";
+        if (root.EndsWith(apiSegment, StringComparison.OrdinalIgnoreCase))
+            root = root[..^apiSegment.Length];
+
+        return $"{root.TrimEnd('/')}/TDWorkManagement/";
     }
 
     /// <summary>
@@ -34,9 +75,8 @@ public class TdxSsoService
     /// </summary>
     public async Task<TdxSsoResult> TrySilentSsoAsync(CancellationToken ct = default)
     {
-        var rootUrl = _baseUrl.Replace("/TDWebApi", "");
-        var loginSsoUrl = _baseUrl + "/api/auth/loginSSO";
-        var entryUrl = rootUrl + "/TDWorkManagement/";
+        var loginSsoUrl = BuildLoginSsoUrl(_baseUrl);
+        var entryUrl = BuildEntryUrl(_baseUrl);
 
         Log.Information("[tdx-sso-core] Starting silent HTTP SSO (Negotiate/Kerberos)");
 
@@ -108,24 +148,81 @@ public class TdxSsoService
     {
         var body = await response.Content.ReadAsStringAsync(ct);
         var token = body.Trim().Trim('"');
-        if (token.StartsWith("eyJ") && token.Length > 20)
+
+        if (!LooksLikeJwt(token))
+            return null;
+
+        var (name, email) = ExtractUserInfoFromJwt(token);
+        _token = token;
+        _tokenExpiry = ReadExpiry(token);
+        _userName = name;
+        _userEmail = email;
+        Log.Information("[tdx-sso-core] ✓ JWT acquired — user={UserName}, expires={Expiry:u}",
+            name ?? "(unknown)", _tokenExpiry);
+        return new TdxSsoResult
         {
-            var (name, email) = ExtractUserInfoFromJwt(token);
-            _token = token;
-            _tokenExpiry = DateTime.UtcNow.AddHours(23);
-            _userName = name;
-            _userEmail = email;
-            Log.Information("[tdx-sso-core] ✓ JWT acquired — user={UserName}", name ?? "(unknown)");
-            return new TdxSsoResult
+            Success = true,
+            Token = token,
+            UserName = name,
+            UserEmail = email,
+            Expiry = _tokenExpiry
+        };
+    }
+
+    /// <summary>
+    /// A JWT is three dot-separated base64url segments starting <c>eyJ</c>.
+    /// Anything else is an error page or a redirect body, and must not be handed
+    /// out as a credential — an <c>eyJ</c> prefix alone was enough to let one
+    /// through.
+    /// </summary>
+    public static bool LooksLikeJwt(string token) =>
+        token.StartsWith("eyJ", StringComparison.Ordinal)
+        && token.Split('.').Length == 3
+        && token.Length > 20;
+
+    /// <summary>
+    /// Real expiry from the token's own <c>exp</c> claim.
+    ///
+    /// The previous fixed 23-hour guess outlived any shorter-lived token TDX
+    /// issues, so <c>HasValidToken</c> would keep reporting healthy while every
+    /// call came back 401.
+    /// </summary>
+    public static DateTime ReadExpiry(string token)
+    {
+        const int fallbackHours = 23;
+        try
+        {
+            var payload = DecodePayload(token);
+            if (payload == null) return DateTime.UtcNow.AddHours(fallbackHours);
+
+            using var json = JsonDocument.Parse(payload);
+            if (json.RootElement.TryGetProperty("exp", out var exp) &&
+                exp.ValueKind == JsonValueKind.Number &&
+                exp.TryGetInt64(out var seconds))
             {
-                Success = true,
-                Token = token,
-                UserName = name,
-                UserEmail = email,
-                Expiry = _tokenExpiry
-            };
+                // Refresh a little early so a token never expires mid-flight.
+                return DateTimeOffset.FromUnixTimeSeconds(seconds).UtcDateTime.AddMinutes(-5);
+            }
         }
-        return null;
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[tdx-sso-core] Could not read exp claim; assuming {Hours}h", fallbackHours);
+        }
+
+        return DateTime.UtcNow.AddHours(fallbackHours);
+    }
+
+    /// <summary>Base64url-decode a JWT's payload segment.</summary>
+    private static byte[]? DecodePayload(string token)
+    {
+        var parts = token.Split('.');
+        if (parts.Length < 2) return null;
+
+        var payload = parts[1].Replace('-', '+').Replace('_', '/');
+        var remainder = payload.Length % 4;
+        if (remainder > 0) payload += new string('=', 4 - remainder);
+
+        return Convert.FromBase64String(payload);
     }
 
     /// <summary>Extract user info from a JWT payload (no signature verification).</summary>
@@ -133,15 +230,10 @@ public class TdxSsoService
     {
         try
         {
-            var parts = token.Split('.');
-            if (parts.Length < 2) return (null, null);
+            var bytes = DecodePayload(token);
+            if (bytes == null) return (null, null);
 
-            var payload = parts[1].Replace('-', '+').Replace('_', '/');
-            var remainder = payload.Length % 4;
-            if (remainder > 0) payload += new string('=', 4 - remainder);
-
-            var bytes = Convert.FromBase64String(payload);
-            var json = JsonDocument.Parse(bytes);
+            using var json = JsonDocument.Parse(bytes);
             var root = json.RootElement;
 
             string? name = null;

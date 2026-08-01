@@ -20,7 +20,9 @@ public class PlannerSyncService : IDisposable
     private readonly JsonSerializerOptions _jsonOptions;
     private string? _accessToken;
     
+#pragma warning disable CS0618 // Compatibility surface for legacy configurations.
     public bool IsEnabled => _config.Enabled && !string.IsNullOrEmpty(_config.PlanId);
+#pragma warning restore CS0618
 
     public PlannerSyncService(FleetMateConfig config)
     {
