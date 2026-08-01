@@ -69,6 +69,11 @@ public class GitHubGraphQLClient : IDisposable
     /// </summary>
     public async Task<T> ExecuteAsync<T>(string query, object? variables = null, CancellationToken ct = default)
     {
+        // Every client instance drains one hourly quota, so the gate is checked
+        // before the token is even resolved — a call we know will be rejected
+        // should not cost a round trip.
+        GitHubRateLimitGate.Check();
+
         await EnsureTokenAsync();
 
         var requestBody = new Dictionary<string, object?> { ["query"] = query };
@@ -83,6 +88,7 @@ public class GitHubGraphQLClient : IDisposable
 
         if (!response.IsSuccessStatusCode)
         {
+            GitHubRateLimitGate.TripIfRateLimitStatus((int)response.StatusCode, responseBody);
             Log.Error("GitHub GraphQL HTTP {Status}: {Body}", (int)response.StatusCode, responseBody);
             throw new InvalidOperationException($"GitHub GraphQL HTTP {(int)response.StatusCode}: {responseBody}");
         }
@@ -94,6 +100,11 @@ public class GitHubGraphQLClient : IDisposable
         if (root.TryGetProperty("errors", out var errors) && errors.GetArrayLength() > 0)
         {
             var firstError = errors[0].GetProperty("message").GetString() ?? "Unknown GraphQL error";
+
+            // GraphQL reports throttling as a 200 with an error body, so the
+            // status check above never sees it.
+            GitHubRateLimitGate.TripIfRateLimit(firstError);
+
             Log.Error("GitHub GraphQL error: {Error}", firstError);
             throw new InvalidOperationException($"GitHub GraphQL error: {firstError}");
         }
@@ -132,6 +143,8 @@ public class GitHubGraphQLClient : IDisposable
         Dictionary<string, object>? body = null,
         CancellationToken ct = default)
     {
+        GitHubRateLimitGate.Check();
+
         await EnsureTokenAsync(ct);
 
         var url = $"https://api.github.com{path}";
@@ -151,6 +164,7 @@ public class GitHubGraphQLClient : IDisposable
         if (!response.IsSuccessStatusCode)
         {
             var responseBody = Encoding.UTF8.GetString(responseBytes);
+            GitHubRateLimitGate.TripIfRateLimitStatus((int)response.StatusCode, responseBody);
             Log.Error("GitHub REST HTTP {Status}: {Body}", (int)response.StatusCode, responseBody);
             throw new HttpRequestException(
                 $"GitHub REST HTTP {(int)response.StatusCode}: {responseBody}",

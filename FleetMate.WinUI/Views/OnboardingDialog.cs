@@ -7,7 +7,7 @@ namespace FleetMate.WinUI.Views;
 /// <summary>
 /// First-run setup wizard (greenfield WinUI). A single ContentDialog stepping through
 /// Welcome → Modules → Configure → Summary, persisting collected settings to the
-/// registry via <see cref="FleetMateConfig.SaveSettings"/>. Auto-launches when nothing
+/// registry via <see cref="FleetMateConfig.SaveDesktopSettings"/>. Auto-launches when nothing
 /// is configured and is re-runnable from Settings.
 /// </summary>
 public sealed class OnboardingDialog
@@ -26,11 +26,10 @@ public sealed class OnboardingDialog
     // Service fields
     private readonly TextBox _graphTenant = Field("Tenant ID");
     private readonly TextBox _graphClient = Field("Client ID");
-    private readonly PasswordBox _graphSecret = new() { PlaceholderText = "Client secret (optional)" };
     private readonly TextBox _snipeUrl = Field("Snipe-IT URL (https://…)");
-    private readonly TextBox _snipeKey = Field("API key (or leave blank to use a resource id)");
-    private readonly TextBox _snipeResource = Field("OIDC resource id (optional, secretless)");
+    private readonly TextBox _snipeAudience = Field("Entra audience / application ID");
     private readonly TextBox _tdxUrl = Field("TeamDynamix base URL (https://…)");
+    private readonly TextBox _tdxTicketingAppId = Field("TeamDynamix ticketing app ID");
     private readonly TextBox _devopsOrg = Field("Azure DevOps organization");
     private readonly TextBox _devopsProject = Field("Azure DevOps project");
 
@@ -39,6 +38,16 @@ public sealed class OnboardingDialog
 
     public OnboardingDialog(XamlRoot xamlRoot)
     {
+        var config = App.Current.Config;
+        _graphTenant.Text = config.Graph?.TenantId ?? FleetMateConfig.DefaultTenantId;
+        _graphClient.Text = config.Graph?.ClientId ?? "";
+        _snipeUrl.Text = config.SnipeUrl ?? "";
+        _snipeAudience.Text = config.SnipeOidcAudience ?? FleetMateConfig.DefaultSnipeOidcAudience;
+        _tdxUrl.Text = config.Tdx?.BaseUrl ?? "";
+        _tdxTicketingAppId.Text = (config.Tdx?.TicketingAppId ?? 115).ToString();
+        _devopsOrg.Text = config.AzureDevOps?.Organization ?? "";
+        _devopsProject.Text = config.AzureDevOps?.Project ?? "";
+
         _pages = new[] { BuildWelcome(), BuildModules(), BuildConfigure(), BuildSummary() };
 
         _dialog = new ContentDialog
@@ -120,15 +129,17 @@ public sealed class OnboardingDialog
         {
             Put(values, "GraphTenantId", _graphTenant.Text);
             Put(values, "GraphClientId", _graphClient.Text);
-            Put(values, "GraphClientSecret", _graphSecret.Password);
         }
         if (_inventory.IsChecked == true)
         {
             Put(values, "SnipeUrl", _snipeUrl.Text);
-            Put(values, "SnipeApiKey", _snipeKey.Text);
-            Put(values, "SnipeResourceId", _snipeResource.Text);
+            Put(values, "SnipeOidcAudience", _snipeAudience.Text);
         }
-        if (_tickets.IsChecked == true) Put(values, "TdxBaseUrl", _tdxUrl.Text);
+        if (_tickets.IsChecked == true)
+        {
+            Put(values, "TdxBaseUrl", _tdxUrl.Text);
+            Put(values, "TdxTicketingAppId", _tdxTicketingAppId.Text);
+        }
         if (_projects.IsChecked == true)
         {
             Put(values, "DevOpsOrganization", _devopsOrg.Text);
@@ -136,7 +147,7 @@ public sealed class OnboardingDialog
         }
 
         if (values.Count > 0)
-            FleetMateConfig.SaveSettings(values);
+            FleetMateConfig.SaveDesktopSettings(values);
     }
 
     private static void Put(IDictionary<string, string?> d, string key, string? value)
@@ -156,7 +167,7 @@ public sealed class OnboardingDialog
             new TextBlock { Text = "FleetMate connects your device fleet tools in one place.", TextWrapping = TextWrapping.Wrap },
             new TextBlock
             {
-                Text = "This quick setup collects the credentials for the modules you use. You can change any of it later in Settings.",
+                Text = "This quick setup collects service endpoints and public application IDs. Authentication uses your Windows account; FleetMate does not store service credentials.",
                 TextWrapping = TextWrapping.Wrap, Opacity = 0.75,
             },
         },
@@ -176,9 +187,9 @@ public sealed class OnboardingDialog
 
     private UIElement BuildConfigure()
     {
-        _graphSection = Section("Microsoft Graph (Devices / Identity)", _graphTenant, _graphClient, _graphSecret);
-        _snipeSection = Section("Snipe-IT (Inventory)", _snipeUrl, _snipeKey, _snipeResource);
-        _tdxSection = Section("TeamDynamix (Tickets)", _tdxUrl);
+        _graphSection = Section("Microsoft Graph (Devices / Identity)", _graphTenant, _graphClient);
+        _snipeSection = Section("Snipe-IT (Inventory)", _snipeUrl, _snipeAudience);
+        _tdxSection = Section("TeamDynamix (Tickets)", _tdxUrl, _tdxTicketingAppId);
         _devopsSection = Section("Azure DevOps (Projects)", _devopsOrg, _devopsProject);
 
         var stack = new StackPanel { Spacing = 16, Width = 460 };
@@ -196,7 +207,7 @@ public sealed class OnboardingDialog
         panel.Children.Add(_summary);
         panel.Children.Add(new TextBlock
         {
-            Text = "Settings are saved to the FleetMate registry. Sign in with az / gh where needed, then use each tab's Refresh (or Settings → Refresh All) to connect.",
+            Text = "Non-secret settings are saved to the FleetMate registry. FleetMate uses Windows broker SSO and browser SSO, then refreshes services without a restart.",
             TextWrapping = TextWrapping.Wrap, Opacity = 0.7, FontSize = 12,
         });
         return panel;

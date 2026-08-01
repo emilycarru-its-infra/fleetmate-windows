@@ -6,7 +6,7 @@ using Xunit;
 namespace FleetMate.Tests;
 
 /// <summary>Verifies TDX JWT claim extraction (name/email) and malformed-token handling.</summary>
-public class TdxJwtTests
+public class TdxJwtClaimTests
 {
     private static string MakeJwt(object payload)
     {

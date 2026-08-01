@@ -3,7 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.modernwpf.com/2019">
 
-    <Grid Margin="24">
+    <Grid Margin="16,14,16,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -14,9 +14,9 @@
             <TextBlock Text="Identity" Style="{StaticResource TitleTextStyle}" DockPanel.Dock="Left" VerticalAlignment="Center" />
             <StackPanel Orientation="Horizontal" Margin="16,0,0,0" VerticalAlignment="Center">
                 <RadioButton x:Name="GroupsRadio" Content="Groups" IsChecked="True" GroupName="IdentityTab" 
-                             Checked="OnTabChanged" Margin="0,0,8,0" />
+                             Checked="OnTabChanged" Style="{StaticResource NavigationTabStyle}" />
                 <RadioButton x:Name="UsersRadio" Content="Users" GroupName="IdentityTab" 
-                             Checked="OnTabChanged" />
+                             Checked="OnTabChanged" Style="{StaticResource NavigationTabStyle}" />
             </StackPanel>
         </DockPanel>
 
@@ -91,47 +91,150 @@
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                                VerticalAlignment="Center" HorizontalAlignment="Center" />
 
-                    <!-- Users List -->
-                    <ListView x:Name="UsersListView" Grid.Row="1" Visibility="Collapsed">
-                        <ListView.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Margin="4">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="👤 " FontSize="16" VerticalAlignment="Center" />
-                                        <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                        <TextBlock x:Name="AccountBadge" Margin="8,0,0,0" FontSize="11" VerticalAlignment="Center"
-                                                   Foreground="Green" Text="● Active" />
-                                    </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
-                                        <TextBlock Text="{Binding Mail}" FontSize="12" 
-                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" 
-                                                   Margin="0,0,12,0" />
-                                        <TextBlock Text="{Binding JobTitle}" FontSize="12" 
-                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" 
-                                                   Margin="0,0,12,0" />
-                                        <TextBlock Text="{Binding Department}" FontSize="12" 
+                    <!-- Master/detail: results sidebar, full profile pane -->
+                    <Grid x:Name="UsersSplit" Grid.Row="1" Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="280" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <ListView x:Name="UsersListView" Grid.Column="0"
+                                  SelectionMode="Single" SelectionChanged="OnUserSelected"
+                                  BorderThickness="0">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="2,4">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Text="{Binding AccountBadgeText}"
+                                                       Foreground="{Binding AccountBadgeBrush}"
+                                                       FontSize="10" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </DockPanel>
+                                        <TextBlock Text="{Binding UserPrincipalName}" FontSize="11"
+                                                   TextTrimming="CharacterEllipsis"
                                                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                     </StackPanel>
-                                    <!-- Group Memberships -->
-                                    <ItemsControl x:Name="GroupTags" ItemsSource="{Binding MemberOf}" Margin="0,4,0,0">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                                <WrapPanel />
-                                            </ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Border Background="#220078D4" 
-                                                        CornerRadius="3" Padding="6,2" Margin="0,0,4,4">
-                                                    <TextBlock Text="{Binding DisplayName}" FontSize="11" />
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
-                    </ListView>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <Rectangle Grid.Column="1" Width="1" Margin="8,0"
+                                   Fill="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+
+                        <!-- Detail pane -->
+                        <Grid Grid.Column="2">
+                            <TextBlock x:Name="UserDetailPlaceholder"
+                                       Text="Select a user to see their Entra profile."
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                       VerticalAlignment="Center" HorizontalAlignment="Center" />
+
+                            <Grid x:Name="UserDetailPane" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <!-- Header -->
+                                <DockPanel Grid.Row="0" Margin="0,0,0,12">
+                                    <Border DockPanel.Dock="Left" Width="48" Height="48" CornerRadius="24"
+                                            Background="{DynamicResource SystemControlBackgroundAccentBrush}"
+                                            Margin="0,0,12,0">
+                                        <TextBlock x:Name="UserInitialsText" Foreground="White" FontSize="18"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock x:Name="UserNameText" FontSize="18" FontWeight="SemiBold" />
+                                            <TextBlock x:Name="UserBadgeText" FontSize="11" Margin="8,0,0,0"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <TextBlock x:Name="UserSubtitleText" FontSize="12"
+                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                        <TextBlock x:Name="UserUpnText" FontSize="12"
+                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    </StackPanel>
+                                </DockPanel>
+
+                                <TabControl Grid.Row="1">
+                                    <TabItem Header="Properties">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <ItemsControl x:Name="UserPropertiesControl" Margin="8">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Margin="0,0,0,16" Visibility="{Binding Visibility}">
+                                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
+                                                                       FontSize="12" Margin="0,0,0,4"
+                                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                            <ItemsControl ItemsSource="{Binding Rows}">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <DockPanel Margin="0,2">
+                                                                            <TextBlock Text="{Binding Label}" Width="170"
+                                                                                       FontSize="12" VerticalAlignment="Top"
+                                                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                                            <TextBlock Text="{Binding DisplayValue}" FontSize="12"
+                                                                                       Foreground="{Binding ValueBrush}"
+                                                                                       TextWrapping="Wrap" />
+                                                                        </DockPanel>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                    </TabItem>
+
+                                    <TabItem Header="Devices">
+                                        <Grid>
+                                            <TextBlock x:Name="UserDevicesEmpty" Padding="12"
+                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                                       VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                            <ListView x:Name="UserDevicesList" BorderThickness="0">
+                                                <ListView.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Margin="2,4">
+                                                            <TextBlock Text="{Binding DeviceName}" FontWeight="SemiBold" FontSize="12" />
+                                                            <TextBlock FontSize="11"
+                                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}">
+                                                                <Run Text="{Binding OperatingSystem, Mode=OneWay}" />
+                                                                <Run Text="{Binding OsVersion, Mode=OneWay}" />
+                                                                <Run Text="·" />
+                                                                <Run Text="{Binding SerialNumber, Mode=OneWay}" />
+                                                            </TextBlock>
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ListView.ItemTemplate>
+                                            </ListView>
+                                        </Grid>
+                                    </TabItem>
+
+                                    <TabItem Header="Groups">
+                                        <Grid>
+                                            <TextBlock x:Name="UserGroupsEmpty" Padding="12"
+                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                                       VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                            <ListView x:Name="UserGroupsList" BorderThickness="0">
+                                                <ListView.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Margin="2,4">
+                                                            <TextBlock Text="{Binding DisplayName}" FontSize="12" />
+                                                            <TextBlock Text="{Binding Description}" FontSize="11"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ListView.ItemTemplate>
+                                            </ListView>
+                                        </Grid>
+                                    </TabItem>
+                                </TabControl>
+                            </Grid>
+                        </Grid>
+                    </Grid>
                 </Grid>
             </Border>
         </Grid>

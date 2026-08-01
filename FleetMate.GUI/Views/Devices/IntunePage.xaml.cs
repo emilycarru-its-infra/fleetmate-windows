@@ -68,8 +68,11 @@ public partial class IntunePage : Page
         if (_graphService == null || _app == null)
         {
             NotConfiguredText.Visibility = Visibility.Visible;
+            DevicesDataGrid.Visibility = Visibility.Collapsed;
             return;
         }
+
+        DevicesDataGrid.Visibility = Visibility.Visible;
         
         // Use cache if valid
         if (_app.IsDevicesCacheValid && _app.CachedDevices.Count > 0)
@@ -370,7 +373,7 @@ public partial class IntunePage : Page
 
         try
         {
-            var results = await _graphService.RetireDevicesAsync(deviceIds);
+            var results = await _graphService.RetireDevicesAsync(deviceIds, confirmed: true);
             var successful = results.Count(r => r.Success);
             var failed = results.Count - successful;
 
@@ -401,7 +404,7 @@ public partial class IntunePage : Page
 
         try
         {
-            var results = await _graphService.WipeDevicesAsync(deviceIds);
+            var results = await _graphService.WipeDevicesAsync(deviceIds, confirmed: true);
             var successful = results.Count(r => r.Success);
             var failed = results.Count - successful;
 
@@ -433,7 +436,7 @@ public partial class IntunePage : Page
 
         try
         {
-            var results = await _graphService.RemoteLockDevicesAsync(deviceIds, pin);
+            var results = await _graphService.RemoteLockDevicesAsync(deviceIds, pin, confirmed: true);
             var successful = results.Count(r => r.Success);
             var failed = results.Count - successful;
 

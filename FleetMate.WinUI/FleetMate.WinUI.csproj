@@ -9,22 +9,23 @@
     <UseWinUI>true</UseWinUI>
     <!-- Declare real platforms (no AnyCPU) so the solution can map to x64/ARM64.
          WinUI 3 can't build AnyCPU (PRI tooling needs a concrete arch). -->
-    <Platforms>x64;ARM64</Platforms>
+    <Platforms>x64;arm64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <RootNamespace>FleetMate.WinUI</RootNamespace>
-    <AssemblyName>FleetMate</AssemblyName>
+    <AssemblyName>fleetmate-gui</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
 
     <!-- Platform target must match runtime identifier -->
-    <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">ARM64</PlatformTarget>
+    <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</PlatformTarget>
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == 'win-x64'">x64</PlatformTarget>
     <PlatformTarget Condition="'$(RuntimeIdentifier)' == ''">AnyCPU</PlatformTarget>
 
     <SelfContained>true</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>
     <PublishTrimmed>false</PublishTrimmed>
-    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishReadyToRun>false</PublishReadyToRun>
 
     <!-- MSC ships its own Program.Main for early crash logging -->
     <DefineConstants>DISABLE_XAML_GENERATED_MAIN</DefineConstants>
@@ -36,8 +37,7 @@
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
-    <!-- 1.8 is required for the .NET 10 SDK (1.7's PRI-gen MSBuild task path is absent on net10). Matches Cimian MSC. -->
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1" />
   </ItemGroup>
 
   <ItemGroup>

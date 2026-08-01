@@ -5,6 +5,7 @@ using FleetMate.Core.Services.Inventory;
 using FleetMate.Core.Services.Tickets;
 using FleetMate.Core.Services.Projects;
 using FleetMate.Core.Services.Reporting;
+using Microsoft.Win32;
 
 namespace FleetMate.WinUI;
 
@@ -15,18 +16,15 @@ namespace FleetMate.WinUI;
 /// </summary>
 public partial class App : Application
 {
-    private Window? _window;
-
     public static new App Current => (App)Application.Current;
+    public static MainWindow Window { get; private set; } = null!;
 
     public FleetMateConfig Config { get; private set; } = null!;
     public AuthManager AuthManager { get; private set; } = null!;
     public GraphService? GraphService { get; private set; }
     public SnipeService? SnipeService { get; private set; }
-    public SnipeSsoService? SnipeSso { get; private set; }
     public TdxService? TdxService { get; private set; }
     public AzureDevOpsService? DevOpsService { get; private set; }
-    public DevOpsSsoService? DevOpsSsoService { get; private set; }
     public ReportMateService? ReportMateService { get; private set; }
 
     public App()
@@ -39,16 +37,23 @@ public partial class App : Application
     {
         try
         {
-            Config = FleetMateConfig.Load();
+            Config = FleetMateConfig.LoadDesktop();
             InitializeServices();
             AuthManager = new AuthManager(Config);
 
-            _window = new MainWindow();
-            _window.Activate();
-
-            // Prefer a delegated OIDC bearer for Snipe when configured (secretless path).
-            if (SnipeSso != null && SnipeService != null)
-                _ = ApplySnipeSsoAsync();
+            Window = new MainWindow();
+            using (var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\FleetMate"))
+            {
+                if (Window.Content is FrameworkElement root)
+                    root.RequestedTheme = key?.GetValue("UiTheme")?.ToString() switch
+                    {
+                        "Light" => ElementTheme.Light,
+                        "Dark" => ElementTheme.Dark,
+                        _ => ElementTheme.Default
+                    };
+            }
+            Window.Activate();
+            EntraTokenSource.ParentWindowProvider = () => WinRT.Interop.WindowNative.GetWindowHandle(Window);
         }
         catch (Exception ex)
         {
@@ -65,38 +70,19 @@ public partial class App : Application
     public void ReloadConfigAndServices()
     {
         GraphService?.Dispose();
+        SnipeService?.Dispose();
+        TdxService?.Dispose();
         DevOpsService?.Dispose();
         ReportMateService?.Dispose();
         GraphService = null;
         SnipeService = null;
-        SnipeSso = null;
         TdxService = null;
         DevOpsService = null;
-        DevOpsSsoService = null;
         ReportMateService = null;
 
-        Config = FleetMateConfig.Load();
+        Config = FleetMateConfig.LoadDesktop();
         InitializeServices();
         AuthManager = new AuthManager(Config);
-
-        if (SnipeSso != null && SnipeService != null)
-            _ = ApplySnipeSsoAsync();
-    }
-
-    private async Task ApplySnipeSsoAsync()
-    {
-        try
-        {
-            var result = await SnipeSso!.AcquireTokenAsync();
-            if (result.Success && result.Token != null)
-                SnipeService!.SetBearerToken(result.Token);
-            else
-                Program.Log($"Snipe SSO not applied: {result.Error}");
-        }
-        catch (Exception ex)
-        {
-            Program.Log($"Snipe SSO failed: {ex.Message}");
-        }
     }
 
     /// <summary>
@@ -108,29 +94,19 @@ public partial class App : Application
         try
         {
             if (Config.Graph != null && !string.IsNullOrEmpty(Config.Graph.TenantId))
-                GraphService = new GraphService(Config.Graph);
+                GraphService = new GraphService(Config.Graph, Config.Elevation);
 
-            // Snipe: needs a URL plus either a static API key or an OIDC resource id.
-            if (!string.IsNullOrEmpty(Config.SnipeUrl) &&
-                (!string.IsNullOrEmpty(Config.SnipeApiKey) || !string.IsNullOrEmpty(Config.SnipeResourceId)))
-            {
-                SnipeService = new SnipeService(Config.SnipeUrl, Config.SnipeApiKey, Config.CacheMinutes);
-                if (!string.IsNullOrEmpty(Config.SnipeResourceId))
-                    SnipeSso = new SnipeSsoService(Config.SnipeResourceId);
-            }
+            if (!string.IsNullOrEmpty(Config.SnipeUrl))
+                SnipeService = FleetMate.Core.Services.Inventory.SnipeService.FromConfig(Config);
 
             if (Config.Tdx != null && !string.IsNullOrEmpty(Config.Tdx.BaseUrl))
                 TdxService = new TdxService(Config.Tdx);
 
             if (Config.AzureDevOps != null && !string.IsNullOrEmpty(Config.AzureDevOps.Organization))
-            {
                 DevOpsService = new AzureDevOpsService(Config.AzureDevOps);
-                if (!string.IsNullOrEmpty(Config.AzureDevOps.ClientId) && !string.IsNullOrEmpty(Config.AzureDevOps.TenantId))
-                    DevOpsSsoService = new DevOpsSsoService(Config.AzureDevOps.ClientId, Config.AzureDevOps.TenantId);
-            }
 
             if (!string.IsNullOrEmpty(Config.ReportMateUrl))
-                ReportMateService = new ReportMateService(Config.ReportMateUrl, Config.ReportMatePassphrase, Config.CacheMinutes);
+                ReportMateService = FleetMate.Core.Services.Reporting.ReportMateService.FromConfig(Config);
         }
         catch (Exception ex)
         {

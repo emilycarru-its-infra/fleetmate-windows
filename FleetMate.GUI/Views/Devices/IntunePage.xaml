@@ -4,7 +4,7 @@
       xmlns:local="clr-namespace:FleetMate.GUI.Views.Devices"
       xmlns:ui="http://schemas.modernwpf.com/2019">
 
-    <Grid Margin="24">
+    <Grid Margin="16,14,16,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -17,7 +17,7 @@
 
         <!-- Header -->
         <StackPanel Grid.Row="0" Grid.Column="0">
-            <TextBlock Text="Management" Style="{StaticResource TitleTextStyle}" />
+            <TextBlock Text="Devices" Style="{StaticResource TitleTextStyle}" />
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="MDM devices (Intune, Jamf, etc.)" Style="{StaticResource SubtitleTextStyle}" />
                 <TextBlock x:Name="SelectionCountText" Margin="8,0,0,0" Foreground="{DynamicResource SystemControlForegroundAccentBrush}" FontWeight="SemiBold" />
@@ -75,18 +75,17 @@
 
                     <!-- Not configured message -->
                     <TextBlock x:Name="NotConfiguredText" Visibility="Collapsed"
-                               Text="Microsoft Graph is not configured. Set GRAPH_TENANT_ID and credentials in your config."
+                               Text="Add the Microsoft Graph tenant and client IDs in Settings. Authentication uses your signed-in Windows account."
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                                VerticalAlignment="Center" HorizontalAlignment="Center" TextWrapping="Wrap" />
 
                     <!-- Device DataGrid -->
                     <DataGrid x:Name="DevicesDataGrid"
+                              Style="{StaticResource FleetDataGridStyle}"
                               AutoGenerateColumns="False"
                               IsReadOnly="True"
                               SelectionMode="Extended"
                               SelectionChanged="OnDeviceSelectionChanged"
-                              GridLinesVisibility="Horizontal"
-                              HeadersVisibility="Column"
                               CanUserSortColumns="True">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Serial" Binding="{Binding SerialNumber}" Width="120" />

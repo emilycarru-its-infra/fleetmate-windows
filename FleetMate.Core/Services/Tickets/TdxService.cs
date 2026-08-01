@@ -3,7 +3,9 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using FleetMate.Core.Converters;
 using FleetMate.Core.Models.Tickets;
+using FleetMate.Core.Services;
 using Serilog;
 
 namespace FleetMate.Core.Services.Tickets;
@@ -17,8 +19,8 @@ public class TdxService : IDisposable
     private readonly HttpClient _client;
     private readonly TdxConfig _config;
     private readonly JsonSerializerOptions _jsonOptions;
-    private string? _cachedToken;
-    private DateTime _tokenExpiry = DateTime.MinValue;
+    // The service-account token cache is gone with the service account itself —
+    // the operator's SSO token in _ssoToken is the only credential now.
     
     // SSO authentication state
     private string? _ssoToken;
@@ -49,23 +51,27 @@ public class TdxService : IDisposable
     public string? AuthenticatedUserId => IsSsoAuthenticated ? _ssoUserId : null;
     
     /// <summary>
-    /// Returns true if SSO login is required based on config
+    /// True when TDX is configured but nobody is signed in. SSO is the only way
+    /// in, so an unauthenticated TDX is always waiting on a sign-in.
     /// </summary>
-    public bool RequiresSsoLogin => _config.AuthMethod == TdxAuthMethod.BrowserSSO && !IsSsoAuthenticated;
-    
+    public bool RequiresSsoLogin => _config.SsoEnabled && !IsSsoAuthenticated;
+
     /// <summary>
-    /// Returns true if SSO should be attempted (based on config)
+    /// Always true where TDX is configured — there is no other credential to try.
     /// </summary>
-    public bool ShouldAttemptSso => _config.AuthMethod == TdxAuthMethod.BrowserSSO || _config.AuthMethod == TdxAuthMethod.Auto;
+    public bool ShouldAttemptSso => _config.SsoEnabled;
 
     public TdxService(TdxConfig config)
     {
         _config = config;
         _cacheDuration = TimeSpan.FromMinutes(config.CacheMinutes);
 
+        var baseUrl = ServiceUri.Normalize(config.BaseUrl);
+        if (!baseUrl.EndsWith("/TDWebApi", StringComparison.OrdinalIgnoreCase))
+            baseUrl += "/TDWebApi";
         _client = new HttpClient
         {
-            BaseAddress = new Uri(config.BaseUrl.TrimEnd('/') + "/"),
+            BaseAddress = new Uri(baseUrl + "/"),
             Timeout = TimeSpan.FromSeconds(60)
         };
 
@@ -75,6 +81,10 @@ public class TdxService : IDisposable
         {
             PropertyNameCaseInsensitive = true
         };
+        // TDX response contracts contain several legacy fields whose wire type
+        // varies by application/version (for example enum values as numbers).
+        _jsonOptions.Converters.Add(new StringOrNumberConverter());
+        _jsonOptions.Converters.Add(new FlexibleBooleanConverter());
     }
 
     #region Authentication
@@ -108,110 +118,46 @@ public class TdxService : IDisposable
     /// </summary>
     private async Task<string?> GetAccessTokenAsync()
     {
-        var authMethod = _config.AuthMethod;
-        
-        // Check for valid SSO token first (if SSO is configured)
-        if (authMethod == TdxAuthMethod.BrowserSSO || authMethod == TdxAuthMethod.Auto)
+        // The operator's own SSO token is the only credential. If it is valid,
+        // use it; if it is not, there is nothing to fall back to, and saying so
+        // is the honest answer.
+        //
+        // There used to be a service-account chain here — loginadmin with a
+        // BEID/WebServicesKey pair, then a username/password login, both sourced
+        // from config, environment or Key Vault. It made every TDX action look
+        // like it came from one shared identity, which is exactly what an audit
+        // trail must not do. It also silently masked SSO failures: a broken
+        // sign-in still "worked", so nobody noticed until attribution mattered.
+        if (!string.IsNullOrEmpty(_ssoToken) && DateTime.UtcNow < _ssoTokenExpiry)
         {
-            if (!string.IsNullOrEmpty(_ssoToken) && DateTime.UtcNow < _ssoTokenExpiry)
-            {
-                return _ssoToken;
-            }
-            
-            // If browserSSO is required and no valid token, return null
-            if (authMethod == TdxAuthMethod.BrowserSSO)
-            {
-                Log.Warning("TDX SSO authentication required but no valid token available");
-                return null;
-            }
-        }
-        
-        // Check cached service account / password token
-        if (_cachedToken != null && DateTime.UtcNow < _tokenExpiry)
-        {
-            return _cachedToken;
-        }
-        
-        // For SSO-only mode, don't fall back to service account
-        if (authMethod == TdxAuthMethod.BrowserSSO)
-        {
-            return null;
+            return _ssoToken;
         }
 
-        try
+        // Try the silent SSO chain — Negotiate/Kerberos into loginsso — before
+        // giving up. On a domain-joined machine this needs no interaction.
+        if (!string.IsNullOrEmpty(_config.BaseUrl))
         {
-            // Try admin login first (BEID + WebServicesKey)
-            if (authMethod == TdxAuthMethod.ServiceAccount || authMethod == TdxAuthMethod.Auto)
+            try
             {
-                var (beid, webServicesKey) = _config.GetAdminCredentials();
-                if (!string.IsNullOrEmpty(beid) && !string.IsNullOrEmpty(webServicesKey))
+                var sso = new TdxSsoService(_config.BaseUrl);
+                var result = await sso.TrySilentSsoAsync();
+                if (result.Success && !string.IsNullOrEmpty(result.Token))
                 {
-                    var loginUrl = "api/auth/loginadmin";
-                    var loginBody = new
-                    {
-                        BEID = beid,
-                        WebServicesKey = webServicesKey
-                    };
-
-                    var content = new StringContent(JsonSerializer.Serialize(loginBody), Encoding.UTF8, "application/json");
-                    var response = await _client.PostAsync(loginUrl, content);
-
-                    if (response.IsSuccessStatusCode)
-                    {
-                        _cachedToken = await response.Content.ReadAsStringAsync();
-                        _cachedToken = _cachedToken.Trim('"');
-                        _tokenExpiry = DateTime.UtcNow.AddHours(23);
-                        Log.Debug("Acquired TDX JWT token via admin login (BEID)");
-                        return _cachedToken;
-                    }
-
-                    var error = await response.Content.ReadAsStringAsync();
-                    Log.Warning("TDX admin login failed: {Status} - {Error}, trying regular login", response.StatusCode, error);
+                    SetSsoToken(result.Token, result.Expiry, result.UserEmail, result.UserName);
+                    Log.Information("[tdx] Acquired a TDX token via silent SSO as {User}",
+                        result.UserName ?? "(unknown)");
+                    return _ssoToken;
                 }
             }
-
-            // Fallback to regular login (Username + Password)
-            if (authMethod == TdxAuthMethod.UserPassword || authMethod == TdxAuthMethod.Auto)
+            catch (Exception ex)
             {
-                var (username, password) = _config.GetRegularCredentials();
-                if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
-                {
-                    Log.Error("TDX credentials not configured. Set BEID/WebServicesKey or Username/Password in config, environment variables, or Key Vault.");
-                    return null;
-                }
-
-                var regularLoginUrl = "api/auth/login";
-                var regularLoginBody = new
-                {
-                    UserName = username,
-                    Password = password
-                };
-                var regularContent = new StringContent(JsonSerializer.Serialize(regularLoginBody), Encoding.UTF8, "application/json");
-                var regularResponse = await _client.PostAsync(regularLoginUrl, regularContent);
-
-                if (!regularResponse.IsSuccessStatusCode)
-                {
-                    var error = await regularResponse.Content.ReadAsStringAsync();
-                    Log.Error("TDX authentication failed: {Status} - {Error}", regularResponse.StatusCode, error);
-                    return null;
-                }
-
-                // Response body is the JWT token as a string
-                _cachedToken = await regularResponse.Content.ReadAsStringAsync();
-                _cachedToken = _cachedToken.Trim('"');
-                _tokenExpiry = DateTime.UtcNow.AddHours(23);
-
-                Log.Debug("Acquired TDX JWT token via regular login");
-                return _cachedToken;
+                Log.Warning(ex, "[tdx] Silent SSO failed");
             }
-            
-            return null;
         }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Failed to authenticate with TDX");
-            return null;
-        }
+
+        Log.Warning("[tdx] No TDX credential — sign in to TeamDynamix. " +
+                    "There is no service account to fall back to by design.");
+        return null;
     }
 
     private async Task<bool> SetAuthorizationAsync()
@@ -383,6 +329,32 @@ public class TdxService : IDisposable
     #region Tickets
 
     /// <summary>
+    /// Performs a strict, read-only ticket probe for desktop diagnostics.
+    /// Unlike the user-facing list methods, this never converts authentication,
+    /// transport, or HTTP failures into an indistinguishable empty result.
+    /// </summary>
+    public async Task<int> VerifyTicketAccessAsync()
+    {
+        if (!await SetAuthorizationAsync())
+            throw new UnauthorizedAccessException("TeamDynamix SSO did not provide a bearer token");
+
+        var search = new TicketSearchRequest { MaxResults = 1 };
+        var content = new StringContent(JsonSerializer.Serialize(search, _jsonOptions), Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync(_config.GetTicketsUrl("search"), content);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = (await response.Content.ReadAsStringAsync()).Trim();
+            if (body.Length > 300) body = body[..300] + "…";
+            throw new HttpRequestException(
+                $"TeamDynamix ticket probe returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}",
+                null, response.StatusCode);
+        }
+
+        var tickets = await response.Content.ReadFromJsonAsync<List<TdxTicket>>(_jsonOptions);
+        return tickets?.Count ?? 0;
+    }
+
+    /// <summary>
     /// Search for tickets
     /// </summary>
     public async Task<List<TdxTicket>> SearchTicketsAsync(TicketSearchRequest? search = null, int maxResults = 50)
@@ -500,21 +472,61 @@ public class TdxService : IDisposable
     }
 
     /// <summary>
-    /// Update a ticket
+    /// Convert a sparse set of field updates into an RFC 6902 JSON Patch document.
+    ///
+    /// TDX's PATCH takes a JsonPatchDocument — an <em>array</em> of operations —
+    /// not an object of field/value pairs. Posting the bare object is what
+    /// produced:
+    ///   "patch must not be null. Errors: The JsonPatchDocument was malformed
+    ///    and could not be parsed."
+    ///
+    /// A null value is preserved as an explicit JSON null rather than dropped:
+    /// clearing a field is a legitimate edit, and silently omitting it would
+    /// turn "unset the assignee" into a no-op that reports success.
     /// </summary>
-    public async Task<TdxTicket?> UpdateTicketAsync(int ticketId, object updates)
+    internal static List<Dictionary<string, object?>> ToJsonPatch(IDictionary<string, object?> updates)
+    {
+        return updates
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .Select(kv => new Dictionary<string, object?>
+            {
+                ["op"] = "replace",
+                // RFC 6902 pointers are /-prefixed, and ~ and / inside a field
+                // name have to be escaped or the pointer silently addresses
+                // something else.
+                ["path"] = "/" + kv.Key.Replace("~", "~0").Replace("/", "~1"),
+                ["value"] = kv.Value,
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Update a ticket. <paramref name="updates"/> is a sparse map of field name
+    /// to new value; it is sent as a JSON Patch document.
+    /// </summary>
+    public async Task<TdxTicket?> UpdateTicketAsync(int ticketId, IDictionary<string, object?> updates)
     {
         if (!await SetAuthorizationAsync())
         {
             return null;
         }
 
+        if (updates.Count == 0)
+        {
+            Log.Debug("No changes for ticket {Id}; skipping the PATCH", ticketId);
+            return await GetTicketAsync(ticketId);
+        }
+
         try
         {
             var url = _config.GetTicketsUrl(ticketId.ToString());
-            var content = new StringContent(JsonSerializer.Serialize(updates, _jsonOptions), Encoding.UTF8, "application/json");
+            var patch = ToJsonPatch(updates);
+            Log.Information("TDX PATCH ticket {Id} fields: {Fields}",
+                ticketId, string.Join(", ", updates.Keys.OrderBy(k => k, StringComparer.Ordinal)));
 
-            // Use PATCH for partial updates
+            var content = new StringContent(
+                JsonSerializer.Serialize(patch, _jsonOptions), Encoding.UTF8, "application/json-patch+json");
+
             var request = new HttpRequestMessage(HttpMethod.Patch, url) { Content = content };
             var response = await _client.SendAsync(request);
 
@@ -543,9 +555,13 @@ public class TdxService : IDisposable
     }
 
     /// <summary>
-    /// Get feed entries (comments) for a ticket
+    /// Get feed entries (comments) for a ticket.
     /// </summary>
-    public async Task<List<TdxFeedEntry>> GetTicketFeedAsync(int ticketId)
+    /// <param name="includeReplies">
+    /// Hydrate threaded replies. One extra request per threaded entry and none
+    /// for the rest; pass false for a faster first paint.
+    /// </param>
+    public async Task<List<TdxFeedEntry>> GetTicketFeedAsync(int ticketId, bool includeReplies = true)
     {
         if (!await SetAuthorizationAsync())
         {
@@ -564,8 +580,10 @@ public class TdxService : IDisposable
                 return new List<TdxFeedEntry>();
             }
 
-            var feed = await response.Content.ReadFromJsonAsync<List<TdxFeedEntry>>(_jsonOptions);
-            return feed ?? new List<TdxFeedEntry>();
+            var feed = await response.Content.ReadFromJsonAsync<List<TdxFeedEntry>>(_jsonOptions)
+                       ?? new List<TdxFeedEntry>();
+
+            return includeReplies ? await HydrateRepliesAsync(feed) : feed;
         }
         catch (Exception ex)
         {
@@ -575,45 +593,124 @@ public class TdxService : IDisposable
     }
 
     /// <summary>
-    /// Add a comment to a ticket
+    /// Replace entries that have unloaded replies with copies carrying them.
+    ///
+    /// The ticket feed collection reports RepliesCount but always sends
+    /// <c>Replies: []</c>, so without this every thread renders as nothing.
     /// </summary>
-    public async Task<bool> AddCommentAsync(int ticketId, string comment, bool isPrivate = false, List<Guid>? notify = null)
+    private async Task<List<TdxFeedEntry>> HydrateRepliesAsync(List<TdxFeedEntry> feed)
     {
-        if (!await SetAuthorizationAsync())
+        var pending = feed.Where(e => e.HasUnloadedReplies).ToList();
+        if (pending.Count == 0) return feed;
+
+        Log.Debug("[tdx] Hydrating replies for {Count} feed entries", pending.Count);
+
+        var loaded = await Task.WhenAll(pending.Select(async entry =>
         {
-            return false;
-        }
+            var full = await GetFeedEntryAsync(entry.Id);
+            return (entry.Id, Replies: full?.ReplyList.ToList() ?? new List<TdxFeedEntry>());
+        }));
+
+        var byId = loaded
+            .Where(x => x.Replies.Count > 0)
+            .ToDictionary(x => x.Id, x => x.Replies);
+
+        return feed
+            .Select(entry => byId.TryGetValue(entry.Id, out var replies) ? entry.WithReplies(replies) : entry)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Fetch one feed entry from the tenant-level Feed API, which is the only
+    /// endpoint that carries reply bodies.
+    /// </summary>
+    public async Task<TdxFeedEntry?> GetFeedEntryAsync(int feedEntryId)
+    {
+        if (!await SetAuthorizationAsync()) return null;
 
         try
         {
-            var request = new CreateFeedEntryRequest
-            {
-                Comments = comment,
-                IsPrivate = isPrivate,
-                IsRichHtml = false,
-                Notify = notify
-            };
-
-            var url = _config.GetTicketsUrl($"{ticketId}/feed");
-            var content = new StringContent(JsonSerializer.Serialize(request, _jsonOptions), Encoding.UTF8, "application/json");
-
-            var response = await _client.PostAsync(url, content);
-
+            var response = await _client.GetAsync(_config.GetApiUrl($"feed/{feedEntryId}"));
             if (!response.IsSuccessStatusCode)
             {
-                var error = await response.Content.ReadAsStringAsync();
-                Log.Warning("Failed to add comment to ticket {Id}: {Status} - {Error}", ticketId, response.StatusCode, error);
-                return false;
+                Log.Debug("[tdx] Feed entry {Id} returned {Status}", feedEntryId, response.StatusCode);
+                return null;
             }
 
-            Log.Debug("Added comment to ticket {Id}", ticketId);
-            return true;
+            return await response.Content.ReadFromJsonAsync<TdxFeedEntry>(_jsonOptions);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[tdx] Failed to fetch feed entry {Id}", feedEntryId);
+            return null;
+        }
+    }
+
+    // Posting a threaded reply is not possible through the TDX Web API, and no
+    // method for it belongs here. Verified against the live API on 2026-07-28:
+    //
+    //   • OPTIONS /api/feed/{id} answers `Allow: GET,DELETE` — there is no POST
+    //     route under a feed entry at all, under any suffix.
+    //   • POST /api/{appId}/tickets/{id}/feed accepts ParentID,
+    //     ParentFeedEntryID, ReplyToID and ItemUpdateID without complaint and
+    //     ignores every one of them: each returns 201 having created another
+    //     top-level entry, with the named parent's RepliesCount still 0.
+    //
+    // Existing threads *are* readable — see GetTicketFeedAsync(includeReplies).
+    // The UI offers quoting into a new comment instead. This note is here so the
+    // route does not get re-added a third time.
+
+    /// <summary>
+    /// Post a top-level comment on a ticket, returning the created feed entry.
+    ///
+    /// Throws rather than reporting failure as a <c>false</c> return: a
+    /// swallowed failure here looks exactly like a successful post the feed has
+    /// not caught up with yet, so the operator retypes a comment that was in
+    /// fact rejected.
+    /// </summary>
+    /// <exception cref="TdxCommentException">The comment was not accepted.</exception>
+    public async Task<TdxFeedEntry?> AddCommentAsync(
+        int ticketId, string comment, bool isPrivate = false,
+        bool isRichHtml = false, List<Guid>? notify = null)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            throw new TdxCommentException(ticketId, "not authenticated to TeamDynamix");
+        }
+
+        var request = new CreateFeedEntryRequest
+        {
+            Comments = comment,
+            IsPrivate = isPrivate,
+            IsRichHtml = isRichHtml,
+            Notify = notify,
+        };
+
+        var url = _config.GetTicketsUrl($"{ticketId}/feed");
+        var content = new StringContent(
+            JsonSerializer.Serialize(request, _jsonOptions), Encoding.UTF8, "application/json");
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _client.PostAsync(url, content);
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to add comment to ticket {Id}", ticketId);
-            return false;
+            throw new TdxCommentException(ticketId, ex.Message, ex);
         }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            Log.Warning("Failed to add comment to ticket {Id}: {Status} - {Error}",
+                ticketId, response.StatusCode, error);
+            throw new TdxCommentException(ticketId, $"{(int)response.StatusCode}: {error}");
+        }
+
+        Log.Debug("Added comment to ticket {Id}", ticketId);
+        return await response.Content.ReadFromJsonAsync<TdxFeedEntry>(_jsonOptions);
     }
 
     #endregion
