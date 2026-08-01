@@ -3,7 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.modernwpf.com/2019">
 
-    <Grid Margin="24">
+    <Grid Margin="16,14,16,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -14,9 +14,9 @@
             <TextBlock Text="Identity" Style="{StaticResource TitleTextStyle}" DockPanel.Dock="Left" VerticalAlignment="Center" />
             <StackPanel Orientation="Horizontal" Margin="16,0,0,0" VerticalAlignment="Center">
                 <RadioButton x:Name="GroupsRadio" Content="Groups" IsChecked="True" GroupName="IdentityTab" 
-                             Checked="OnTabChanged" Margin="0,0,8,0" />
+                             Checked="OnTabChanged" Style="{StaticResource NavigationTabStyle}" />
                 <RadioButton x:Name="UsersRadio" Content="Users" GroupName="IdentityTab" 
-                             Checked="OnTabChanged" />
+                             Checked="OnTabChanged" Style="{StaticResource NavigationTabStyle}" />
             </StackPanel>
         </DockPanel>
 

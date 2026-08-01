@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FleetMate.Core.Models.Inventory;
+using FleetMate.Core.Services;
 using Serilog;
 
 namespace FleetMate.Core.Services.Inventory;
@@ -48,7 +49,7 @@ public class SnipeService : IDisposable
 
     public SnipeService(string? baseUrl = null, string? apiKey = null, int cacheMinutes = 5, string? oidcAudience = null)
     {
-        BaseUrl = baseUrl?.TrimEnd('/') ?? string.Empty;
+        BaseUrl = string.IsNullOrWhiteSpace(baseUrl) ? string.Empty : ServiceUri.Normalize(baseUrl);
         UsesOidc = !string.IsNullOrWhiteSpace(oidcAudience);
 
         // Prefer-bearer: an Entra audience beats a shared key wherever both are

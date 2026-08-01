@@ -23,6 +23,7 @@ public class TdxSsoUrlTests
     // Trailing slashes must not double up.
     [InlineData("https://td.example.edu/TDWebApi/", "https://td.example.edu/TDWebApi/api/auth/loginsso")]
     [InlineData("https://td.example.edu/", "https://td.example.edu/TDWebApi/api/auth/loginsso")]
+    [InlineData("td.example.edu", "https://td.example.edu/TDWebApi/api/auth/loginsso")]
     // Casing varies between TDX instances.
     [InlineData("https://td.example.edu/tdwebapi", "https://td.example.edu/TDWebApi/api/auth/loginsso")]
     public void BuildLoginSsoUrl_IsIdempotent_AcrossBaseUrlShapes(string baseUrl, string expected)
@@ -34,9 +35,22 @@ public class TdxSsoUrlTests
     [InlineData("https://td.example.edu/TDWebApi", "https://td.example.edu/TDWorkManagement/")]
     [InlineData("https://td.example.edu", "https://td.example.edu/TDWorkManagement/")]
     [InlineData("https://td.example.edu/TDWebApi/", "https://td.example.edu/TDWorkManagement/")]
+    [InlineData("td.example.edu", "https://td.example.edu/TDWorkManagement/")]
     public void BuildEntryUrl_StripsTheApiSegment(string baseUrl, string expected)
     {
         Assert.Equal(expected, TdxSsoService.BuildEntryUrl(baseUrl));
+    }
+}
+
+public class TdxApiUrlTests
+{
+    [Theory]
+    [InlineData("servicedesk.example.edu", "https://servicedesk.example.edu/TDWebApi/api/115/tickets/search")]
+    [InlineData("https://servicedesk.example.edu/TDWebApi", "https://servicedesk.example.edu/TDWebApi/api/115/tickets/search")]
+    public void TicketUrls_NormalizeHostAndApiSegment(string baseUrl, string expected)
+    {
+        var config = new FleetMate.Core.Models.Tickets.TdxConfig { BaseUrl = baseUrl, AppId = 116, TicketingAppId = 115 };
+        Assert.Equal(expected, config.GetTicketsUrl("search"));
     }
 }
 

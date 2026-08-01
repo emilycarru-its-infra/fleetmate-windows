@@ -11,15 +11,27 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Row 0: Fixed top area -->
-        <StackPanel Grid.Row="0" Margin="16,16,16,8">
+        <!-- Fixed page header -->
+        <StackPanel Grid.Row="0" Margin="16,14,16,10">
             <!-- Header -->
             <DockPanel Margin="0,0,0,6">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
                     <ui:ProgressRing x:Name="HeaderProgress" IsActive="True" Width="18" Height="18"
                                      Margin="0,0,8,0" Visibility="Collapsed" />
-                    <Button Content="Refresh" Click="OnRefreshClicked" Margin="0,0,8,0" />
-                    <Button x:Name="AuthButton" Content="Authentication" Click="OnAuthClicked" />
+                    <Button Click="OnRefreshClicked" Margin="0,0,4,0"
+                            Style="{StaticResource ChromeIconButtonStyle}" ToolTip="Refresh dashboard">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:FontIcon Glyph="&#xE72C;" FontSize="13" Margin="0,0,6,0" />
+                            <TextBlock Text="Refresh" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="AuthButton" Click="OnAuthClicked"
+                            Style="{StaticResource ChromeIconButtonStyle}" ToolTip="Authentication status">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:FontIcon Glyph="&#xE72E;" FontSize="13" Margin="0,0,6,0" />
+                            <TextBlock Text="Authentication" />
+                        </StackPanel>
+                    </Button>
                     <Popup x:Name="AuthPopup" PlacementTarget="{Binding ElementName=AuthButton}" Placement="Bottom"
                            StaysOpen="False" AllowsTransparency="True">
                         <Border Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
@@ -61,62 +73,69 @@
                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
             </StackPanel>
 
-            <!-- Connect Services Prompt -->
-            <Border x:Name="ConnectServicesPrompt" Visibility="Collapsed" Style="{StaticResource CardStyle}" Margin="0,0,0,6">
-                <StackPanel HorizontalAlignment="Center" Margin="24">
-                    <ui:FontIcon Glyph="&#xE968;" FontSize="36" HorizontalAlignment="Center" Margin="0,0,0,8" />
-                    <TextBlock Text="No services connected yet" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" />
-                    <TextBlock Text="Configure your systems in Settings to see fleet data here."
-                               HorizontalAlignment="Center" Margin="0,4,0,0"
-                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                </StackPanel>
-            </Border>
-
-            <!-- KPI Strip -->
-            <WrapPanel x:Name="KpiStrip" Margin="0,0,0,0" />
         </StackPanel>
 
-        <!-- Row 1: Fill-height split panel -->
-        <Grid Grid.Row="1" Margin="16,0,16,16">
+        <!-- A disconnected dashboard is one deliberate state, not several empty widgets. -->
+        <Border Grid.Row="1" x:Name="ConnectServicesPrompt" Visibility="Collapsed"
+                Style="{StaticResource CardStyle}" Margin="16,0,16,16"
+                VerticalAlignment="Stretch">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="32">
+                <Border Width="64" Height="64" CornerRadius="32" Margin="0,0,0,16"
+                        Background="{DynamicResource SystemControlBackgroundAltMediumLowBrush}">
+                    <ui:FontIcon Glyph="&#xE968;" FontSize="30" HorizontalAlignment="Center"
+                                 VerticalAlignment="Center"
+                                 Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                </Border>
+                <TextBlock Text="No services connected" FontSize="18" FontWeight="SemiBold"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="Connect your IT systems to see fleet health, pull requests, and recent activity."
+                           HorizontalAlignment="Center" TextAlignment="Center" Margin="0,6,0,16"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <Button Content="Open Settings" Padding="18,7" Click="OnOpenSettingsClicked" />
+            </StackPanel>
+        </Border>
+
+        <!-- Mac-parity workspace: operational content on the left, activity rail on the right. -->
+        <Grid Grid.Row="1" x:Name="DashboardContent" Margin="16,0,16,16">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="7*" MinWidth="520" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="3*" MinWidth="280" />
             </Grid.ColumnDefinitions>
 
-            <!-- Left 50%: Scrollable charts -->
+            <!-- Main operational canvas -->
             <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <WrapPanel x:Name="ChartGrid" />
+                <StackPanel Margin="0,0,12,0">
+                    <local:PullRequestQueueView x:Name="PullRequestQueue" Height="300" Margin="0,0,0,14" />
+                    <WrapPanel x:Name="KpiStrip" Margin="0,0,0,4" />
+                    <WrapPanel x:Name="ChartGrid" />
+                </StackPanel>
             </ScrollViewer>
 
             <!-- Divider -->
             <Rectangle Grid.Column="1" Width="1" Margin="8,0"
                        Fill="{DynamicResource SystemControlForegroundBaseLowBrush}" />
 
-            <!-- Right 50%: pull request queue over the activity feed -->
-            <Grid Grid.Column="2">
+            <!-- Recent activity rail -->
+            <Grid Grid.Column="2" Margin="12,0,0,0">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="*" MinHeight="140" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" MinHeight="140" />
+                    <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <!-- My Pull Requests -->
-                <local:PullRequestQueueView Grid.Row="0" x:Name="PullRequestQueue" Margin="0,0,0,12" />
-
                 <!-- Activity title -->
-                <DockPanel Grid.Row="1" Margin="0,0,0,6">
+                <DockPanel Grid.Row="0" Margin="0,0,0,8">
                     <TextBlock Text="Recent Activity" Style="{StaticResource SectionHeaderStyle}" VerticalAlignment="Center" />
                 </DockPanel>
 
                 <!-- Filter chips -->
-                <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Margin="0,0,0,8">
+                <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Margin="0,0,0,8">
                     <StackPanel x:Name="ActivityFilterPanel" Orientation="Horizontal" />
                 </ScrollViewer>
 
                 <!-- Feed fills remaining height -->
-                <Border Grid.Row="3" Style="{StaticResource CardStyle}" Padding="0">
+                <Border Grid.Row="2" Style="{StaticResource CardStyle}" Padding="0">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" x:Name="ActivityScrollViewer">
                         <StackPanel>
                             <ItemsControl x:Name="ActivityFeed">

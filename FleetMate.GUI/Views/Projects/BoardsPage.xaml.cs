@@ -3,15 +3,12 @@ using System.Windows;
 using System.Windows.Controls;
 using FleetMate.Core.Config;
 using FleetMate.Core.Models.Projects;
-using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
 using FleetMate.Core.Services.Projects.Tasks;
-using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services;
 using FleetMate.Core.Services.Devices;
 using FleetMate.Core.Services.Inventory;
 using FleetMate.Core.Services.Tickets;
-using FleetMate.Core.Services.Projects;
 using FleetMate.Core.Services.Reporting;
 
 namespace FleetMate.GUI.Views.Projects;
@@ -42,8 +39,8 @@ public partial class BoardsPage : Page
     public BoardsPage()
     {
         InitializeComponent();
-        _config = FleetMateConfig.Load();
         _app = Application.Current as App;
+        _config = _app?.Config ?? FleetMateConfig.Load();
 
         DetailPanel.CloseRequested += (_, _) => DetailPanel.Visibility = Visibility.Collapsed;
         DetailPanel.TaskUpdated += async (_, _) => await LoadTasksAsync();
@@ -57,7 +54,7 @@ public partial class BoardsPage : Page
         // Initialize AzDO service for list mode
         if (_config.AzureDevOps != null && !string.IsNullOrEmpty(_config.AzureDevOps.Organization))
         {
-            _devOpsService = new AzureDevOpsService(_config.AzureDevOps);
+            _devOpsService = _app?.DevOpsService ?? new AzureDevOpsService(_config.AzureDevOps);
         }
 
         // Show SSO button if ClientId + TenantId are configured

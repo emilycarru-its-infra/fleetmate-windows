@@ -92,6 +92,8 @@ public class FleetMateConfig
 
     public const string DefaultReportMateOidcAudience = "26c197e0-3c53-4c52-b104-2f84b1669105";
     public const string DefaultSnipeOidcAudience = "4d6abdd9-5380-40a5-8f8e-fe41f317a29f";
+    public const string DefaultTenantId = "d22686a0-c1be-48e0-8f91-5bdd033f7dad";
+    public const string DefaultReportMateUrl = "https://reportmate-functions-api.blackdune-79551938.canadacentral.azurecontainerapps.io";
 
     /// <summary>True when Snipe-IT is set up to authenticate via Entra SSO.</summary>
     public bool SnipeUsesOidc => !string.IsNullOrWhiteSpace(SnipeOidcAudience);
@@ -241,6 +243,26 @@ public class FleetMateConfig
 
         return config;
     }
+
+    /// <summary>
+    /// Loads non-secret endpoints and public application identifiers for a
+    /// desktop operator session, while explicitly discarding every legacy
+    /// credential that may have come from yaml, .env, environment variables,
+    /// or the registry. Desktop authentication is always brokered SSO.
+    /// </summary>
+    public static FleetMateConfig LoadDesktop()
+    {
+        var config = Load();
+#pragma warning disable CS0618
+        config.SnipeApiKey = null;
+        config.ReportMatePassphrase = null;
+#pragma warning restore CS0618
+        if (config.Tasks?.Providers?.GitHub is { } github)
+            github.Token = null;
+        if (config.Tasks?.Providers?.Gitea is { } gitea)
+            gitea.Token = null;
+        return config;
+    }
     
     /// <summary>
     /// Flag a stored credential that FleetMate no longer honours.
@@ -271,11 +293,30 @@ public class FleetMateConfig
     /// </summary>
     private static void ApplySsoDefaults(FleetMateConfig config)
     {
+        config.Graph ??= new GraphConfig();
+        if (string.IsNullOrWhiteSpace(config.Graph.TenantId))
+            config.Graph.TenantId = DefaultTenantId;
+
         if (string.IsNullOrWhiteSpace(config.ReportMateOidcAudience))
             config.ReportMateOidcAudience = DefaultReportMateOidcAudience;
 
         if (string.IsNullOrWhiteSpace(config.SnipeOidcAudience))
             config.SnipeOidcAudience = DefaultSnipeOidcAudience;
+
+        if (string.IsNullOrWhiteSpace(config.ReportMateUrl))
+            config.ReportMateUrl = DefaultReportMateUrl;
+
+        config.Tdx ??= new TdxConfig();
+        if (config.Tdx.AppId <= 0)
+            config.Tdx.AppId = 116;
+        config.Tdx.TicketingAppId ??= 115;
+        config.Tdx.AssetsAppId ??= 116;
+
+        config.Elevation ??= new ElevationConfig();
+        config.Elevation.ResourceGroup ??= "Entra";
+        config.Elevation.AcrImage ??= "elevationregistryecu.azurecr.io/elevation-session:latest";
+        config.Elevation.TranscriptAccount ??= "elevationtranscripts";
+        config.Elevation.IdentityPrefix ??= "DevOps-";
 
         EntraTokenSource.Configure(config.Graph?.TenantId, config.EntraClientId);
     }
@@ -354,6 +395,14 @@ public class FleetMateConfig
             var tdxAppId = key.GetValue("TdxAppId") as string;
             if (!string.IsNullOrEmpty(tdxAppId) && int.TryParse(tdxAppId, out var appId))
                 config.Tdx.AppId = appId;
+
+            var tdxTicketingAppId = key.GetValue("TdxTicketingAppId") as string;
+            if (!string.IsNullOrEmpty(tdxTicketingAppId) && int.TryParse(tdxTicketingAppId, out var ticketingAppId))
+                config.Tdx.TicketingAppId = ticketingAppId;
+
+            var tdxAssetsAppId = key.GetValue("TdxAssetsAppId") as string;
+            if (!string.IsNullOrEmpty(tdxAssetsAppId) && int.TryParse(tdxAssetsAppId, out var assetsAppId))
+                config.Tdx.AssetsAppId = assetsAppId;
             
             // TDX service-account credentials are gone — SSO is the only path in.
             // Warn rather than silently ignore, so anyone still provisioning
@@ -505,13 +554,17 @@ public class FleetMateConfig
                         config.ReportMateUrl = value;
                         break;
                     case "REPORTMATE_PASSPHRASE":
+#pragma warning disable CS0618 // Legacy CLI compatibility; LoadDesktop always clears this secret.
                         config.ReportMatePassphrase = value;
+#pragma warning restore CS0618
                         break;
                     case "SNIPE_URL":
                         config.SnipeUrl = value;
                         break;
                     case "SNIPE_API_KEY":
+#pragma warning disable CS0618 // Legacy CLI compatibility; LoadDesktop always clears this secret.
                         config.SnipeApiKey = value;
+#pragma warning restore CS0618
                         break;
                     case "GRAPH_TENANT_ID":
                         config.Graph ??= new GraphConfig();
