@@ -19,6 +19,27 @@ public partial class TicketsPage : Page
     private readonly App? _app;
     private readonly TdxService? _tdxService;
     private ObservableCollection<TdxTicket> _filteredTickets = new();
+
+    /// <summary>
+    /// Rows actually rendered by the list — the filtered tickets as an outline,
+    /// with collapsed subtrees omitted.
+    /// </summary>
+    private readonly ObservableCollection<TicketRowViewModel> _ticketRows = new();
+
+    /// <summary>
+    /// Folded parents, shared by the list and the board. One set rather than one
+    /// per view, so switching modes does not silently re-expand everything.
+    /// </summary>
+    private readonly HashSet<int> _collapsedTickets = new();
+
+    /// <summary>Unsent comments, keyed by ticket. A draft belongs to its ticket.</summary>
+    private readonly Dictionary<int, string> _commentDrafts = new();
+
+    /// <summary>
+    /// Filter entry for tickets nobody has picked up. Not a real responsible
+    /// name, so it is matched by identity rather than compared as one.
+    /// </summary>
+    internal const string UnassignedFilterLabel = "(Unassigned)";
     private List<TdxFeedEntry> _ticketFeed = new();
     private TdxTicket? _selectedTicket;
     private bool _sortAscending = false;  // Default descending (newest first)
@@ -58,7 +79,7 @@ public partial class TicketsPage : Page
             _tdxService = app.TdxService;
         }
 
-        TicketsListView.ItemsSource = _filteredTickets;
+        TicketsListView.ItemsSource = _ticketRows;
 
         Loaded += async (s, e) => 
         {
@@ -72,12 +93,7 @@ public partial class TicketsPage : Page
             if (_app?.PendingNavigateTicketId is { } ticketId)
             {
                 _app.PendingNavigateTicketId = null;
-                var ticket = _filteredTickets.FirstOrDefault(t => t.Id == ticketId);
-                if (ticket != null)
-                {
-                    TicketsListView.SelectedItem = ticket;
-                    TicketsListView.ScrollIntoView(ticket);
-                }
+                RevealTicket(ticketId);
             }
         };
     }
@@ -132,11 +148,22 @@ public partial class TicketsPage : Page
 
     private async Task LoadTicketsAsync()
     {
+        // Reachable during BAML load: LimitComboBox marks an item IsSelected in
+        // markup, so SelectionChanged fires mid-parse and lands here before
+        // NotConfiguredText and the rest of the tree exist. Because
+        // OnLimitChanged is async void, the resulting NullReferenceException
+        // surfaces on the dispatcher as unhandled and kills the process — the
+        // Tickets tab took the whole app down with it.
+        if (!IsInitialized) return;
+
         if (_tdxService == null || _app == null)
         {
             NotConfiguredText.Visibility = Visibility.Visible;
+            TicketsListView.Visibility = Visibility.Collapsed;
             return;
         }
+
+        TicketsListView.Visibility = Visibility.Visible;
         
         // Use cache if valid
         if (_app.IsTicketsCacheValid && _app.CachedTickets.Count > 0)
@@ -193,12 +220,27 @@ public partial class TicketsPage : Page
         GroupFilterComboBox.ItemsSource = groups.OrderBy(s => s == "All" ? "" : s).ToList();
         GroupFilterComboBox.SelectedIndex = 0;
         
-        ResponsibleFilterComboBox.ItemsSource = responsible.OrderBy(s => s == "All" ? "" : s).ToList();
+        // Unassigned is offered explicitly. Tickets nobody has picked up are
+        // the ones most worth finding, and they were unreachable through a
+        // filter built only from names that exist.
+        var responsibleOptions = responsible.OrderBy(s => s == "All" ? "" : s).ToList();
+        if (_allTickets.Any(t => string.IsNullOrWhiteSpace(t.ResponsibleFullName)))
+        {
+            responsibleOptions.Add(UnassignedFilterLabel);
+        }
+
+        ResponsibleFilterComboBox.ItemsSource = responsibleOptions;
         ResponsibleFilterComboBox.SelectedIndex = 0;
     }
 
     private void ApplyFiltersAndSort()
     {
+        // Reached during BAML load too: SortComboBox marks an item IsSelected in
+        // markup, so SelectionChanged fires while the tree is half-built and the
+        // controls this touches — TicketsListView in particular — are still null.
+        // Nothing here is meaningful before the page exists.
+        if (!IsInitialized) return;
+
         var filtered = _allTickets.AsEnumerable();
 
         // Filter show closed (hide when unchecked)
@@ -228,7 +270,9 @@ public partial class TicketsPage : Page
         var responsibleFilter = ResponsibleFilterComboBox.SelectedItem?.ToString();
         if (!string.IsNullOrEmpty(responsibleFilter) && responsibleFilter != "All")
         {
-            filtered = filtered.Where(t => t.ResponsibleFullName == responsibleFilter);
+            filtered = responsibleFilter == UnassignedFilterLabel
+                ? filtered.Where(t => string.IsNullOrWhiteSpace(t.ResponsibleFullName))
+                : filtered.Where(t => t.ResponsibleFullName == responsibleFilter);
         }
 
         // Filter by search text
@@ -259,8 +303,11 @@ public partial class TicketsPage : Page
         {
             _filteredTickets.Add(ticket);
         }
-        
-        // Update ticket count display
+
+        RebuildOutline();
+
+        // Count the tickets, not the visible rows — a folded subtree must not
+        // read as work that disappeared.
         TicketCountText.Text = $"{_filteredTickets.Count} of {_allTickets.Count}";
         
         // Update board view if active
@@ -270,13 +317,110 @@ public partial class TicketsPage : Page
         }
     }
     
+    /// <summary>
+    /// Rebuild the visible rows from the filtered tickets and the current fold
+    /// state, preserving the selection across the swap.
+    /// </summary>
+    private void RebuildOutline()
+    {
+        // Belt and braces: every caller is guarded, but this one dereferences
+        // the list directly and a future caller added before load would fault.
+        if (TicketsListView is null) return;
+
+        // ItemsSource is replaced wholesale, so WPF drops the selection. Losing
+        // the open ticket every time a filter changes would close the detail
+        // pane out from under the operator.
+        var selectedId = (TicketsListView.SelectedItem as TicketRowViewModel)?.Id
+                         ?? _selectedTicket?.Id;
+
+        var tree = TicketHierarchy.Build(_filteredTickets);
+        var rows = TicketHierarchy.Flatten(tree, _collapsedTickets);
+
+        _ticketRows.Clear();
+        foreach (var row in rows) _ticketRows.Add(new TicketRowViewModel { Row = row });
+
+        if (selectedId is { } id)
+        {
+            var match = _ticketRows.FirstOrDefault(r => r.Id == id);
+            if (match != null) TicketsListView.SelectedItem = match;
+        }
+    }
+
+    /// <summary>
+    /// Select and scroll to a ticket, unfolding whatever hides it.
+    ///
+    /// A deep link to a child ticket lands on nothing if its parent is
+    /// collapsed, so the ancestors are expanded first rather than the link
+    /// silently doing nothing.
+    /// </summary>
+    private void RevealTicket(int ticketId)
+    {
+        var ticket = _filteredTickets.FirstOrDefault(t => t.Id == ticketId);
+        if (ticket == null) return;
+
+        var byId = _filteredTickets.ToDictionary(t => t.Id);
+        var cursor = TicketHierarchy.ParentTicketId(ticket);
+        var guard = new HashSet<int>();
+
+        while (cursor is { } parentId && guard.Add(parentId))
+        {
+            _collapsedTickets.Remove(parentId);
+            cursor = byId.TryGetValue(parentId, out var parent)
+                ? TicketHierarchy.ParentTicketId(parent)
+                : null;
+        }
+
+        RebuildOutline();
+
+        var row = _ticketRows.FirstOrDefault(r => r.Id == ticketId);
+        if (row == null) return;
+
+        TicketsListView.SelectedItem = row;
+        TicketsListView.ScrollIntoView(row);
+    }
+
+    private void OnToggleTicketFold(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: TicketRowViewModel row }) return;
+
+        if (!_collapsedTickets.Remove(row.Id)) _collapsedTickets.Add(row.Id);
+
+        RebuildOutline();
+        if (_isBoardView) UpdateBoardView();
+    }
+
+    private void OnCollapseAllClicked(object sender, RoutedEventArgs e)
+    {
+        foreach (var id in TicketHierarchy.AllParentIds(TicketHierarchy.Build(_filteredTickets)))
+            _collapsedTickets.Add(id);
+
+        RebuildOutline();
+        if (_isBoardView) UpdateBoardView();
+    }
+
+    private void OnExpandAllClicked(object sender, RoutedEventArgs e)
+    {
+        _collapsedTickets.Clear();
+
+        RebuildOutline();
+        if (_isBoardView) UpdateBoardView();
+    }
+
     private void OnViewModeChanged(object sender, RoutedEventArgs e)
     {
+        // ListViewRadio carries IsChecked="True", so its Checked event fires
+        // while the XAML is still being parsed — before BoardViewRadio and the
+        // panels below it exist. Dereferencing them there took the whole app
+        // down with a NullReferenceException the moment Tickets was opened.
+        // IsInitialized is false until InitializeComponent finishes, which is
+        // exactly the window we need to sit out.
+        if (!IsInitialized) return;
+
         _isBoardView = BoardViewRadio.IsChecked == true;
-        
+
         ListViewPanel.Visibility = _isBoardView ? Visibility.Collapsed : Visibility.Visible;
         BoardViewPanel.Visibility = _isBoardView ? Visibility.Visible : Visibility.Collapsed;
-        
+
         if (_isBoardView)
         {
             UpdateBoardView();
@@ -293,8 +437,13 @@ public partial class TicketsPage : Page
             {
                 StatusName = g.Key,
                 HeaderColor = GetStatusColor(g.Key),
+                // The count is of tickets in the column, not visible cards — a
+                // folded subtree must not read as work that disappeared.
                 Count = g.Count(),
-                Tickets = g.ToList()
+                Rows = TicketHierarchy
+                    .Flatten(TicketHierarchy.Build(g), _collapsedTickets)
+                    .Select(row => new TicketRowViewModel { Row = row })
+                    .ToList(),
             })
             .ToList();
         
@@ -395,6 +544,10 @@ public partial class TicketsPage : Page
 
     private void OnFeedFilterChanged(object sender, RoutedEventArgs e)
     {
+        // FeedFilterComments is checked in markup, so this fires before its
+        // sibling radios exist.
+        if (!IsInitialized) return;
+
         if (FeedFilterComments.IsChecked == true)
             _feedFilter = "Comments";
         else if (FeedFilterActivity.IsChecked == true)
@@ -494,10 +647,17 @@ public partial class TicketsPage : Page
 
     private async void OnTicketSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (TicketsListView.SelectedItem is TdxTicket ticket)
+        if (TicketsListView.SelectedItem is TicketRowViewModel { Ticket: { } ticket })
         {
+            // A draft belongs to the ticket it was written on. The box used to
+            // persist across selections, so half-written text followed you to
+            // the next ticket and Post sent it there — the worst kind of bug,
+            // because it looks like it worked.
+            StashCommentDraft();
+
             _selectedTicket = ticket;
-            
+            RestoreCommentDraft(ticket.Id);
+
             // Show detail panel if not already visible
             if (!_detailPanelVisible)
             {
@@ -505,9 +665,66 @@ public partial class TicketsPage : Page
                 DetailPanel.Visibility = Visibility.Visible;
                 DetailPanelColumn.Width = new GridLength(360);
             }
-            
+
             await LoadTicketDetailAsync(ticket.Id);
         }
+    }
+
+    /// <summary>
+    /// Keep the current ticket's unsent comment so it comes back if the
+    /// operator returns to it. Losing typed work on a stray click is worse than
+    /// carrying a few strings.
+    /// </summary>
+    private void StashCommentDraft()
+    {
+        if (_selectedTicket is not { } previous) return;
+
+        var draft = CommentTextBox.Text?.Trim();
+
+        if (string.IsNullOrEmpty(draft)) _commentDrafts.Remove(previous.Id);
+        else _commentDrafts[previous.Id] = CommentTextBox.Text ?? "";
+    }
+
+    private void RestoreCommentDraft(int ticketId)
+    {
+        CommentTextBox.Text = _commentDrafts.GetValueOrDefault(ticketId) ?? "";
+    }
+
+    /// <summary>
+    /// Seed the comment box with the selected entry, quoted.
+    ///
+    /// Quote rather than Reply because the TDX Web API has no route for a
+    /// threaded reply — posting one creates another top-level entry with the
+    /// named parent's reply count still zero. Quoting is the closest thing the
+    /// API actually supports, so it is what the button offers.
+    /// </summary>
+    private void OnQuoteFeedEntry(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: FeedDisplayItem entry }) return;
+
+        var quoted = BuildQuote(entry);
+        var existing = CommentTextBox.Text ?? "";
+
+        // Append rather than replace — quoting a second comment into a reply
+        // already being written must not discard what is there.
+        CommentTextBox.Text = string.IsNullOrWhiteSpace(existing)
+            ? quoted
+            : existing.TrimEnd() + "\n\n" + quoted;
+
+        CommentTextBox.Focus();
+        CommentTextBox.CaretIndex = CommentTextBox.Text.Length;
+    }
+
+    internal static string BuildQuote(FeedDisplayItem entry)
+    {
+        var author = string.IsNullOrWhiteSpace(entry.CreatedFullName) ? "someone" : entry.CreatedFullName;
+
+        // The body is already stripped for display, so quoting it gives plain
+        // text rather than a block of markup nobody wants in their comment.
+        var quoted = string.Join("\n",
+            (entry.StrippedBody ?? "").Split('\n').Select(line => $"> {line.TrimEnd()}"));
+
+        return $"{author} wrote:\n{quoted}";
     }
 
     private async Task LoadTicketDetailAsync(int ticketId)
@@ -675,24 +892,27 @@ public partial class TicketsPage : Page
 
         try
         {
-            var success = await _tdxService.AddCommentAsync(
+            await _tdxService.AddCommentAsync(
                 _selectedTicket.Id,
                 comment,
                 PrivateCheckBox.IsChecked == true);
 
-            if (success)
-            {
-                ShowActionMessage("Comment added successfully");
-                CommentTextBox.Text = "";
-                
-                // Refresh feed
-                _ticketFeed = await _tdxService.GetTicketFeedAsync(_selectedTicket.Id);
-                UpdateFeedPanel();
-            }
-            else
-            {
-                ShowActionMessage("Failed to add comment", isError: true);
-            }
+            ShowActionMessage("Comment added successfully");
+            CommentTextBox.Text = "";
+
+            // Drop the stashed copy too, or navigating away and back would
+            // resurrect a comment that was already posted.
+            _commentDrafts.Remove(_selectedTicket.Id);
+
+            // Refresh feed
+            _ticketFeed = await _tdxService.GetTicketFeedAsync(_selectedTicket.Id);
+            UpdateFeedPanel();
+        }
+        catch (TdxCommentException ex)
+        {
+            // Only clear the box on success — the comment is the operator's
+            // work, and losing it to a rejected post is worse than the failure.
+            ShowActionMessage(ex.Message, isError: true);
         }
         catch (Exception ex)
         {
@@ -783,5 +1003,12 @@ public class BoardColumn
     public string StatusName { get; set; } = "";
     public SolidColorBrush HeaderColor { get; set; } = new(Colors.Gray);
     public int Count { get; set; }
-    public List<TdxTicket> Tickets { get; set; } = new();
+
+    /// <summary>
+    /// Cards as an outline, so children indent under their parent here too.
+    /// A child whose parent sits in another status column has no parent to nest
+    /// under and renders as a root — which is the honest reading, since the
+    /// parent genuinely is not in this column.
+    /// </summary>
+    public List<TicketRowViewModel> Rows { get; set; } = new();
 }

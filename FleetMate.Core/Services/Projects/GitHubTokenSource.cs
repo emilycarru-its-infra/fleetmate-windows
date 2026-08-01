@@ -11,13 +11,22 @@ namespace FleetMate.Core.Services.Projects;
 /// <summary>
 /// Centralized GitHub token resolution for all GitHub API clients.
 ///
+/// Every source here resolves to a token belonging to a *person*, not to a
+/// shared service account — `gh` and the Device Flow both sign the operator in
+/// individually, and CI's GITHUB_TOKEN is job-scoped and ephemeral.
+///
 /// Priority order (first source to return a non-empty token wins):
-/// 1. config token — explicit override in config.yaml; always respected
-/// 2. gh CLI — `gh auth token`; zero-config on developer machines; OS-keychain-backed
-/// 3. GITHUB_TOKEN / GH_TOKEN — environment variables; CI/automation/devcontainers
-/// 4. Windows Credential Store — DPAPI-encrypted token from a previous Device Flow
-/// 5. OAuth Device Flow — interactive first-run; requires OauthClientId in config;
+/// 1. gh CLI — `gh auth token`; zero-config on developer machines; OS-keychain-backed
+/// 2. Windows Credential Store — DPAPI-encrypted token from a previous Device Flow
+/// 3. OAuth Device Flow — interactive first-run; requires OauthClientId in config;
 ///    stores the resulting token in the credential store for all future runs
+/// 4. GITHUB_TOKEN / GH_TOKEN — environment variables; CI/automation/devcontainers
+/// 5. config token — deprecated static PAT; last resort, and warns when used
+///
+/// The static config token used to win outright. It was demoted because a PAT
+/// pasted into config.yaml is a shared credential in everything but name: it
+/// outlives the person who made it and attributes their colleagues' actions to
+/// them.
 /// </summary>
 public class GitHubTokenSource : IDisposable
 {
@@ -49,26 +58,18 @@ public class GitHubTokenSource : IDisposable
     {
         if (!string.IsNullOrEmpty(_cachedToken)) return _cachedToken;
 
-        // 1. Explicit config token (user override — always wins)
-        if (!string.IsNullOrEmpty(_config.Token)) return Cache(_config.Token!);
-
-        // 2. gh CLI — seamless; wraps OS keychain internally
+        // 1. gh CLI — seamless; wraps OS keychain internally; signs in as a person
         if (_config.UseGhCli)
         {
             var ghToken = await GetTokenFromGhCliAsync();
             if (!string.IsNullOrEmpty(ghToken)) return Cache(ghToken!);
         }
 
-        // 3. Environment variables (CI / automation)
-        var envToken = Environment.GetEnvironmentVariable("GITHUB_TOKEN")
-                    ?? Environment.GetEnvironmentVariable("GH_TOKEN");
-        if (!string.IsNullOrEmpty(envToken)) return Cache(envToken!);
-
-        // 4. Windows Credential Store (DPAPI-encrypted token from previous Device Flow)
+        // 2. Windows Credential Store (DPAPI-encrypted token from previous Device Flow)
         var stored = LoadFromCredentialStore();
         if (!string.IsNullOrEmpty(stored)) return Cache(stored!);
 
-        // 5. OAuth Device Flow (interactive first-run)
+        // 3. OAuth Device Flow (interactive first-run)
         if (!string.IsNullOrEmpty(_config.OauthClientId) && DeviceFlowPrompt != null)
         {
             var deviceToken = await PerformDeviceFlowAsync(_config.OauthClientId!, ct);
@@ -77,6 +78,21 @@ public class GitHubTokenSource : IDisposable
                 SaveToCredentialStore(deviceToken!);
                 return Cache(deviceToken!);
             }
+        }
+
+        // 4. Environment variables. Legitimate in CI, where the token is
+        // job-scoped and expires with the run.
+        var envToken = Environment.GetEnvironmentVariable("GITHUB_TOKEN")
+                    ?? Environment.GetEnvironmentVariable("GH_TOKEN");
+        if (!string.IsNullOrEmpty(envToken)) return Cache(envToken!);
+
+        // 5. Static PAT from config — deprecated, and last for a reason.
+        if (!string.IsNullOrEmpty(_config.Token))
+        {
+            Log.Warning("[github] Using the static token from config. This is a shared credential in " +
+                        "everything but name — it outlives whoever minted it and attributes their " +
+                        "colleagues' actions to them. Run `gh auth login` and remove `token:` from config.");
+            return Cache(_config.Token!);
         }
 
         return null;
