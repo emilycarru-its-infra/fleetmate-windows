@@ -3,7 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.modernwpf.com/2019">
 
-    <Grid Margin="24">
+    <Grid Margin="16,14,16,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -38,8 +38,19 @@
             
             <!-- View Mode Toggle -->
             <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
-                <RadioButton x:Name="ListViewRadio" Content="📋 List" IsChecked="True" GroupName="ViewMode" Checked="OnViewModeChanged" Margin="0,0,4,0" />
-                <RadioButton x:Name="BoardViewRadio" Content="📊 Board" GroupName="ViewMode" Checked="OnViewModeChanged" />
+                <RadioButton x:Name="ListViewRadio" Content="List" IsChecked="True" GroupName="ViewMode"
+                             Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
+                <RadioButton x:Name="BoardViewRadio" Content="Board" GroupName="ViewMode"
+                             Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
+            </StackPanel>
+
+            <!-- Fold controls sit with view-mode and sort, not with the filters:
+                 they change how rows are drawn, not which rows are there. -->
+            <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                <Button x:Name="CollapseAllButton" Content="▸" FontFamily="Segoe UI Symbol" FontSize="10"
+                        ToolTip="Collapse all" Click="OnCollapseAllClicked" Padding="6,2" Margin="0,0,4,0" />
+                <Button x:Name="ExpandAllButton" Content="▾" FontFamily="Segoe UI Symbol" FontSize="10"
+                        ToolTip="Expand all" Click="OnExpandAllClicked" Padding="6,2" />
             </StackPanel>
             <ComboBox x:Name="SortComboBox" Width="110" Margin="0,0,8,0" SelectionChanged="OnSortChanged">
                 <ComboBoxItem Content="Modified" IsSelected="True" />
@@ -117,17 +128,21 @@
 
                     <!-- Not configured message -->
                     <TextBlock x:Name="NotConfiguredText" Visibility="Collapsed"
-                               Text="TeamDynamix is not configured. Set TDX_BASE_URL and TDX_TICKETING_APP_ID in your config."
+                               Text="Add the TeamDynamix endpoint in Settings. FleetMate signs in silently as your Windows user."
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                                VerticalAlignment="Center" HorizontalAlignment="Center" TextWrapping="Wrap" />
 
                     <!-- Tickets ListView -->
                     <ListView x:Name="TicketsListView"
+                              AlternationCount="2"
+                              ItemContainerStyle="{StaticResource FleetListViewItemStyle}"
                               SelectionMode="Single"
                               SelectionChanged="OnTicketSelectionChanged">
                         <ListView.ItemTemplate>
                             <DataTemplate>
-                                <Grid Margin="4">
+                                <!-- Indent the content, not the row: an indented
+                                     selection highlight reads as a rendering bug. -->
+                                <Grid Margin="{Binding IndentMargin}">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
@@ -135,6 +150,17 @@
 
                                     <!-- Title and Status -->
                                     <DockPanel Grid.Row="0">
+                                        <!-- Disclosure triangle. Hidden rather than
+                                             collapsed on leaves so titles stay in
+                                             one visual column. -->
+                                        <Button DockPanel.Dock="Left" Content="{Binding TriangleGlyph}"
+                                                Visibility="{Binding TriangleVisibility}"
+                                                ToolTip="{Binding ChildCountTooltip}"
+                                                Tag="{Binding}" Click="OnToggleTicketFold"
+                                                FontFamily="Segoe UI Symbol" FontSize="9"
+                                                Width="16" Height="16" Padding="0" Margin="0,0,4,0"
+                                                VerticalAlignment="Center"
+                                                Background="Transparent" BorderThickness="0" />
                                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                                             <Ellipse Width="8" Height="8" Margin="0,0,4,0">
                                                 <Ellipse.Style>
@@ -179,7 +205,13 @@
                                         <TextBlock Text="{Binding ResponsibleGroupName}" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,12,0" />
                                         <TextBlock Text="→" FontSize="11" Margin="0,0,2,0" />
                                         <TextBlock Text="{Binding ResponsibleFullName}" FontSize="11" Foreground="{DynamicResource SystemControlForegroundAccentBrush}" Margin="0,0,12,0" />
-                                        <TextBlock Text="{Binding PriorityName}" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                        <TextBlock Text="{Binding PriorityName}" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,12,0" />
+                                        <!-- Age and idle time answer different
+                                             questions, so both are shown. -->
+                                        <TextBlock Text="{Binding AgeLabel}" FontSize="11" ToolTip="Days since opened"
+                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,6,0" />
+                                        <TextBlock Text="{Binding LastActivityLabel}" FontSize="11" ToolTip="Days since last activity"
+                                                   Foreground="{DynamicResource SystemControlForegroundBaseLowBrush}" />
                                     </StackPanel>
                                 </Grid>
                             </DataTemplate>
@@ -218,22 +250,30 @@
                                     
                                     <!-- Cards -->
                                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="600">
-                                        <ItemsControl ItemsSource="{Binding Tickets}" Margin="8">
+                                        <ItemsControl ItemsSource="{Binding Rows}" Margin="8">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Border Background="{DynamicResource SystemControlBackgroundAltHighBrush}" 
-                                                            Padding="10" CornerRadius="6" Margin="0,0,0,8" 
+                                                    <Border Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                                                            Padding="10" CornerRadius="6" Margin="{Binding CardIndentMargin}"
                                                             MouseLeftButtonUp="OnBoardCardClick" Cursor="Hand"
                                                             Tag="{Binding Id}">
                                                         <Border.Effect>
                                                             <DropShadowEffect BlurRadius="4" ShadowDepth="1" Opacity="0.2" />
                                                         </Border.Effect>
                                                         <StackPanel>
-                                                            <!-- ID and Priority -->
+                                                            <!-- ID, fold control and Priority -->
                                                             <DockPanel Margin="0,0,0,4">
-                                                                <TextBlock DockPanel.Dock="Right" Text="{Binding PriorityName}" FontSize="10" 
+                                                                <TextBlock DockPanel.Dock="Right" Text="{Binding PriorityName}" FontSize="10"
                                                                            Padding="6,2" Background="#20808080" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                                                <TextBlock Text="{Binding Id, StringFormat='#{0}'}" FontSize="11" 
+                                                                <Button DockPanel.Dock="Left" Content="{Binding TriangleGlyph}"
+                                                                        Visibility="{Binding TriangleVisibility}"
+                                                                        ToolTip="{Binding ChildCountTooltip}"
+                                                                        Tag="{Binding}" Click="OnToggleTicketFold"
+                                                                        FontFamily="Segoe UI Symbol" FontSize="9"
+                                                                        Width="14" Height="14" Padding="0" Margin="0,0,4,0"
+                                                                        VerticalAlignment="Center"
+                                                                        Background="Transparent" BorderThickness="0" />
+                                                                <TextBlock Text="{Binding Id, StringFormat='#{0}'}" FontSize="11"
                                                                            Foreground="{DynamicResource SystemControlForegroundAccentBrush}" FontWeight="Medium" />
                                                             </DockPanel>
                                                             
@@ -397,6 +437,12 @@
                                                 <StackPanel>
                                                     <DockPanel>
                                                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                                            <!-- Quote, not Reply: the TDX Web API has no route
+                                                                 for a threaded reply, so quoting into a new
+                                                                 comment is the closest thing it supports. -->
+                                                            <Button Content="Quote" FontSize="10" Padding="6,1" Margin="0,0,6,0"
+                                                                    Click="OnQuoteFeedEntry" Tag="{Binding}"
+                                                                    ToolTip="Quote this comment into a new one" />
                                                             <Border x:Name="PrivateBadge" Background="#FFFFD080" Padding="6,2" CornerRadius="4" Margin="0,0,4,0" Visibility="{Binding IsPrivate, Converter={StaticResource BoolToVisibilityConverter}}">
                                                                 <TextBlock Text="Private" FontSize="10" />
                                                             </Border>
@@ -404,7 +450,9 @@
                                                         </StackPanel>
                                                         <TextBlock Text="{Binding CreatedFullName}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                                     </DockPanel>
-                                                    <TextBlock Text="{Binding StrippedBody}" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" TextWrapping="Wrap" MaxHeight="100" TextTrimming="CharacterEllipsis" Margin="0,6,0,0" />
+                                                    <!-- Uncapped: a clipped comment reads as a rendering fault,
+                                                         and the detail you need is often at the bottom. -->
+                                                    <TextBlock Text="{Binding StrippedBody}" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
                                                 </StackPanel>
                                             </Border>
                                         </DataTemplate>

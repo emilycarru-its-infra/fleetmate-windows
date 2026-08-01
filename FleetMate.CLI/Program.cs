@@ -43,19 +43,17 @@ class Program
         try
         {
             // Create services - use default URL if not configured
-            var reportMateUrl = config.ReportMateUrl ?? "https://reportmate.example.com";
-            using var reportMate = new ReportMateService(
-                reportMateUrl, 
-                config.ReportMatePassphrase,
-                config.CacheMinutes);
-            
+            config.ReportMateUrl ??= "https://reportmate.example.com";
+            using var reportMate = ReportMateService.FromConfig(config);
+
             var pkgInfoService = new PkgInfoService(config);
-            
-            // Create Snipe-IT service if configured
+
+            // Create Snipe-IT service if configured. A URL is enough now: auth is
+            // the operator's Entra session, so there is no key to wait for.
             SnipeService? snipeService = null;
-            if (!string.IsNullOrEmpty(config.SnipeUrl) && !string.IsNullOrEmpty(config.SnipeApiKey))
+            if (!string.IsNullOrEmpty(config.SnipeUrl))
             {
-                snipeService = new SnipeService(config.SnipeUrl, config.SnipeApiKey);
+                snipeService = SnipeService.FromConfig(config);
             }
 
             // Create SecureShell service if configured
@@ -91,13 +89,11 @@ class Program
             var useElevation = !string.Equals(
                 Environment.GetEnvironmentVariable("FLEETMATE_GRAPH_TRANSPORT"), "direct",
                 StringComparison.OrdinalIgnoreCase);
+            // Direct transport needs no credentials to be configured any more —
+            // the broker resolves the operator's own token — so Graph is
+            // available whenever elevation is on or a tenant is known.
             GraphService? graphService = null;
-            if (useElevation ||
-                (config.Graph != null &&
-                 (config.Graph.UseAzureCliAuth ||
-                  (!string.IsNullOrWhiteSpace(config.Graph.TenantId) &&
-                   !string.IsNullOrWhiteSpace(config.Graph.ClientId) &&
-                   !string.IsNullOrWhiteSpace(config.Graph.ClientSecret)))))
+            if (useElevation || !string.IsNullOrWhiteSpace(config.Graph?.TenantId))
             {
                 graphService = new GraphService(config.Graph ?? new GraphConfig(), config.Elevation);
             }
@@ -139,7 +135,11 @@ class Program
             // Quality control (port of quality/control.ps1)
             rootCommand.AddCommand(QaCommand.Create(config));
             
+            // Projects — my pull request queue across DevOps and GitHub
+            rootCommand.AddCommand(FleetMate.Commands.Projects.PullRequestsCommand.Create(config));
+
             // Utility commands
+            rootCommand.AddCommand(LoginCommand.Create(config));
             rootCommand.AddCommand(StatusCommand.Create(config, reportMate));
             rootCommand.AddCommand(ConfigureCommand.Create(config));
             

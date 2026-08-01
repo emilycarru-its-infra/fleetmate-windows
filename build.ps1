@@ -56,7 +56,12 @@ param(
     [switch]$Msi,
     [switch]$MsiOnly,
     [switch]$NoSign,
-    [switch]$Launch
+    [switch]$Launch,
+    # Runtime identifier for the GUI publish. Defaults to the host's
+    # architecture; set explicitly to cross-build (e.g. win-arm64 from an x64
+    # box for the ARM fleet).
+    [ValidateSet('win-x64', 'win-arm64')]
+    [string]$GuiRuntime
 )
 
 $ErrorActionPreference = 'Stop'
@@ -455,7 +460,7 @@ try {
     # Clean if requested
     if ($Clean) {
         Write-BuildLog "Cleaning build artifacts..."
-        foreach ($proj in @('FleetMate.CLI', 'FleetMate.GUI', 'FleetMate.Core')) {
+        foreach ($proj in @('FleetMate.CLI', 'FleetMate.GUI', 'FleetMate.WinUI', 'FleetMate.Core')) {
             Remove-Item -Path "$RootDir\$proj\bin" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path "$RootDir\$proj\obj" -Recurse -Force -ErrorAction SilentlyContinue
         }
@@ -515,15 +520,36 @@ try {
     if ($buildGUI -and -not $PkgOnly -and -not $MsiOnly) {
         Write-BuildLog "Building FleetMate GUI..."
 
-        # GUI must be published as self-contained single-file for WDAC-compliant signing.
-        # A regular dotnet build produces a dotnet host stub that WDAC blocks signtool from modifying.
+        # The user-facing desktop is native WinUI 3. It must be published as a
+        # self-contained single file for WDAC-compliant signing: a regular .NET
+        # app-host stub is protected before SignTool can add Authenticode data.
+        # Windows App SDK also requires EnableMsixTooling to embed resources.pri
+        # into a single-file unpackaged application.
         $guiOutDir = "$RootDir\publish\gui"
 
-        & dotnet publish "$RootDir\FleetMate.GUI\FleetMate.GUI.csproj" `
+        # Follow the host architecture unless told otherwise. This was pinned to
+        # win-arm64, which meant the GUI could be built and signed on an x64 box
+        # and then refused to start: "not a valid application for this OS
+        # platform". Use -GuiRuntime to cross-build for the other architecture.
+        $guiRid = if ($GuiRuntime) {
+            $GuiRuntime
+        } elseif ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') {
+            'win-arm64'
+        } else {
+            'win-x64'
+        }
+        $guiPlatform = if ($guiRid -eq 'win-arm64') { 'arm64' } else { 'x64' }
+
+        Write-BuildLog "  runtime: $guiRid"
+
+        & dotnet publish "$RootDir\FleetMate.WinUI\FleetMate.WinUI.csproj" `
             --configuration Release `
-            --runtime win-arm64 `
+            --runtime $guiRid `
             --self-contained true `
+            -p:Platform=$guiPlatform `
             -p:PublishSingleFile=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:EnableMsixTooling=true `
             --output $guiOutDir
 
         if ($LASTEXITCODE -ne 0) { throw "GUI build failed" }

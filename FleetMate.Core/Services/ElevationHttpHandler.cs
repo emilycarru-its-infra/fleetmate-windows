@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using FleetMate.Core.Config;
+using Serilog;
 
 namespace FleetMate.Core.Services;
 
@@ -38,6 +39,13 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
         try
         {
             var (output, code) = await _session.ExecAsync(domain, sb.ToString());
+            // Log the real failure once, at the transport boundary. Callers turn a
+            // non-success status into null/empty (e.g. "User not found"), so without
+            // this the underlying error — a Graph 4xx/5xx surfaced by the in-session
+            // az rest — would be invisible.
+            if (code != 0)
+                Log.Warning("Elevation {Domain} call to {Method} {Url} exited {Code}: {Body}",
+                    domain.Slug(), method, url, code, Truncate(output));
             var status = code == 0 ? HttpStatusCode.OK : HttpStatusCode.BadGateway;
             return new HttpResponseMessage(status)
             {
@@ -47,9 +55,16 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
         }
         catch (Exception ex)
         {
+            // Elevation infra failure (not configured, container/exec error, network).
+            // The full detail is logged at debug level only — ex.Message can still carry
+            // elevated output in edge cases, and GraphService re-logs the response body.
+            // The body callers receive is therefore a fixed, non-sensitive string.
+            Log.Debug(ex, "Elevation {Domain} call to {Method} {Url} failed", domain.Slug(), method, url);
+            Log.Warning("Elevation {Domain} call to {Method} {Url} failed (detail at debug level)",
+                domain.Slug(), method, url);
             return new HttpResponseMessage(HttpStatusCode.BadGateway)
             {
-                Content = new StringContent(ex.Message),
+                Content = new StringContent("Elevation request failed; see FleetMate debug log for detail."),
                 RequestMessage = request,
             };
         }
@@ -67,4 +82,11 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
 
     // Single-quote so the container shell does not expand $top/$filter/$ref/etc.
     private static string SingleQuote(string s) => "'" + s.Replace("'", "'\\''") + "'";
+
+    // Keep log lines bounded — Graph error bodies can be large.
+    private static string Truncate(string s)
+    {
+        s = s?.Trim() ?? "";
+        return s.Length > 600 ? s[..600] + "…" : s;
+    }
 }

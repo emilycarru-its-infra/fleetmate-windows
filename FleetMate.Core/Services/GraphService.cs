@@ -19,16 +19,42 @@ public class GraphService : IDisposable
     private readonly HttpClient _client;
     private readonly GraphConfig _config;
     private readonly JsonSerializerOptions _jsonOptions;
-    private string? _cachedToken;
-    private DateTime _tokenExpiry = DateTime.MinValue;
 
-    // Multi-SP: per-scope token caches
-    private string? _devicesToken;
-    private DateTime _devicesTokenExpiry = DateTime.MinValue;
-    private string? _systemsToken;
-    private DateTime _systemsTokenExpiry = DateTime.MinValue;
+    // Token caching lives in EntraTokenSource, which is shared across services
+    // so one broker call serves every consumer of a given audience.
 
-    private const string GraphScope = "https://graph.microsoft.com/.default";
+    /// <summary>
+    /// Graph's hard ceiling for <c>$top</c> on directory collections.
+    ///
+    /// Asking for more is not merely capped — the request fails outright with
+    /// <c>Request_UnsupportedQuery</c> ("Invalid page size specified: '1000'.
+    /// Must be between 1 and 999 inclusive"), so a caller wanting 1000 groups
+    /// gets zero of them and the UI shows an empty state.
+    /// </summary>
+    private const int MaxGraphPageSize = 999;
+
+    /// <summary>
+    /// Page size for a request that wants <paramref name="limit"/> results in
+    /// total. This is a <em>page</em> size, not a cap on the result: the paged
+    /// calls here follow <c>@odata.nextLink</c> until they reach the limit, so
+    /// the 999 ceiling bounds a page rather than the answer.
+    /// </summary>
+    private int PageSizeFor(int limit) =>
+        Math.Min(Math.Min(limit, _config.PageSize), MaxGraphPageSize);
+
+    /// <summary>
+    /// Fields to request for a user.
+    ///
+    /// Graph's default projection for /users omits most of this — including
+    /// <c>accountEnabled</c>, which then decodes to null and renders every
+    /// single user as Disabled. An explicit $select is not an optimisation here;
+    /// without it the data is silently wrong.
+    /// </summary>
+    private const string UserSelect =
+        "id,displayName,userPrincipalName,mail,givenName,surname,jobTitle,department," +
+        "officeLocation,mobilePhone,businessPhones,accountEnabled,createdDateTime," +
+        "employeeId,employeeType,companyName,usageLocation," +
+        "onPremisesSamAccountName,onPremisesDistinguishedName,onPremisesSyncEnabled";
 
     // Caches
     private readonly Dictionary<string, (EntraUser user, DateTime expiry)> _userCache = new();
@@ -74,148 +100,33 @@ public class GraphService : IDisposable
     #region Authentication
 
     /// <summary>
-    /// Get access token using service principal or Azure CLI SSO
+    /// Get a Graph access token for the operator, brokered from their Windows
+    /// sign-in.
+    ///
+    /// Graph is secretless. There are exactly two ways FleetMate reaches it:
+    /// this delegated token, and — for privileged Intune/Entra writes — an
+    /// <see cref="ElevationSession"/> running as a managed identity, whose token
+    /// never leaves Azure. Client secrets and per-scope service principals were
+    /// removed deliberately; a secret sitting in the registry of every admin
+    /// workstation is the thing this design exists to avoid.
     /// </summary>
     private async Task<string?> GetAccessTokenAsync()
     {
-        if (_cachedToken != null && DateTime.UtcNow < _tokenExpiry)
-        {
-            return _cachedToken;
-        }
+        var source = EntraTokenSource.Shared
+            ?? EntraTokenSource.Configure(_config.TenantId, _config.ClientId);
 
         try
         {
-            if (!_config.UseAzureCliAuth &&
-                !string.IsNullOrWhiteSpace(_config.TenantId) &&
-                !string.IsNullOrWhiteSpace(_config.ClientId) &&
-                !string.IsNullOrWhiteSpace(_config.ClientSecret))
-            {
-                var clientToken = await GetClientCredentialTokenAsync(
-                    _config.TenantId,
-                    _config.ClientId,
-                    _config.ClientSecret);
-
-                if (!string.IsNullOrEmpty(clientToken))
-                {
-                    _cachedToken = clientToken;
-                    _tokenExpiry = DateTime.UtcNow.AddMinutes(55);
-                    Log.Debug("Acquired Microsoft Graph access token via client credentials");
-                    return _cachedToken;
-                }
-            }
-
-            var azPath = FindAzureCli();
-            if (azPath == null)
-            {
-                Log.Error("Azure CLI (az) not found. Please install Azure CLI.");
-                return null;
-            }
-
-            var psi = new ProcessStartInfo
-            {
-                FileName = azPath,
-                Arguments = $"account get-access-token --resource {GraphResourceId} --query accessToken -o tsv",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            using var process = Process.Start(psi);
-            if (process == null)
-            {
-                Log.Error("Failed to start az CLI process");
-                return null;
-            }
-
-            var token = await process.StandardOutput.ReadToEndAsync();
-            var error = await process.StandardError.ReadToEndAsync();
-
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode != 0)
-            {
-                Log.Error("Azure CLI failed: {Error}", error);
-                return null;
-            }
-
-            _cachedToken = token.Trim();
-            _tokenExpiry = DateTime.UtcNow.AddMinutes(55);
-
-            Log.Debug("Acquired Microsoft Graph access token via Azure CLI");
-            return _cachedToken;
+            return await source.GetTokenAsync(GraphResourceId);
+        }
+        catch (EntraTokenException ex)
+        {
+            Log.Error("Failed to get Microsoft Graph access token: {Message}", ex.Message);
+            return null;
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to get Microsoft Graph access token");
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Get an access token scoped to a specific purpose.
-    /// Falls back to the default SP / az CLI if no dedicated SP is configured.
-    /// </summary>
-    private async Task<string?> GetScopedAccessTokenAsync(string scope)
-    {
-        switch (scope)
-        {
-            case "devices" when _config.IsDevicesSpConfigured:
-                if (_devicesToken != null && DateTime.UtcNow < _devicesTokenExpiry) return _devicesToken;
-                var dt = await GetClientCredentialTokenAsync(_config.TenantId!, _config.DevicesClientId!, _config.DevicesClientSecret!);
-                if (!string.IsNullOrEmpty(dt)) { _devicesToken = dt; _devicesTokenExpiry = DateTime.UtcNow.AddMinutes(55); }
-                return _devicesToken ?? await GetAccessTokenAsync();
-
-            case "systems" when _config.IsSystemsSpConfigured:
-                if (_systemsToken != null && DateTime.UtcNow < _systemsTokenExpiry) return _systemsToken;
-                var st = await GetClientCredentialTokenAsync(_config.TenantId!, _config.SystemsClientId!, _config.SystemsClientSecret!);
-                if (!string.IsNullOrEmpty(st)) { _systemsToken = st; _systemsTokenExpiry = DateTime.UtcNow.AddMinutes(55); }
-                return _systemsToken ?? await GetAccessTokenAsync();
-
-            default:
-                return await GetAccessTokenAsync();
-        }
-    }
-
-    private async Task<string?> GetClientCredentialTokenAsync(string tenantId, string clientId, string clientSecret)
-    {
-        try
-        {
-            using var tokenClient = new HttpClient
-            {
-                Timeout = TimeSpan.FromSeconds(30)
-            };
-
-            var tokenEndpoint = $"https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token";
-            var content = new FormUrlEncodedContent(new Dictionary<string, string>
-            {
-                ["client_id"] = clientId,
-                ["client_secret"] = clientSecret,
-                ["grant_type"] = "client_credentials",
-                ["scope"] = GraphScope
-            });
-
-            var response = await tokenClient.PostAsync(tokenEndpoint, content);
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                Log.Error("Graph token request failed: {Status} - {Error}", response.StatusCode, error);
-                return null;
-            }
-
-            using var stream = await response.Content.ReadAsStreamAsync();
-            using var doc = await JsonDocument.ParseAsync(stream);
-            if (doc.RootElement.TryGetProperty("access_token", out var tokenProp))
-            {
-                return tokenProp.GetString();
-            }
-
-            Log.Error("Graph token response missing access_token");
-            return null;
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Failed to get Microsoft Graph access token via client credentials");
             return null;
         }
     }
@@ -236,29 +147,23 @@ public class GraphService : IDisposable
         return true;
     }
 
-    private static string? FindAzureCli()
+    /// <summary>
+    /// Read a response body for error logging (truncated). In elevation mode the
+    /// <see cref="ElevationHttpHandler"/> packs the real failure — e.g. "aze elevation
+    /// is not configured" or the underlying Graph error — into a BadGateway body, so
+    /// surfacing it here stops elevation/auth failures from silently looking like a
+    /// missing user or group.
+    /// </summary>
+    private static async Task<string> ReadErrorBodyAsync(HttpResponseMessage response)
     {
-        var candidates = new[]
+        try
         {
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft SDKs", "Azure", "CLI2", "wbin", "az.cmd"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft SDKs", "Azure", "CLI2", "wbin", "az.cmd"),
-            @"C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd",
-            @"C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
-        };
-
-        foreach (var candidate in candidates)
-        {
-            if (File.Exists(candidate)) return candidate;
+            var body = (await response.Content.ReadAsStringAsync())?.Trim() ?? "";
+            return body.Length > 600 ? body[..600] + "…" : body;
         }
-
-        var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";
-        foreach (var dir in pathEnv.Split(Path.PathSeparator))
-        {
-            var azCmd = Path.Combine(dir, "az.cmd");
-            if (File.Exists(azCmd)) return azCmd;
-        }
-        return null;
+        catch { return "(no body)"; }
     }
+
 
     #endregion
 
@@ -278,7 +183,7 @@ public class GraphService : IDisposable
         var allDevices = new List<IntuneDevice>();
         var url = "deviceManagement/managedDevices";
 
-        var queryParams = new List<string> { $"$top={Math.Min(limit, _config.PageSize)}" };
+        var queryParams = new List<string> { $"$top={PageSizeFor(limit)}" };
         if (!string.IsNullOrEmpty(filter))
         {
             queryParams.Add($"$filter={Uri.EscapeDataString(filter)}");
@@ -408,7 +313,7 @@ public class GraphService : IDisposable
 
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get device {DeviceId}: {Status}", deviceId, response.StatusCode);
+                Log.Warning("Failed to get device {DeviceId}: {Status} - {Error}", deviceId, response.StatusCode, await ReadErrorBodyAsync(response));
                 return null;
             }
 
@@ -523,8 +428,26 @@ public class GraphService : IDisposable
     /// <summary>
     /// Remote lock a device with optional PIN
     /// </summary>
-    public async Task<DeviceActionResult> RemoteLockDeviceAsync(string deviceId, string? pin = null)
+    // Defense-in-depth: destructive fleet actions (remoteLock/wipe/retire/remediation)
+    // must be invoked with an explicit confirmed flag. Callers gate on their own
+    // confirmation first (CLI --confirm, GUI MessageBox) then pass confirmed: true; a
+    // caller that forgets is refused here rather than silently firing the action.
+    private static DeviceActionResult? RequireConfirmation(bool confirmed, string action, string? deviceId = null)
     {
+        if (confirmed) return null;
+        Log.Warning("Refused unconfirmed destructive action {Action} for {Target}", action, deviceId ?? "(fleet)");
+        return new DeviceActionResult
+        {
+            Success = false, DeviceId = deviceId ?? string.Empty, Action = action,
+            Message = "Confirmation required: this destructive action must be invoked with confirmed: true."
+        };
+    }
+
+    public async Task<DeviceActionResult> RemoteLockDeviceAsync(string deviceId, string? pin = null, bool confirmed = false)
+    {
+        var guard = RequireConfirmation(confirmed, "remoteLock", deviceId);
+        if (guard != null) return guard;
+
         if (!await SetAuthorizationAsync())
         {
             return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "remoteLock", Message = "Not authenticated" };
@@ -566,9 +489,9 @@ public class GraphService : IDisposable
     /// <summary>
     /// Remote lock multiple devices
     /// </summary>
-    public async Task<List<DeviceActionResult>> RemoteLockDevicesAsync(IEnumerable<string> deviceIds, string? pin = null)
+    public async Task<List<DeviceActionResult>> RemoteLockDevicesAsync(IEnumerable<string> deviceIds, string? pin = null, bool confirmed = false)
     {
-        var tasks = deviceIds.Select(id => RemoteLockDeviceAsync(id, pin));
+        var tasks = deviceIds.Select(id => RemoteLockDeviceAsync(id, pin, confirmed));
         var results = await Task.WhenAll(tasks);
         return results.ToList();
     }
@@ -576,8 +499,11 @@ public class GraphService : IDisposable
     /// <summary>
     /// Wipe a device (factory reset)
     /// </summary>
-    public async Task<DeviceActionResult> WipeDeviceAsync(string deviceId, bool keepEnrollmentData = false, bool keepUserData = false)
+    public async Task<DeviceActionResult> WipeDeviceAsync(string deviceId, bool keepEnrollmentData = false, bool keepUserData = false, bool confirmed = false)
     {
+        var guard = RequireConfirmation(confirmed, "wipe", deviceId);
+        if (guard != null) return guard;
+
         if (!await SetAuthorizationAsync())
         {
             return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "wipe", Message = "Not authenticated" };
@@ -611,8 +537,11 @@ public class GraphService : IDisposable
     /// <summary>
     /// Retire a device (remove company data)
     /// </summary>
-    public async Task<DeviceActionResult> RetireDeviceAsync(string deviceId)
+    public async Task<DeviceActionResult> RetireDeviceAsync(string deviceId, bool confirmed = false)
     {
+        var guard = RequireConfirmation(confirmed, "retire", deviceId);
+        if (guard != null) return guard;
+
         if (!await SetAuthorizationAsync())
         {
             return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "retire", Message = "Not authenticated" };
@@ -641,17 +570,17 @@ public class GraphService : IDisposable
     }
 
     /// <summary>Factory-reset multiple devices.</summary>
-    public async Task<List<DeviceActionResult>> WipeDevicesAsync(IEnumerable<string> deviceIds, bool keepEnrollmentData = false, bool keepUserData = false)
+    public async Task<List<DeviceActionResult>> WipeDevicesAsync(IEnumerable<string> deviceIds, bool keepEnrollmentData = false, bool keepUserData = false, bool confirmed = false)
     {
-        var tasks = deviceIds.Select(id => WipeDeviceAsync(id, keepEnrollmentData, keepUserData));
+        var tasks = deviceIds.Select(id => WipeDeviceAsync(id, keepEnrollmentData, keepUserData, confirmed));
         var results = await Task.WhenAll(tasks);
         return results.ToList();
     }
 
     /// <summary>Retire multiple devices (remove company data, unenroll).</summary>
-    public async Task<List<DeviceActionResult>> RetireDevicesAsync(IEnumerable<string> deviceIds)
+    public async Task<List<DeviceActionResult>> RetireDevicesAsync(IEnumerable<string> deviceIds, bool confirmed = false)
     {
-        var tasks = deviceIds.Select(RetireDeviceAsync);
+        var tasks = deviceIds.Select(id => RetireDeviceAsync(id, confirmed));
         var results = await Task.WhenAll(tasks);
         return results.ToList();
     }
@@ -669,7 +598,7 @@ public class GraphService : IDisposable
         var allApps = new List<MobileApp>();
         var url = "deviceAppManagement/mobileApps";
 
-        var queryParams = new List<string> { $"$top={Math.Min(limit, _config.PageSize)}" };
+        var queryParams = new List<string> { $"$top={PageSizeFor(limit)}" };
         if (!string.IsNullOrEmpty(filter))
         {
             queryParams.Add($"$filter={Uri.EscapeDataString(filter)}");
@@ -774,12 +703,12 @@ public class GraphService : IDisposable
 
         try
         {
-            var url = $"users/{Uri.EscapeDataString(userPrincipalNameOrId)}";
+            var url = $"users/{Uri.EscapeDataString(userPrincipalNameOrId)}?$select={UserSelect}";
             var response = await _client.GetAsync(url);
 
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get user {User}: {Status}", userPrincipalNameOrId, response.StatusCode);
+                Log.Warning("Failed to get user {User}: {Status} - {Error}", userPrincipalNameOrId, response.StatusCode, await ReadErrorBodyAsync(response));
                 return null;
             }
 
@@ -818,13 +747,15 @@ public class GraphService : IDisposable
         {
             var escaped = query.Replace("'", "''");
             var filter = $"startswith(displayName,'{escaped}') or startswith(userPrincipalName,'{escaped}') or startswith(mail,'{escaped}')";
-            var select = "id,displayName,userPrincipalName,mail,jobTitle,department,officeLocation";
-            var url = $"users?$filter={Uri.EscapeDataString(filter)}&$select={select}&$top={limit}";
+            // Same $select as GetUserAsync — the list renders the enabled badge
+            // too, and a narrower projection here put every result in the list
+            // at odds with its own detail pane.
+            var url = $"users?$filter={Uri.EscapeDataString(filter)}&$select={UserSelect}&$top={PageSizeFor(limit)}";
 
             var response = await _client.GetAsync(url);
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to search users with query '{Query}': {Status}", query, response.StatusCode);
+                Log.Warning("Failed to search users with query '{Query}': {Status} - {Error}", query, response.StatusCode, await ReadErrorBodyAsync(response));
                 return new List<EntraUser>();
             }
 
@@ -841,6 +772,55 @@ public class GraphService : IDisposable
     /// <summary>
     /// Get groups a user is a member of
     /// </summary>
+    /// <summary>
+    /// The user's manager, or null when they have none.
+    ///
+    /// Graph answers 404 rather than an empty body for a user with no manager,
+    /// which is a normal state and not an error worth logging loudly.
+    /// </summary>
+    public async Task<EntraUser?> GetUserManagerAsync(string userPrincipalNameOrId)
+    {
+        if (!await SetAuthorizationAsync()) return null;
+
+        try
+        {
+            var url = $"users/{Uri.EscapeDataString(userPrincipalNameOrId)}/manager?$select={UserSelect}";
+            var response = await _client.GetAsync(url);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                if (response.StatusCode != System.Net.HttpStatusCode.NotFound)
+                {
+                    Log.Debug("[graph] Manager lookup for {User} returned {Status}",
+                        userPrincipalNameOrId, response.StatusCode);
+                }
+                return null;
+            }
+
+            return await response.Content.ReadFromJsonAsync<EntraUser>(_jsonOptions);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[graph] Failed to get the manager for {User}", userPrincipalNameOrId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Intune devices whose primary user is this person.
+    ///
+    /// Filtered server-side on userPrincipalName rather than fetching the estate
+    /// and matching locally — the managed device collection is the largest thing
+    /// in the tenant and an inspector pane must not pull all of it.
+    /// </summary>
+    public async Task<List<IntuneDevice>> GetUserDevicesAsync(string userPrincipalName, int limit = 100)
+    {
+        if (string.IsNullOrWhiteSpace(userPrincipalName)) return new List<IntuneDevice>();
+
+        var escaped = userPrincipalName.Replace("'", "''");
+        return await GetManagedDevicesAsync($"userPrincipalName eq '{escaped}'", limit);
+    }
+
     public async Task<List<EntraGroup>> GetUserGroupsAsync(string userPrincipalNameOrId)
     {
         if (!await SetAuthorizationAsync())
@@ -860,7 +840,7 @@ public class GraphService : IDisposable
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    Log.Warning("Failed to get groups for user {User}: {Status}", userPrincipalNameOrId, response.StatusCode);
+                    Log.Warning("Failed to get groups for user {User}: {Status} - {Error}", userPrincipalNameOrId, response.StatusCode, await ReadErrorBodyAsync(response));
                     break;
                 }
 
@@ -978,7 +958,7 @@ public class GraphService : IDisposable
 
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get group {Group}: {Status}", displayName, response.StatusCode);
+                Log.Warning("Failed to get group {Group}: {Status} - {Error}", displayName, response.StatusCode, await ReadErrorBodyAsync(response));
                 return null;
             }
 
@@ -1016,7 +996,7 @@ public class GraphService : IDisposable
 
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get group {GroupId}: {Status}", groupId, response.StatusCode);
+                Log.Warning("Failed to get group {GroupId}: {Status} - {Error}", groupId, response.StatusCode, await ReadErrorBodyAsync(response));
                 return null;
             }
 
@@ -1055,7 +1035,7 @@ public class GraphService : IDisposable
 
         try
         {
-            var url = $"groups/{groupId}/members?$top={Math.Min(limit, _config.PageSize)}";
+            var url = $"groups/{groupId}/members?$top={PageSizeFor(limit)}";
 
             while (!string.IsNullOrEmpty(url) && members.Count < limit)
             {
@@ -1181,26 +1161,43 @@ public class GraphService : IDisposable
             return new List<EntraGroup>();
         }
 
+        var groups = new List<EntraGroup>();
+
         try
         {
-            var filter = $"startswith(displayName, '{query}')";
-            var url = $"groups?$filter={Uri.EscapeDataString(filter)}&$top={limit}";
+            var escaped = query.Replace("'", "''");
+            var filter = $"startswith(displayName, '{escaped}')";
+            var url = $"groups?$filter={Uri.EscapeDataString(filter)}&$top={PageSizeFor(limit)}";
 
-            var response = await _client.GetAsync(url);
-
-            if (!response.IsSuccessStatusCode)
+            // Follow @odata.nextLink until the caller's limit is met. A single
+            // page silently truncated the result at the page ceiling, so a
+            // tenant with more than 999 Devices-* groups lost the tail — and the
+            // client-side filter could not match what was never fetched.
+            while (!string.IsNullOrEmpty(url) && groups.Count < limit)
             {
-                Log.Warning("Failed to search groups: {Status}", response.StatusCode);
-                return new List<EntraGroup>();
+                var response = await _client.GetAsync(url);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    Log.Warning("Failed to search groups: {Status} - {Error}",
+                        response.StatusCode, await ReadErrorBodyAsync(response));
+                    break;
+                }
+
+                var result = await response.Content.ReadFromJsonAsync<EntraGroupListResponse>(_jsonOptions);
+                if (result?.Value == null || result.Value.Count == 0) break;
+
+                groups.AddRange(result.Value);
+                url = result.NextLink;
             }
 
-            var result = await response.Content.ReadFromJsonAsync<EntraGroupListResponse>(_jsonOptions);
-            return result?.Value ?? new List<EntraGroup>();
+            // nextLink pages are whole, so the last one can overshoot the limit.
+            return groups.Count > limit ? groups.Take(limit).ToList() : groups;
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to search groups");
-            return new List<EntraGroup>();
+            return groups;
         }
     }
 
@@ -1233,7 +1230,7 @@ public class GraphService : IDisposable
         try
         {
             // Get device members from the group (filters for device objects)
-            var url = $"groups/{groupId}/members?$top={Math.Min(limit, _config.PageSize)}";
+            var url = $"groups/{groupId}/members?$top={PageSizeFor(limit)}";
 
             while (!string.IsNullOrEmpty(url) && devices.Count < limit)
             {
@@ -1308,8 +1305,14 @@ public class GraphService : IDisposable
         string detectionScript,
         string remediationScript,
         string groupId,
-        string? description = null)
+        string? description = null,
+        bool confirmed = false)
     {
+        // Most destructive path: runs PowerShell as SYSTEM across every device in the
+        // target group. Requires explicit confirmation, like wipe/retire.
+        var guard = RequireConfirmation(confirmed, "deployRemediation", groupId);
+        if (guard != null) return guard;
+
         if (!await SetAuthorizationAsync())
         {
             return new DeviceActionResult { Success = false, Action = "deployRemediation", Message = "Not authenticated" };
@@ -1421,7 +1424,7 @@ public class GraphService : IDisposable
     /// Deploy the Cimian push trigger remediation to a group.
     /// Creates a proactive remediation that writes .cimian.headless on target devices.
     /// </summary>
-    public async Task<DeviceActionResult> DeployCimianPushRemediationAsync(string groupNameOrId)
+    public async Task<DeviceActionResult> DeployCimianPushRemediationAsync(string groupNameOrId, bool confirmed = false)
     {
         // Resolve group ID
         var groupId = groupNameOrId;
@@ -1500,7 +1503,8 @@ if ($svc -and $svc.Status -ne 'Running') {
             detectionScript,
             remediationScript,
             groupId,
-            "FleetMate-initiated Cimian push trigger. Creates .cimian.headless to force an immediate managed software update run.");
+            "FleetMate-initiated Cimian push trigger. Creates .cimian.headless to force an immediate managed software update run.",
+            confirmed);
     }
 
     #endregion

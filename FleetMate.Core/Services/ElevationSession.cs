@@ -147,8 +147,25 @@ public sealed class ElevationSession
 
     // MARK: exec (handshake via az, raw websocket native)
 
+    /// <summary>
+    /// Runs a single bash <paramref name="command"/> inside the elevated container and
+    /// returns its stdout and exit code. This is a general-purpose primitive that will
+    /// execute ANY bash string with the domain managed identity's privileges.
+    ///
+    /// INVARIANT — callers MUST pass only sanctioned <c>az rest</c> commands built by
+    /// <see cref="ElevationHttpHandler"/> (the sole intended caller). Never pass
+    /// free-form strings, user input, or interpolated identifiers that were not
+    /// single-quote-escaped. Never use this to extract a raw token
+    /// (e.g. <c>az account get-access-token</c>) — the elevation model deliberately
+    /// keeps the identity's token inside Azure; only Graph JSON results come back.
+    ///
+    /// A lightweight defensive guard enforces the shape (leading <c>az rest</c>) and
+    /// rejects obvious token-extraction; it is a backstop, not a substitute for the
+    /// invariant above.
+    /// </summary>
     public async Task<(string Out, int Code)> ExecAsync(GraphDomain domain, string command)
     {
+        GuardSanctionedCommand(command);
         await EnsureSessionAsync(domain);
         var name = SessionName(domain);
 
@@ -169,6 +186,17 @@ public sealed class ElevationSession
         if (wsUri == null || password == null) throw new ElevationException("Exec response missing webSocketUri/password");
 
         return await RunWebSocketAsync(new Uri(wsUri), password, command);
+    }
+
+    // Backstop for the ExecAsync invariant: only sanctioned `az rest` calls are allowed
+    // through, and never a token-extraction command. See the ExecAsync doc comment.
+    private static void GuardSanctionedCommand(string command)
+    {
+        var trimmed = command?.TrimStart() ?? "";
+        if (!trimmed.StartsWith("az rest ", StringComparison.Ordinal))
+            throw new ElevationException("Elevation exec is restricted to sanctioned 'az rest' commands.");
+        if (trimmed.Contains("get-access-token", StringComparison.OrdinalIgnoreCase))
+            throw new ElevationException("Elevation exec must not extract tokens.");
     }
 
     private static readonly Regex AnsiRe = new(@"\x1b\[[0-9;?]*[a-zA-Z]", RegexOptions.Compiled);
@@ -217,7 +245,20 @@ public sealed class ElevationSession
     {
         var text = AnsiRe.Replace(raw, "").Replace("\r\n", "\n").Replace("\r", "\n");
         var m = MarkerRe.Match(text);
-        if (!m.Success) throw new ElevationException("Could not find output markers in session output:\n" + text);
+        if (!m.Success)
+        {
+            // Never embed the raw session body — it can carry privileged Graph JSON.
+            // Report only a non-sensitive summary; the full run is in the transcript.
+            // A bounded tail is available for local troubleshooting behind an opt-in
+            // debug flag (FLEETMATE_ELEVATION_DEBUG=1); withheld by default.
+            var summary = $"Could not find output markers in session output ({text.Length} chars, no end marker/exit code — output withheld, see the elevation transcript).";
+            if (string.Equals(Environment.GetEnvironmentVariable("FLEETMATE_ELEVATION_DEBUG"), "1", StringComparison.Ordinal))
+            {
+                var tail = text.Length > 200 ? text[^200..] : text;
+                summary += " Tail: " + tail;
+            }
+            throw new ElevationException(summary);
+        }
         var output = m.Groups[1].Value.Trim('\n');
         var code = int.TryParse(m.Groups[2].Value, out var c) ? c : 0;
         return (output, code);

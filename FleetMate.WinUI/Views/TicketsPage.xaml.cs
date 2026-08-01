@@ -191,10 +191,12 @@ public sealed partial class TicketsPage : Page
         AddCommentButton.IsEnabled = false;
         try
         {
-            var ok = await tdx.AddCommentAsync(t.Id, box.Text.Trim(), isPrivate.IsChecked == true, notifyUids);
-            if (ok) await LoadFeedAsync(t.Id);
-            else await MessageAsync("Comment failed", "Could not post the comment.");
+            await tdx.AddCommentAsync(
+                t.Id, box.Text.Trim(), isPrivate.IsChecked == true,
+                isRichHtml: false, notify: notifyUids);
+            await LoadFeedAsync(t.Id);
         }
+        catch (Exception ex) { await MessageAsync("Comment failed", ex.Message); }
         finally { AddCommentButton.IsEnabled = true; }
     }
 

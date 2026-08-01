@@ -42,7 +42,9 @@ public static class StatusCommand
         configTable.AddRow("Quality Path", config.ResolvePath(config.QualityPath));
         configTable.AddRow("Log Path", config.LogPath ?? "[dim](not set)[/]");
         configTable.AddRow("ReportMate URL", string.IsNullOrEmpty(config.ReportMateUrl) ? "[dim](not configured)[/]" : config.ReportMateUrl);
-        configTable.AddRow("ReportMate Auth", string.IsNullOrEmpty(config.ReportMatePassphrase) ? "[red]Not configured[/]" : "[green]Configured[/]");
+        configTable.AddRow("ReportMate Auth", config.ReportMateUsesOidc
+            ? "[green]Entra SSO[/] [dim](secretless)[/]"
+            : "[yellow]Legacy passphrase[/]");
         
         AnsiConsole.Write(configTable);
         Console.WriteLine();
@@ -75,8 +77,9 @@ public static class StatusCommand
         AnsiConsole.Write(pathsTable);
         Console.WriteLine();
         
-        // ReportMate status
-        if (!string.IsNullOrEmpty(config.ReportMatePassphrase))
+        // ReportMate status. A URL is enough to try now — auth is the operator's
+        // Entra session, so there is no credential to wait for.
+        if (!string.IsNullOrEmpty(config.ReportMateUrl))
         {
             await AnsiConsole.Status()
                 .StartAsync("Checking ReportMate connection...", async ctx =>
