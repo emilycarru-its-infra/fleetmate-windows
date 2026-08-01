@@ -148,6 +148,14 @@ public partial class TicketsPage : Page
 
     private async Task LoadTicketsAsync()
     {
+        // Reachable during BAML load: LimitComboBox marks an item IsSelected in
+        // markup, so SelectionChanged fires mid-parse and lands here before
+        // NotConfiguredText and the rest of the tree exist. Because
+        // OnLimitChanged is async void, the resulting NullReferenceException
+        // surfaces on the dispatcher as unhandled and kills the process — the
+        // Tickets tab took the whole app down with it.
+        if (!IsInitialized) return;
+
         if (_tdxService == null || _app == null)
         {
             NotConfiguredText.Visibility = Visibility.Visible;
@@ -224,6 +232,12 @@ public partial class TicketsPage : Page
 
     private void ApplyFiltersAndSort()
     {
+        // Reached during BAML load too: SortComboBox marks an item IsSelected in
+        // markup, so SelectionChanged fires while the tree is half-built and the
+        // controls this touches — TicketsListView in particular — are still null.
+        // Nothing here is meaningful before the page exists.
+        if (!IsInitialized) return;
+
         var filtered = _allTickets.AsEnumerable();
 
         // Filter show closed (hide when unchecked)
@@ -306,6 +320,10 @@ public partial class TicketsPage : Page
     /// </summary>
     private void RebuildOutline()
     {
+        // Belt and braces: every caller is guarded, but this one dereferences
+        // the list directly and a future caller added before load would fault.
+        if (TicketsListView is null) return;
+
         // ItemsSource is replaced wholesale, so WPF drops the selection. Losing
         // the open ticket every time a filter changes would close the detail
         // pane out from under the operator.
@@ -387,11 +405,19 @@ public partial class TicketsPage : Page
 
     private void OnViewModeChanged(object sender, RoutedEventArgs e)
     {
+        // ListViewRadio carries IsChecked="True", so its Checked event fires
+        // while the XAML is still being parsed — before BoardViewRadio and the
+        // panels below it exist. Dereferencing them there took the whole app
+        // down with a NullReferenceException the moment Tickets was opened.
+        // IsInitialized is false until InitializeComponent finishes, which is
+        // exactly the window we need to sit out.
+        if (!IsInitialized) return;
+
         _isBoardView = BoardViewRadio.IsChecked == true;
-        
+
         ListViewPanel.Visibility = _isBoardView ? Visibility.Collapsed : Visibility.Visible;
         BoardViewPanel.Visibility = _isBoardView ? Visibility.Visible : Visibility.Collapsed;
-        
+
         if (_isBoardView)
         {
             UpdateBoardView();
@@ -515,6 +541,10 @@ public partial class TicketsPage : Page
 
     private void OnFeedFilterChanged(object sender, RoutedEventArgs e)
     {
+        // FeedFilterComments is checked in markup, so this fires before its
+        // sibling radios exist.
+        if (!IsInitialized) return;
+
         if (FeedFilterComments.IsChecked == true)
             _feedFilter = "Comments";
         else if (FeedFilterActivity.IsChecked == true)
@@ -649,12 +679,12 @@ public partial class TicketsPage : Page
         var draft = CommentTextBox.Text?.Trim();
 
         if (string.IsNullOrEmpty(draft)) _commentDrafts.Remove(previous.Id);
-        else _commentDrafts[previous.Id] = CommentTextBox.Text;
+        else _commentDrafts[previous.Id] = CommentTextBox.Text ?? "";
     }
 
     private void RestoreCommentDraft(int ticketId)
     {
-        CommentTextBox.Text = _commentDrafts.TryGetValue(ticketId, out var draft) ? draft : "";
+        CommentTextBox.Text = _commentDrafts.GetValueOrDefault(ticketId) ?? "";
     }
 
     /// <summary>
