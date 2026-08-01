@@ -433,6 +433,12 @@
                                                 <StackPanel>
                                                     <DockPanel>
                                                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                                            <!-- Quote, not Reply: the TDX Web API has no route
+                                                                 for a threaded reply, so quoting into a new
+                                                                 comment is the closest thing it supports. -->
+                                                            <Button Content="Quote" FontSize="10" Padding="6,1" Margin="0,0,6,0"
+                                                                    Click="OnQuoteFeedEntry" Tag="{Binding}"
+                                                                    ToolTip="Quote this comment into a new one" />
                                                             <Border x:Name="PrivateBadge" Background="#FFFFD080" Padding="6,2" CornerRadius="4" Margin="0,0,4,0" Visibility="{Binding IsPrivate, Converter={StaticResource BoolToVisibilityConverter}}">
                                                                 <TextBlock Text="Private" FontSize="10" />
                                                             </Border>
@@ -440,7 +446,9 @@
                                                         </StackPanel>
                                                         <TextBlock Text="{Binding CreatedFullName}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                                     </DockPanel>
-                                                    <TextBlock Text="{Binding StrippedBody}" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" TextWrapping="Wrap" MaxHeight="100" TextTrimming="CharacterEllipsis" Margin="0,6,0,0" />
+                                                    <!-- Uncapped: a clipped comment reads as a rendering fault,
+                                                         and the detail you need is often at the bottom. -->
+                                                    <TextBlock Text="{Binding StrippedBody}" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
                                                 </StackPanel>
                                             </Border>
                                         </DataTemplate>
