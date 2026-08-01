@@ -25,7 +25,7 @@ public class TdxSsoService
 
     public TdxSsoService(string baseUrl)
     {
-        _baseUrl = baseUrl.TrimEnd('/');
+        _baseUrl = ServiceUri.Normalize(baseUrl);
     }
 
     /// <summary>
@@ -45,7 +45,7 @@ public class TdxSsoService
     /// </summary>
     public static string BuildLoginSsoUrl(string baseUrl)
     {
-        var root = baseUrl.TrimEnd('/');
+        var root = ServiceUri.Normalize(baseUrl);
 
         // Strip a trailing /TDWebApi (any casing) so appending it back is
         // idempotent. Previously the root was computed and then thrown away, so
@@ -61,7 +61,7 @@ public class TdxSsoService
     /// <summary>The TDX web entry point that drives the SAML redirect chain.</summary>
     public static string BuildEntryUrl(string baseUrl)
     {
-        var root = baseUrl.TrimEnd('/');
+        var root = ServiceUri.Normalize(baseUrl);
         const string apiSegment = "/TDWebApi";
         if (root.EndsWith(apiSegment, StringComparison.OrdinalIgnoreCase))
             root = root[..^apiSegment.Length];

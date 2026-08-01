@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.CommandLine.Invocation;
 using System.Text.Json;
 using FleetMate.Core.Config;
 using FleetMate.Core.Services;
@@ -35,21 +36,36 @@ public static class LoginCommand
         var checkOnly = new Option<bool>("--check",
             "Only verify auth; never prompt, even if a system needs interactive consent");
         var asJson = new Option<bool>(new[] { "--json", "-j" }, "Output as JSON");
+        var desktop = new Option<bool>("--desktop",
+            "Use the desktop app's secretless configuration (ignore all locally stored credentials)");
+        var strict = new Option<bool>("--strict",
+            "Fail when any configured system cannot authenticate or read data");
+        var deferBrowser = new Option<bool>("--defer-browser",
+            "Defer browser-only systems to the desktop WebView smoke runner");
 
         command.AddOption(checkOnly);
         command.AddOption(asJson);
+        command.AddOption(desktop);
+        command.AddOption(strict);
+        command.AddOption(deferBrowser);
 
-        command.SetHandler(async (bool check, bool json) =>
-            {
-                var exitCode = await ExecuteAsync(config, check, json);
-                Environment.ExitCode = exitCode;
-            },
-            checkOnly, asJson);
+        command.SetHandler(async (InvocationContext context) =>
+        {
+            var effectiveConfig = context.ParseResult.GetValueForOption(desktop)
+                ? FleetMateConfig.LoadDesktop()
+                : config;
+            context.ExitCode = await ExecuteAsync(
+                effectiveConfig,
+                context.ParseResult.GetValueForOption(checkOnly),
+                context.ParseResult.GetValueForOption(asJson),
+                context.ParseResult.GetValueForOption(strict),
+                context.ParseResult.GetValueForOption(deferBrowser));
+        });
 
         return command;
     }
 
-    private static async Task<int> ExecuteAsync(FleetMateConfig config, bool check, bool json)
+    private static async Task<int> ExecuteAsync(FleetMateConfig config, bool check, bool json, bool strict, bool deferBrowser)
     {
         var reports = new List<SystemReport>();
 
@@ -91,7 +107,7 @@ public static class LoginCommand
         }
 
         // ── TeamDynamix ──────────────────────────────────────────────────────
-        if (!string.IsNullOrWhiteSpace(config.Tdx?.BaseUrl))
+        if (!deferBrowser && !string.IsNullOrWhiteSpace(config.Tdx?.BaseUrl))
         {
             reports.Add(await ProbeTdxAsync(config));
         }
@@ -102,7 +118,9 @@ public static class LoginCommand
         // Only a broken trust anchor is a failure exit. A single unreachable
         // service should not fail a scripted health check that is really asking
         // "is my sign-in good?".
-        return entraOk ? 0 : 1;
+        return strict
+            ? (reports.All(r => r.Status == AuthStatus.Ok) ? 0 : 1)
+            : (entraOk ? 0 : 1);
     }
 
     // MARK: - Probes

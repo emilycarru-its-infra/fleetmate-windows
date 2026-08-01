@@ -1,5 +1,7 @@
 namespace FleetMate.Core.Models.Tickets;
 
+using FleetMate.Core.Services;
+
 /// <summary>
 /// TeamDynamix (TDX) API configuration.
 ///
@@ -88,7 +90,7 @@ public class TdxConfig
         if (string.IsNullOrEmpty(BaseUrl))
             throw new InvalidOperationException("TDX BaseUrl is not configured. Set TDX_BASE_URL environment variable.");
 
-        var baseUrl = BaseUrl.TrimEnd('/');
+        var baseUrl = GetNormalizedApiBaseUrl();
         return $"{baseUrl}/api/{endpoint}";
     }
 
@@ -100,10 +102,11 @@ public class TdxConfig
         if (string.IsNullOrEmpty(BaseUrl))
             throw new InvalidOperationException("TDX BaseUrl is not configured. Set TDX_BASE_URL environment variable.");
 
-        var baseUrl = BaseUrl.TrimEnd('/');
+        var baseUrl = GetNormalizedApiBaseUrl();
+        var appId = TicketingAppId ?? AppId;
         return string.IsNullOrEmpty(path)
-            ? $"{baseUrl}/api/{AppId}/tickets"
-            : $"{baseUrl}/api/{AppId}/tickets/{path}";
+            ? $"{baseUrl}/api/{appId}/tickets"
+            : $"{baseUrl}/api/{appId}/tickets/{path}";
     }
 
     /// <summary>
@@ -114,14 +117,23 @@ public class TdxConfig
         if (string.IsNullOrEmpty(BaseUrl))
             throw new InvalidOperationException("TDX BaseUrl is not configured. Set TDX_BASE_URL environment variable.");
 
-        var baseUrl = BaseUrl.TrimEnd('/');
+        var baseUrl = GetNormalizedApiBaseUrl();
+        var appId = AssetsAppId ?? AppId;
         return string.IsNullOrEmpty(path)
-            ? $"{baseUrl}/api/{AppId}/assets"
-            : $"{baseUrl}/api/{AppId}/assets/{path}";
+            ? $"{baseUrl}/api/{appId}/assets"
+            : $"{baseUrl}/api/{appId}/assets/{path}";
     }
 
     /// <summary>
     /// Check if TDX is configured (has required settings)
     /// </summary>
     public bool IsConfigured => !string.IsNullOrEmpty(BaseUrl) && AppId > 0;
+
+    private string GetNormalizedApiBaseUrl()
+    {
+        var baseUrl = ServiceUri.Normalize(BaseUrl!);
+        return baseUrl.EndsWith("/TDWebApi", StringComparison.OrdinalIgnoreCase)
+            ? baseUrl
+            : baseUrl + "/TDWebApi";
+    }
 }

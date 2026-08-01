@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FleetMate.Core.Converters;
 using FleetMate.Core.Models.Reporting;
+using FleetMate.Core.Services;
 using Serilog;
 
 namespace FleetMate.Core.Services.Reporting;
@@ -49,7 +50,7 @@ public class ReportMateService : IDisposable
         _client = UsesOidc
             ? new HttpClient(new EntraBearerHandler(oidcAudience!))
             : new HttpClient();
-        _client.BaseAddress = new Uri(baseUrl.TrimEnd('/'));
+        _client.BaseAddress = new Uri(ServiceUri.Normalize(baseUrl));
         _client.Timeout = TimeSpan.FromSeconds(120);
 
         if (!UsesOidc && !string.IsNullOrEmpty(passphrase))

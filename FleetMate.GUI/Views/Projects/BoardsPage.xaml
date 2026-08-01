@@ -5,7 +5,7 @@
       xmlns:local="clr-namespace:FleetMate.GUI.Views.Projects"
       Loaded="Page_Loaded">
 
-    <Grid Margin="24">
+    <Grid Margin="16,14,16,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -58,11 +58,11 @@
         <!-- Board / List / Projects toggle (separate row, left-aligned) -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
             <RadioButton x:Name="BoardModeRadio" Content="Board" IsChecked="True" 
-                         GroupName="ViewMode" Checked="OnViewModeChanged" />
+                         GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
             <RadioButton x:Name="ListModeRadio" Content="List" 
-                         GroupName="ViewMode" Checked="OnViewModeChanged" Margin="8,0,0,0" />
+                         GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
             <RadioButton x:Name="ProjectsModeRadio" Content="Projects" 
-                         GroupName="ViewMode" Checked="OnViewModeChanged" Margin="8,0,0,0" />
+                         GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
         </StackPanel>
 
         <!-- Search and filters (Board mode) -->
