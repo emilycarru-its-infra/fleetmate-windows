@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FleetMate.Core.Models.Inventory;
+using FleetMate.Core.Services;
 using Serilog;
 
 namespace FleetMate.Core.Services.Inventory;
@@ -27,26 +28,48 @@ public class SnipeService : IDisposable
     
     public string BaseUrl { get; }
     public bool IsConfigured => !string.IsNullOrEmpty(BaseUrl);
-    
-    public SnipeService(string? baseUrl = null, string? apiKey = null, int cacheMinutes = 5)
+
+    /// <summary>
+    /// True when Snipe-IT authenticates with an Entra bearer minted off the
+    /// operator's Windows sign-in rather than a shared API key.
+    /// </summary>
+    public bool UsesOidc { get; }
+
+    /// <summary>
+    /// Build from config so every call site authenticates the same way — Entra
+    /// SSO by default, the legacy API key only where no audience is configured.
+    /// </summary>
+    public static SnipeService FromConfig(FleetMate.Core.Config.FleetMateConfig config)
     {
-        BaseUrl = baseUrl?.TrimEnd('/') ?? string.Empty;
-        
-        _client = new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(120)
-        };
-        
+#pragma warning disable CS0618 // legacy fallback for unmigrated configs
+        var apiKey = config.SnipeApiKey;
+#pragma warning restore CS0618
+        return new SnipeService(config.SnipeUrl, apiKey, config.CacheMinutes, config.SnipeOidcAudience);
+    }
+
+    public SnipeService(string? baseUrl = null, string? apiKey = null, int cacheMinutes = 5, string? oidcAudience = null)
+    {
+        BaseUrl = string.IsNullOrWhiteSpace(baseUrl) ? string.Empty : ServiceUri.Normalize(baseUrl);
+        UsesOidc = !string.IsNullOrWhiteSpace(oidcAudience);
+
+        // Prefer-bearer: an Entra audience beats a shared key wherever both are
+        // set, so migrating an estate is a matter of setting the audience rather
+        // than of racing to delete keys everywhere first.
+        _client = UsesOidc
+            ? new HttpClient(new EntraBearerHandler(oidcAudience!))
+            : new HttpClient();
+        _client.Timeout = TimeSpan.FromSeconds(120);
+
         if (!string.IsNullOrEmpty(BaseUrl))
         {
             _client.BaseAddress = new Uri(BaseUrl);
         }
-        
-        if (!string.IsNullOrEmpty(apiKey))
+
+        if (!UsesOidc && !string.IsNullOrEmpty(apiKey))
         {
             _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         }
-        
+
         _client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         
         _jsonOptions = new JsonSerializerOptions

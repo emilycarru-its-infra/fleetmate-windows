@@ -2,13 +2,14 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.modernwpf.com/2019"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:vm="clr-namespace:FleetMate.GUI.ViewModels"
         ui:WindowHelper.UseModernWindowStyle="True"
         ui:TitleBar.ExtendViewIntoTitleBar="True"
         Title="FleetMate"
-        Height="700"
-        Width="1100"
-        MinHeight="500"
+        Height="850"
+        Width="1400"
+        MinHeight="600"
         MinWidth="900"
         WindowStartupLocation="CenterScreen">
 
@@ -16,36 +17,52 @@
         <vm:MainViewModel />
     </Window.DataContext>
 
-    <Grid>
+    <Grid Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="48" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Top Tab Bar -->
-        <Border Grid.Row="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" Padding="12,8">
-            <StackPanel Orientation="Horizontal" x:Name="TabBar">
-                <RadioButton x:Name="TabDashboard" Content="Dashboard" Tag="Dashboard" GroupName="MainTabs"
-                             IsChecked="True" Checked="OnTabChecked" Style="{StaticResource {x:Type RadioButton}}" Margin="0,0,4,0" FontSize="13" />
-                <RadioButton x:Name="TabDevices" Content="Devices" Tag="Devices" GroupName="MainTabs"
-                             Checked="OnTabChecked" Margin="0,0,4,0" FontSize="13" />
-                <RadioButton x:Name="TabInventory" Content="Inventory" Tag="Inventory" GroupName="MainTabs"
-                             Checked="OnTabChecked" Margin="0,0,4,0" FontSize="13" />
-                <RadioButton x:Name="TabTickets" Content="Tickets" Tag="Tickets" GroupName="MainTabs"
-                             Checked="OnTabChecked" Margin="0,0,4,0" FontSize="13" />
-                <RadioButton x:Name="TabBoards" Content="Projects" Tag="Projects" GroupName="MainTabs"
-                             Checked="OnTabChecked" Margin="0,0,4,0" FontSize="13" />
-                <RadioButton x:Name="TabIdentity" Content="Identity" Tag="Identity" GroupName="MainTabs"
-                             Checked="OnTabChecked" Margin="0,0,4,0" FontSize="13" />
-                <RadioButton x:Name="TabSettings" Content="⚙ Settings" Tag="Settings" GroupName="MainTabs"
-                             Checked="OnTabChecked" Margin="16,0,0,0" FontSize="13" />
-            </StackPanel>
+        <!-- Centered, segmented top navigation. The equal outer columns keep it
+             centered even when window actions are added on the right. -->
+        <Border Grid.Row="0" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,0,0,1" Padding="12,7">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="1" CornerRadius="9"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                        BorderThickness="1" Padding="2">
+                    <StackPanel Orientation="Horizontal" x:Name="TabBar">
+                        <RadioButton x:Name="TabDashboard" Content="Dashboard" Tag="Dashboard" GroupName="MainTabs"
+                                     IsChecked="True" Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}" />
+                        <RadioButton x:Name="TabDevices" Content="▰  Devices" Tag="Devices" GroupName="MainTabs"
+                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}" />
+                        <RadioButton x:Name="TabInventory" Content="◇  Inventory" Tag="Inventory" GroupName="MainTabs"
+                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}" />
+                        <RadioButton x:Name="TabTickets" Content="▣  Tickets" Tag="Tickets" GroupName="MainTabs"
+                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}" />
+                        <RadioButton x:Name="TabBoards" Content="▤  Projects" Tag="Projects" GroupName="MainTabs"
+                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}" />
+                        <RadioButton x:Name="TabIdentity" Content="♙  Identity" Tag="Identity" GroupName="MainTabs"
+                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}" />
+                    </StackPanel>
+                </Border>
+
+                <RadioButton Grid.Column="2" x:Name="TabSettings" Content="⚙" ToolTip="Settings"
+                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                             Tag="Settings" GroupName="MainTabs" Checked="OnTabChecked"
+                             Style="{StaticResource NavigationTabStyle}"
+                             HorizontalAlignment="Right" Margin="0,0,116,0" FontSize="15" />
+            </Grid>
         </Border>
 
-        <Separator Grid.Row="1" />
-
         <!-- Content Frame -->
-        <Frame Grid.Row="2" x:Name="ContentFrame" NavigationUIVisibility="Hidden" Background="Transparent" />
+        <Frame Grid.Row="1" x:Name="ContentFrame" NavigationUIVisibility="Hidden" Background="Transparent" />
     </Grid>
 </Window>

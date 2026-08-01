@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FleetMate.Core.Converters;
 using FleetMate.Core.Models.Reporting;
+using FleetMate.Core.Services;
 using Serilog;
 
 namespace FleetMate.Core.Services.Reporting;
@@ -21,19 +22,42 @@ public class ReportMateService : IDisposable
     private DateTime _installCacheExpiry = DateTime.MinValue;
     private readonly TimeSpan _cacheDuration;
     
-    public ReportMateService(string baseUrl, string? passphrase = null, int cacheMinutes = 5)
+    /// <summary>
+    /// True when ReportMate authenticates with an Entra bearer minted off the
+    /// operator's Windows sign-in rather than the shared passphrase.
+    /// </summary>
+    public bool UsesOidc { get; }
+
+    /// <summary>
+    /// Build from config so every call site authenticates the same way — Entra
+    /// SSO by default, the legacy passphrase only where no audience is configured.
+    /// </summary>
+    public static ReportMateService FromConfig(FleetMate.Core.Config.FleetMateConfig config)
     {
-        _client = new HttpClient
-        {
-            BaseAddress = new Uri(baseUrl.TrimEnd('/')),
-            Timeout = TimeSpan.FromSeconds(120)
-        };
-        
-        if (!string.IsNullOrEmpty(passphrase))
+#pragma warning disable CS0618 // legacy fallback for unmigrated configs
+        var passphrase = config.ReportMatePassphrase;
+#pragma warning restore CS0618
+        return new ReportMateService(
+            config.ReportMateUrl ?? string.Empty, passphrase, config.CacheMinutes, config.ReportMateOidcAudience);
+    }
+
+    public ReportMateService(string baseUrl, string? passphrase = null, int cacheMinutes = 5, string? oidcAudience = null)
+    {
+        UsesOidc = !string.IsNullOrWhiteSpace(oidcAudience);
+
+        // Prefer-bearer: an Entra audience beats the shared passphrase wherever
+        // both are set, so migration is additive rather than a flag day.
+        _client = UsesOidc
+            ? new HttpClient(new EntraBearerHandler(oidcAudience!))
+            : new HttpClient();
+        _client.BaseAddress = new Uri(ServiceUri.Normalize(baseUrl));
+        _client.Timeout = TimeSpan.FromSeconds(120);
+
+        if (!UsesOidc && !string.IsNullOrEmpty(passphrase))
         {
             _client.DefaultRequestHeaders.Add("X-Client-Passphrase", passphrase);
         }
-        
+
         _jsonOptions = new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
@@ -64,7 +88,7 @@ public class ReportMateService : IDisposable
             
             while (true)
             {
-                var response = await _client.GetAsync($"/api/devices?offset={offset}&limit={limit}");
+                var response = await _client.GetAsync($"/api/v1/devices?offset={offset}&limit={limit}");
                 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -131,7 +155,7 @@ public class ReportMateService : IDisposable
         
         try
         {
-            var response = await _client.GetAsync("/api/devices/installs");
+            var response = await _client.GetAsync("/api/v1/installs");
             
             if (!response.IsSuccessStatusCode)
             {
@@ -238,7 +262,7 @@ public class ReportMateService : IDisposable
         
         try
         {
-            var response = await _client.GetAsync($"/api/device/{serialNumber}/installs/log");
+            var response = await _client.GetAsync($"/api/v1/device/{serialNumber}/installs/log");
             
             if (!response.IsSuccessStatusCode)
             {
@@ -265,7 +289,7 @@ public class ReportMateService : IDisposable
         
         try
         {
-            var response = await _client.GetAsync($"/api/device/{serialNumber}/modules/network");
+            var response = await _client.GetAsync($"/api/v1/device/{serialNumber}/modules/network");
             
             if (!response.IsSuccessStatusCode)
             {
@@ -285,7 +309,13 @@ public class ReportMateService : IDisposable
     }
     
     /// <summary>
-    /// Get fleet-wide network data (all devices with network info)
+    /// Get fleet-wide network data (all devices with network info).
+    ///
+    /// NOTE: the ReportMate v1 API has no fleet-wide network endpoint — this
+    /// 404s today. Per-device network data is available via
+    /// <see cref="GetDeviceNetworkAsync"/>. The call is kept, pointed at the v1
+    /// path, so it starts working the day a fleet endpoint ships; until then it
+    /// logs the failure and returns empty rather than throwing.
     /// </summary>
     public async Task<List<DeviceNetworkInfo>> GetFleetNetworkAsync()
     {
@@ -293,7 +323,7 @@ public class ReportMateService : IDisposable
         
         try
         {
-            var response = await _client.GetAsync("/api/devices/network");
+            var response = await _client.GetAsync("/api/v1/devices/network");
             
             if (!response.IsSuccessStatusCode)
             {
@@ -321,7 +351,7 @@ public class ReportMateService : IDisposable
         
         try
         {
-            var response = await _client.GetAsync($"/api/device/{serialNumber}");
+            var response = await _client.GetAsync($"/api/v1/device/{serialNumber}");
             
             if (!response.IsSuccessStatusCode)
             {
