@@ -463,7 +463,39 @@ public class FleetMateConfig
     /// Save credentials to Windows Registry
     /// Called by 'fleetmate configure' command
     /// </summary>
-    public static void SaveToRegistry(string? reportMateUrl, string? reportMatePassphrase, 
+    /// <summary>
+    /// Persists desktop endpoints and public application identifiers. Credential
+    /// names are deliberately not accepted; the desktop always authenticates via
+    /// the Windows broker/browser session.
+    /// </summary>
+    public static void SaveDesktopSettings(IReadOnlyDictionary<string, string?> values)
+    {
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "GraphTenantId", "GraphClientId", "SnipeUrl", "SnipeOidcAudience",
+            "TdxBaseUrl", "TdxTicketingAppId", "DevOpsOrganization", "DevOpsProject",
+            "ReportMateUrl"
+        };
+
+        using var key = Registry.CurrentUser.CreateSubKey(RegistryPath)
+            ?? throw new InvalidOperationException($"Could not create HKCU\\{RegistryPath}");
+        foreach (var (name, value) in values)
+        {
+            if (!allowed.Contains(name))
+                throw new ArgumentException($"'{name}' is not a desktop setting.", nameof(values));
+            if (string.IsNullOrWhiteSpace(value)) key.DeleteValue(name, false);
+            else key.SetValue(name, value.Trim());
+        }
+
+        foreach (var retired in new[]
+        {
+            "GraphClientSecret", "SnipeApiKey", "ReportMatePassphrase",
+            "TdxUsername", "TdxPassword", "TdxBeid", "TdxWebServicesKey"
+        })
+            key.DeleteValue(retired, false);
+    }
+
+    public static void SaveToRegistry(string? reportMateUrl, string? reportMatePassphrase,
         string? snipeUrl = null, string? snipeApiKey = null)
     {
         try
