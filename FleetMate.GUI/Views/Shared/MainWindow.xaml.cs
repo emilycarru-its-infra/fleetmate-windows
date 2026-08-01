@@ -68,4 +68,9 @@ public partial class MainWindow : Window
     {
         ContentFrame.Navigate(GetOrCreatePage(tag));
     }
+
+    public void ResetPageCache()
+    {
+        _pageCache.Clear();
+    }
 }

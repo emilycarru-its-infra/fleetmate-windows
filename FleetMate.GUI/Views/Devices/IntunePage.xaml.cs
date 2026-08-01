@@ -68,8 +68,11 @@ public partial class IntunePage : Page
         if (_graphService == null || _app == null)
         {
             NotConfiguredText.Visibility = Visibility.Visible;
+            DevicesDataGrid.Visibility = Visibility.Collapsed;
             return;
         }
+
+        DevicesDataGrid.Visibility = Visibility.Visible;
         
         // Use cache if valid
         if (_app.IsDevicesCacheValid && _app.CachedDevices.Count > 0)

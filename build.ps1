@@ -460,7 +460,7 @@ try {
     # Clean if requested
     if ($Clean) {
         Write-BuildLog "Cleaning build artifacts..."
-        foreach ($proj in @('FleetMate.CLI', 'FleetMate.GUI', 'FleetMate.Core')) {
+        foreach ($proj in @('FleetMate.CLI', 'FleetMate.GUI', 'FleetMate.WinUI', 'FleetMate.Core')) {
             Remove-Item -Path "$RootDir\$proj\bin" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path "$RootDir\$proj\obj" -Recurse -Force -ErrorAction SilentlyContinue
         }
@@ -520,8 +520,11 @@ try {
     if ($buildGUI -and -not $PkgOnly -and -not $MsiOnly) {
         Write-BuildLog "Building FleetMate GUI..."
 
-        # GUI must be published as self-contained single-file for WDAC-compliant signing.
-        # A regular dotnet build produces a dotnet host stub that WDAC blocks signtool from modifying.
+        # The user-facing desktop is native WinUI 3. It must be published as a
+        # self-contained single file for WDAC-compliant signing: a regular .NET
+        # app-host stub is protected before SignTool can add Authenticode data.
+        # Windows App SDK also requires EnableMsixTooling to embed resources.pri
+        # into a single-file unpackaged application.
         $guiOutDir = "$RootDir\publish\gui"
 
         # Follow the host architecture unless told otherwise. This was pinned to
@@ -535,14 +538,18 @@ try {
         } else {
             'win-x64'
         }
+        $guiPlatform = if ($guiRid -eq 'win-arm64') { 'arm64' } else { 'x64' }
 
         Write-BuildLog "  runtime: $guiRid"
 
-        & dotnet publish "$RootDir\FleetMate.GUI\FleetMate.GUI.csproj" `
+        & dotnet publish "$RootDir\FleetMate.WinUI\FleetMate.WinUI.csproj" `
             --configuration Release `
             --runtime $guiRid `
             --self-contained true `
+            -p:Platform=$guiPlatform `
             -p:PublishSingleFile=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:EnableMsixTooling=true `
             --output $guiOutDir
 
         if ($LASTEXITCODE -ne 0) { throw "GUI build failed" }
