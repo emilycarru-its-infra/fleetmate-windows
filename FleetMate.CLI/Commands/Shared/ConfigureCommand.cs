@@ -164,12 +164,13 @@ public static class ConfigureCommand
             !string.IsNullOrEmpty(envPassphrase) ? "Active for this session" : ""
         );
         
-        // Effective configuration
-        var effectivePassphrase = config.ReportMatePassphrase;
+        // Effective configuration. Readiness is now a URL plus an Entra audience
+        // — the operator's own sign-in supplies the credential.
+        var ready = !string.IsNullOrEmpty(config.ReportMateUrl) && config.ReportMateUsesOidc;
         table.AddRow(
             "[bold]Effective Config[/]",
-            !string.IsNullOrEmpty(effectivePassphrase) ? "[green]✓ Ready[/]" : "[red]✗ Missing passphrase[/]",
-            !string.IsNullOrEmpty(effectivePassphrase) ? $"URL: {config.ReportMateUrl}" : "FleetMate cannot connect to ReportMate"
+            ready ? "[green]✓ Ready (Entra SSO)[/]" : "[red]✗ Not configured[/]",
+            ready ? $"URL: {config.ReportMateUrl}" : "Set the ReportMate URL to connect"
         );
         
         AnsiConsole.Write(table);
@@ -177,13 +178,13 @@ public static class ConfigureCommand
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[dim]Credential precedence: Environment > Registry > .env files > config.yaml[/]");
         
-        if (string.IsNullOrEmpty(effectivePassphrase))
+        if (!ready)
         {
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[yellow]Quick setup options:[/]");
             AnsiConsole.MarkupLine("  [cyan]fleetmate configure import[/]     - Import from terraform.tfvars");
             AnsiConsole.MarkupLine("  [cyan]fleetmate configure set -i[/]     - Interactive setup");
-            AnsiConsole.MarkupLine("  [cyan]fleetmate configure set -p XXX[/] - Set passphrase directly");
+            AnsiConsole.MarkupLine("  [cyan]fleetmate configure set -u XXX[/] - Set the ReportMate URL");
         }
     }
     
@@ -204,15 +205,17 @@ public static class ConfigureCommand
             DetermineSource("REPORTMATE_URL", "ReportMateUrl")
         );
         
-        // ReportMate Passphrase
-        var passphrase = config.ReportMatePassphrase ?? "";
-        var displayPassphrase = reveal ? passphrase : MaskSecret(passphrase);
+        // ReportMate auth — an Entra audience, not a secret. Shown in full
+        // because there is nothing here worth masking.
         table.AddRow(
-            "ReportMate Passphrase",
-            displayPassphrase,
-            DetermineSource("REPORTMATE_PASSPHRASE", "ReportMatePassphrase")
+            "ReportMate Auth",
+            config.ReportMateUsesOidc
+                ? $"Entra SSO → {config.ReportMateOidcAudience}"
+                : "[yellow]legacy passphrase[/]",
+            DetermineSource("REPORTMATE_OIDC_AUDIENCE", "ReportMateOidcAudience")
         );
-        
+
+
         // Snipe-IT
         if (!string.IsNullOrEmpty(config.SnipeUrl))
         {
@@ -222,12 +225,12 @@ public static class ConfigureCommand
                 DetermineSource("SNIPE_URL", "SnipeUrl")
             );
             
-            var snipeKey = config.SnipeApiKey ?? "";
-            var displaySnipeKey = reveal ? snipeKey : MaskSecret(snipeKey);
             table.AddRow(
-                "Snipe-IT API Key",
-                displaySnipeKey,
-                DetermineSource("SNIPE_API_KEY", "SnipeApiKey")
+                "Snipe-IT Auth",
+                config.SnipeUsesOidc
+                    ? $"Entra SSO → {config.SnipeOidcAudience}"
+                    : "[yellow]legacy API key[/]",
+                DetermineSource("SNIPE_OIDC_AUDIENCE", "SnipeOidcAudience")
             );
         }
         
@@ -299,7 +302,7 @@ public static class ConfigureCommand
             
             // Verify by reloading
             var config = FleetMateConfig.Load();
-            if (!string.IsNullOrEmpty(config.ReportMatePassphrase))
+            if (!string.IsNullOrEmpty(config.ReportMateUrl))
             {
                 AnsiConsole.MarkupLine("[green]✓[/] Configuration verified - FleetMate is ready");
             }

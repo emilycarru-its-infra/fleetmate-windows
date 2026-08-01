@@ -3,159 +3,198 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.modernwpf.com/2019">
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="24" MaxWidth="800">
+    <Grid Margin="24,18,24,24" MaxWidth="980" HorizontalAlignment="Center">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Margin="0,0,0,14">
             <TextBlock Text="Settings" Style="{StaticResource TitleTextStyle}" />
-            <TextBlock Text="Configure FleetMate" Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,24" />
-
-            <!-- Configuration File -->
-            <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
-                <StackPanel>
-                    <TextBlock Text="Configuration" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,8" />
-                    <TextBlock Text="Config file location:" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                    <TextBox x:Name="ConfigPathTextBox" IsReadOnly="True" Margin="0,4,0,0"
-                             Text="~/.fleetmate/config.yaml" />
-                </StackPanel>
-            </Border>
-
-            <!-- Graph API Settings -->
-            <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
-                <StackPanel>
-                    <TextBlock Text="Microsoft Graph" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,8" />
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-
-                        <StackPanel Grid.Column="0" Grid.Row="0" Margin="0,0,8,8">
-                            <TextBlock Text="Tenant ID" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                            <TextBox x:Name="TenantIdTextBox" Margin="0,4,0,0" />
-                        </StackPanel>
-
-                        <StackPanel Grid.Column="1" Grid.Row="0" Margin="8,0,0,8">
-                            <TextBlock Text="Client ID" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                            <TextBox x:Name="ClientIdTextBox" Margin="0,4,0,0" />
-                        </StackPanel>
-
-                        <StackPanel Grid.Column="0" Grid.Row="1" Grid.ColumnSpan="2">
-                            <TextBlock Text="Client Secret" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                            <PasswordBox x:Name="ClientSecretBox" Margin="0,4,0,0" />
-                        </StackPanel>
-                    </Grid>
-                </StackPanel>
-            </Border>
-
-            <!-- Azure DevOps Settings -->
-            <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
-                <StackPanel>
-                    <TextBlock Text="Azure DevOps" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,8" />
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-
-                        <StackPanel Grid.Column="0" Grid.Row="0" Margin="0,0,8,8">
-                            <TextBlock Text="Organization" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                            <TextBox x:Name="AdoOrgTextBox" Margin="0,4,0,0" />
-                        </StackPanel>
-
-                        <StackPanel Grid.Column="1" Grid.Row="0" Margin="8,0,0,8">
-                            <TextBlock Text="Project" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                            <TextBox x:Name="AdoProjectTextBox" Margin="0,4,0,0" />
-                        </StackPanel>
-
-                        <!-- NO PAT — Azure DevOps uses SSO only -->
-                    </Grid>
-                </StackPanel>
-            </Border>
-
-            <!-- Snipe-IT Settings -->
-            <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
-                <StackPanel>
-                    <TextBlock Text="Snipe-IT" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,8" />
-                    <StackPanel Margin="0,0,0,8">
-                        <TextBlock Text="Base URL" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                        <TextBox x:Name="SnipeUrlTextBox" Margin="0,4,0,0" />
-                    </StackPanel>
-                    <StackPanel>
-                        <TextBlock Text="API Key" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                        <PasswordBox x:Name="SnipeApiKeyBox" Margin="0,4,0,0" />
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <!-- TDX Settings -->
-            <Border Style="{StaticResource CardStyle}" Margin="0,0,0,16">
-                <StackPanel>
-                    <TextBlock Text="TeamDynamix" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,8" />
-                    <StackPanel Margin="0,0,0,8">
-                        <TextBlock Text="Base URL" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                        <TextBox x:Name="TdxUrlTextBox" Margin="0,4,0,0" />
-                    </StackPanel>
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" Margin="0,0,8,0">
-                            <TextBlock Text="Username" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                            <TextBox x:Name="TdxUsernameTextBox" Margin="0,4,0,0" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Margin="8,0,0,0">
-                            <TextBlock Text="Password" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                            <PasswordBox x:Name="TdxPasswordBox" Margin="0,4,0,0" />
-                        </StackPanel>
-                    </Grid>
-                </StackPanel>
-            </Border>
-
-            <!-- Save Button -->
-            <Button Content="Save Settings" HorizontalAlignment="Right"
-                    Style="{StaticResource AccentButtonStyle}" Padding="24,8"
-                    Click="OnSaveClicked" />
-
-            <!-- Authentication Status Section -->
-            <TextBlock Text="Authentication Status" FontWeight="SemiBold" FontSize="18" Margin="0,24,0,12" />
-
-            <StackPanel x:Name="AuthCardsPanel">
-                <!-- Cards are generated in code-behind -->
-            </StackPanel>
-
-            <Button Content="Refresh All" HorizontalAlignment="Right" Margin="0,8,0,0"
-                    Click="OnRefreshAuthClicked" />
-
-            <!-- About Section -->
-            <Border Style="{StaticResource CardStyle}" Margin="0,24,0,16">
-                <StackPanel>
-                    <TextBlock Text="About" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,8" />
-                    <StackPanel Orientation="Horizontal" Margin="0,4">
-                        <TextBlock Text="Version" Width="100" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                        <TextBlock x:Name="VersionText" Text="1.0.0" />
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,4">
-                        <TextBlock Text="Platform" Width="100" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                        <TextBlock x:Name="PlatformText" Text="Windows" />
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,4">
-                        <TextBlock Text="Architecture" Width="100" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                        <TextBlock x:Name="ArchitectureText" Text="" />
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,4">
-                        <TextBlock Text=".NET Runtime" Width="100" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                        <TextBlock x:Name="RuntimeText" Text="" />
-                    </StackPanel>
-                </StackPanel>
-            </Border>
+            <TextBlock Text="Configure FleetMate" Style="{StaticResource SubtitleTextStyle}" Margin="0,3,0,0" />
         </StackPanel>
-    </ScrollViewer>
+
+        <TabControl Grid.Row="1" x:Name="SettingsTabs" Background="Transparent">
+            <TabItem Header="General">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
+                    <StackPanel Margin="2" MaxWidth="860">
+                        <TextBlock Text="General" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" />
+                        <TextBlock Text="Configuration storage and application information."
+                                   Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,14" />
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Configuration" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <TextBlock Text="Desktop configuration store" FontSize="12"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <TextBox x:Name="ConfigPathTextBox" IsReadOnly="True" Margin="0,5,0,0"
+                                         Text="HKCU\SOFTWARE\FleetMate" />
+                                <TextBlock Text="Only non-secret endpoints and identifiers are read here. Tokens are acquired from the signed-in Windows user."
+                                           TextWrapping="Wrap" FontSize="11" Margin="0,8,0,0"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,8,0,10">
+                            <StackPanel>
+                                <TextBlock Text="About" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="130" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Text="Version" Margin="0,3" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    <TextBlock Grid.Row="0" Grid.Column="1" x:Name="VersionText" Text="1.0.0" Margin="0,3" />
+                                    <TextBlock Grid.Row="1" Text="Platform" Margin="0,3" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    <TextBlock Grid.Row="1" Grid.Column="1" x:Name="PlatformText" Text="Windows" Margin="0,3" />
+                                    <TextBlock Grid.Row="2" Text="Architecture" Margin="0,3" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="1" x:Name="ArchitectureText" Margin="0,3" />
+                                    <TextBlock Grid.Row="3" Text=".NET Runtime" Margin="0,3" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    <TextBlock Grid.Row="3" Grid.Column="1" x:Name="RuntimeText" Margin="0,3" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Authentication">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
+                    <StackPanel Margin="2" MaxWidth="860">
+                        <DockPanel Margin="0,0,0,14">
+                            <Button DockPanel.Dock="Right" Content="Refresh All" Padding="12,5"
+                                    Click="OnRefreshAuthClicked" />
+                            <StackPanel>
+                                <TextBlock Text="Authentication" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" />
+                                <TextBlock Text="Service endpoints, sign-in state, and credentials."
+                                           Style="{StaticResource SubtitleTextStyle}" />
+                            </StackPanel>
+                        </DockPanel>
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Microsoft Graph" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                                        <TextBlock Text="Tenant ID" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                        <TextBox x:Name="TenantIdTextBox" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                                        <TextBlock Text="Client ID" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                        <TextBox x:Name="ClientIdTextBox" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Text="Uses your Windows account broker session; no client secret is stored."
+                                           TextWrapping="Wrap" Margin="0,9,0,0" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Azure DevOps" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                                        <TextBlock Text="Organization" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                        <TextBox x:Name="AdoOrgTextBox" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                                        <TextBlock Text="Project" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                        <TextBox x:Name="AdoProjectTextBox" Margin="0,4,0,0" />
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Style="{StaticResource CardStyle}" Margin="0,0,5,10">
+                                <StackPanel>
+                                    <TextBlock Text="Snipe-IT" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                    <TextBlock Text="Base URL" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    <TextBox x:Name="SnipeUrlTextBox" Margin="0,4,0,0" />
+                                    <TextBlock Text="Uses your Entra session; no API key required." TextWrapping="Wrap" Margin="0,8,0,0" FontSize="11"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="1" Style="{StaticResource CardStyle}" Margin="5,0,0,10">
+                                <StackPanel>
+                                    <TextBlock Text="TeamDynamix" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                    <TextBlock Text="Base URL" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    <TextBox x:Name="TdxUrlTextBox" Margin="0,4,0,0" />
+                                    <TextBlock Text="Ticketing App ID" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,8,0,0" />
+                                    <TextBox x:Name="TdxAppIdTextBox" Margin="0,4,0,0" />
+                                    <TextBlock Text="Signs in with your Entra account." TextWrapping="Wrap" Margin="0,8,0,0" FontSize="11"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="ReportMate" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <TextBlock Text="API URL" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <TextBox x:Name="ReportMateUrlTextBox" Margin="0,4,0,0" />
+                                <TextBlock Text="Uses a brokered Entra bearer; no passphrase is stored."
+                                           TextWrapping="Wrap" Margin="0,8,0,0" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Button Content="Save Settings" HorizontalAlignment="Right" Margin="0,2,0,18"
+                                Style="{StaticResource AccentButtonStyle}" Padding="22,7" Click="OnSaveClicked" />
+
+                        <TextBlock Text="Authentication Status" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,10" />
+                        <StackPanel x:Name="AuthCardsPanel" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Appearance">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
+                    <StackPanel Margin="2" MaxWidth="860">
+                        <TextBlock Text="Appearance" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" />
+                        <TextBlock Text="Choose how FleetMate looks on this PC."
+                                   Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,14" />
+                        <Border Style="{StaticResource CardStyle}">
+                            <DockPanel>
+                                <ComboBox x:Name="ThemeComboBox" DockPanel.Dock="Right" Width="180"
+                                          SelectionChanged="OnThemeSelectionChanged">
+                                    <ComboBoxItem Content="Use system setting" Tag="System" />
+                                    <ComboBoxItem Content="Light" Tag="Light" />
+                                    <ComboBoxItem Content="Dark" Tag="Dark" />
+                                </ComboBox>
+                                <StackPanel Margin="0,0,20,0">
+                                    <TextBlock Text="Theme" FontWeight="SemiBold" FontSize="15" />
+                                    <TextBlock Text="Changes are applied immediately."
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,3,0,0" />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,8,0,10">
+                            <StackPanel>
+                                <TextBlock Text="Preview" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <Separator />
+                                <TextBlock Text="Add display reconciliation blueprint" FontWeight="SemiBold" Margin="0,10,0,2" />
+                                <TextBlock Text="Rod Christiansen request !10716 into Devices/ReportMate"
+                                           FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <Separator Margin="0,10,0,10" />
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="Primary action" Style="{StaticResource AccentButtonStyle}" Margin="0,0,8,0" />
+                                    <Button Content="Secondary action" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+    </Grid>
 </Page>

@@ -132,6 +132,7 @@ public partial class DashboardPage : Page
                             _app.ReportMateService != null;
 
         ConnectServicesPrompt.Visibility = hasAnyService ? Visibility.Collapsed : Visibility.Visible;
+        DashboardContent.Visibility = hasAnyService ? Visibility.Visible : Visibility.Collapsed;
 
         if (hasAnyService)
         {
@@ -942,6 +943,11 @@ public partial class DashboardPage : Page
         {
             Dispatcher.Invoke(async () => await RefreshDashboardAsync());
         });
+    }
+
+    private void OnOpenSettingsClicked(object sender, RoutedEventArgs e)
+    {
+        NavigateToTab("Settings");
     }
 
     private void OnAuthClicked(object sender, RoutedEventArgs e)
