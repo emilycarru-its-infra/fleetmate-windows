@@ -1,0 +1,210 @@
+<Window x:Class="FleetMate.GUI.Views.Shared.PullRequestDetailWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        Title="Pull request"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        Background="{DynamicResource ApplicationPageBackgroundThemeBrush}">
+
+    <Window.Resources>
+        <!-- One diff row: gutter strip, both line numbers, marker, content. -->
+        <DataTemplate x:Key="DiffLineTemplate">
+            <Grid Background="{Binding RowBackground}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="3" />
+                    <ColumnDefinition Width="44" />
+                    <ColumnDefinition Width="44" />
+                    <ColumnDefinition Width="14" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Rectangle Grid.Column="0" Fill="{Binding GutterStrip}" />
+
+                <TextBlock Grid.Column="1" Text="{Binding OldLineLabel}" FontFamily="Consolas"
+                           FontSize="11" TextAlignment="Right" Padding="0,0,6,0"
+                           Foreground="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+                <TextBlock Grid.Column="2" Text="{Binding NewLineLabel}" FontFamily="Consolas"
+                           FontSize="11" TextAlignment="Right" Padding="0,0,6,0"
+                           Foreground="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+
+                <TextBlock Grid.Column="3" Text="{Binding Marker}" FontFamily="Consolas" FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+                <TextBlock Grid.Column="4" Text="{Binding Content}" FontFamily="Consolas" FontSize="11"
+                           Foreground="{Binding ContentBrush}" FontStyle="{Binding ContentStyle}"
+                           TextWrapping="NoWrap" />
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="DiffHunkTemplate">
+            <StackPanel>
+                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}" Padding="6,2">
+                    <TextBlock Text="{Binding Header}" FontFamily="Consolas" FontSize="10"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                </Border>
+                <ItemsControl ItemsSource="{Binding Lines}" ItemTemplate="{StaticResource DiffLineTemplate}" />
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- One file card in Changes. -->
+        <DataTemplate x:Key="DiffFileTemplate">
+            <Border BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                    BorderThickness="1" CornerRadius="6" Margin="0,0,0,12">
+                <StackPanel>
+                    <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                            CornerRadius="6,6,0,0" Padding="10,6">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding StatLabel}" FontSize="11"
+                                       FontFamily="Consolas" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding StatusLabel}" FontSize="10"
+                                       Visibility="{Binding StatusVisibility}" Margin="0,0,8,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            <TextBlock Text="{Binding Path}" FontFamily="Consolas" FontSize="12"
+                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}" />
+                        </DockPanel>
+                    </Border>
+
+                    <TextBlock Text="{Binding EmptyNotice}" Visibility="{Binding EmptyNoticeVisibility}"
+                               Padding="10,8" FontSize="11" TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+                    <!-- Wide lines scroll within their own card rather than
+                         forcing the whole sheet sideways. -->
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding Hunks}" ItemTemplate="{StaticResource DiffHunkTemplate}" />
+                    </ScrollViewer>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate x:Key="CommitTemplate">
+            <DockPanel Margin="0,0,0,6">
+                <TextBlock DockPanel.Dock="Left" Text="{Binding ShortSha}" FontFamily="Consolas"
+                           FontSize="11" Margin="0,0,10,0" VerticalAlignment="Top"
+                           Foreground="{DynamicResource SystemControlForegroundAccentBrush}" />
+                <StackPanel>
+                    <TextBlock Text="{Binding Subject}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding AuthorName}" FontSize="10"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                </StackPanel>
+            </DockPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="CommentTemplate">
+            <Border BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                    BorderThickness="0,0,0,0.5" Padding="0,6">
+                <StackPanel>
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding DateLabel}" FontSize="10"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+                        <TextBlock Text="{Binding AuthorName}" FontWeight="SemiBold" FontSize="11" />
+                    </DockPanel>
+                    <TextBlock Text="{Binding Body}" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"
+                               Foreground="{Binding BodyBrush}" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header: everything the queue row showed, plus the actions -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                    <Button x:Name="CompleteButton" Content="Complete" Margin="0,0,6,0" Padding="10,3"
+                            Click="OnCompleteClicked" Visibility="Collapsed"
+                            ToolTip="Merge this pull request into its target branch" />
+                    <Button x:Name="AbandonButton" Content="Abandon" Margin="0,0,6,0" Padding="10,3"
+                            Click="OnAbandonClicked" Visibility="Collapsed"
+                            ToolTip="Close this pull request without merging" />
+                    <Button Content="Open in browser" Padding="10,3" Click="OnOpenInBrowserClicked" />
+                </StackPanel>
+
+                <StackPanel>
+                    <TextBlock x:Name="TitleText" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock x:Name="BylineText" FontSize="11" Margin="0,2,0,0"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    <TextBlock x:Name="BranchText" FontFamily="Consolas" FontSize="11" Margin="0,2,0,0"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                </StackPanel>
+            </DockPanel>
+
+            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                <TextBlock x:Name="StateText" FontSize="11" Margin="0,0,12,0" VerticalAlignment="Center" />
+                <TextBlock x:Name="ReviewerText" FontSize="11" Margin="0,0,12,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <TextBlock x:Name="CommentCountText" FontSize="11" VerticalAlignment="Center"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            </StackPanel>
+        </StackPanel>
+
+        <!-- One scroll: description and conversation, then commits, then diffs.
+             Tabs made you hunt for which one held the thing you wanted. -->
+        <Grid Grid.Row="1">
+            <StackPanel x:Name="LoadingPanel" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <ui:ProgressRing IsActive="True" Width="32" Height="32" />
+                <TextBlock Text="Loading pull request…" Margin="0,8,0,0"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            </StackPanel>
+
+            <TextBlock x:Name="ErrorText" Visibility="Collapsed" TextWrapping="Wrap"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="460"
+                       TextAlignment="Center"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+            <ScrollViewer x:Name="ContentScroller" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                <StackPanel>
+
+                    <!-- Description -->
+                    <StackPanel x:Name="DescriptionSection" Margin="0,0,0,16">
+                        <TextBlock Text="Description" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,4"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <Border Style="{StaticResource CardStyle}">
+                            <TextBlock x:Name="DescriptionText" TextWrapping="Wrap" FontSize="12" />
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Conversation -->
+                    <StackPanel x:Name="ConversationSection" Margin="0,0,0,16">
+                        <TextBlock x:Name="ConversationHeader" FontWeight="SemiBold" FontSize="12"
+                                   Margin="0,0,0,4"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <Border Style="{StaticResource CardStyle}">
+                            <ItemsControl x:Name="CommentsList" ItemTemplate="{StaticResource CommentTemplate}" />
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Commits -->
+                    <StackPanel x:Name="CommitsSection" Margin="0,0,0,16">
+                        <TextBlock x:Name="CommitsHeader" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,4"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <Border Style="{StaticResource CardStyle}">
+                            <ItemsControl x:Name="CommitsList" ItemTemplate="{StaticResource CommitTemplate}" />
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Changes -->
+                    <StackPanel x:Name="ChangesSection">
+                        <DockPanel Margin="0,0,0,4">
+                            <TextBlock x:Name="TruncationNotice" DockPanel.Dock="Right" FontSize="10"
+                                       Visibility="Collapsed" VerticalAlignment="Center"
+                                       Foreground="#FFB800" />
+                            <TextBlock x:Name="ChangesHeader" FontWeight="SemiBold" FontSize="12"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        </DockPanel>
+                        <ItemsControl x:Name="FilesList" ItemTemplate="{StaticResource DiffFileTemplate}" />
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</Window>

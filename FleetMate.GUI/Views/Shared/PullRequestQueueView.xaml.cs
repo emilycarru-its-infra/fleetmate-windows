@@ -160,19 +160,17 @@ public partial class PullRequestQueueView : UserControl
 
     private async void OnRefreshClicked(object sender, RoutedEventArgs e) => await LoadAsync(forceRefresh: true);
 
-    private void OnRowClicked(object sender, MouseButtonEventArgs e)
+    private async void OnRowClicked(object sender, MouseButtonEventArgs e)
     {
         if (sender is not FrameworkElement { Tag: PullRequestRowViewModel row }) return;
-        if (string.IsNullOrWhiteSpace(row.WebUrl)) return;
 
-        try
-        {
-            Process.Start(new ProcessStartInfo(row.WebUrl) { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "[prs] Could not open {Url}", row.WebUrl);
-        }
+        // Opens in-app rather than in the browser. The window keeps an
+        // open-in-browser escape hatch for anything it cannot show.
+        var viewer = new PullRequestDetailWindow(row.PullRequest, Window.GetWindow(this));
+        viewer.ShowDialog();
+
+        // Completing or abandoning from the sheet leaves the queue stale.
+        if (viewer.QueueNeedsRefresh) await LoadAsync(forceRefresh: true);
     }
 
     private async void OnCompleteClicked(object sender, RoutedEventArgs e)
