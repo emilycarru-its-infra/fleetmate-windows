@@ -14,6 +14,13 @@ public class GitHubProjectsService : IDisposable
     private readonly GitHubGraphQLClient _client;
     private readonly GitHubProviderConfig _config;
 
+    /// <summary>
+    /// The underlying client, so callers can run their own queries against the
+    /// same authenticated session and the same rate-limit gate rather than
+    /// standing up a second one.
+    /// </summary>
+    internal GitHubGraphQLClient Client => _client;
+
     public GitHubProjectsService(GitHubProviderConfig config)
     {
         _config = config;
