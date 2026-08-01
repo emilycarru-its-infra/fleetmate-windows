@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FleetMate.Core.Config;
 using FleetMate.Core.Models.Projects;
+using FleetMate.Core.Shared;
 using Serilog;
 
 namespace FleetMate.Core.Services.Projects;
@@ -251,6 +252,118 @@ public sealed class GitHubPullRequestService : IDisposable
         if (nodes.ValueKind != JsonValueKind.Array) yield break;
 
         foreach (var child in nodes.EnumerateArray()) yield return child;
+    }
+
+    // MARK: - PR detail (REST)
+
+    /// <summary>
+    /// Everything the in-app viewer needs for one pull request: body, commits,
+    /// comments and per-file diffs.
+    ///
+    /// REST rather than GraphQL because <c>/pulls/{n}/files</c> hands back
+    /// ready-made unified-diff hunks per file; GraphQL has no equivalent and
+    /// would mean reconstructing diffs from blobs the way Azure DevOps needs.
+    /// </summary>
+    public async Task<PullRequestDetail> GetPullRequestDetailAsync(
+        string owner, string repo, int number, CancellationToken ct = default)
+    {
+        var basePath = $"/repos/{Uri.EscapeDataString(owner)}/{Uri.EscapeDataString(repo)}";
+
+        // Four independent reads — issued together so the viewer opens in one
+        // round trip's time rather than four.
+        var prTask = _client.ExecuteRestAsync($"{basePath}/pulls/{number}", ct: ct);
+        var commitsTask = _client.ExecuteRestAsync($"{basePath}/pulls/{number}/commits?per_page=100", ct: ct);
+        var commentsTask = _client.ExecuteRestAsync($"{basePath}/issues/{number}/comments?per_page=100", ct: ct);
+        var filesTask = _client.ExecuteRestAsync($"{basePath}/pulls/{number}/files?per_page=100", ct: ct);
+
+        await Task.WhenAll(prTask, commitsTask, commentsTask, filesTask);
+
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+        var pr = JsonSerializer.Deserialize<JsonElement>(await prTask, options);
+        var commits = JsonSerializer.Deserialize<JsonElement>(await commitsTask, options);
+        var comments = JsonSerializer.Deserialize<JsonElement>(await commentsTask, options);
+        var files = JsonSerializer.Deserialize<JsonElement>(await filesTask, options);
+
+        var diffFiles = new List<DiffFile>();
+        var fileCount = 0;
+
+        if (files.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var file in files.EnumerateArray())
+            {
+                fileCount++;
+                var filename = Str(file, "filename") ?? "(unknown)";
+                var patch = Str(file, "patch");
+
+                // GitHub omits the patch for binary and oversized files. The row
+                // still belongs in the list — the reader needs to know it
+                // changed, even without a rendered diff.
+                diffFiles.Add(string.IsNullOrEmpty(patch)
+                    ? new DiffFile { OldPath = filename, NewPath = filename }
+                    : DiffParser.ParseBareHunks(patch, filename));
+            }
+        }
+
+        return new PullRequestDetail
+        {
+            Body = Str(pr, "body"),
+            Commits = ParseCommits(commits),
+            Comments = ParseComments(comments),
+            Files = diffFiles,
+            // per_page caps at 100; hitting it means there may be more.
+            Truncated = fileCount >= 100,
+        };
+    }
+
+    private static List<PullRequestCommit> ParseCommits(JsonElement commits)
+    {
+        var result = new List<PullRequestCommit>();
+        if (commits.ValueKind != JsonValueKind.Array) return result;
+
+        foreach (var node in commits.EnumerateArray())
+        {
+            var inner = node.TryGetProperty("commit", out var c) ? c : default;
+            var signature = inner.ValueKind == JsonValueKind.Object
+                            && inner.TryGetProperty("author", out var a) ? a : default;
+
+            result.Add(new PullRequestCommit
+            {
+                Id = Str(node, "sha") ?? "",
+                Message = Str(inner, "message") ?? "",
+                // The git signature name is the truth about who wrote it; the
+                // GitHub account is only a best-effort match on the email.
+                AuthorName = Str(signature, "name")
+                             ?? (node.TryGetProperty("author", out var gh) ? Str(gh, "login") : null),
+                Date = PullRequestDateParser.Parse(Str(signature, "date")),
+            });
+        }
+
+        return result;
+    }
+
+    private static List<PullRequestComment> ParseComments(JsonElement comments)
+    {
+        var result = new List<PullRequestComment>();
+        if (comments.ValueKind != JsonValueKind.Array) return result;
+
+        foreach (var node in comments.EnumerateArray())
+        {
+            result.Add(new PullRequestComment
+            {
+                Id = node.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number
+                    ? id.GetInt64().ToString()
+                    : Guid.NewGuid().ToString(),
+                AuthorName = node.TryGetProperty("user", out var user) ? Str(user, "login") ?? "unknown" : "unknown",
+                Body = Str(node, "body") ?? "",
+                Date = PullRequestDateParser.Parse(Str(node, "created_at")),
+                // GitHub issue comments are all human; its status events live
+                // on a different endpoint we do not read.
+                IsSystem = false,
+            });
+        }
+
+        return result;
     }
 
     private static int TotalCount(JsonElement node, string property) =>
