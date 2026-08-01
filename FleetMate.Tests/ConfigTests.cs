@@ -89,7 +89,8 @@ public class ConfigTests
         Assert.Equal(12, config.CacheMinutes);
         Assert.NotNull(config.Graph);
         Assert.Equal("tenant-123", config.Graph!.TenantId);
-        Assert.False(config.Graph.UseAzureCliAuth);
+        // useAzureCliAuth was retired with the secret-bearing auth paths. An
+        // existing config that still carries it must load, not throw.
         Assert.NotNull(config.AzureDevOps);
         Assert.Equal("contoso", config.AzureDevOps!.Organization);
         Assert.Equal("https://azure-devops.example.com/contoso", config.AzureDevOps.BaseUrl);

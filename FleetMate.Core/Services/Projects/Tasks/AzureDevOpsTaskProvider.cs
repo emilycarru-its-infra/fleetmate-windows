@@ -19,7 +19,6 @@ public class AzureDevOpsTaskProvider : ITaskProvider, IDisposable
     private readonly AzureDevOpsService _service;
     private readonly AzureDevOpsProviderConfig? _providerConfig;
     private readonly AzureDevOpsConfig _devOpsConfig;
-    private bool _isAuthenticated;
 
     public string ProviderId => "azdevops";
     public string ProviderName => "Azure DevOps";
@@ -49,7 +48,6 @@ public class AzureDevOpsTaskProvider : ITaskProvider, IDisposable
         try
         {
             var sprints = await _service.GetSprintsAsync();
-            _isAuthenticated = true;
             Log.Information("Authenticated with Azure DevOps: {Org}/{Project}", 
                 _devOpsConfig.Organization, _devOpsConfig.Project);
             return true;
@@ -57,7 +55,6 @@ public class AzureDevOpsTaskProvider : ITaskProvider, IDisposable
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to authenticate with Azure DevOps");
-            _isAuthenticated = false;
             return false;
         }
     }

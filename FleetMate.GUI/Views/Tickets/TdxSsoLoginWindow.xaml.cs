@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Security.Principal;
@@ -13,6 +14,7 @@ using Microsoft.Web.WebView2.Core;
 using ModernWpf.Controls;
 using Serilog;
 using FleetMate.Core.Services.Tickets;
+using FleetMate.Core.Services;
 
 namespace FleetMate.GUI.Views.Tickets;
 
@@ -44,7 +46,7 @@ public partial class TdxSsoLoginWindow : Window
         "/SBTDClient/",
         "/TDClient/",
         "/TDNext/",
-        "/TDWorkManagement/",
+        "/TDWorkManagement",
         "/Home/Desktop"
     };
     
@@ -219,9 +221,11 @@ public partial class TdxSsoLoginWindow : Window
     {
         InitializeComponent();
         
-        // Build SSO login URL - navigate to TDWorkManagement to trigger SAML redirect chain
-        _rootUrl = baseUrl.TrimEnd('/').Replace("/TDWebApi", "");
-        _ssoLoginUrl = _rootUrl + "/TDWorkManagement/";
+        // Build SSO login URL - navigate to TDWorkManagement to trigger SAML redirect chain.
+        // Both URLs come from TdxSsoService so the GUI and the headless path can
+        // never disagree about where loginsso lives.
+        _rootUrl = ServiceUri.Normalize(baseUrl).Replace("/TDWebApi", "", StringComparison.OrdinalIgnoreCase);
+        _ssoLoginUrl = TdxSsoService.BuildEntryUrl(baseUrl);
         
         // Detect UPN from Windows identity (domain\user → user@domain or UPN from AD)
         _detectedUpn = DetectWindowsUpn();
@@ -276,7 +280,7 @@ public partial class TdxSsoLoginWindow : Window
             StatusText.Text = "Initializing WebView2...";
             
             // Initialize WebView2
-            await WebView.EnsureCoreWebView2Async();
+            await WebView.EnsureCoreWebView2Async(await CreateWebViewEnvironmentAsync());
             
             // Configure WebView2
             WebView.CoreWebView2.Settings.IsStatusBarEnabled = false;
@@ -536,7 +540,7 @@ public partial class TdxSsoLoginWindow : Window
     {
         try
         {
-            var loginSsoUrl = _rootUrl + "/TDWebApi/api/auth/loginSSO";
+            var loginSsoUrl = TdxSsoService.BuildLoginSsoUrl(_rootUrl);
             Log.Debug("[JWT] Requesting bearer token from {Url}", loginSsoUrl);
             
             // Get all cookies from WebView2 for the TDX domain
@@ -825,9 +829,8 @@ public partial class TdxSsoLoginWindow : Window
     /// </summary>
     public static async Task<TdxSsoResult?> TryPhase1SilentAsync(string baseUrl, CancellationToken ct = default)
     {
-        var rootUrl = baseUrl.TrimEnd('/').Replace("/TDWebApi", "");
-        var loginSsoUrl = baseUrl.TrimEnd('/') + "/api/auth/loginSSO";
-        var entryUrl = rootUrl + "/TDWorkManagement/";
+        var loginSsoUrl = TdxSsoService.BuildLoginSsoUrl(baseUrl);
+        var entryUrl = TdxSsoService.BuildEntryUrl(baseUrl);
         
         Log.Information("[tdx-sso] [Phase 1] Starting silent HttpClient SSO (Negotiate/Kerberos)");
         
@@ -919,8 +922,8 @@ public partial class TdxSsoLoginWindow : Window
     {
         Log.Information("[tdx-sso] [Phase 1.5] Starting headless WebView2 SSO");
         
-        var rootUrl = baseUrl.TrimEnd('/').Replace("/TDWebApi", "");
-        var ssoLoginUrl = rootUrl + "/TDWorkManagement/";
+        var rootUrl = ServiceUri.Normalize(baseUrl).Replace("/TDWebApi", "", StringComparison.OrdinalIgnoreCase);
+        var ssoLoginUrl = TdxSsoService.BuildEntryUrl(baseUrl);
         
         TdxSsoResult? result = null;
         var tcs = new TaskCompletionSource<TdxSsoResult?>();
@@ -940,13 +943,15 @@ public partial class TdxSsoLoginWindow : Window
         hiddenWindow.Show(); // Required for WebView2 to initialize
         
         bool completed = false;
+        string? lastUrl = null;
+        bool loginSsoRequested = false;
         bool fidoFallbackInjected = false;
         var detectedUpn = DetectWindowsUpn();
         bool usernameAutoFilled = false;
         
         try
         {
-            await webView.EnsureCoreWebView2Async();
+            await webView.EnsureCoreWebView2Async(await CreateWebViewEnvironmentAsync());
             
             webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
             webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
@@ -957,6 +962,7 @@ public partial class TdxSsoLoginWindow : Window
                 if (completed || !e.IsSuccess) return;
                 
                 var url = webView.Source?.ToString() ?? "";
+                lastUrl = url;
                 Log.Debug("[tdx-sso] [Phase 1.5] [DONE] {Url}", url);
                 
                 // Auto-fill on Entra login page
@@ -973,7 +979,7 @@ public partial class TdxSsoLoginWindow : Window
                         await Task.Delay(3000, ct);
                         if (!completed && !fidoFallbackInjected)
                         {
-                            hiddenWindow.Dispatcher.Invoke(async () =>
+                            await (await hiddenWindow.Dispatcher.InvokeAsync(async () =>
                             {
                                 try
                                 {
@@ -982,13 +988,13 @@ public partial class TdxSsoLoginWindow : Window
                                     await webView.CoreWebView2.ExecuteScriptAsync(FidoFallbackScript);
                                 }
                                 catch { /* disposed */ }
-                            });
+                            }));
                         }
                     });
                 }
                 
                 // Check loginSSO for JWT
-                if (url.Contains("/api/auth/loginSSO"))
+                if (url.Contains("/api/auth/loginsso", StringComparison.OrdinalIgnoreCase))
                 {
                     try
                     {
@@ -1012,24 +1018,12 @@ public partial class TdxSsoLoginWindow : Window
                 }
                 
                 // Check for success URL → call loginSSO with cookies
-                if (SuccessPatterns.Any(p => url.Contains(p, StringComparison.OrdinalIgnoreCase)))
+                if (!loginSsoRequested && SuccessPatterns.Any(p => url.Contains(p, StringComparison.OrdinalIgnoreCase)))
                 {
-                    Log.Information("[tdx-sso] [Phase 1.5] Success URL reached, extracting JWT...");
-                    try
-                    {
-                        await Task.Delay(500, ct);
-                        var jwtResult = await TryGetJwtFromWebViewAsync(webView, rootUrl);
-                        if (jwtResult != null)
-                        {
-                            completed = true;
-                            Log.Information("[tdx-sso] [Phase 1.5] ✓ JWT obtained");
-                            tcs.TrySetResult(jwtResult);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Debug(ex, "[tdx-sso] [Phase 1.5] JWT extraction error");
-                    }
+                    loginSsoRequested = true;
+                    Log.Information("[tdx-sso] [Phase 1.5] Success URL reached; requesting JWT in the authenticated browser session");
+                    webView.CoreWebView2.Navigate(TdxSsoService.BuildLoginSsoUrl(baseUrl));
+                    return;
                 }
             };
             
@@ -1044,7 +1038,7 @@ public partial class TdxSsoLoginWindow : Window
                     {
                         Log.Information("[tdx-sso] [Phase 1.5] Autologon succeeded — pre-injecting FIDO fallback");
                         await Task.Delay(500);
-                        hiddenWindow.Dispatcher.Invoke(async () =>
+                        await (await hiddenWindow.Dispatcher.InvokeAsync(async () =>
                         {
                             try
                             {
@@ -1053,7 +1047,7 @@ public partial class TdxSsoLoginWindow : Window
                                 fidoFallbackInjected = true;
                             }
                             catch { /* disposed */ }
-                        });
+                        }));
                     }
                 }
                 catch { /* ignore */ }
@@ -1090,9 +1084,32 @@ public partial class TdxSsoLoginWindow : Window
         }
         
         if (result == null)
-            Log.Information("[tdx-sso] [Phase 1.5] Headless SSO did not produce a JWT");
+        {
+            var stop = Uri.TryCreate(lastUrl, UriKind.Absolute, out var stoppedAt)
+                ? $"{stoppedAt.Host}{stoppedAt.AbsolutePath}"
+                : "the browser sign-in flow";
+            result = TdxSsoResult.Failed(
+                $"Stopped at {stop}; one-time interactive Entra/Windows Hello completion is required in Settings");
+            Log.Information("[tdx-sso] [Phase 1.5] {Reason}", result.Error);
+        }
         
         return result;
+    }
+
+    private static async Task<CoreWebView2Environment> CreateWebViewEnvironmentAsync()
+    {
+        var userDataFolder = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "FleetMate", "WebView2");
+        Directory.CreateDirectory(userDataFolder);
+        var options = new CoreWebView2EnvironmentOptions
+        {
+            AllowSingleSignOnUsingOSPrimaryAccount = true
+        };
+        return await CoreWebView2Environment.CreateAsync(
+            browserExecutableFolder: null,
+            userDataFolder: userDataFolder,
+            options: options);
     }
     
     /// <summary>

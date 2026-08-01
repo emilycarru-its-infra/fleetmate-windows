@@ -5,12 +5,15 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using FleetMate.Core.Config;
+using FleetMate.Core.Models;
+using ModernWpf;
 
 namespace FleetMate.GUI.Views.Shared;
 
 public partial class SettingsPage : Page
 {
     private const string RegistryPath = @"SOFTWARE\FleetMate";
+    private bool _isLoadingSettings;
 
     public SettingsPage()
     {
@@ -18,7 +21,7 @@ public partial class SettingsPage : Page
         Loaded += (_, _) =>
         {
             LoadSettings();
-            BuildAuthCards();
+            _ = RefreshAuthCardsAsync();
         };
     }
 
@@ -26,35 +29,29 @@ public partial class SettingsPage : Page
 
     private void LoadSettings()
     {
+        _isLoadingSettings = true;
         var config = Application.Current is App app ? app.Config : FleetMateConfig.Load();
 
         // Config file path
-        var cfgPath = System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".fleetmate", "config.yaml");
-        ConfigPathTextBox.Text = cfgPath;
+        ConfigPathTextBox.Text = @"HKCU\SOFTWARE\FleetMate";
 
-        // Microsoft Graph
+        // Microsoft Graph — tenant and client ID only; there is no secret to enter.
         TenantIdTextBox.Text  = config.Graph?.TenantId  ?? "";
         ClientIdTextBox.Text  = config.Graph?.ClientId  ?? "";
-        if (!string.IsNullOrEmpty(config.Graph?.ClientSecret))
-            ClientSecretBox.Password = config.Graph.ClientSecret;
 
         // Azure DevOps
         AdoOrgTextBox.Text     = config.AzureDevOps?.Organization ?? "";
         AdoProjectTextBox.Text = config.AzureDevOps?.Project      ?? "";
         // NO PAT — Azure DevOps uses SSO only (browser OAuth2 PKCE or Azure CLI)
 
-        // Snipe-IT
+        // Snipe-IT — auth is the operator's Entra session; no key to enter.
         SnipeUrlTextBox.Text = config.SnipeUrl ?? "";
-        if (!string.IsNullOrEmpty(config.SnipeApiKey))
-            SnipeApiKeyBox.Password = config.SnipeApiKey;
 
-        // TDX
-        TdxUrlTextBox.Text      = config.Tdx?.BaseUrl  ?? "";
-        TdxUsernameTextBox.Text = config.Tdx?.Username ?? "";
-        if (!string.IsNullOrEmpty(config.Tdx?.Password))
-            TdxPasswordBox.Password = config.Tdx.Password;
+        // TDX — SSO only; there is no username or password to enter.
+        TdxUrlTextBox.Text = config.Tdx?.BaseUrl ?? "";
+        TdxAppIdTextBox.Text = config.Tdx?.AppId > 0 ? config.Tdx.AppId.ToString() : "";
+
+        ReportMateUrlTextBox.Text = config.ReportMateUrl ?? "";
 
         // About
         var version = Assembly.GetExecutingAssembly().GetName().Version;
@@ -62,6 +59,33 @@ public partial class SettingsPage : Page
         PlatformText.Text = $"Windows {Environment.OSVersion.Version.Major}.{Environment.OSVersion.Version.Minor}";
         ArchitectureText.Text = RuntimeInformation.ProcessArchitecture.ToString();
         RuntimeText.Text = RuntimeInformation.FrameworkDescription;
+
+        using var appearanceKey = Registry.CurrentUser.OpenSubKey(RegistryPath);
+        var theme = appearanceKey?.GetValue("UiTheme")?.ToString() ?? "System";
+        ThemeComboBox.SelectedIndex = theme switch
+        {
+            "Light" => 1,
+            "Dark" => 2,
+            _ => 0
+        };
+        _isLoadingSettings = false;
+    }
+
+    private void OnThemeSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isLoadingSettings || ThemeComboBox.SelectedItem is not ComboBoxItem item)
+            return;
+
+        var theme = item.Tag?.ToString() ?? "System";
+        ThemeManager.Current.ApplicationTheme = theme switch
+        {
+            "Light" => ApplicationTheme.Light,
+            "Dark" => ApplicationTheme.Dark,
+            _ => null
+        };
+
+        using var key = Registry.CurrentUser.CreateSubKey(RegistryPath);
+        key?.SetValue("UiTheme", theme);
     }
 
     // ── Save ────────────────────────────────────────────────────────────────
@@ -73,26 +97,38 @@ public partial class SettingsPage : Page
             using var key = Registry.CurrentUser.CreateSubKey(RegistryPath)
                 ?? throw new InvalidOperationException("Cannot open registry key");
 
-            // Graph
+            // Graph — no secret is written; Graph authenticates via the broker.
             SetReg(key, "GraphTenantId",    TenantIdTextBox.Text);
             SetReg(key, "GraphClientId",    ClientIdTextBox.Text);
-            SetReg(key, "GraphClientSecret", ClientSecretBox.Password);
+            key.DeleteValue("GraphClientSecret", throwOnMissingValue: false);
 
             // AzDO — NO PAT, SSO only
             SetReg(key, "DevOpsOrganization", AdoOrgTextBox.Text);
             SetReg(key, "DevOpsProject",      AdoProjectTextBox.Text);
 
-            // Snipe
-            SetReg(key, "SnipeUrl",    SnipeUrlTextBox.Text);
-            SetReg(key, "SnipeApiKey", SnipeApiKeyBox.Password);
+            // Snipe — no API key is written; auth is the operator's Entra session.
+            SetReg(key, "SnipeUrl", SnipeUrlTextBox.Text);
+
+            SetReg(key, "ReportMateUrl", ReportMateUrlTextBox.Text);
+            key.DeleteValue("ReportMatePassphrase", throwOnMissingValue: false);
+            key.DeleteValue("SnipeApiKey", throwOnMissingValue: false);
 
             // TDX
-            SetReg(key, "TdxBaseUrl",  TdxUrlTextBox.Text);
-            SetReg(key, "TdxUsername", TdxUsernameTextBox.Text);
-            SetReg(key, "TdxPassword", TdxPasswordBox.Password);
+            // TDX — SSO only. Clear any service-account credential left behind by
+            // an older build rather than leaving a live secret in the registry.
+            SetReg(key, "TdxBaseUrl", TdxUrlTextBox.Text);
+            SetReg(key, "TdxAppId", TdxAppIdTextBox.Text);
+            foreach (var retired in new[] { "TdxUsername", "TdxPassword", "TdxBeid", "TdxWebServicesKey" })
+                key.DeleteValue(retired, throwOnMissingValue: false);
+
+            if (Application.Current is App app)
+            {
+                app.ReloadConfiguration();
+                BuildAuthCards();
+            }
 
             MessageBox.Show(
-                "Settings saved. Restart FleetMate to apply changes.",
+                "Settings saved and applied.",
                 "Settings Saved",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -122,96 +158,108 @@ public partial class SettingsPage : Page
         if (Application.Current is not App app) return;
         var config = app.Config;
 
-        // Microsoft Graph (Intune / Entra)
         var graphConfigured = config.Graph != null && !string.IsNullOrEmpty(config.Graph.TenantId);
-        var graphHasSecret = !string.IsNullOrEmpty(config.Graph?.ClientSecret);
-        AddAuthCard("Microsoft Graph", "Service Principal (client credentials)",
-            graphConfigured ? (graphHasSecret ? "configured" : "missing secret") : "not configured",
-            graphConfigured && graphHasSecret ? AuthState.Configured : AuthState.NotConfigured,
-            new[]
-            {
-                ("Tenant ID", ShortId(config.Graph?.TenantId)),
-                ("Client ID", ShortId(config.Graph?.ClientId)),
-                ("Client Secret", graphHasSecret ? "● configured" : "✗ missing"),
-                ("Devices SP", ShortId(config.Graph?.DevicesClientId)),
-                ("Systems SP", ShortId(config.Graph?.SystemsClientId))
-            });
+        if (graphConfigured)
+        {
+            var (text, state) = BrokerState(app, AuthSystemId.Graph);
+            AddAuthCard("Microsoft Graph", "Entra SSO · Windows Web Account Manager", text, state,
+                new (string label, string? value)[]
+                {
+                    ("Tenant ID", ShortId(config.Graph?.TenantId)),
+                    ("Client ID", ShortId(config.Graph?.ClientId)),
+                    ("Token source", "Windows broker (WAM / device PRT)"),
+                    ("Elevation", "managed identity (aze)")
+                });
+        }
 
-        // Azure DevOps
         var adoConfigured = config.AzureDevOps != null && !string.IsNullOrEmpty(config.AzureDevOps.Organization);
-        var adoSso = app.IsDevOpsSsoAuthenticated;
-        AddAuthCard("Azure DevOps", "Platform SSO (OAuth2 PKCE)",
-            adoSso ? $"signed in as {app.DevOpsAuthenticatedUserName}" : (adoConfigured ? "not signed in" : "not configured"),
-            adoSso ? AuthState.Valid : (adoConfigured ? AuthState.Configured : AuthState.NotConfigured),
-            new[]
-            {
-                ("Organization", config.AzureDevOps?.Organization),
-                ("Project", config.AzureDevOps?.Project),
-                ("User", adoSso ? app.DevOpsAuthenticatedUserName : null)
-            },
-            adoConfigured ? (adoSso ? "Sign Out" : "Sign In") : null,
-            () =>
-            {
-                if (adoSso) app.AuthManager.SignOut();
-                else _ = app.AttemptSilentDevOpsSsoAsync();
-                BuildAuthCards();
-            });
+        if (adoConfigured)
+        {
+            var (text, state) = BrokerState(app, AuthSystemId.DevOps);
+            AddAuthCard("Azure DevOps", "Entra SSO · Windows Web Account Manager", text, state,
+                new[]
+                {
+                    ("Organization", config.AzureDevOps?.Organization),
+                    ("Project", config.AzureDevOps?.Project),
+                    ("Token source", "Windows broker (operator identity)")
+                });
+        }
 
-        // TeamDynamix
         var tdxConfigured = config.Tdx != null && !string.IsNullOrEmpty(config.Tdx.BaseUrl);
-        var tdxSso = app.IsTdxSsoAuthenticated;
-        AddAuthCard("TeamDynamix", TdxAuthDescription(config, tdxSso),
-            tdxSso ? $"signed in as {app.TdxAuthenticatedUserName}" : (tdxConfigured ? "not signed in" : "not configured"),
-            tdxSso ? AuthState.Valid : (tdxConfigured ? AuthState.Configured : AuthState.NotConfigured),
-            new[]
-            {
-                ("Base URL", config.Tdx?.BaseUrl),
-                ("Auth Method", TdxAuthDescription(config, tdxSso)),
-                ("User", tdxSso ? app.TdxAuthenticatedUserName : null)
-            },
-            tdxConfigured ? (tdxSso ? "Sign Out" : "Sign In") : null,
-            () =>
-            {
-                if (tdxSso) app.SignOutTdxSso();
-                else app.ShowTdxSsoLogin(_ => Dispatcher.Invoke(BuildAuthCards));
-                BuildAuthCards();
-            });
+        if (tdxConfigured)
+        {
+            var (text, state) = BrokerState(app, AuthSystemId.Tdx);
+            AddAuthCard("TeamDynamix", "Integrated SSO · Entra / Shibboleth", text, state,
+                new[]
+                {
+                    ("Base URL", config.Tdx?.BaseUrl),
+                    ("Token source", "silent Windows SSO (operator identity)")
+                });
+        }
 
-        // Snipe-IT
-        var snipeConfigured = !string.IsNullOrEmpty(config.SnipeUrl) && !string.IsNullOrEmpty(config.SnipeApiKey);
-        AddAuthCard("Snipe-IT", "API key (Bearer token)",
-            snipeConfigured ? "configured" : "not configured",
-            snipeConfigured ? AuthState.Configured : AuthState.NotConfigured,
-            new[]
-            {
-                ("Instance URL", config.SnipeUrl),
-                ("API Key", !string.IsNullOrEmpty(config.SnipeApiKey) ? MaskedToken(config.SnipeApiKey) : "✗ missing")
-            });
+        var snipeConfigured = !string.IsNullOrEmpty(config.SnipeUrl);
+        if (snipeConfigured)
+        {
+            var (text, state) = BrokerState(app, AuthSystemId.Snipe);
+            AddAuthCard("Snipe-IT", "Entra SSO · brokered bearer", text, state,
+                new[]
+                {
+                    ("Instance URL", config.SnipeUrl),
+                    ("Audience", ShortId(config.SnipeOidcAudience)),
+                    ("Token source", "Windows broker — no API key")
+                });
+        }
 
-        // GitHub
+        var rmConfigured = !string.IsNullOrEmpty(config.ReportMateUrl);
+        if (rmConfigured)
+        {
+            AddAuthCard("ReportMate", "Entra SSO · brokered bearer", "ready for SSO", AuthState.Configured,
+                new[]
+                {
+                    ("API URL", config.ReportMateUrl),
+                    ("Audience", ShortId(config.ReportMateOidcAudience)),
+                    ("Token source", "Windows broker — no passphrase")
+                });
+        }
+
         var ghConfig = config.Tasks?.Providers?.GitHub;
-        var ghConfigured = ghConfig != null && ghConfig.Enabled;
-        AddAuthCard("GitHub", "gh CLI (device/browser flow)",
-            ghConfigured ? "configured" : "not configured",
-            ghConfigured ? AuthState.Configured : AuthState.NotConfigured,
-            new[]
-            {
-                ("Organization", ghConfig?.Organization),
-                ("Project #", ghConfig?.ProjectNumber?.ToString())
-            });
+        var ghState = app.AuthManager.Systems.GetValueOrDefault(AuthSystemId.GitHub)?.State;
+        if (ghConfig is { Enabled: true } || ghState?.Kind == AuthStateKind.Valid)
+        {
+            var (text, state) = BrokerState(app, AuthSystemId.GitHub);
+            AddAuthCard("GitHub", "GitHub CLI · OS credential store", text, state,
+                new[]
+                {
+                    ("Organization", ghConfig?.Organization),
+                    ("Project #", ghConfig?.ProjectNumber?.ToString()),
+                    ("Token source", "gh authenticated session — no config token")
+                });
+        }
 
-        // Gitea
-        var giteaConfig = config.Tasks?.Providers?.Gitea;
-        var giteaConfigured = giteaConfig != null && giteaConfig.Enabled;
-        AddAuthCard("Gitea", "API token",
-            giteaConfigured ? "configured" : "not configured",
-            giteaConfigured ? AuthState.Configured : AuthState.NotConfigured,
-            new[]
+        if (AuthCardsPanel.Children.Count == 0)
+        {
+            AuthCardsPanel.Children.Add(new TextBlock
             {
-                ("Instance URL", giteaConfig?.Url),
-                ("Owner", giteaConfig?.Owner),
-                ("Token", !string.IsNullOrEmpty(giteaConfig?.Token) ? MaskedToken(giteaConfig.Token) : "✗ missing")
+                Text = "Add an endpoint above, then save. FleetMate will acquire the operator's session from Windows automatically.",
+                TextWrapping = TextWrapping.Wrap,
+                Padding = new Thickness(12),
+                Foreground = (Brush)FindResource("SystemControlForegroundBaseMediumBrush")
             });
+        }
+    }
+
+    private static (string text, AuthState state) BrokerState(App app, AuthSystemId id)
+    {
+        var status = app.AuthManager.Systems.GetValueOrDefault(id);
+        if (status == null) return ("needs setup", AuthState.NotConfigured);
+        return status.State.Kind switch
+        {
+            AuthStateKind.Valid => ($"signed in as {status.State.User ?? status.User ?? "you"}", AuthState.Valid),
+            AuthStateKind.Authenticating => ("checking Windows session…", AuthState.Configured),
+            AuthStateKind.Failed => ("SSO unavailable", AuthState.Failed),
+            AuthStateKind.ServicePrincipal => ("service principal blocked", AuthState.Failed),
+            _ => ("ready for SSO", AuthState.Configured)
+        };
     }
 
     private void AddAuthCard(string systemName, string authMethod, string statusText, AuthState state,
@@ -221,6 +269,7 @@ public partial class SettingsPage : Page
         {
             AuthState.Valid => "#27ae60",
             AuthState.Configured => "#f39c12",
+            AuthState.Failed => "#d64545",
             _ => "#666"
         };
         var borderColor = Color.FromArgb(50,
@@ -338,22 +387,32 @@ public partial class SettingsPage : Page
         AuthCardsPanel.Children.Add(card);
     }
 
-    private void OnRefreshAuthClicked(object sender, RoutedEventArgs e)
+    private async void OnRefreshAuthClicked(object sender, RoutedEventArgs e)
     {
+        await RefreshAuthCardsAsync();
+    }
+
+    private async Task RefreshAuthCardsAsync()
+    {
+        if (Application.Current is not App app) return;
+        try
+        {
+            await app.AuthManager.ProbeAllAsync(
+                app.GraphService, app.TdxService, app.SnipeService, app.DevOpsService);
+        }
+        catch
+        {
+            // Individual probes own their error states; keep rendering the rest.
+        }
         BuildAuthCards();
     }
 
     // ── Auth Helpers ────────────────────────────────────────────────────────
 
-    private enum AuthState { Valid, Configured, NotConfigured }
+    private enum AuthState { Valid, Configured, Failed, NotConfigured }
 
     private static string TdxAuthDescription(FleetMateConfig config, bool ssoActive)
-    {
-        if (ssoActive) return "Browser SSO (active)";
-        if (config.Tdx?.Beid != null) return "Service account + SSO available";
-        if (!string.IsNullOrEmpty(config.Tdx?.Username)) return "Username / password";
-        return "Browser SSO (Entra ID / Shibboleth)";
-    }
+        => ssoActive ? "SSO — signed in" : "SSO (Entra ID / Shibboleth)";
 
     private static string ShortId(string? s)
     {

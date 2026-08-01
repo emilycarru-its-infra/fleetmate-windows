@@ -17,24 +17,92 @@
             <Color x:Key="FleetMateAccentColor">#0078D4</Color>
             <SolidColorBrush x:Key="FleetMateAccentBrush" Color="{StaticResource FleetMateAccentColor}" />
 
-            <!-- Card Style -->
+            <!-- Shared surfaces -->
             <Style x:Key="CardStyle" TargetType="Border">
                 <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundAltHighBrush}" />
                 <Setter Property="CornerRadius" Value="8" />
-                <Setter Property="Padding" Value="16" />
-                <Setter Property="Margin" Value="0,0,0,12" />
-                <Setter Property="Effect">
+                <Setter Property="Padding" Value="12" />
+                <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Margin" Value="0,0,0,10" />
+            </Style>
+
+            <!-- Compact, centered navigation used by the main window. -->
+            <Style x:Key="NavigationTabStyle" TargetType="RadioButton">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Padding" Value="11,5" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template">
                     <Setter.Value>
-                        <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.15" />
+                        <ControlTemplate TargetType="RadioButton">
+                            <Border x:Name="Chrome" Background="{TemplateBinding Background}"
+                                    CornerRadius="7" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Chrome" Property="Background"
+                                            Value="{DynamicResource SystemControlBackgroundAltMediumLowBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Chrome" Property="Background"
+                                            Value="{DynamicResource SystemControlBackgroundAltMediumLowBrush}" />
+                                    <Setter Property="Foreground"
+                                            Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
                     </Setter.Value>
                 </Setter>
             </Style>
 
+            <Style x:Key="ChromeIconButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Padding" Value="8,5" />
+                <Setter Property="MinWidth" Value="32" />
+                <Setter Property="Cursor" Value="Hand" />
+            </Style>
+
+            <Style x:Key="FleetListViewItemStyle" TargetType="ListViewItem">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="Padding" Value="5,2" />
+                <Setter Property="MinHeight" Value="26" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Style.Triggers>
+                    <Trigger Property="ItemsControl.AlternationIndex" Value="1">
+                        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListLowBrush}" />
+                    </Trigger>
+                    <Trigger Property="IsSelected" Value="True">
+                        <Setter Property="Background" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
+                        <Setter Property="Foreground" Value="White" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="FleetDataGridStyle" TargetType="DataGrid">
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="RowHeight" Value="27" />
+                <Setter Property="ColumnHeaderHeight" Value="29" />
+                <Setter Property="CanUserAddRows" Value="False" />
+                <Setter Property="CanUserResizeRows" Value="False" />
+                <Setter Property="GridLinesVisibility" Value="Horizontal" />
+                <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+                <Setter Property="AlternatingRowBackground" Value="{DynamicResource SystemControlBackgroundListLowBrush}" />
+                <Setter Property="RowBackground" Value="Transparent" />
+                <Setter Property="HeadersVisibility" Value="Column" />
+            </Style>
+
             <!-- Typography -->
             <Style x:Key="TitleTextStyle" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="28" />
-                <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="Margin" Value="0,0,0,8" />
+                <Setter Property="FontSize" Value="26" />
+                <Setter Property="FontWeight" Value="Bold" />
+                <Setter Property="Margin" Value="0" />
             </Style>
 
             <Style x:Key="SubtitleTextStyle" TargetType="TextBlock">
@@ -44,9 +112,9 @@
             </Style>
 
             <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="18" />
+                <Setter Property="FontSize" Value="16" />
                 <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="Margin" Value="0,16,0,8" />
+                <Setter Property="Margin" Value="0" />
             </Style>
 
         </ResourceDictionary>

@@ -41,38 +41,53 @@ public class GitHubProjectsTaskProvider : ITaskProvider
 
     public async Task<List<UnifiedTask>> ListTasksAsync(TaskFilter? filter = null, CancellationToken ct = default)
     {
-        await EnsureProjectAsync(ct);
-
         var limit = filter?.Limit ?? 100;
+
+        // No board configured, and none to find. Rather than showing an empty
+        // Projects tab, fall back to the issues this account is involved in —
+        // that is what someone opening the tab is looking for, and most estates
+        // never set up a Projects v2 board at all.
+        if (!await TryEnsureProjectAsync(ct))
+        {
+            return ApplyFilters(await ListInvolvedIssuesAsync(limit, ct), filter);
+        }
+
         var items = await _service.ListProjectItemsAsync(_projectId!, limit, ct: ct);
 
         var tasks = items.Select(ItemToUnifiedTask).Where(t => t != null).Select(t => t!).ToList();
 
-        // Apply filters
-        if (filter != null)
-        {
-            if (filter.States?.Any() == true)
-                tasks = tasks.Where(t => filter.States.Contains(t.State)).ToList();
+        return ApplyFilters(tasks, filter);
+    }
 
-            if (!filter.IncludeClosed)
-                tasks = tasks.Where(t => t.State != TaskState.Closed).ToList();
+    /// <summary>
+    /// Filtering is client-side and shared by both sources, so a board and the
+    /// issues fallback behave identically once the rows exist.
+    /// </summary>
+    private static List<UnifiedTask> ApplyFilters(List<UnifiedTask> tasks, TaskFilter? filter)
+    {
+        if (filter == null) return tasks;
 
-            if (filter.Assignees?.Any() == true)
-                tasks = tasks.Where(t => t.Assignees.Any(a => 
-                    filter.Assignees.Contains(a, StringComparer.OrdinalIgnoreCase))).ToList();
+        if (filter.States?.Any() == true)
+            tasks = tasks.Where(t => filter.States.Contains(t.State)).ToList();
 
-            if (filter.Labels?.Any() == true)
-                tasks = tasks.Where(t => t.Labels.Any(l => 
-                    filter.Labels.Contains(l, StringComparer.OrdinalIgnoreCase))).ToList();
+        if (!filter.IncludeClosed)
+            tasks = tasks.Where(t => t.State != TaskState.Closed).ToList();
 
-            if (!string.IsNullOrEmpty(filter.Bucket))
-                tasks = tasks.Where(t => string.Equals(t.Bucket, filter.Bucket, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (filter.Assignees?.Any() == true)
+            tasks = tasks.Where(t => t.Assignees.Any(a =>
+                filter.Assignees.Contains(a, StringComparer.OrdinalIgnoreCase))).ToList();
 
-            if (!string.IsNullOrEmpty(filter.SearchText))
-                tasks = tasks.Where(t =>
-                    (t.Title?.Contains(filter.SearchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                    (t.Description?.Contains(filter.SearchText, StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
-        }
+        if (filter.Labels?.Any() == true)
+            tasks = tasks.Where(t => t.Labels.Any(l =>
+                filter.Labels.Contains(l, StringComparer.OrdinalIgnoreCase))).ToList();
+
+        if (!string.IsNullOrEmpty(filter.Bucket))
+            tasks = tasks.Where(t => string.Equals(t.Bucket, filter.Bucket, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        if (!string.IsNullOrEmpty(filter.SearchText))
+            tasks = tasks.Where(t =>
+                (t.Title?.Contains(filter.SearchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                (t.Description?.Contains(filter.SearchText, StringComparison.OrdinalIgnoreCase) ?? false)).ToList();
 
         return tasks;
     }
@@ -202,11 +217,138 @@ public class GitHubProjectsTaskProvider : ITaskProvider
 
     private async Task EnsureProjectAsync(CancellationToken ct)
     {
-        if (_projectId != null) return;
-        await ResolveProjectAsync(ct);
-        if (_projectId == null)
+        if (!await TryEnsureProjectAsync(ct))
             throw new InvalidOperationException("No GitHub project configured or found");
     }
+
+    /// <summary>Resolve the board if there is one, without throwing when there is not.</summary>
+    private async Task<bool> TryEnsureProjectAsync(CancellationToken ct)
+    {
+        if (_projectId != null) return true;
+
+        try
+        {
+            await ResolveProjectAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[github] Could not resolve a Projects v2 board");
+        }
+
+        return _projectId != null;
+    }
+
+    /// <summary>
+    /// Issues this account is involved in, used when no Projects v2 board
+    /// exists. <c>involves:@me</c> covers authored, assigned, mentioned and
+    /// commented — the same set GitHub's own dashboard considers yours.
+    /// </summary>
+    private async Task<List<UnifiedTask>> ListInvolvedIssuesAsync(int limit, CancellationToken ct)
+    {
+        const string query = """
+            query($search: String!, $first: Int!) {
+              search(query: $search, type: ISSUE, first: $first) {
+                nodes {
+                  ... on Issue {
+                    id number title body url state createdAt updatedAt
+                    author { login }
+                    repository { name owner { login } }
+                    assignees(first: 10) { nodes { login } }
+                    labels(first: 20) { nodes { name } }
+                  }
+                }
+              }
+            }
+            """;
+
+        try
+        {
+            var data = await _service.Client.ExecuteRawAsync(query, new
+            {
+                search = "is:issue involves:@me sort:updated-desc",
+                first = Math.Clamp(limit, 1, 100),
+            }, ct);
+
+            if (!data.TryGetProperty("search", out var search)
+                || !search.TryGetProperty("nodes", out var nodes)
+                || nodes.ValueKind != JsonValueKind.Array)
+            {
+                return new List<UnifiedTask>();
+            }
+
+            var tasks = new List<UnifiedTask>();
+
+            foreach (var node in nodes.EnumerateArray())
+            {
+                // The issue search also returns pull requests, which have no
+                // number/repository pair in this projection.
+                if (!node.TryGetProperty("number", out var number)
+                    || number.ValueKind != JsonValueKind.Number)
+                {
+                    continue;
+                }
+
+                var closed = string.Equals(Str(node, "state"), "CLOSED", StringComparison.OrdinalIgnoreCase);
+                var repo = node.TryGetProperty("repository", out var r) ? r : default;
+                var owner = repo.ValueKind == JsonValueKind.Object
+                            && repo.TryGetProperty("owner", out var o) ? Str(o, "login") : null;
+
+                var repoName = Str(repo, "name");
+
+                tasks.Add(new UnifiedTask
+                {
+                    Id = Str(node, "id") ?? "",
+                    Provider = ProviderId,
+                    // Prefix with owner/repo — without a board these come from
+                    // across the estate, and a bare title says nothing about
+                    // where the work lives.
+                    Title = owner is null || repoName is null
+                        ? Str(node, "title") ?? "(untitled)"
+                        : $"{owner}/{repoName}#{number.GetInt32()} · {Str(node, "title")}",
+                    Description = Str(node, "body"),
+                    State = closed ? TaskState.Closed : TaskState.Open,
+                    // Without a board there are no status columns, so open and
+                    // closed are the only honest grouping.
+                    Bucket = closed ? "Closed" : "Open",
+                    ExternalUrl = Str(node, "url"),
+                    Assignees = Logins(node, "assignees"),
+                    Labels = Names(node, "labels"),
+                    CreatedAt = PullRequestDateParser.Parse(Str(node, "createdAt")) ?? DateTime.MinValue,
+                    UpdatedAt = PullRequestDateParser.Parse(Str(node, "updatedAt")) ?? DateTime.MinValue,
+                });
+            }
+
+            Log.Information("[github] No Projects board; showing {Count} involved issues", tasks.Count);
+            return tasks;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[github] Issues fallback failed");
+            return new List<UnifiedTask>();
+        }
+    }
+
+    private static List<string> Logins(JsonElement node, string property) =>
+        Collection(node, property).Select(n => Str(n, "login")).Where(s => s != null).Select(s => s!).ToList();
+
+    private static List<string> Names(JsonElement node, string property) =>
+        Collection(node, property).Select(n => Str(n, "name")).Where(s => s != null).Select(s => s!).ToList();
+
+    private static IEnumerable<JsonElement> Collection(JsonElement node, string property)
+    {
+        if (!node.TryGetProperty(property, out var container)) yield break;
+        if (!container.TryGetProperty("nodes", out var nodes)) yield break;
+        if (nodes.ValueKind != JsonValueKind.Array) yield break;
+
+        foreach (var child in nodes.EnumerateArray()) yield return child;
+    }
+
+    private static string? Str(JsonElement element, string property) =>
+        element.ValueKind == JsonValueKind.Object
+        && element.TryGetProperty(property, out var value)
+        && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
     private async Task ResolveProjectAsync(CancellationToken ct)
     {

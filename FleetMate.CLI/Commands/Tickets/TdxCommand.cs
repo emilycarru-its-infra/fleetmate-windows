@@ -405,22 +405,31 @@ public static class TdxCommand
         {
             if (!EnsureConfigured(tdxService)) return;
 
-            bool success = false;
+            string? failure = null;
 
             await AnsiConsole.Status()
                 .Spinner(Spinner.Known.Dots)
                 .StartAsync($"Adding comment to ticket {id}...", async ctx =>
                 {
-                    success = await tdxService!.AddCommentAsync(id, comment, isPrivate);
+                    try
+                    {
+                        await tdxService!.AddCommentAsync(id, comment, isPrivate);
+                    }
+                    catch (TdxCommentException ex)
+                    {
+                        failure = ex.Message;
+                    }
                 });
 
-            if (success)
+            if (failure == null)
             {
                 AnsiConsole.MarkupLine($"[green]Added comment to ticket {id}[/]");
             }
             else
             {
-                AnsiConsole.MarkupLine($"[red]Failed to add comment to ticket {id}[/]");
+                // Say why. "Failed to add comment" left no way to tell a
+                // permissions problem from an expired session.
+                AnsiConsole.MarkupLine($"[red]{Markup.Escape(failure)}[/]");
             }
         }, idArg, commentArg, privateOption);
 
