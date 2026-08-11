@@ -70,14 +70,43 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
         }
     }
 
-    /// Intune (deviceManagement / deviceAppManagement) → devices; everything else
-    /// (users/groups/directory) → identity.
-    private static GraphDomain RouteDomain(string url)
+    /// Intune (deviceManagement / deviceAppManagement) and the directory's own
+    /// device objects (/devices) → devices; everything else (users, groups,
+    /// directory roles) → identity.
+    ///
+    /// /devices sits in the directory alongside /users, but it is device
+    /// lifecycle, not identity: re-provisioning an endpoint deletes its device
+    /// object and its Intune record together. Routing it to the devices domain
+    /// keeps that one operation inside one managed identity, so neither domain
+    /// needs a scope the other already holds.
+    internal static GraphDomain RouteDomain(string url)
     {
         var lower = url.ToLowerInvariant();
         if (lower.Contains("/devicemanagement/") || lower.Contains("/deviceappmanagement/"))
             return GraphDomain.Devices;
+        if (IsDirectoryDeviceCall(lower))
+            return GraphDomain.Devices;
         return GraphDomain.Identity;
+    }
+
+    /// <summary>
+    /// True for the /devices collection specifically — matched on the path
+    /// segment after the API version so that neither /deviceManagement nor a
+    /// query string mentioning devices is caught by it.
+    /// </summary>
+    private static bool IsDirectoryDeviceCall(string lowerUrl)
+    {
+        foreach (var version in new[] { "/v1.0/", "/beta/" })
+        {
+            var start = lowerUrl.IndexOf(version, StringComparison.Ordinal);
+            if (start < 0) continue;
+
+            var path = lowerUrl[(start + version.Length)..];
+            var end = path.IndexOfAny(['/', '?']);
+            var segment = end < 0 ? path : path[..end];
+            return segment == "devices";
+        }
+        return false;
     }
 
     // Single-quote so the container shell does not expand $top/$filter/$ref/etc.
