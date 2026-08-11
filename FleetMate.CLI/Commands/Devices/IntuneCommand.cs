@@ -36,9 +36,170 @@ public static class IntuneCommand
         command.AddCommand(CreateLockCommand(graphService));
         command.AddCommand(CreateWipeCommand(graphService));
         command.AddCommand(CreateRetireCommand(graphService));
+        command.AddCommand(CreateDeleteCommand(graphService));
+        command.AddCommand(CreateAutopilotCommand(graphService));
+        command.AddCommand(CreateCleanupCommand(graphService));
         command.AddCommand(CreateCimianPushCommand(graphService));
 
         return command;
+    }
+
+    private static Command CreateDeleteCommand(GraphService? graphService)
+    {
+        var command = new Command("delete", "Delete a device's Intune record (server-side only; sends nothing to the device)");
+        var idArg = new Argument<string>(name: "identifier", description: "Serial number or managedDevice id");
+        var confirmOption = new Option<bool>(aliases: ["--confirm"], description: "Required to actually delete");
+        command.AddArgument(idArg);
+        command.AddOption(confirmOption);
+        command.SetHandler(async (identifier, confirm) =>
+        {
+            if (!EnsureConfigured(graphService)) return;
+            if (!confirm)
+            {
+                AnsiConsole.MarkupLine($"[yellow]This will delete the Intune record for {Markup.Escape(identifier)}, leaving it unmanaged until it re-enrolls. Re-run with --confirm to proceed.[/]");
+                return;
+            }
+            var id = await ResolveDeviceIdAsync(graphService!, identifier);
+            ReportAction(await graphService!.DeleteManagedDeviceAsync(id!, confirmed: true), "delete");
+        }, idArg, confirmOption);
+        return command;
+    }
+
+    private static Command CreateAutopilotCommand(GraphService? graphService)
+    {
+        var command = new Command("autopilot", "Show the AutoPilot identity and directory records for a serial");
+        var serialArg = new Argument<string>(name: "serial", description: "Device serial number");
+        var jsonOption = new Option<bool>(aliases: ["--json"], description: "Output as JSON");
+        command.AddArgument(serialArg);
+        command.AddOption(jsonOption);
+        command.SetHandler(async (serial, json) =>
+        {
+            if (!EnsureConfigured(graphService)) return;
+
+            GraphService.DeviceRecordState? state = null;
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .StartAsync($"Reading records for {serial}...", async ctx =>
+                {
+                    state = await graphService!.GetDeviceRecordStateAsync(serial);
+                });
+
+            if (json)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(state, JsonOptions));
+                return;
+            }
+
+            DisplayRecordState(state!);
+        }, serialArg, jsonOption);
+        return command;
+    }
+
+    private static Command CreateCleanupCommand(GraphService? graphService)
+    {
+        var command = new Command("cleanup",
+            "Delete the stale Intune and Entra records blocking re-enrollment (keeps the AutoPilot identity)");
+        var serialArg = new Argument<string>(name: "serial", description: "Device serial number");
+        var confirmOption = new Option<bool>(aliases: ["--confirm"], description: "Required to actually delete");
+        var jsonOption = new Option<bool>(aliases: ["--json"], description: "Output as JSON");
+        command.AddArgument(serialArg);
+        command.AddOption(confirmOption);
+        command.AddOption(jsonOption);
+        command.SetHandler(async (serial, confirm, json) =>
+        {
+            if (!EnsureConfigured(graphService)) return;
+
+            // Without --confirm this is the dry run: show exactly which records
+            // would go, which is also the answer to "why did this machine fail".
+            if (!confirm)
+            {
+                var preview = await graphService!.GetDeviceRecordStateAsync(serial);
+                if (json)
+                {
+                    Console.WriteLine(JsonSerializer.Serialize(preview, JsonOptions));
+                    return;
+                }
+                DisplayRecordState(preview);
+                AnsiConsole.WriteLine();
+                AnsiConsole.MarkupLine("[yellow]Dry run.[/] Re-run with [cyan]--confirm[/] to delete the Intune and Entra records above. The AutoPilot identity is kept.");
+                return;
+            }
+
+            GraphService.RecordCleanupResult? result = null;
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .StartAsync($"Cleaning records for {serial}...", async ctx =>
+                {
+                    result = await graphService!.CleanDeviceRecordsAsync(serial, confirmed: true);
+                });
+
+            if (json)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(result, JsonOptions));
+                return;
+            }
+
+            foreach (var d in result!.Deleted) AnsiConsole.MarkupLine($"[green]Deleted[/] {Markup.Escape(d)}");
+            foreach (var s in result.Skipped) AnsiConsole.MarkupLine($"[dim]Skipped {Markup.Escape(s)}[/]");
+            foreach (var e in result.Errors) AnsiConsole.MarkupLine($"[red]Error[/] {Markup.Escape(e)}");
+
+            if (!string.IsNullOrEmpty(result.RetainedAutopilotId))
+                AnsiConsole.MarkupLine($"[dim]Kept AutoPilot identity {result.RetainedAutopilotId}[/]");
+            else
+                AnsiConsole.MarkupLine("[yellow]No AutoPilot identity found for this serial — the machine will not find a deployment profile at OOBE.[/]");
+
+            AnsiConsole.MarkupLine(result.Success
+                ? "[green]Records cleaned.[/] The device can now enroll fresh."
+                : "[red]Cleanup incomplete — see errors above.[/]");
+        }, serialArg, confirmOption, jsonOption);
+        return command;
+    }
+
+    private static void DisplayRecordState(GraphService.DeviceRecordState state)
+    {
+        var table = new Table { Border = TableBorder.Rounded };
+        table.AddColumn("Record");
+        table.AddColumn("Status");
+        table.AddColumn("Detail");
+
+        var ap = state.Autopilot;
+        table.AddRow(
+            "AutoPilot identity",
+            ap == null ? "[red]missing[/]" : "[green]present[/]",
+            ap == null
+                ? "[red]no hardware hash registered[/]"
+                : Markup.Escape($"{ap.Id}  enrollmentState={ap.EnrollmentState}  groupTag={(string.IsNullOrEmpty(ap.GroupTag) ? "(none)" : ap.GroupTag)}"));
+
+        table.AddRow(
+            "Intune managedDevice",
+            state.Intune == null ? "[yellow]none[/]" : "[green]present[/]",
+            state.Intune == null
+                ? "[dim]no enrollment record[/]"
+                : Markup.Escape($"{state.Intune.Id}  {state.Intune.DeviceName}  {state.Intune.ComplianceState}"));
+
+        if (state.EntraDevices.Count == 0)
+        {
+            table.AddRow("Entra device object", "[yellow]none[/]", "[dim]no directory object[/]");
+        }
+        else
+        {
+            foreach (var e in state.EntraDevices)
+                table.AddRow(
+                    "Entra device object",
+                    "[green]present[/]",
+                    Markup.Escape($"{e.Id}  {e.DisplayName}  trust={e.TrustType}  managed={e.IsManaged}"));
+        }
+
+        AnsiConsole.Write(table);
+
+        if (state.IsOrphaned)
+        {
+            AnsiConsole.MarkupLine("[red]Orphaned:[/] Entra still holds a device object but Intune has no record.");
+            AnsiConsole.MarkupLine("[dim]The next OOBE pass re-binds to the stale object by ZTDID and fails at \"Registering your device for mobile management\".[/]");
+        }
+
+        if (state.HasDanglingManagedDeviceId)
+            AnsiConsole.MarkupLine($"[dim]AutoPilot identity still points at deleted managedDevice {state.Autopilot!.ManagedDeviceId} — Intune clears this on re-enrollment.[/]");
     }
 
     /// <summary>Resolve a serial to a managedDevice id; pass an id straight through.</summary>
