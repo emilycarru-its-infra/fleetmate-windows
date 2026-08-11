@@ -36,11 +36,36 @@ public static class IntuneCommand
         command.AddCommand(CreateLockCommand(graphService));
         command.AddCommand(CreateWipeCommand(graphService));
         command.AddCommand(CreateRetireCommand(graphService));
+        command.AddCommand(CreateAutopilotResetCommand(graphService));
         command.AddCommand(CreateDeleteCommand(graphService));
         command.AddCommand(CreateAutopilotCommand(graphService));
         command.AddCommand(CreateCleanupCommand(graphService));
         command.AddCommand(CreateCimianPushCommand(graphService));
 
+        return command;
+    }
+
+    private static Command CreateAutopilotResetCommand(GraphService? graphService)
+    {
+        var command = new Command("autopilot-reset",
+            "AutoPilot Reset a device back to OOBE, keeping OS and enrollment (DESTRUCTIVE)");
+        var idArg = new Argument<string>(name: "identifier", description: "Serial number or managedDevice id");
+        var keepUserDataOption = new Option<bool>(aliases: ["--keep-user-data"], description: "Keep user data (rarely wanted on shared devices)");
+        var confirmOption = new Option<bool>(aliases: ["--confirm"], description: "Required to actually reset");
+        command.AddArgument(idArg);
+        command.AddOption(keepUserDataOption);
+        command.AddOption(confirmOption);
+        command.SetHandler(async (identifier, keepUserData, confirm) =>
+        {
+            if (!EnsureConfigured(graphService)) return;
+            if (!confirm)
+            {
+                AnsiConsole.MarkupLine($"[yellow]This will reset {Markup.Escape(identifier)} to OOBE, removing profiles, apps and settings. Re-run with --confirm to proceed.[/]");
+                return;
+            }
+            var id = await ResolveDeviceIdAsync(graphService!, identifier);
+            ReportAction(await graphService!.AutopilotResetDeviceAsync(id!, keepUserData: keepUserData, confirmed: true), "AutoPilot Reset");
+        }, idArg, keepUserDataOption, confirmOption);
         return command;
     }
 
