@@ -34,6 +34,143 @@ public static class EntraCommand
         command.AddCommand(CreateAddMemberCommand(graphService));
         command.AddCommand(CreateRemoveMemberCommand(graphService));
         command.AddCommand(CreateSetUserCommand(graphService));
+        command.AddCommand(CreateDeviceCommand(graphService));
+        command.AddCommand(CreateDeleteDeviceCommand(graphService));
+
+        return command;
+    }
+
+    /// <summary>
+    /// Resolve a device query to Entra device objects. Accepts a display name, a
+    /// deviceId or a directory object id — a technician holding a failure screen
+    /// rarely knows which of the three they have.
+    /// </summary>
+    private static async Task<List<EntraDevice>> ResolveEntraDevicesAsync(GraphService graph, string query)
+    {
+        if (Guid.TryParse(query, out _))
+        {
+            var byDeviceId = await graph.GetEntraDeviceByDeviceIdAsync(query);
+            if (byDeviceId != null) return [byDeviceId];
+
+            var byObjectId = await graph.GetEntraDevicesAsync($"id eq '{query}'", 1);
+            if (byObjectId.Count > 0) return byObjectId;
+        }
+
+        return await graph.GetEntraDevicesByNameAsync(query);
+    }
+
+    private static Command CreateDeviceCommand(GraphService? graphService)
+    {
+        var command = new Command("device", "Get Entra device object(s) by name, deviceId or object id");
+
+        var queryArg = new Argument<string>(name: "query", description: "Display name, deviceId or object id");
+        var jsonOption = new Option<bool>(aliases: ["--json"], description: "Output as JSON");
+
+        command.AddArgument(queryArg);
+        command.AddOption(jsonOption);
+
+        command.SetHandler(async (query, json) =>
+        {
+            if (!EnsureConfigured(graphService)) return;
+
+            List<EntraDevice> devices = new();
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .StartAsync($"Finding device {query}...", async ctx =>
+                {
+                    devices = await ResolveEntraDevicesAsync(graphService!, query);
+                });
+
+            if (json)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(devices, JsonOptions));
+                return;
+            }
+
+            if (devices.Count == 0)
+            {
+                AnsiConsole.MarkupLine($"[yellow]No Entra device object found: {Markup.Escape(query)}[/]");
+                return;
+            }
+
+            var table = new Table { Border = TableBorder.Rounded };
+            table.AddColumn("Name");
+            table.AddColumn("Object id");
+            table.AddColumn("Trust");
+            table.AddColumn("Managed");
+            table.AddColumn("Compliant");
+            table.AddColumn("Last sign-in");
+
+            foreach (var d in devices)
+                table.AddRow(
+                    Markup.Escape(d.DisplayName ?? "-"),
+                    d.Id,
+                    d.TrustType ?? "-",
+                    d.IsManaged == true ? "[green]yes[/]" : "[yellow]no[/]",
+                    d.IsCompliant == true ? "[green]yes[/]" : "[yellow]no[/]",
+                    d.ApproximateLastSignInDateTime?.ToString("yyyy-MM-dd") ?? "-");
+
+            AnsiConsole.Write(table);
+
+            if (devices.Count > 1)
+                AnsiConsole.MarkupLine($"[yellow]{devices.Count} objects share this name[/] — duplicates block enrollment; remove the stale ones.");
+        }, queryArg, jsonOption);
+
+        return command;
+    }
+
+    private static Command CreateDeleteDeviceCommand(GraphService? graphService)
+    {
+        var command = new Command("delete-device", "Delete an Entra device object (DESTRUCTIVE)");
+
+        var queryArg = new Argument<string>(name: "query", description: "Display name, deviceId or object id");
+        var confirmOption = new Option<bool>(aliases: ["--confirm"], description: "Required to actually delete");
+        var allOption = new Option<bool>(aliases: ["--all"], description: "Delete every object matching the query, not just a unique match");
+
+        command.AddArgument(queryArg);
+        command.AddOption(confirmOption);
+        command.AddOption(allOption);
+
+        command.SetHandler(async (query, confirm, all) =>
+        {
+            if (!EnsureConfigured(graphService)) return;
+
+            var devices = await ResolveEntraDevicesAsync(graphService!, query);
+
+            if (devices.Count == 0)
+            {
+                AnsiConsole.MarkupLine($"[yellow]No Entra device object found: {Markup.Escape(query)}[/]");
+                return;
+            }
+
+            // Refuse to guess between duplicates: deleting the wrong one of a
+            // matched pair unenrolls a working machine.
+            if (devices.Count > 1 && !all)
+            {
+                AnsiConsole.MarkupLine($"[yellow]{devices.Count} objects match {Markup.Escape(query)}.[/] Pass an object id, or --all to delete every match:");
+                foreach (var d in devices)
+                    AnsiConsole.MarkupLine($"  [dim]{d.Id}[/]  {Markup.Escape(d.DisplayName ?? "-")}  trust={d.TrustType}  last sign-in {d.ApproximateLastSignInDateTime?.ToString("yyyy-MM-dd") ?? "-"}");
+                return;
+            }
+
+            if (!confirm)
+            {
+                AnsiConsole.MarkupLine($"[yellow]This will delete {devices.Count} Entra device object(s):[/]");
+                foreach (var d in devices)
+                    AnsiConsole.MarkupLine($"  [dim]{d.Id}[/]  {Markup.Escape(d.DisplayName ?? "-")}");
+                AnsiConsole.MarkupLine("Re-run with [cyan]--confirm[/] to proceed.");
+                return;
+            }
+
+            foreach (var d in devices)
+            {
+                var result = await graphService!.DeleteEntraDeviceAsync(d.Id, confirmed: true);
+                if (result.Success)
+                    AnsiConsole.MarkupLine($"[green]Deleted[/] {Markup.Escape(d.DisplayName ?? d.Id)} ({d.Id})");
+                else
+                    AnsiConsole.MarkupLine($"[red]Failed:[/] {Markup.Escape(result.Message ?? "unknown error")}");
+            }
+        }, queryArg, confirmOption, allOption);
 
         return command;
     }
