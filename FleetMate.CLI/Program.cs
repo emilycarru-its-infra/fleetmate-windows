@@ -161,6 +161,8 @@ class Program
 
             // Intune device management
             rootCommand.AddCommand(IntuneCommand.Create(graphService, reportMate));
+            // Fleet reset — reset devices and clean the records that block re-enrollment
+            rootCommand.AddCommand(WipeCommand.Create(graphService, snipeService));
             // Entra ID (Azure AD) user/group management
             rootCommand.AddCommand(EntraCommand.Create(graphService, reportMate));
 

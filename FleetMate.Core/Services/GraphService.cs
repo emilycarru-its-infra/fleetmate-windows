@@ -569,6 +569,48 @@ public class GraphService : IDisposable
         }
     }
 
+    /// <summary>
+    /// AutoPilot Reset a device (cleanWindowsDevice).
+    ///
+    /// Keeps the OS, drivers, Wi-Fi and enrollment, removing user profiles, apps
+    /// and settings so the machine returns to OOBE ready for the next user. This
+    /// is the reset shared and lab endpoints use; it is not supported on Entra
+    /// hybrid-joined devices, which fail with an explicit Graph error rather
+    /// than silently doing nothing.
+    /// </summary>
+    public async Task<DeviceActionResult> AutopilotResetDeviceAsync(string deviceId, bool keepUserData = false, bool confirmed = false)
+    {
+        var guard = RequireConfirmation(confirmed, "cleanWindowsDevice", deviceId);
+        if (guard != null) return guard;
+
+        if (!await SetAuthorizationAsync())
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "cleanWindowsDevice", Message = "Not authenticated" };
+
+        try
+        {
+            var url = $"deviceManagement/managedDevices/{deviceId}/cleanWindowsDevice";
+            var body = new { keepUserData };
+            var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+            var response = await _client.PostAsync(url, content);
+
+            if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                Log.Information("AutoPilot Reset triggered for device {DeviceId}", deviceId);
+                return new DeviceActionResult { Success = true, DeviceId = deviceId, Action = "cleanWindowsDevice" };
+            }
+
+            var error = await ReadErrorBodyAsync(response);
+            Log.Warning("Failed to AutoPilot Reset device {DeviceId}: {Status} - {Error}", deviceId, response.StatusCode, error);
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "cleanWindowsDevice", Message = error };
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to AutoPilot Reset device {DeviceId}", deviceId);
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "cleanWindowsDevice", Message = ex.Message };
+        }
+    }
+
     /// <summary>Factory-reset multiple devices.</summary>
     public async Task<List<DeviceActionResult>> WipeDevicesAsync(IEnumerable<string> deviceIds, bool keepEnrollmentData = false, bool keepUserData = false, bool confirmed = false)
     {
