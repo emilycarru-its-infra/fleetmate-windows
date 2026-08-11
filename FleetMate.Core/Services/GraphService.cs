@@ -1509,6 +1509,317 @@ if ($svc -and $svc.Status -ne 'Running') {
 
     #endregion
 
+    #region AutoPilot identity and directory records
+
+    /// <summary>
+    /// Look up a machine's AutoPilot device identity by serial.
+    ///
+    /// Uses contains() rather than eq: AutoPilot serials are recorded exactly as
+    /// the OEM wrote them into firmware, and Lenovo units in particular arrive
+    /// with trailing whitespace that makes an equality filter silently miss.
+    /// </summary>
+    public async Task<AutopilotDevice?> GetAutopilotDeviceBySerialAsync(string serialNumber)
+    {
+        var devices = await GetAutopilotDevicesAsync($"contains(serialNumber,'{serialNumber}')", 5);
+        return devices.FirstOrDefault(d =>
+                   string.Equals(d.SerialNumber?.Trim(), serialNumber.Trim(), StringComparison.OrdinalIgnoreCase))
+               ?? devices.FirstOrDefault();
+    }
+
+    /// <summary>List AutoPilot device identities, following paging to <paramref name="limit"/>.</summary>
+    public async Task<List<AutopilotDevice>> GetAutopilotDevicesAsync(string? filter = null, int limit = 100)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            Log.Warning("Failed to authenticate to Microsoft Graph");
+            return new List<AutopilotDevice>();
+        }
+
+        var all = new List<AutopilotDevice>();
+        var url = "deviceManagement/windowsAutopilotDeviceIdentities";
+
+        var queryParams = new List<string> { $"$top={PageSizeFor(limit)}" };
+        if (!string.IsNullOrEmpty(filter))
+            queryParams.Add($"$filter={Uri.EscapeDataString(filter)}");
+        url += "?" + string.Join("&", queryParams);
+
+        try
+        {
+            while (!string.IsNullOrEmpty(url) && all.Count < limit)
+            {
+                var response = await _client.GetAsync(url);
+                if (!response.IsSuccessStatusCode)
+                {
+                    Log.Warning("Failed to get AutoPilot identities: {Status} - {Error}",
+                        response.StatusCode, await ReadErrorBodyAsync(response));
+                    break;
+                }
+
+                var result = await response.Content.ReadFromJsonAsync<AutopilotDeviceListResponse>(_jsonOptions);
+                if (result?.Value != null) all.AddRange(result.Value);
+
+                url = result?.NextLink;
+                if (url != null && url.StartsWith(_client.BaseAddress!.ToString()))
+                    url = url.Substring(_client.BaseAddress.ToString().Length);
+            }
+
+            return all.Take(limit).ToList();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to get AutoPilot identities");
+            return new List<AutopilotDevice>();
+        }
+    }
+
+    /// <summary>
+    /// Delete an Intune managedDevice record.
+    ///
+    /// This is not a wipe and sends nothing to the machine — it removes the
+    /// server-side enrollment record so the device can enroll clean. Deleting
+    /// the record of a machine that is still running leaves that machine
+    /// unmanaged until it re-enrolls.
+    /// </summary>
+    public async Task<DeviceActionResult> DeleteManagedDeviceAsync(string deviceId, bool confirmed = false)
+    {
+        var guard = RequireConfirmation(confirmed, "deleteManagedDevice", deviceId);
+        if (guard != null) return guard;
+
+        if (!await SetAuthorizationAsync())
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "deleteManagedDevice", Message = "Not authenticated" };
+
+        try
+        {
+            var response = await _client.DeleteAsync($"deviceManagement/managedDevices/{deviceId}");
+
+            if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                Log.Information("Deleted Intune managedDevice {DeviceId}", deviceId);
+                return new DeviceActionResult { Success = true, DeviceId = deviceId, Action = "deleteManagedDevice" };
+            }
+
+            var error = await ReadErrorBodyAsync(response);
+            Log.Warning("Failed to delete managedDevice {DeviceId}: {Status} - {Error}", deviceId, response.StatusCode, error);
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "deleteManagedDevice", Message = error };
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to delete managedDevice {DeviceId}", deviceId);
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "deleteManagedDevice", Message = ex.Message };
+        }
+    }
+
+    /// <summary>List Entra device objects matching an OData filter.</summary>
+    public async Task<List<EntraDevice>> GetEntraDevicesAsync(string? filter = null, int limit = 100)
+    {
+        if (!await SetAuthorizationAsync())
+            return new List<EntraDevice>();
+
+        var all = new List<EntraDevice>();
+        var url = "devices";
+
+        var queryParams = new List<string> { $"$top={PageSizeFor(limit)}" };
+        if (!string.IsNullOrEmpty(filter))
+            queryParams.Add($"$filter={Uri.EscapeDataString(filter)}");
+        url += "?" + string.Join("&", queryParams);
+
+        try
+        {
+            while (!string.IsNullOrEmpty(url) && all.Count < limit)
+            {
+                var response = await _client.GetAsync(url);
+                if (!response.IsSuccessStatusCode)
+                {
+                    Log.Warning("Failed to get Entra devices: {Status} - {Error}",
+                        response.StatusCode, await ReadErrorBodyAsync(response));
+                    break;
+                }
+
+                var result = await response.Content.ReadFromJsonAsync<EntraDeviceListResponse>(_jsonOptions);
+                if (result?.Value != null) all.AddRange(result.Value);
+
+                url = result?.NextLink;
+                if (url != null && url.StartsWith(_client.BaseAddress!.ToString()))
+                    url = url.Substring(_client.BaseAddress.ToString().Length);
+            }
+
+            return all.Take(limit).ToList();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to get Entra devices");
+            return new List<EntraDevice>();
+        }
+    }
+
+    /// <summary>Find the Entra device object for a device id (not the object id).</summary>
+    public async Task<EntraDevice?> GetEntraDeviceByDeviceIdAsync(string deviceId)
+    {
+        var devices = await GetEntraDevicesAsync($"deviceId eq '{deviceId}'", 1);
+        return devices.FirstOrDefault();
+    }
+
+    /// <summary>Find Entra device objects by display name. Duplicates are the point — all matches are returned.</summary>
+    public async Task<List<EntraDevice>> GetEntraDevicesByNameAsync(string displayName)
+        => await GetEntraDevicesAsync($"displayName eq '{displayName}'", 50);
+
+    /// <summary>
+    /// Delete an Entra device object by its directory object id.
+    ///
+    /// Takes the object id, not the deviceId — passing the latter yields a
+    /// confusing 404, so callers should resolve through
+    /// <see cref="GetEntraDeviceByDeviceIdAsync"/> first.
+    /// </summary>
+    public async Task<DeviceActionResult> DeleteEntraDeviceAsync(string objectId, bool confirmed = false)
+    {
+        var guard = RequireConfirmation(confirmed, "deleteEntraDevice", objectId);
+        if (guard != null) return guard;
+
+        if (!await SetAuthorizationAsync())
+            return new DeviceActionResult { Success = false, DeviceId = objectId, Action = "deleteEntraDevice", Message = "Not authenticated" };
+
+        try
+        {
+            var response = await _client.DeleteAsync($"devices/{objectId}");
+
+            if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                Log.Information("Deleted Entra device object {ObjectId}", objectId);
+                return new DeviceActionResult { Success = true, DeviceId = objectId, Action = "deleteEntraDevice" };
+            }
+
+            var error = await ReadErrorBodyAsync(response);
+            Log.Warning("Failed to delete Entra device {ObjectId}: {Status} - {Error}", objectId, response.StatusCode, error);
+            return new DeviceActionResult { Success = false, DeviceId = objectId, Action = "deleteEntraDevice", Message = error };
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to delete Entra device {ObjectId}", objectId);
+            return new DeviceActionResult { Success = false, DeviceId = objectId, Action = "deleteEntraDevice", Message = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// What the three directory records say about one machine, gathered in one
+    /// place so a re-provisioning failure can be read at a glance.
+    /// </summary>
+    public class DeviceRecordState
+    {
+        public string Serial { get; set; } = string.Empty;
+        public AutopilotDevice? Autopilot { get; set; }
+        public IntuneDevice? Intune { get; set; }
+        public List<EntraDevice> EntraDevices { get; set; } = new();
+
+        /// <summary>
+        /// True when Entra still holds a device object but Intune has no record —
+        /// the state that fails the next OOBE at "Registering your device for
+        /// mobile management" after "Securing your hardware" finally passes.
+        /// </summary>
+        public bool IsOrphaned => Intune == null && EntraDevices.Count > 0;
+
+        /// <summary>True when the AutoPilot identity points at a managedDevice that no longer exists.</summary>
+        public bool HasDanglingManagedDeviceId =>
+            Autopilot != null && !string.IsNullOrEmpty(Autopilot.ManagedDeviceId) && Intune == null;
+    }
+
+    /// <summary>
+    /// Gather the AutoPilot identity, the Intune record and every Entra device
+    /// object for one serial.
+    ///
+    /// Entra objects are found two ways — by the deviceId the AutoPilot identity
+    /// points at, and by the Intune record's display name — because an orphan is
+    /// precisely the case where one of those links is already broken.
+    /// </summary>
+    public async Task<DeviceRecordState> GetDeviceRecordStateAsync(string serialNumber)
+    {
+        var state = new DeviceRecordState { Serial = serialNumber };
+
+        state.Autopilot = await GetAutopilotDeviceBySerialAsync(serialNumber);
+        state.Intune = await GetDeviceBySerialAsync(serialNumber);
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void Add(EntraDevice? device)
+        {
+            if (device != null && seen.Add(device.Id)) state.EntraDevices.Add(device);
+        }
+
+        if (!string.IsNullOrEmpty(state.Autopilot?.AzureActiveDirectoryDeviceId))
+            Add(await GetEntraDeviceByDeviceIdAsync(state.Autopilot!.AzureActiveDirectoryDeviceId!));
+
+        if (!string.IsNullOrEmpty(state.Intune?.AzureAdDeviceId))
+            Add(await GetEntraDeviceByDeviceIdAsync(state.Intune!.AzureAdDeviceId!));
+
+        var name = state.Intune?.DeviceName;
+        if (!string.IsNullOrWhiteSpace(name))
+            foreach (var d in await GetEntraDevicesByNameAsync(name!)) Add(d);
+
+        return state;
+    }
+
+    /// <summary>Outcome of a directory-record cleanup for one machine.</summary>
+    public class RecordCleanupResult
+    {
+        public string Serial { get; set; } = string.Empty;
+        public bool Success { get; set; }
+        public List<string> Deleted { get; set; } = new();
+        public List<string> Skipped { get; set; } = new();
+        public List<string> Errors { get; set; } = new();
+
+        /// <summary>The AutoPilot identity, always retained — reported so the caller can prove it survived.</summary>
+        public string? RetainedAutopilotId { get; set; }
+    }
+
+    /// <summary>
+    /// Remove the stale directory records that block a machine from re-enrolling:
+    /// the Intune managedDevice and every Entra device object bound to it.
+    ///
+    /// The AutoPilot identity is deliberately retained — it holds the hardware
+    /// hash, and both deleted records are re-created by the next enrollment.
+    /// Deleting only the Intune record (the hand runbook) leaves the Entra object
+    /// behind, which re-binds by ZTDID at the next OOBE and fails enrollment one
+    /// ESP phase later; that is the whole reason this is one operation.
+    /// </summary>
+    public async Task<RecordCleanupResult> CleanDeviceRecordsAsync(string serialNumber, bool confirmed = false)
+    {
+        var result = new RecordCleanupResult { Serial = serialNumber };
+
+        if (!confirmed)
+        {
+            result.Errors.Add("Confirmation required: this destructive action must be invoked with confirmed: true.");
+            Log.Warning("Refused unconfirmed destructive action cleanDeviceRecords for {Serial}", serialNumber);
+            return result;
+        }
+
+        var state = await GetDeviceRecordStateAsync(serialNumber);
+        result.RetainedAutopilotId = state.Autopilot?.Id;
+
+        if (state.Intune != null)
+        {
+            var deleted = await DeleteManagedDeviceAsync(state.Intune.Id, confirmed: true);
+            if (deleted.Success) result.Deleted.Add($"Intune managedDevice {state.Intune.Id} ({state.Intune.DeviceName})");
+            else result.Errors.Add($"Intune managedDevice {state.Intune.Id}: {deleted.Message}");
+        }
+        else
+        {
+            result.Skipped.Add("Intune managedDevice: no record");
+        }
+
+        foreach (var entra in state.EntraDevices)
+        {
+            var deleted = await DeleteEntraDeviceAsync(entra.Id, confirmed: true);
+            if (deleted.Success) result.Deleted.Add($"Entra device {entra.Id} ({entra.DisplayName})");
+            else result.Errors.Add($"Entra device {entra.Id}: {deleted.Message}");
+        }
+
+        if (state.EntraDevices.Count == 0) result.Skipped.Add("Entra device object: no record");
+
+        result.Success = result.Errors.Count == 0;
+        return result;
+    }
+
+    #endregion
+
     public void Dispose()
     {
         _client.Dispose();
