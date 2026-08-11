@@ -60,4 +60,38 @@ public class ElevationDomainTests
         };
         Assert.True(full.IsConfigured);
     }
+
+    /// <summary>
+    /// Which managed identity a Graph call runs as. The directory's /devices
+    /// collection routes to devices, not identity: deleting a device object and
+    /// deleting its Intune record are one re-provisioning operation, and keeping
+    /// them in one domain means neither identity needs a scope the other holds.
+    /// </summary>
+    [Theory]
+    // Intune
+    [InlineData("https://graph.microsoft.com/v1.0/deviceManagement/managedDevices", GraphDomain.Devices)]
+    [InlineData("https://graph.microsoft.com/v1.0/deviceManagement/windowsAutopilotDeviceIdentities", GraphDomain.Devices)]
+    [InlineData("https://graph.microsoft.com/v1.0/deviceAppManagement/mobileApps", GraphDomain.Devices)]
+    // Directory device objects
+    [InlineData("https://graph.microsoft.com/v1.0/devices", GraphDomain.Devices)]
+    [InlineData("https://graph.microsoft.com/v1.0/devices/839c6139-1d9d-4b8d-9c35-2319c85e24c9", GraphDomain.Devices)]
+    [InlineData("https://graph.microsoft.com/v1.0/devices?$filter=displayName%20eq%20'ANIM-STD-04'", GraphDomain.Devices)]
+    [InlineData("https://graph.microsoft.com/beta/devices", GraphDomain.Devices)]
+    // Identity
+    [InlineData("https://graph.microsoft.com/v1.0/users/rod@example.org", GraphDomain.Identity)]
+    [InlineData("https://graph.microsoft.com/v1.0/groups", GraphDomain.Identity)]
+    [InlineData("https://graph.microsoft.com/v1.0/directoryRoles", GraphDomain.Identity)]
+    public void RouteDomain_SendsCallsToTheRightIdentity(string url, GraphDomain expected)
+    {
+        Assert.Equal(expected, ElevationHttpHandler.RouteDomain(url));
+    }
+
+    [Fact]
+    public void RouteDomain_DoesNotMistakeAUserQueryMentioningDevicesForADeviceCall()
+    {
+        // A query string can mention devices without being a /devices call; only
+        // the path segment after the API version decides.
+        Assert.Equal(GraphDomain.Identity,
+            ElevationHttpHandler.RouteDomain("https://graph.microsoft.com/v1.0/users?$expand=registeredDevices"));
+    }
 }
