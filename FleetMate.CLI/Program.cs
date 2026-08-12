@@ -99,8 +99,14 @@ class Program
             }
 
             // Create TeamDynamix service if configured
+            // IsConfigured tests BaseUrl, which is what actually says TDX is set
+            // up — the same guard the GUI and WinUI hosts use. Gating on AppId
+            // alone did not work: defaults give every machine an AppId, so an
+            // unconfigured host built a TdxService with a null BaseUrl and
+            // crashed startup before argument parsing — including on `--help`
+            // and on `configure`, the command that would have fixed it.
             TdxService? tdxService = null;
-            if (config.Tdx != null && config.Tdx.AppId > 0)
+            if (config.Tdx?.IsConfigured == true)
             {
                 tdxService = new TdxService(config.Tdx);
             }
