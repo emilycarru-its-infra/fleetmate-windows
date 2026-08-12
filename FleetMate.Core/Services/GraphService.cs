@@ -69,6 +69,13 @@ public class GraphService : IDisposable
     // falls back to a local az-minted token + direct HTTP.
     private readonly bool _useElevation;
 
+    /// <summary>
+    /// Whether elevated calls actually reached Graph. Read this before reporting
+    /// an absence: a failed call and a genuine "no such record" both arrive here
+    /// as null.
+    /// </summary>
+    public ElevationStatus Elevation { get; } = new();
+
     public GraphService(GraphConfig config, ElevationConfig? elevation = null)
     {
         _config = config;
@@ -79,7 +86,7 @@ public class GraphService : IDisposable
             StringComparison.OrdinalIgnoreCase);
 
         _client = _useElevation
-            ? new HttpClient(new ElevationHttpHandler(elevation ?? new ElevationConfig()))
+            ? new HttpClient(new ElevationHttpHandler(elevation ?? new ElevationConfig(), Elevation))
             {
                 BaseAddress = new Uri("https://graph.microsoft.com/v1.0/"),
                 Timeout = TimeSpan.FromSeconds(120) // allow for the one-time ~30s container cold start
@@ -1762,6 +1769,17 @@ if ($svc -and $svc.Status -ne 'Running') {
         /// <summary>True when the AutoPilot identity points at a managedDevice that no longer exists.</summary>
         public bool HasDanglingManagedDeviceId =>
             Autopilot != null && !string.IsNullOrEmpty(Autopilot.ManagedDeviceId) && Intune == null;
+
+        /// <summary>
+        /// True when at least one of the lookups behind this state never reached
+        /// Graph, so the absences below are unknowns rather than facts. Nothing
+        /// may report "no records" — and certainly not delete anything — while
+        /// this is set.
+        /// </summary>
+        public bool LookupFailed { get; set; }
+
+        /// <summary>Why the lookup failed, for the operator-facing message.</summary>
+        public string? LookupError { get; set; }
     }
 
     /// <summary>
@@ -1775,6 +1793,10 @@ if ($svc -and $svc.Status -ne 'Running') {
     public async Task<DeviceRecordState> GetDeviceRecordStateAsync(string serialNumber)
     {
         var state = new DeviceRecordState { Serial = serialNumber };
+
+        // Every lookup below reports "not found" and "could not ask" the same
+        // way, so bracket them and let the state say which one it was.
+        var before = Elevation.Snapshot();
 
         state.Autopilot = await GetAutopilotDeviceBySerialAsync(serialNumber);
         state.Intune = await GetDeviceBySerialAsync(serialNumber);
@@ -1796,6 +1818,12 @@ if ($svc -and $svc.Status -ne 'Running') {
         if (!string.IsNullOrWhiteSpace(name))
             foreach (var d in await GetEntraDevicesByNameAsync(name!)) Add(d);
 
+        if (Elevation.FailedSince(before))
+        {
+            state.LookupFailed = true;
+            state.LookupError = Elevation.LastError;
+        }
+
         return state;
     }
 
@@ -1810,6 +1838,13 @@ if ($svc -and $svc.Status -ne 'Running') {
 
         /// <summary>The AutoPilot identity, always retained — reported so the caller can prove it survived.</summary>
         public string? RetainedAutopilotId { get; set; }
+
+        /// <summary>
+        /// True when the records could not be read, so nothing was attempted. A
+        /// null RetainedAutopilotId means "no AutoPilot identity" only when this
+        /// is false — otherwise it just means we never got to look.
+        /// </summary>
+        public bool LookupFailed { get; set; }
     }
 
     /// <summary>
@@ -1834,6 +1869,20 @@ if ($svc -and $svc.Status -ne 'Running') {
         }
 
         var state = await GetDeviceRecordStateAsync(serialNumber);
+
+        // A lookup that never reached Graph reports every record as absent, which
+        // here would read as "already clean" and quietly do nothing — leaving the
+        // records that block re-enrollment in place while reporting success.
+        if (state.LookupFailed)
+        {
+            result.LookupFailed = true;
+            result.Errors.Add(
+                $"Could not read the current records for {serialNumber}, so nothing was changed. " +
+                $"Elevated Graph call failed: {state.LookupError ?? "reason unavailable"}");
+            Log.Error("Refused cleanDeviceRecords for {Serial}: record lookup failed", serialNumber);
+            return result;
+        }
+
         result.RetainedAutopilotId = state.Autopilot?.Id;
 
         if (state.Intune != null)
