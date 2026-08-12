@@ -141,6 +141,36 @@ public static class WipeCommand
                         states.Add(await graphService.GetDeviceRecordStateAsync(serial));
                 });
 
+            // Stop before printing anything if the reads did not reach Graph.
+            // Every absent record would otherwise render as "none"/"missing", and
+            // an empty fleet state is indistinguishable from a clean one: it reads
+            // as "nothing to do here" for a machine that is fully enrolled.
+            var unreadable = states.Where(s => s.LookupFailed).ToList();
+            if (unreadable.Count > 0)
+            {
+                if (json)
+                {
+                    Console.WriteLine(JsonSerializer.Serialize(new
+                    {
+                        Error = "lookup-failed",
+                        Message = "Could not read device records; no state is reported and nothing was changed.",
+                        Detail = unreadable[0].LookupError,
+                        Serials = unreadable.Select(s => s.Serial),
+                    }, JsonOptions));
+                    context.ExitCode = 1;
+                    return;
+                }
+
+                AnsiConsole.MarkupLine($"[red]Could not read records for {unreadable.Count} of {states.Count} device(s).[/]");
+                AnsiConsole.MarkupLine("[dim]Not showing device state: a failed lookup reports every record as absent, which is indistinguishable from a machine that is already clean.[/]");
+                AnsiConsole.WriteLine();
+                AnsiConsole.MarkupLine($"[dim]{Markup.Escape(unreadable[0].LookupError ?? "reason unavailable")}[/]");
+                AnsiConsole.WriteLine();
+                AnsiConsole.MarkupLine("[yellow]This is usually an elevation problem, not a device problem.[/] Check [cyan]az login[/], then retry.");
+                context.ExitCode = 1;
+                return;
+            }
+
             if (!confirm)
             {
                 if (json)
