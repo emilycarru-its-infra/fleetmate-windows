@@ -1,4 +1,5 @@
 using FleetMate.Core.Config;
+using FleetMate.Core.Models.Tickets;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 using Xunit;
@@ -94,5 +95,22 @@ public class ConfigTests
         Assert.NotNull(config.AzureDevOps);
         Assert.Equal("contoso", config.AzureDevOps!.Organization);
         Assert.Equal("https://azure-devops.example.com/contoso", config.AzureDevOps.BaseUrl);
+    }
+
+    /// <summary>
+    /// AppId cannot stand in for "TDX is set up": defaults hand every machine an
+    /// AppId, so a host that has never been configured still has one. Only
+    /// BaseUrl distinguishes the two, and hosts must gate service construction
+    /// on IsConfigured — building a TdxService without a BaseUrl crashed the CLI
+    /// at startup, before argument parsing, on every unconfigured machine.
+    /// </summary>
+    [Fact]
+    public void TdxConfig_IsNotConsideredConfiguredFromAnAppIdAlone()
+    {
+        Assert.False(new TdxConfig().IsConfigured);
+        Assert.False(new TdxConfig { AppId = 116 }.IsConfigured);
+        Assert.False(new TdxConfig { AppId = 116, BaseUrl = "" }.IsConfigured);
+
+        Assert.True(new TdxConfig { AppId = 116, BaseUrl = "tdx.example" }.IsConfigured);
     }
 }
