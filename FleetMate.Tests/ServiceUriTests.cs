@@ -13,4 +13,18 @@ public class ServiceUriTests
     {
         Assert.Equal(expected, ServiceUri.Normalize(input));
     }
+
+    /// <summary>
+    /// An unconfigured host is a normal state on a machine that has never run
+    /// `fleetmate configure`. Normalize used to dereference it, which turned a
+    /// missing setting into a startup crash.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Normalize_TreatsAnUnsetHostAsEmptyRatherThanThrowing(string? input)
+    {
+        Assert.Equal(string.Empty, ServiceUri.Normalize(input));
+    }
 }
