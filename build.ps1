@@ -173,8 +173,33 @@ function Invoke-SignArtifact {
     throw "Signing failed after $MaxAttempts attempts: $Path"
 }
 
+function Get-PacificNow {
+    # Version stamps are read by people here, not by the build agent: hosted
+    # agents run in UTC, so an afternoon build was landing with the next
+    # evening's clock time (a 13:35 build stamped .2035). Resolve to Pacific so
+    # the version matches the wall clock of whoever cut it. DST is handled by
+    # the zone, so this is PST or PDT as appropriate.
+    #
+    # The zone id differs by platform and PowerShell edition — Windows
+    # PowerShell 5.1 knows only the Windows id, while .NET on Linux (and .NET 6+
+    # on Windows) also accepts the IANA id — so try both.
+    foreach ($id in @('Pacific Standard Time', 'America/Los_Angeles')) {
+        try {
+            $tz = [System.TimeZoneInfo]::FindSystemTimeZoneById($id)
+            return [System.TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, $tz)
+        }
+        catch {
+            # try the next id
+        }
+    }
+
+    # Never block a build over a timezone lookup; stamp local time and say so.
+    Write-BuildLog "Pacific time zone not found on this host; stamping local time instead" "WARNING"
+    return Get-Date
+}
+
 function Get-BuildVersion {
-    $now = Get-Date
+    $now = Get-PacificNow
     # Authoritative binary/release/pkgsinfo version: YYYY.MM.DD.HHMM. This is
     # what appears in artifact filenames and what cimiimport derives the Cimian
     # package version from.
