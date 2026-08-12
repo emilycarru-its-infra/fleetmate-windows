@@ -97,9 +97,20 @@ public static class IntuneCommand
         var jsonOption = new Option<bool>(aliases: ["--json"], description: "Output as JSON");
         command.AddArgument(serialArg);
         command.AddOption(jsonOption);
-        command.SetHandler(async (serial, json) =>
+        // Context handler rather than a typed lambda: the exit code has to come
+        // from the invocation context. Environment.ExitCode is discarded, because
+        // Program.cs returns the pipeline's own result — so a failed lookup would
+        // print an error and still exit 0, which scripts would read as success.
+        command.SetHandler(async (context) =>
         {
-            if (!EnsureConfigured(graphService)) return;
+            var serial = context.ParseResult.GetValueForArgument(serialArg);
+            var json = context.ParseResult.GetValueForOption(jsonOption);
+
+            if (!EnsureConfigured(graphService))
+            {
+                context.ExitCode = 1;
+                return;
+            }
 
             GraphService.DeviceRecordState? state = null;
             await AnsiConsole.Status()
@@ -112,11 +123,12 @@ public static class IntuneCommand
             if (json)
             {
                 Console.WriteLine(JsonSerializer.Serialize(state, JsonOptions));
+                if (state!.LookupFailed) context.ExitCode = 1;
                 return;
             }
 
-            DisplayRecordState(state!);
-        }, serialArg, jsonOption);
+            if (!DisplayRecordState(state!)) context.ExitCode = 1;
+        });
         return command;
     }
 
@@ -130,9 +142,18 @@ public static class IntuneCommand
         command.AddArgument(serialArg);
         command.AddOption(confirmOption);
         command.AddOption(jsonOption);
-        command.SetHandler(async (serial, confirm, json) =>
+        // Context handler so a refusal exits non-zero; see CreateAutopilotCommand.
+        command.SetHandler(async (context) =>
         {
-            if (!EnsureConfigured(graphService)) return;
+            var serial = context.ParseResult.GetValueForArgument(serialArg);
+            var confirm = context.ParseResult.GetValueForOption(confirmOption);
+            var json = context.ParseResult.GetValueForOption(jsonOption);
+
+            if (!EnsureConfigured(graphService))
+            {
+                context.ExitCode = 1;
+                return;
+            }
 
             // Without --confirm this is the dry run: show exactly which records
             // would go, which is also the answer to "why did this machine fail".
@@ -142,9 +163,14 @@ public static class IntuneCommand
                 if (json)
                 {
                     Console.WriteLine(JsonSerializer.Serialize(preview, JsonOptions));
+                    if (preview.LookupFailed) context.ExitCode = 1;
                     return;
                 }
-                DisplayRecordState(preview);
+                if (!DisplayRecordState(preview))
+                {
+                    context.ExitCode = 1;
+                    return;
+                }
                 AnsiConsole.WriteLine();
                 AnsiConsole.MarkupLine("[yellow]Dry run.[/] Re-run with [cyan]--confirm[/] to delete the Intune and Entra records above. The AutoPilot identity is kept.");
                 return;
@@ -161,6 +187,7 @@ public static class IntuneCommand
             if (json)
             {
                 Console.WriteLine(JsonSerializer.Serialize(result, JsonOptions));
+                if (!result!.Success) context.ExitCode = 1;
                 return;
             }
 
@@ -168,20 +195,43 @@ public static class IntuneCommand
             foreach (var s in result.Skipped) AnsiConsole.MarkupLine($"[dim]Skipped {Markup.Escape(s)}[/]");
             foreach (var e in result.Errors) AnsiConsole.MarkupLine($"[red]Error[/] {Markup.Escape(e)}");
 
+            // Only claim the identity is absent when we actually looked. On a
+            // failed lookup RetainedAutopilotId is null because nothing was read,
+            // not because the machine lacks a hardware hash.
             if (!string.IsNullOrEmpty(result.RetainedAutopilotId))
                 AnsiConsole.MarkupLine($"[dim]Kept AutoPilot identity {result.RetainedAutopilotId}[/]");
-            else
+            else if (!result.LookupFailed)
                 AnsiConsole.MarkupLine("[yellow]No AutoPilot identity found for this serial — the machine will not find a deployment profile at OOBE.[/]");
+            else
+                AnsiConsole.MarkupLine("[yellow]This is usually an elevation problem, not a device problem.[/] Check [cyan]az login[/], then retry.");
 
             AnsiConsole.MarkupLine(result.Success
                 ? "[green]Records cleaned.[/] The device can now enroll fresh."
                 : "[red]Cleanup incomplete — see errors above.[/]");
-        }, serialArg, confirmOption, jsonOption);
+
+            if (!result.Success) context.ExitCode = 1;
+        });
         return command;
     }
 
-    private static void DisplayRecordState(GraphService.DeviceRecordState state)
+    /// <summary>
+    /// Renders the three records, or refuses to render anything when the lookup
+    /// never reached Graph. Returns false in that case: absent records and
+    /// unreadable records look identical in this table, and showing "none" for a
+    /// machine that is actually enrolled has sent people chasing a missing
+    /// hardware hash that was never missing.
+    /// </summary>
+    private static bool DisplayRecordState(GraphService.DeviceRecordState state)
     {
+        if (state.LookupFailed)
+        {
+            AnsiConsole.MarkupLine($"[red]Could not read the records for {Markup.Escape(state.Serial)}.[/]");
+            AnsiConsole.MarkupLine($"[dim]{Markup.Escape(state.LookupError ?? "reason unavailable")}[/]");
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine("[yellow]This is usually an elevation problem, not a device problem.[/] Check [cyan]az login[/], then retry.");
+            return false;
+        }
+
         var table = new Table { Border = TableBorder.Rounded };
         table.AddColumn("Record");
         table.AddColumn("Status");
@@ -225,6 +275,8 @@ public static class IntuneCommand
 
         if (state.HasDanglingManagedDeviceId)
             AnsiConsole.MarkupLine($"[dim]AutoPilot identity still points at deleted managedDevice {state.Autopilot!.ManagedDeviceId} — Intune clears this on re-enrollment.[/]");
+
+        return true;
     }
 
     /// <summary>Resolve a serial to a managedDevice id; pass an id straight through.</summary>
