@@ -96,7 +96,7 @@ tasks:
       # token:                            # Explicit PAT override (last resort)
 
 # Logging
-logPath: C:\ProgramData\Cimian\Logs
+logPath: C:\ProgramData\FleetMate\logs
 logLevel: Information  # Debug, Information, Warning, Error
 
 # Deployment paths (relative to repo root)
