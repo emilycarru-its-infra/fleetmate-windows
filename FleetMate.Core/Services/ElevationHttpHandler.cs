@@ -14,10 +14,12 @@ namespace FleetMate.Core.Services;
 public sealed class ElevationHttpHandler : HttpMessageHandler
 {
     private readonly ElevationSession _session;
+    private readonly ElevationStatus _status;
 
-    public ElevationHttpHandler(ElevationConfig config)
+    public ElevationHttpHandler(ElevationConfig config, ElevationStatus? status = null)
     {
         _session = new ElevationSession(config);
+        _status = status ?? new ElevationStatus();
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -44,8 +46,13 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
             // this the underlying error — a Graph 4xx/5xx surfaced by the in-session
             // az rest — would be invisible.
             if (code != 0)
+            {
                 Log.Warning("Elevation {Domain} call to {Method} {Url} exited {Code}: {Body}",
                     domain.Slug(), method, url, code, Truncate(output));
+                // Callers flatten a failed response to null/empty, which would
+                // otherwise present "no records" for a call that never ran.
+                _status.RecordFailure($"elevated {domain.Slug()} call exited {code}: {Truncate(output)}");
+            }
             var status = code == 0 ? HttpStatusCode.OK : HttpStatusCode.BadGateway;
             return new HttpResponseMessage(status)
             {
@@ -62,6 +69,7 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
             Log.Debug(ex, "Elevation {Domain} call to {Method} {Url} failed", domain.Slug(), method, url);
             Log.Warning("Elevation {Domain} call to {Method} {Url} failed (detail at debug level)",
                 domain.Slug(), method, url);
+            _status.RecordFailure($"elevated {domain.Slug()} session failed: {ex.GetType().Name}");
             return new HttpResponseMessage(HttpStatusCode.BadGateway)
             {
                 Content = new StringContent("Elevation request failed; see FleetMate debug log for detail."),

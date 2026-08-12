@@ -118,8 +118,10 @@ public class FleetMateConfig
     // sbin-installer installs .pkg/.nupkg, msiexec installs .msi.
     public string SbinInstallerPath { get; set; } = @"C:\Program Files\sbin\installer.exe";
     
-    // Logging
-    public string LogPath { get; set; } = @"C:\ProgramData\Cimian\Logs";
+    // Logging. FleetMate's own logs live under FleetMate: they were landing in
+    // Cimian's log directory, which made them look like Cimian output and put
+    // this tool's diagnostics somewhere nobody would think to look for them.
+    public string LogPath { get; set; } = @"C:\ProgramData\FleetMate\logs";
     public string LogLevel { get; set; } = "Information";
     
     // Cache settings
