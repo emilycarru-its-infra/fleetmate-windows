@@ -57,7 +57,7 @@ public static class WipeCommand
             description: "Keep user data (rarely wanted on shared devices)");
 
         var cleanupOption = new Option<bool>(aliases: ["--cleanup"],
-            description: "After the reset, delete the stale Intune and Entra records (keeps the AutoPilot identity)");
+            description: "Also delete the stale Intune and Entra records (keeps the AutoPilot identity)");
         var recordsOnlyOption = new Option<bool>(aliases: ["--records-only"],
             description: "Skip the reset; only clean directory records for the resolved targets");
 
@@ -102,17 +102,6 @@ public static class WipeCommand
                 return;
             }
 
-            // AutoPilot Reset deliberately preserves enrollment — the machine
-            // comes back as the same managed device. Deleting its records in the
-            // same breath removes the channel it is relying on.
-            if (cleanup && mode == ResetMode.AutopilotReset && !recordsOnly)
-            {
-                AnsiConsole.MarkupLine("[red]--cleanup cannot be combined with --mode autopilot-reset.[/]");
-                AnsiConsole.MarkupLine("[dim]AutoPilot Reset keeps the device enrolled by design; deleting its records would strip the enrollment it returns to.[/]");
-                AnsiConsole.MarkupLine("[dim]Use --mode factory to reinstall and re-enroll clean, or run the cleanup separately once the machine is back at OOBE.[/]");
-                context.ExitCode = 1;
-                return;
-            }
 
             var targets = await ResolveTargetsAsync(serials, location, model, file, snipeService);
 
@@ -171,6 +160,25 @@ public static class WipeCommand
                 return;
             }
 
+            // Whether --cleanup conflicts with the reset mode is a question about
+            // each device's records, not about the flags alone. AutoPilot Reset
+            // preserves enrollment, so deleting the records of a machine that just
+            // received one strips the enrollment it comes back to. A device with no
+            // Intune record receives nothing and has no enrollment to protect — for
+            // that one the cleanup is the only action available at all. Deciding
+            // this before the records were read is what made the combination
+            // unusable on exactly the devices that needed it.
+            var resettable = states.Count(s => s.Intune != null);
+
+            if (cleanup && mode == ResetMode.AutopilotReset && !recordsOnly && resettable > 0)
+            {
+                AnsiConsole.MarkupLine($"[red]--cleanup cannot be combined with --mode autopilot-reset[/] for {resettable} of {states.Count} target(s).");
+                AnsiConsole.MarkupLine("[dim]AutoPilot Reset keeps those devices enrolled by design; deleting their records would strip the enrollment they return to.[/]");
+                AnsiConsole.MarkupLine("[dim]Use --mode factory to reinstall and re-enroll clean, or --records-only to clear directory records without sending a reset.[/]");
+                context.ExitCode = 1;
+                return;
+            }
+
             if (!confirm)
             {
                 if (json)
@@ -193,11 +201,15 @@ public static class WipeCommand
 
             var results = new List<object>();
             var failures = 0;
+            var changed = 0;
+            var inertOrphans = 0;
 
             foreach (var state in states)
             {
                 var serial = state.Serial;
                 var actions = new List<string>();
+                var acted = false;
+                var resetSent = false;
 
                 if (!recordsOnly)
                 {
@@ -206,7 +218,7 @@ public static class WipeCommand
                         // Nothing to send the reset to. Not an error when the
                         // point is to clean up after a machine already wiped.
                         actions.Add("reset skipped: no Intune record");
-                        AnsiConsole.MarkupLine($"[yellow]{serial}[/] no Intune record — nothing to reset");
+                        AnsiConsole.MarkupLine($"[yellow]{serial}[/] no Intune record — no reset can be sent");
                     }
                     else
                     {
@@ -220,6 +232,8 @@ public static class WipeCommand
                         if (reset.Success)
                         {
                             actions.Add($"{modeText} sent");
+                            acted = true;
+                            resetSent = true;
                             AnsiConsole.MarkupLine($"[green]{serial}[/] {modeText} sent to {Markup.Escape(state.Intune.DeviceName)}");
                         }
                         else
@@ -233,35 +247,51 @@ public static class WipeCommand
 
                 if (cleanup || recordsOnly)
                 {
-                    var cleaned = await graphService.CleanDeviceRecordsAsync(serial, confirmed: true);
-                    foreach (var d in cleaned.Deleted)
+                    // The device that just received an AutoPilot Reset is the one
+                    // case where cleaning up would undo the operation: it returns
+                    // enrolled, to the records this would delete.
+                    if (resetSent && mode == ResetMode.AutopilotReset)
                     {
-                        actions.Add($"deleted {d}");
-                        AnsiConsole.MarkupLine($"[green]{serial}[/] deleted {Markup.Escape(d)}");
+                        actions.Add("cleanup skipped: AutoPilot Reset keeps this device enrolled");
+                        AnsiConsole.MarkupLine($"[dim]{serial} cleanup skipped — AutoPilot Reset keeps this device enrolled[/]");
                     }
-                    foreach (var e in cleaned.Errors)
+                    else
                     {
-                        failures++;
-                        actions.Add($"cleanup FAILED: {e}");
-                        AnsiConsole.MarkupLine($"[red]{serial}[/] {Markup.Escape(e)}");
+                        var cleaned = await graphService.CleanDeviceRecordsAsync(serial, confirmed: true);
+                        foreach (var d in cleaned.Deleted)
+                        {
+                            actions.Add($"deleted {d}");
+                            acted = true;
+                            AnsiConsole.MarkupLine($"[green]{serial}[/] deleted {Markup.Escape(d)}");
+                        }
+                        foreach (var e in cleaned.Errors)
+                        {
+                            failures++;
+                            actions.Add($"cleanup FAILED: {e}");
+                            AnsiConsole.MarkupLine($"[red]{serial}[/] {Markup.Escape(e)}");
+                        }
+                        if (cleaned.Deleted.Count == 0 && cleaned.Errors.Count == 0)
+                            AnsiConsole.MarkupLine($"[dim]{serial} no stale records to remove[/]");
                     }
-                    if (cleaned.Deleted.Count == 0 && cleaned.Errors.Count == 0)
-                        AnsiConsole.MarkupLine($"[dim]{serial} no stale records to remove[/]");
                 }
 
-                results.Add(new { Serial = serial, Actions = actions });
+                if (acted) changed++;
+                else if (state.Intune == null && !recordsOnly) inertOrphans++;
+
+                results.Add(new { Serial = serial, Actions = actions, Changed = acted });
             }
 
             if (json)
-                Console.WriteLine(JsonSerializer.Serialize(new { Mode = modeText, Results = results }, JsonOptions));
+                Console.WriteLine(JsonSerializer.Serialize(new { Mode = modeText, Changed = changed, Results = results }, JsonOptions));
 
             AnsiConsole.WriteLine();
-            if (failures == 0)
-                AnsiConsole.MarkupLine($"[green]Done.[/] {states.Count} device(s) processed.");
-            else
+            AnsiConsole.MarkupLine(OutcomeSummary(changed, failures, states.Count));
+            if (failures > 0) context.ExitCode = 1;
+
+            if (inertOrphans > 0)
             {
-                AnsiConsole.MarkupLine($"[red]{failures} failure(s)[/] across {states.Count} device(s).");
-                context.ExitCode = 1;
+                AnsiConsole.MarkupLine($"[yellow]{inertOrphans} device(s) had no Intune record, so no reset reached them.[/]");
+                AnsiConsole.MarkupLine("[dim]A leftover Entra object is what fails a machine's next OOBE at \"Registering your device for mobile management\". Clear it with[/] [cyan]--records-only[/][dim].[/]");
             }
         });
 
@@ -374,9 +404,8 @@ public static class WipeCommand
 
     private static void DisplayPlan(List<GraphService.DeviceRecordState> states, string mode, bool cleanup, bool recordsOnly)
     {
-        AnsiConsole.MarkupLine(recordsOnly
-            ? "[bold]Plan:[/] clean directory records only — no reset is sent."
-            : $"[bold]Plan:[/] {Markup.Escape(mode)}{(cleanup ? ", then delete stale Intune and Entra records" : "")}. The AutoPilot identity is always kept.");
+        AnsiConsole.MarkupLine(PlanSummary(states, mode, cleanup, recordsOnly));
+
         AnsiConsole.WriteLine();
 
         var table = new Table { Border = TableBorder.Rounded };
@@ -395,6 +424,14 @@ public static class WipeCommand
                     ? "[dim]no directory records[/]"
                     : "";
 
+            // An orphan is only inert when the run will not touch its records. Say
+            // so on the row, rather than leaving the operator to infer it from a
+            // plan that promises a reset.
+            if (s.Intune == null && !recordsOnly && !cleanup)
+                note = string.IsNullOrEmpty(note)
+                    ? "[yellow]no reset possible — use --records-only[/]"
+                    : $"{note} [yellow](no reset possible — use --records-only)[/]";
+
             table.AddRow(
                 Markup.Escape(s.Serial),
                 Markup.Escape(s.Intune?.DeviceName ?? s.EntraDevices.FirstOrDefault()?.DisplayName ?? "-"),
@@ -409,5 +446,38 @@ public static class WipeCommand
         var noAutopilot = states.Count(s => s.Autopilot == null);
         if (noAutopilot > 0)
             AnsiConsole.MarkupLine($"[yellow]{noAutopilot} device(s) have no AutoPilot identity[/] — those will not find a deployment profile at OOBE.");
+    }
+
+    /// <summary>
+    /// The plan line for a dry run. Split out from the display so the wording is
+    /// testable: what this line says is the whole contract of a dry run, and it
+    /// has to describe these devices rather than the flags in the abstract.
+    /// </summary>
+    internal static string PlanSummary(
+        IReadOnlyList<GraphService.DeviceRecordState> states, string mode, bool cleanup, bool recordsOnly)
+    {
+        if (recordsOnly)
+            return "[bold]Plan:[/] clean directory records only — no reset is sent.";
+
+        var resettable = states.Count(s => s.Intune != null);
+
+        return resettable == 0
+            ? $"[bold]Plan:[/] [yellow]no reset can be sent[/] — no target has an Intune record.{(cleanup ? " Stale Intune and Entra records will still be deleted." : "")}"
+            : $"[bold]Plan:[/] {Markup.Escape(mode)} for {resettable} of {states.Count} device(s){(cleanup ? ", then delete stale Intune and Entra records" : "")}. The AutoPilot identity is always kept.";
+    }
+
+    /// <summary>
+    /// The closing line. A run that changed nothing must not report "Done" — that
+    /// is what lets an operator walk away from a device still in the state they
+    /// ran the command to fix.
+    /// </summary>
+    internal static string OutcomeSummary(int changed, int failures, int total)
+    {
+        if (failures > 0)
+            return $"[red]{failures} failure(s)[/] across {total} device(s).";
+
+        return changed == 0
+            ? $"[yellow]Nothing to do.[/] No change was made to {total} device(s)."
+            : $"[green]Done.[/] {changed} of {total} device(s) changed.";
     }
 }
