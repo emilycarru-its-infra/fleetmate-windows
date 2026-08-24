@@ -74,8 +74,8 @@ public class ElevationDomainTests
     [InlineData("https://graph.microsoft.com/v1.0/deviceAppManagement/mobileApps", GraphDomain.Devices)]
     // Directory device objects
     [InlineData("https://graph.microsoft.com/v1.0/devices", GraphDomain.Devices)]
-    [InlineData("https://graph.microsoft.com/v1.0/devices/839c6139-1d9d-4b8d-9c35-2319c85e24c9", GraphDomain.Devices)]
-    [InlineData("https://graph.microsoft.com/v1.0/devices?$filter=displayName%20eq%20'ANIM-STD-04'", GraphDomain.Devices)]
+    [InlineData("https://graph.microsoft.com/v1.0/devices/44444444-4444-4444-8444-444444444444", GraphDomain.Devices)]
+    [InlineData("https://graph.microsoft.com/v1.0/devices?$filter=displayName%20eq%20'TESTHOST-01'", GraphDomain.Devices)]
     [InlineData("https://graph.microsoft.com/beta/devices", GraphDomain.Devices)]
     // Identity
     [InlineData("https://graph.microsoft.com/v1.0/users/rod@example.org", GraphDomain.Identity)]
