@@ -374,7 +374,7 @@ FleetMate/
 │   │   ├── Graph/
 │   │   └── ...
 │   └── Configuration/       # Config loading
-└── FleetMate.GUI/           # Future WPF UI
+└── FleetMate.GUI/           # WPF desktop app (fleetmate-gui.exe)
 ```
 
 ### Tech Stack
