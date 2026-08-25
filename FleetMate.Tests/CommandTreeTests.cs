@@ -1,4 +1,4 @@
-using System.CommandLine;
+﻿using System.CommandLine;
 using System.CommandLine.Builder;
 using System.CommandLine.Parsing;
 using FleetMate.Commands.Devices;
@@ -118,6 +118,16 @@ public class CommandTreeTests
         var root = BuildRoot();
 
         var result = root.Parse("intune devices --limit 10");
+
+        Assert.Empty(result.Errors);
+    }
+
+    [Theory]
+    [InlineData("intune autopilot-delete SERIAL0001")]
+    [InlineData("intune autopilot-delete SERIAL0001 --confirm")]
+    public void AutopilotDeleteSubcommand_Parses(string line)
+    {
+        var result = BuildRoot().Parse(line);
 
         Assert.Empty(result.Errors);
     }
