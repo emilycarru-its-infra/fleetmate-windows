@@ -41,6 +41,7 @@ public static class IntuneCommand
         command.AddCommand(CreateAutopilotCommand(graphService));
         command.AddCommand(CreateCleanupCommand(graphService));
         command.AddCommand(CreateCimianPushCommand(graphService));
+        command.AddCommand(CreateSettingsCommand(graphService));
 
         return command;
     }
@@ -578,6 +579,88 @@ public static class IntuneCommand
 
             DisplayComplianceStatus(device, policies);
         }, queryArg, byNameOption, jsonOption);
+
+        return command;
+    }
+
+    private static Command CreateSettingsCommand(GraphService? graphService)
+    {
+        var command = new Command("settings", "Search the Intune Settings Catalog for a setting definition id");
+
+        var queryArg = new Argument<string?>(
+            name: "query",
+            getDefaultValue: () => null,
+            description: "Words to match against setting id, name, description and keywords");
+
+        var platformOption = new Option<string?>(
+            aliases: ["--platform", "-p"],
+            description: "Applicability platform: windows10, macOS, iOS, android");
+
+        var limitOption = new Option<int>(
+            aliases: ["--limit", "-n"],
+            getDefaultValue: () => 25,
+            description: "Maximum matches to show (default: 25)");
+
+        var jsonOption = new Option<bool>(
+            aliases: ["--json"],
+            description: "Output as JSON");
+
+        command.AddArgument(queryArg);
+        command.AddOption(platformOption);
+        command.AddOption(limitOption);
+        command.AddOption(jsonOption);
+
+        command.SetHandler(async (query, platform, limit, json) =>
+        {
+            if (!EnsureConfigured(graphService)) return;
+
+            List<SettingsCatalogDefinition> settings = new();
+
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .StartAsync("Searching the Settings Catalog...", async ctx =>
+                {
+                    settings = await graphService!.SearchSettingsCatalogAsync(query, platform, limit);
+                });
+
+            if (json)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(settings, JsonOptions));
+                return;
+            }
+
+            if (settings.Count == 0)
+            {
+                AnsiConsole.MarkupLine("[yellow]No matching settings.[/]");
+                // The most common reason to run this is holding an id that Graph
+                // has already rejected. Nothing found is then the answer, not a
+                // failure, and it is worth saying so plainly.
+                AnsiConsole.MarkupLine("[dim]If you searched for a setting id, no definition by that name exists - which is what[/]");
+                AnsiConsole.MarkupLine("[dim]\"Setting Id is not found in the Settings Catalog\" means. Try a word from the name instead.[/]");
+                return;
+            }
+
+            foreach (var setting in settings)
+            {
+                AnsiConsole.MarkupLine($"[green]{Markup.Escape(setting.Id)}[/]");
+                AnsiConsole.MarkupLine($"  [dim]name[/]     {Markup.Escape(setting.DisplayName ?? "-")}");
+                AnsiConsole.MarkupLine($"  [dim]kind[/]     {Markup.Escape(setting.Kind)}");
+                if (setting.Applicability?.Platform is { } platformValue)
+                {
+                    AnsiConsole.MarkupLine($"  [dim]platform[/] {Markup.Escape(platformValue)}");
+                }
+                if (!string.IsNullOrWhiteSpace(setting.Description))
+                {
+                    var description = setting.Description!.Length > 160
+                        ? setting.Description[..160] + "..."
+                        : setting.Description;
+                    AnsiConsole.MarkupLine($"  [dim]about[/]    {Markup.Escape(description)}");
+                }
+                AnsiConsole.WriteLine();
+            }
+
+            AnsiConsole.MarkupLine($"[dim]{settings.Count} match(es). Use the id above verbatim as a profile's definitionId.[/]");
+        }, queryArg, platformOption, limitOption, jsonOption);
 
         return command;
     }
