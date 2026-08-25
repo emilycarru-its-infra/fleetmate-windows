@@ -328,6 +328,11 @@ public partial class BoardsPage : Page
 
     private void UpdateListDisplay()
     {
+        // ComboBox/TextBox change events fire during InitializeComponent, before
+        // the controls declared after them in the XAML exist. Without this guard
+        // the first SelectionChanged crashed the whole app with a NullReference.
+        if (WorkItemsListView is null || ListCountLabel is null) return;
+
         var filtered = _allWorkItems.AsEnumerable();
 
         if (!string.IsNullOrWhiteSpace(_listSearchText))

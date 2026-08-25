@@ -486,8 +486,7 @@ public partial class TicketsPage : Page
                 if (!_detailPanelVisible)
                 {
                     _detailPanelVisible = true;
-                    DetailPanel.Visibility = Visibility.Visible;
-                    DetailPanelColumn.Width = new GridLength(360);
+                    OpenDetailPanel();
                 }
                 
                 await LoadTicketDetailAsync(ticket.Id);
@@ -631,18 +630,40 @@ public partial class TicketsPage : Page
         await LoadTicketsAsync();
     }
 
+    // Detail panel sizing. The column is resizable via DetailPanelSplitter; the
+    // last dragged width survives close/reopen for the life of the page.
+    private const double DetailPanelDefaultWidth = 520;
+    private const double DetailPanelMinWidth = 360;
+    private double _detailPanelWidth = DetailPanelDefaultWidth;
+
+    private void OpenDetailPanel()
+    {
+        DetailPanel.Visibility = Visibility.Visible;
+        DetailPanelSplitter.Visibility = Visibility.Visible;
+        DetailPanelColumn.MinWidth = DetailPanelMinWidth;
+        DetailPanelColumn.Width = new GridLength(Math.Max(_detailPanelWidth, DetailPanelMinWidth));
+    }
+
+    private void CloseDetailPanel()
+    {
+        if (DetailPanelColumn.ActualWidth >= DetailPanelMinWidth)
+            _detailPanelWidth = DetailPanelColumn.ActualWidth;
+        DetailPanel.Visibility = Visibility.Collapsed;
+        DetailPanelSplitter.Visibility = Visibility.Collapsed;
+        DetailPanelColumn.MinWidth = 0;
+        DetailPanelColumn.Width = new GridLength(0);
+    }
+
     private void OnToggleDetailPanel(object sender, RoutedEventArgs e)
     {
         _detailPanelVisible = !_detailPanelVisible;
-        DetailPanel.Visibility = _detailPanelVisible ? Visibility.Visible : Visibility.Collapsed;
-        DetailPanelColumn.Width = _detailPanelVisible ? new GridLength(360) : new GridLength(0);
+        if (_detailPanelVisible) OpenDetailPanel(); else CloseDetailPanel();
     }
 
     private void OnCloseDetailPanel(object sender, RoutedEventArgs e)
     {
         _detailPanelVisible = false;
-        DetailPanel.Visibility = Visibility.Collapsed;
-        DetailPanelColumn.Width = new GridLength(0);
+        CloseDetailPanel();
     }
 
     private async void OnTicketSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -662,8 +683,7 @@ public partial class TicketsPage : Page
             if (!_detailPanelVisible)
             {
                 _detailPanelVisible = true;
-                DetailPanel.Visibility = Visibility.Visible;
-                DetailPanelColumn.Width = new GridLength(360);
+                OpenDetailPanel();
             }
 
             await LoadTicketDetailAsync(ticket.Id);
