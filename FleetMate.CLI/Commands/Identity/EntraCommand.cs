@@ -36,6 +36,7 @@ public static class EntraCommand
         command.AddCommand(CreateSetUserCommand(graphService));
         command.AddCommand(CreateDeviceCommand(graphService));
         command.AddCommand(CreateDeleteDeviceCommand(graphService));
+        command.AddCommand(CreateAuditCommand(graphService));
 
         return command;
     }
@@ -408,6 +409,138 @@ public static class EntraCommand
             if (ok) AnsiConsole.MarkupLine($"[green]{(enable ? "Enabled" : "Disabled")}[/] account for {Markup.Escape(user)}");
             else AnsiConsole.MarkupLine($"[red]Failed[/] to update {Markup.Escape(user)}");
         }, userArg, enableOption, disableOption);
+
+        return command;
+    }
+
+    /// <summary>
+    /// Build the OData $filter for an audit query.
+    ///
+    /// Kept separate from the handler so the filter can be asserted directly.
+    /// directoryAudits is fussy about what it accepts, and a malformed filter
+    /// comes back as an empty result rather than an error — indistinguishable
+    /// from "nothing happened", which is the wrong answer to give someone
+    /// investigating a deletion.
+    /// </summary>
+    internal static string? BuildAuditFilter(string? target, string? activity, int days, DateTime utcNow)
+    {
+        var clauses = new List<string>();
+
+        if (days > 0)
+        {
+            var since = utcNow.AddDays(-days).ToString("yyyy-MM-ddTHH:mm:ssZ");
+            clauses.Add($"activityDateTime ge {since}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(activity))
+        {
+            clauses.Add($"activityDisplayName eq '{activity.Replace("'", "''")}'");
+        }
+
+        if (!string.IsNullOrWhiteSpace(target))
+        {
+            // A target is given as either the object id or its display name, and
+            // the caller usually has whichever one the failure put in front of
+            // them. Graph will not accept an `or` across two `any` lambdas, so
+            // the shape is chosen from the input instead.
+            var escaped = target.Replace("'", "''");
+            clauses.Add(Guid.TryParse(target, out _)
+                ? $"targetResources/any(t: t/id eq '{escaped}')"
+                : $"targetResources/any(t: t/displayName eq '{escaped}')");
+        }
+
+        return clauses.Count == 0 ? null : string.Join(" and ", clauses);
+    }
+
+    private static Command CreateAuditCommand(GraphService? graphService)
+    {
+        var command = new Command("audit", "Read the Entra directory audit log - who changed a group, user or device");
+
+        var targetOption = new Option<string?>(
+            aliases: ["--target", "-t"],
+            description: "Object the change was made to: display name or object id");
+
+        var activityOption = new Option<string?>(
+            aliases: ["--activity", "-a"],
+            description: "Exact activity name, e.g. \"Delete group\", \"Add member to group\"");
+
+        var daysOption = new Option<int>(
+            aliases: ["--days", "-d"],
+            getDefaultValue: () => 7,
+            description: "How far back to look (default: 7, 0 for no limit)");
+
+        var limitOption = new Option<int>(
+            aliases: ["--limit", "-n"],
+            getDefaultValue: () => 50,
+            description: "Maximum entries to show (default: 50)");
+
+        var jsonOption = new Option<bool>(
+            aliases: ["--json"],
+            description: "Output as JSON");
+
+        command.AddOption(targetOption);
+        command.AddOption(activityOption);
+        command.AddOption(daysOption);
+        command.AddOption(limitOption);
+        command.AddOption(jsonOption);
+
+        command.SetHandler(async (target, activity, days, limit, json) =>
+        {
+            if (!EnsureConfigured(graphService)) return;
+
+            var filter = BuildAuditFilter(target, activity, days, DateTime.UtcNow);
+            List<DirectoryAuditEvent> events = new();
+
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .StartAsync("Reading directory audit log...", async ctx =>
+                {
+                    events = await graphService!.GetDirectoryAuditsAsync(filter, limit);
+                });
+
+            if (json)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(events, JsonOptions));
+                return;
+            }
+
+            if (events.Count == 0)
+            {
+                AnsiConsole.MarkupLine("[yellow]No matching audit entries.[/]");
+                // An empty result is ambiguous here in a way it is not elsewhere:
+                // the log is retained for a limited window and the permission is
+                // not granted by default, so say what would explain it.
+                AnsiConsole.MarkupLine("[dim]The directory audit log retains roughly 30 days, and reading it needs AuditLog.Read.All.[/]");
+                AnsiConsole.MarkupLine("[dim]A wrong --activity name also matches nothing; it is compared exactly.[/]");
+                return;
+            }
+
+            var table = new Table();
+            table.Border = TableBorder.Simple;
+            table.AddColumn("When (UTC)");
+            table.AddColumn("Activity");
+            table.AddColumn("Actor");
+            table.AddColumn("Target");
+            table.AddColumn("Result");
+
+            foreach (var e in events)
+            {
+                var actor = e.ActorIsApplication ? $"[cyan]{Markup.Escape(e.Actor)}[/]" : Markup.Escape(e.Actor);
+                var result = string.Equals(e.Result, "success", StringComparison.OrdinalIgnoreCase)
+                    ? "[green]success[/]"
+                    : $"[red]{Markup.Escape(e.Result ?? "-")}[/]";
+
+                table.AddRow(
+                    e.ActivityDateTime.ToString("yyyy-MM-dd HH:mm"),
+                    Markup.Escape(e.ActivityDisplayName),
+                    actor,
+                    Markup.Escape(e.Targets),
+                    result);
+            }
+
+            AnsiConsole.Write(table);
+            AnsiConsole.MarkupLine($"[dim]{events.Count} entr{(events.Count == 1 ? "y" : "ies")}. Applications are shown in cyan.[/]");
+        }, targetOption, activityOption, daysOption, limitOption, jsonOption);
 
         return command;
     }
