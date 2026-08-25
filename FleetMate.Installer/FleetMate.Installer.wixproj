@@ -17,7 +17,8 @@
     <!-- Human-facing calendar version (YYYY.MM.DD.HHMM) written to the registry. -->
     <CalendarVersion Condition="'$(CalendarVersion)' == ''">$(ProductVersion)</CalendarVersion>
     <!-- Directory holding the published single-file self-contained fleetmate.exe
-         for this $(Platform). build.ps1 publishes to publish\msi-staging\<arch>. -->
+         and fleetmate-gui.exe for this $(Platform). build.ps1 publishes both to
+         publish\msi-staging\<arch>. -->
     <BinDir Condition="'$(BinDir)' == ''">$(MSBuildProjectDirectory)\..\publish\msi-staging\$(Platform)</BinDir>
   </PropertyGroup>
 
@@ -33,10 +34,12 @@
     <PackageReference Include="WixToolset.Util.wixext" Version="6.0.2" />
   </ItemGroup>
 
-  <!-- Fail early with an actionable message if the CLI hasn't been published. -->
+  <!-- Fail early with an actionable message if the payload hasn't been published. -->
   <Target Name="BeforeBuild">
-    <Error Text="FleetMate CLI executable not found at $(BinDir)\fleetmate.exe. Run build.ps1 -Msi (which publishes the self-contained CLI) before building the MSI."
+    <Error Text="FleetMate CLI executable not found at $(BinDir)\fleetmate.exe. Run build.ps1 -Msi (which publishes the self-contained CLI and GUI) before building the MSI."
            Condition="!Exists('$(BinDir)\fleetmate.exe')" />
+    <Error Text="FleetMate GUI executable not found at $(BinDir)\fleetmate-gui.exe. Run build.ps1 -Msi (which publishes the self-contained CLI and GUI) before building the MSI."
+           Condition="!Exists('$(BinDir)\fleetmate-gui.exe')" />
   </Target>
 
 </Project>
