@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
@@ -1711,6 +1711,49 @@ if ($svc -and $svc.Status -ne 'Running') {
     /// <summary>Find Entra device objects by display name. Duplicates are the point — all matches are returned.</summary>
     public async Task<List<EntraDevice>> GetEntraDevicesByNameAsync(string displayName)
         => await GetEntraDevicesAsync($"displayName eq '{displayName}'", 50);
+
+
+    /// <summary>
+    /// Delete a Windows AutoPilot device identity.
+    ///
+    /// This is the one deletion in this service that cannot be undone from a
+    /// desk. The Intune and Entra records are re-created by the next enrollment;
+    /// the AutoPilot identity holds the hardware hash, which Graph never gives
+    /// back, so restoring it means recapturing the hash at OOBE on the machine
+    /// itself. Callers must say so before they call this.
+    ///
+    /// Deletion is asynchronous tenant-side: a success here means Intune accepted
+    /// the request, and the record stays visible for a few minutes afterwards.
+    /// Re-importing the same serial before it clears fails as already-assigned.
+    /// </summary>
+    public async Task<DeviceActionResult> DeleteAutopilotDeviceAsync(string autopilotId, bool confirmed = false)
+    {
+        var guard = RequireConfirmation(confirmed, "deleteAutopilotDevice", autopilotId);
+        if (guard != null) return guard;
+
+        if (!await SetAuthorizationAsync())
+            return new DeviceActionResult { Success = false, DeviceId = autopilotId, Action = "deleteAutopilotDevice", Message = "Not authenticated" };
+
+        try
+        {
+            var response = await _client.DeleteAsync($"deviceManagement/windowsAutopilotDeviceIdentities/{autopilotId}");
+
+            if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                Log.Information("Deleted AutoPilot device identity {AutopilotId}", autopilotId);
+                return new DeviceActionResult { Success = true, DeviceId = autopilotId, Action = "deleteAutopilotDevice" };
+            }
+
+            var error = await ReadErrorBodyAsync(response);
+            Log.Warning("Failed to delete AutoPilot identity {AutopilotId}: {Status} - {Error}", autopilotId, response.StatusCode, error);
+            return new DeviceActionResult { Success = false, DeviceId = autopilotId, Action = "deleteAutopilotDevice", Message = error };
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to delete AutoPilot identity {AutopilotId}", autopilotId);
+            return new DeviceActionResult { Success = false, DeviceId = autopilotId, Action = "deleteAutopilotDevice", Message = ex.Message };
+        }
+    }
 
     /// <summary>
     /// Delete an Entra device object by its directory object id.
