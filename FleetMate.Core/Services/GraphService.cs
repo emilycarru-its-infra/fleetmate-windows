@@ -1911,6 +1911,192 @@ if ($svc -and $svc.Status -ne 'Running') {
 
     #endregion
 
+    #region Directory audit log
+
+    /// <summary>
+    /// Beta endpoints, for the surfaces that have no v1.0 equivalent.
+    ///
+    /// <see cref="_client"/> is based at v1.0 and relative URLs resolve against
+    /// it, so an absolute URL is how a beta collection is reached. That works on
+    /// both transports: the elevation handler forwards <c>RequestUri</c> verbatim
+    /// to <c>az rest --uri</c>.
+    /// </summary>
+    private const string GraphBeta = "https://graph.microsoft.com/beta/";
+
+    /// <summary>
+    /// Read the Entra directory audit log, newest first.
+    ///
+    /// This answers "what changed this object, and who did it" — the question a
+    /// plain lookup cannot. Automation appears as the application holding the
+    /// service principal, so an object removed by a lifecycle policy or a
+    /// pipeline is attributable here and nowhere else.
+    ///
+    /// Requires AuditLog.Read.All. Without it Graph returns 403 rather than an
+    /// empty collection; that is logged rather than flattened into "no results",
+    /// because the two mean very different things to whoever is asking.
+    /// </summary>
+    /// <param name="filter">Raw OData $filter, or null for everything recent.</param>
+    /// <param name="limit">Maximum entries to return.</param>
+    public async Task<List<DirectoryAuditEvent>> GetDirectoryAuditsAsync(string? filter, int limit = 50)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            return new List<DirectoryAuditEvent>();
+        }
+
+        try
+        {
+            var url = $"auditLogs/directoryAudits?$top={PageSizeFor(limit)}";
+            if (!string.IsNullOrWhiteSpace(filter))
+            {
+                url += $"&$filter={Uri.EscapeDataString(filter)}";
+            }
+
+            var events = new List<DirectoryAuditEvent>();
+
+            while (url != null && events.Count < limit)
+            {
+                var response = await _client.GetAsync(url);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    Log.Warning(
+                        "Failed to read directory audits: {Status} - {Error}",
+                        response.StatusCode, await ReadErrorBodyAsync(response));
+                    break;
+                }
+
+                var result = await response.Content.ReadFromJsonAsync<DirectoryAuditListResponse>(_jsonOptions);
+                if (result?.Value != null)
+                {
+                    events.AddRange(result.Value);
+                }
+
+                url = result?.NextLink;
+                if (url != null && url.StartsWith(_client.BaseAddress!.ToString()))
+                {
+                    url = url.Substring(_client.BaseAddress.ToString().Length);
+                }
+            }
+
+            // Graph does not guarantee ordering once a $filter is applied, and an
+            // audit trail read out of order is actively misleading.
+            return events
+                .OrderByDescending(e => e.ActivityDateTime)
+                .Take(limit)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to read directory audits");
+            return new List<DirectoryAuditEvent>();
+        }
+    }
+
+    #endregion
+
+    #region Intune Settings Catalog
+
+    /// <summary>
+    /// Search the Settings Catalog definitions.
+    ///
+    /// Matching runs here rather than on the server on purpose. The catalog holds
+    /// tens of thousands of definitions, its $filter support does not cover the
+    /// fields anyone actually searches on, and $search is not offered on this
+    /// collection at all — while the useful term is usually a fragment of the
+    /// setting id or a word from its description. So the platform slice, which
+    /// Graph does support, is pushed down, and the substring match runs locally.
+    ///
+    /// Paging stops as soon as <paramref name="limit"/> matches are found, so a
+    /// specific query costs a page or two rather than the whole catalog.
+    /// </summary>
+    /// <param name="query">Substring matched against id, display name, description, category and keywords. Null returns the catalog in order.</param>
+    /// <param name="platform">Applicability platform, e.g. windows10, macOS. Null for all.</param>
+    /// <param name="limit">Maximum matches to return.</param>
+    /// <param name="maxPages">Ceiling on pages fetched, so a query matching nothing still terminates.</param>
+    public async Task<List<SettingsCatalogDefinition>> SearchSettingsCatalogAsync(
+        string? query, string? platform = null, int limit = 25, int maxPages = 40)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            return new List<SettingsCatalogDefinition>();
+        }
+
+        try
+        {
+            var url = $"{GraphBeta}deviceManagement/configurationSettings?$top={MaxGraphPageSize}";
+            if (!string.IsNullOrWhiteSpace(platform))
+            {
+                url += $"&$filter={Uri.EscapeDataString($"applicability/platform has '{platform}'")}";
+            }
+
+            var matches = new List<SettingsCatalogDefinition>();
+            var pages = 0;
+
+            while (url != null && matches.Count < limit && pages < maxPages)
+            {
+                pages++;
+                var response = await _client.GetAsync(url);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    Log.Warning(
+                        "Failed to read the Settings Catalog: {Status} - {Error}",
+                        response.StatusCode, await ReadErrorBodyAsync(response));
+                    break;
+                }
+
+                var result = await response.Content.ReadFromJsonAsync<SettingsCatalogListResponse>(_jsonOptions);
+                foreach (var setting in result?.Value ?? new List<SettingsCatalogDefinition>())
+                {
+                    if (MatchesSettingQuery(setting, query))
+                    {
+                        matches.Add(setting);
+                        if (matches.Count >= limit) break;
+                    }
+                }
+
+                url = result?.NextLink;
+            }
+
+            Log.Debug("Settings Catalog search matched {Count} definition(s) over {Pages} page(s)", matches.Count, pages);
+            return matches;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to search the Settings Catalog");
+            return new List<SettingsCatalogDefinition>();
+        }
+    }
+
+    /// <summary>
+    /// Whether a definition matches a free-text query.
+    ///
+    /// The id is searched as well as the prose. Someone who already holds an id
+    /// and wants to know whether it is real is the most common reason to search
+    /// this catalog at all, so an exact id must match as readily as a word from a
+    /// description. Every term has to appear somewhere, so a two-word query
+    /// narrows rather than widens.
+    /// </summary>
+    internal static bool MatchesSettingQuery(SettingsCatalogDefinition setting, string? query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return true;
+
+        var haystack = string.Join(
+            ' ',
+            setting.Id,
+            setting.DisplayName ?? "",
+            setting.Description ?? "",
+            setting.CategoryId ?? "",
+            string.Join(' ', setting.Keywords));
+
+        return query
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .All(term => haystack.Contains(term, StringComparison.OrdinalIgnoreCase));
+    }
+
+    #endregion
+
     public void Dispose()
     {
         _client.Dispose();
