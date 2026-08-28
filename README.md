@@ -63,7 +63,7 @@ Monitor deployment health and troubleshoot installation failures:
 
 ```powershell
 # Look up device by serial, hostname, or asset tag
-fleetmate device L003461
+fleetmate device A000123
 
 # List all installation errors
 fleetmate errors
@@ -85,7 +85,7 @@ fleetmate snipe assets --search "laptop"
 fleetmate snipe assets --status 2 --location 5
 
 # Get asset details (by tag, serial, or ID)
-fleetmate snipe asset L003461
+fleetmate snipe asset A000123
 
 # Asset lifecycle
 fleetmate snipe checkout 923 --user 42 --note "Assigned to new hire"
@@ -93,7 +93,7 @@ fleetmate snipe checkin 923 --note "Returned from user"
 fleetmate snipe audit 923 --location 5
 
 # Users and locations
-fleetmate snipe users --search "bryan"
+fleetmate snipe users --search "smith"
 fleetmate snipe user 42
 fleetmate snipe locations
 
@@ -119,7 +119,7 @@ Asset and ticket management:
 
 ```powershell
 # Search assets (returns full field data via JsonExtensionData)
-fleetmate tdx assets --search L003461 --limit 10
+fleetmate tdx assets --search A000123 --limit 10
 
 # Get asset details with all fields
 fleetmate tdx asset 243576 --json
@@ -137,17 +137,17 @@ SSH-based remote command execution with automatic host key management:
 
 ```powershell
 # Execute single command
-fleetmate ssh exec L003461 "hostname"
+fleetmate ssh exec A000123 "hostname"
 fleetmate ssh exec REMOTE-24 "Get-Service Cimian"
 
 # Batch execution
-fleetmate ssh batch "L003461,REMOTE-24,STUDIO-10" "uptime"
+fleetmate ssh batch "A000123,A000124,A000125" "uptime"
 
 # Test connectivity
-fleetmate ssh test L003461
+fleetmate ssh test A000123
 
 # Retrieve Cimian logs
-fleetmate ssh logs L003461
+fleetmate ssh logs A000123
 
 # Host key management (for reimaged devices)
 fleetmate ssh host-key clean 10.15.26.123     # Remove stale key for single host
@@ -214,8 +214,8 @@ fleetmate qa run --environment staging
 All commands support `--json` for programmatic consumption:
 
 ```powershell
-fleetmate snipe asset L003461 --json | ConvertFrom-Json
-fleetmate tdx assets --search L003461 --json | ConvertFrom-Json
+fleetmate snipe asset A000123 --json | ConvertFrom-Json
+fleetmate tdx assets --search A000123 --json | ConvertFrom-Json
 fleetmate intune device 16BQKQ3 --json | ConvertFrom-Json
 ```
 
@@ -225,7 +225,7 @@ FleetMate includes a comprehensive system check script that tests all integratio
 
 ```powershell
 # Run full system check for an asset
-powershell -File "C:\path\to\fleetmate\scripts\system-check.ps1" -AssetTag L003461
+powershell -File "C:\path\to\fleetmate\scripts\system-check.ps1" -AssetTag A000123
 ```
 
 This generates a timestamped log showing:
@@ -238,7 +238,7 @@ This generates a timestamped log showing:
 
 **Sample Output:**
 ```
-FleetMate system check for asset tag L003461
+FleetMate system check for asset tag A000123
 Timestamp: 2026-01-18 23:41:26Z
 
 === ReportMate: device lookup ===
@@ -247,7 +247,7 @@ Remote Compute 24 (Serial: 16BQKQ3)
 === Snipe: asset detail ===
 +-------------------- Asset Details --------------------+
 ID         : 923
-Asset Tag  : L003461
+Asset Tag  : A000123
 Name       : Remote Compute 24
 Serial     : 16BQKQ3
 Model      : Dell Precision 3660 Tower
@@ -258,14 +258,14 @@ Location   : IT Storage
 === TDX Asset ===
 +-------------------- TDX Asset --------------------+
 Name        : Remote Compute 24
-Asset Tag   : L003461
+Asset Tag   : A000123
 Serial      : 16BQKQ3
 Model       : Precision 3660 Tower
 Manufacturer: Dell
 Status      : In Use
 ...
 
-Log saved to: quality\fleetmate\logs\system-check-L003461-20260118-234126.log
+Log saved to: quality\fleetmate\logs\system-check-A000123-20260118-234126.log
 ```
 
 ## Build & Package
@@ -406,7 +406,7 @@ Set-ItemProperty HKCU:\SOFTWARE\FleetMate -Name TdxAppId -Value "116"
 
 ```powershell
 # Test connectivity
-fleetmate ssh test L003461
+fleetmate ssh test A000123
 
 # Verify key permissions and format
 # Key should be PEM format, no passphrase
@@ -456,12 +456,12 @@ dotnet publish FleetMate.CLI --configuration Release --runtime win-x64 --self-co
 
 ```powershell
 # Run system check
-.\scripts\system-check.ps1 -AssetTag L003461
+.\scripts\system-check.ps1 -AssetTag A000123
 
 # Manual command testing
-dotnet run --project FleetMate.CLI -- device L003461
-dotnet run --project FleetMate.CLI -- snipe asset L003461
-dotnet run --project FleetMate.CLI -- tdx assets --search L003461
+dotnet run --project FleetMate.CLI -- device A000123
+dotnet run --project FleetMate.CLI -- snipe asset A000123
+dotnet run --project FleetMate.CLI -- tdx assets --search A000123
 ```
 
 ## License

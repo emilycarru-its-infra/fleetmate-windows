@@ -70,9 +70,25 @@ if (-not $owner) {
 }
 
 if ($owner) {
-    $upn = if ($owner -match "@") { $owner } else { "$owner@ecuad.ca" }
-    "Resolved user: $upn" | Tee-Object -FilePath $logFile -Append
-    Invoke-FleetMateCommand $fleetmateExe @("entra", "user", $upn) | Tee-Object -FilePath $logFile -Append
+    # Snipe-IT may hold a bare username rather than a UPN. The domain to append is
+    # site-specific, so it comes from the environment rather than being baked in; a
+    # bare username with no domain configured is reported rather than guessed at.
+    $upnDomain = $env:FLEETMATE_UPN_DOMAIN
+    $upn = if ($owner -match "@") {
+        $owner
+    } elseif ($upnDomain) {
+        "$owner@$upnDomain"
+    } else {
+        $null
+    }
+
+    if ($upn) {
+        "Resolved user: $upn" | Tee-Object -FilePath $logFile -Append
+        Invoke-FleetMateCommand $fleetmateExe @("entra", "user", $upn) | Tee-Object -FilePath $logFile -Append
+    } else {
+        "Owner '$owner' is not a UPN and FLEETMATE_UPN_DOMAIN is not set; skipping the directory lookup." |
+            Tee-Object -FilePath $logFile -Append
+    }
 } else {
     "No assigned user found; skipping Entra lookup." | Tee-Object -FilePath $logFile -Append
 }
