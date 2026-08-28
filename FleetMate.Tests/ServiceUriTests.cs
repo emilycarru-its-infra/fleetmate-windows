@@ -6,8 +6,8 @@ namespace FleetMate.Tests;
 public class ServiceUriTests
 {
     [Theory]
-    [InlineData("inventory.its.ecuad.ca", "https://inventory.its.ecuad.ca")]
-    [InlineData("https://inventory.its.ecuad.ca/", "https://inventory.its.ecuad.ca")]
+    [InlineData("inventory.example.edu", "https://inventory.example.edu")]
+    [InlineData("https://inventory.example.edu/", "https://inventory.example.edu")]
     [InlineData("http://localhost:8080/", "http://localhost:8080")]
     public void Normalize_AcceptsHostsAndAbsoluteUris(string input, string expected)
     {

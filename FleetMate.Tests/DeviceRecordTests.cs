@@ -12,7 +12,7 @@ namespace FleetMate.Tests;
 /// a shape, not a device: an Entra object still stamped with a ZTDID whose Intune
 /// partner record is gone. That half-cleaned state is what a hand cleanup leaves
 /// behind when it deletes only the Intune record, and it is why the next OOBE
-/// pass re-uses a stale object Intune has never heard of. See AB#4387.
+/// pass re-uses a stale object Intune has never heard of. 
 /// </summary>
 public class DeviceRecordTests
 {
