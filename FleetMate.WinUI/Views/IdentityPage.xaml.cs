@@ -206,7 +206,7 @@ public sealed partial class IdentityPage : Page
     private async void AddMember_Click(object sender, RoutedEventArgs e)
     {
         if (_currentGroup == null) return;
-        var upn = await PromptTextAsync("Add member", "Enter the user's UPN or object id:", "user@ecuad.ca");
+        var upn = await PromptTextAsync("Add member", "Enter the user's UPN or object id:", "user@example.edu");
         if (string.IsNullOrWhiteSpace(upn)) return;
 
         var ok = await App.Current.GraphService!.AddGroupMemberAsync(_currentGroup.Id, upn.Trim());
