@@ -93,7 +93,7 @@ fleetmate snipe checkin 923 --note "Returned from user"
 fleetmate snipe audit 923 --location 5
 
 # Users and locations
-fleetmate snipe users --search "bryan"
+fleetmate snipe users --search "smith"
 fleetmate snipe user 42
 fleetmate snipe locations
 
@@ -141,7 +141,7 @@ fleetmate ssh exec ASSET-000 "hostname"
 fleetmate ssh exec REMOTE-24 "Get-Service Cimian"
 
 # Batch execution
-fleetmate ssh batch "ASSET-000,REMOTE-24,STUDIO-10" "uptime"
+fleetmate ssh batch "ASSET-000,ASSET-000,ASSET-000" "uptime"
 
 # Test connectivity
 fleetmate ssh test ASSET-000
