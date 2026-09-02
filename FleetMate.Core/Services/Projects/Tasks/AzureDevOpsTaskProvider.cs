@@ -245,7 +245,14 @@ public class AzureDevOpsTaskProvider : ITaskProvider, IDisposable
             UpdatedAt = fields?.ChangedDate ?? DateTime.MinValue,
             ClosedAt = null, // WorkItemFields doesn't have ClosedDate property
             ExternalUrl = workItem.Url?.Replace("_apis/wit/workItems", "_workitems/edit"),
-            Priority = fields?.Priority
+            Priority = fields?.Priority,
+            Metadata = new Dictionary<string, string>
+            {
+                ["state"] = fields?.State ?? "New",
+                ["areaPath"] = fields?.AreaPath ?? "",
+                ["iterationPath"] = fields?.IterationPath ?? "",
+                ["workItemType"] = fields?.WorkItemType ?? "",
+            }
         };
     }
 

@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using FleetMate.Core.Config;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
@@ -24,6 +26,7 @@ public partial class BoardsPage : Page
     private string _searchText = "";
     private bool _showClosed;
     private bool _isInitialLoadDone;
+    private string _groupBy = "State"; // board column dimension, macOS GroupByOption parity
 
     // List mode
     private AzureDevOpsService? _devOpsService;
@@ -160,25 +163,99 @@ public partial class BoardsPage : Page
             filtered = filtered.Where(t => t.Bucket == _filterBucket);
         }
 
+        // State columns handle closed visibility themselves; every other
+        // dimension drops closed tasks entirely, like the Mac board.
+        if (!_showClosed && _groupBy != "State")
+        {
+            filtered = filtered.Where(t => t.State != TaskState.Closed);
+        }
+
         var tasks = filtered.ToList();
-
-        // Separate by state
-        var openTasks = tasks.Where(t => t.State == TaskState.Open).ToList();
-        var inProgressTasks = tasks.Where(t => t.State == TaskState.InProgress).ToList();
-        var closedTasks = tasks.Where(t => t.State == TaskState.Closed).ToList();
-
-        // Update lists
-        OpenTasksList.ItemsSource = openTasks;
-        InProgressTasksList.ItemsSource = inProgressTasks;
-        ClosedTasksList.ItemsSource = _showClosed ? closedTasks : closedTasks.Take(10).ToList();
-
-        // Update counts
-        OpenCount.Text = $"({openTasks.Count})";
-        InProgressCount.Text = $"({inProgressTasks.Count})";
-        ClosedCount.Text = $"({closedTasks.Count})";
-
+        TaskBoardColumnsControl.ItemsSource = BuildTaskColumns(tasks);
         TaskCountLabel.Text = $"{tasks.Count} tasks";
     }
+
+    private static readonly string[] ClosedStateNames = { "closed", "done", "removed", "completed", "resolved" };
+
+    private List<TaskBoardColumn> BuildTaskColumns(List<UnifiedTask> tasks)
+    {
+        static string MetaOr(UnifiedTask t, string key, string fallback)
+            => t.Metadata.TryGetValue(key, out var v) && !string.IsNullOrEmpty(v) ? v : fallback;
+
+        switch (_groupBy)
+        {
+            case "Priority":
+            {
+                var labels = new (int Key, string Label, string Color)[]
+                {
+                    (1, "Critical", "#C05050"), (2, "High", "#DD8844"), (3, "Medium", "#C9A83A"),
+                    (4, "Low", "#4C9A60"), (0, "None", "#808080")
+                };
+                var grouped = tasks.GroupBy(t => t.Priority ?? 0).ToDictionary(g => g.Key, g => g.ToList());
+                return labels
+                    .Select(l => MakeColumn(l.Label, l.Color, grouped.GetValueOrDefault(l.Key) ?? new List<UnifiedTask>()))
+                    .ToList();
+            }
+            case "Assigned To":
+                return tasks.GroupBy(t => t.Assignees.FirstOrDefault() ?? "Unassigned")
+                    .OrderBy(g => g.Key == "Unassigned" ? 0 : 1)
+                    .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(g => MakeColumn(g.Key, "#5B6BAE", g.ToList()))
+                    .ToList();
+            case "Area Path":
+                return GroupedAlpha(tasks, t => MetaOr(t, "areaPath", "No Area"), "No Area", "#8E6BA5");
+            case "Iteration":
+                return GroupedAlpha(tasks, t => MetaOr(t, "iterationPath", "No Iteration"), "No Iteration", "#A5783A");
+            case "Type":
+                return GroupedAlpha(tasks, t => MetaOr(t, "workItemType", "Unknown"), "Unknown", "#4C8C8C");
+            default: // State
+            {
+                var grouped = tasks.GroupBy(t => MetaOr(t, "state", "New")).ToDictionary(g => g.Key, g => g.ToList());
+                return grouped.Keys
+                    .Where(k => _showClosed || !ClosedStateNames.Contains(k.ToLowerInvariant()))
+                    .OrderBy(StateOrder)
+                    .ThenBy(k => k, StringComparer.OrdinalIgnoreCase)
+                    .Select(s => MakeColumn(s, StateColorHex(s), grouped[s]))
+                    .ToList();
+            }
+        }
+    }
+
+    private static List<TaskBoardColumn> GroupedAlpha(
+        List<UnifiedTask> tasks, Func<UnifiedTask, string> key, string fallback, string colorHex)
+        => tasks.GroupBy(key)
+            .OrderBy(g => g.Key == fallback ? 1 : 0)
+            .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(g => MakeColumn(g.Key, colorHex, g.ToList()))
+            .ToList();
+
+    private static TaskBoardColumn MakeColumn(string title, string colorHex, List<UnifiedTask> tasks) => new()
+    {
+        Title = title,
+        Color = new SolidColorBrush((Color)ColorConverter.ConvertFromString(colorHex)),
+        CountLabel = $"({tasks.Count})",
+        Tasks = tasks.OrderByDescending(t => t.UpdatedAt).Select(t => new TaskCardVm { Task = t }).ToList()
+    };
+
+    private static int StateOrder(string state) => state.ToLowerInvariant() switch
+    {
+        "new" or "to do" or "proposed" or "open" => 0,
+        "active" or "in progress" or "doing" or "committed" => 1,
+        "resolved" or "done" or "completed" => 2,
+        "closed" => 3,
+        "removed" => 4,
+        _ => 2
+    };
+
+    private static string StateColorHex(string state) => state.ToLowerInvariant() switch
+    {
+        "new" or "to do" or "proposed" or "open" => "#4C9A60",
+        "active" or "in progress" or "doing" or "committed" => "#3A6EA5",
+        "resolved" or "done" or "completed" => "#8E6BA5",
+        "closed" => "#707070",
+        "removed" => "#C05050",
+        _ => "#3A6EA5"
+    };
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
@@ -258,16 +335,97 @@ public partial class BoardsPage : Page
         UpdateDisplay();
     }
 
-    private void TasksList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void GroupByCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (sender is ListView listView && listView.SelectedItem is UnifiedTask task)
+        if (!IsInitialized) return;
+        _groupBy = (GroupByCombo.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "State";
+        UpdateDisplay();
+    }
+
+    private void OnTaskCardClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is Border card && card.Tag is TaskCardVm vm)
         {
-            // Show task detail sidebar
-            var provider = _registry?.GetProvider(task.Provider);
-            DetailPanel.ShowTask(task, provider);
+            var provider = _registry?.GetProvider(vm.Task.Provider);
+            DetailPanel.ShowTask(vm.Task, provider);
             DetailPanel.Visibility = Visibility.Visible;
         }
     }
+
+    // ── Board drag-and-drop (macOS parity: DevOps-only field updates) ──
+
+    private const string TaskDragFormat = "FleetMateTaskKey";
+    private Point _taskDragStart;
+
+    private void OnTaskCardPreviewMouseDown(object sender, MouseButtonEventArgs e)
+        => _taskDragStart = e.GetPosition(null);
+
+    private void OnTaskCardMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed || sender is not Border card) return;
+        var pos = e.GetPosition(null);
+        if (Math.Abs(pos.X - _taskDragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(pos.Y - _taskDragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
+            return;
+        if (card.Tag is TaskCardVm vm)
+            DragDrop.DoDragDrop(card, new DataObject(TaskDragFormat, vm.Task.CompositeKey), DragDropEffects.Move);
+    }
+
+    private void OnTaskColumnDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(TaskDragFormat) ? DragDropEffects.Move : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void OnTaskColumnDrop(object sender, DragEventArgs e)
+    {
+        if (sender is not Border column || column.Tag is not string columnTitle) return;
+        if (!e.Data.GetDataPresent(TaskDragFormat)) return;
+        var key = (string)e.Data.GetData(TaskDragFormat)!;
+        var task = _allTasks.FirstOrDefault(t => t.CompositeKey == key);
+        if (task == null) return;
+
+        // Field updates via drag are DevOps-only, exactly like the Mac.
+        if (task.Provider != "azdevops" || _devOpsService == null || !int.TryParse(task.Id, out var id))
+            return;
+
+        UpdateWorkItemRequest? request = _groupBy switch
+        {
+            "State" => new UpdateWorkItemRequest { State = columnTitle },
+            "Priority" => PriorityFromLabel(columnTitle) is int p and > 0
+                ? new UpdateWorkItemRequest { Priority = p } : null,
+            "Assigned To" => columnTitle == "Unassigned" ? null
+                : new UpdateWorkItemRequest { AssignedTo = columnTitle },
+            "Iteration" => columnTitle == "No Iteration" ? null
+                : new UpdateWorkItemRequest { IterationPath = columnTitle },
+            "Area Path" => columnTitle == "No Area" ? null
+                : new UpdateWorkItemRequest { AreaPath = columnTitle },
+            _ => null // Type changes are not drag-updatable
+        };
+        if (request == null) return;
+
+        var updated = await _devOpsService.UpdateWorkItemAsync(id, request);
+        if (updated == null) return;
+
+        task.Metadata["state"] = updated.State;
+        task.Metadata["areaPath"] = updated.AreaPath ?? "";
+        task.Metadata["iterationPath"] = updated.IterationPath ?? "";
+        task.Metadata["workItemType"] = updated.WorkItemType;
+        task.Priority = updated.Priority;
+        task.Assignees = updated.AssignedTo != null ? new List<string> { updated.AssignedTo } : new List<string>();
+        task.State = updated.State.ToLowerInvariant() switch
+        {
+            "new" or "to do" or "proposed" or "open" => TaskState.Open,
+            "active" or "in progress" or "doing" or "committed" => TaskState.InProgress,
+            _ => TaskState.Closed
+        };
+        UpdateDisplay();
+    }
+
+    private static int? PriorityFromLabel(string label) => label switch
+    {
+        "Critical" => 1, "High" => 2, "Medium" => 3, "Low" => 4, _ => null
+    };
 
     // MARK: - View Mode Toggle
 
@@ -694,4 +852,52 @@ public partial class BoardsPage : Page
             SsoButton.ToolTip = "Sign in to Azure DevOps via SSO";
         }
     }
+}
+
+
+/// <summary>One board column: title, accent color, and its task cards.</summary>
+public sealed class TaskBoardColumn
+{
+    public string Title { get; init; } = "";
+    public Brush Color { get; init; } = Brushes.Gray;
+    public string CountLabel { get; init; } = "";
+    public List<TaskCardVm> Tasks { get; init; } = new();
+}
+
+/// <summary>Card view-model wrapping a UnifiedTask for the board.</summary>
+public sealed class TaskCardVm
+{
+    public required UnifiedTask Task { get; init; }
+
+    public string Title => Task.Title;
+
+    public string ProviderName => Task.Provider switch
+    {
+        "azdevops" => "DevOps",
+        "github" => "GitHub",
+        "gitea" => "Gitea",
+        _ => Task.Provider
+    };
+
+    public string TypeName => Meta("workItemType");
+    public Visibility TypeVisibility => Vis(TypeName);
+
+    public string AreaPath => Meta("areaPath");
+    public Visibility AreaVisibility => Vis(AreaPath);
+
+    public string Iteration
+    {
+        get
+        {
+            var iteration = Meta("iterationPath");
+            return string.IsNullOrEmpty(iteration) ? Task.Bucket ?? "" : iteration;
+        }
+    }
+    public Visibility IterationVisibility => Vis(Iteration);
+
+    public string AssigneesLabel => Task.Assignees.Count > 0 ? "@ " + string.Join(", ", Task.Assignees) : "";
+    public Visibility AssigneesVisibility => Vis(AssigneesLabel);
+
+    private string Meta(string key) => Task.Metadata.TryGetValue(key, out var value) ? value : "";
+    private static Visibility Vis(string s) => string.IsNullOrEmpty(s) ? Visibility.Collapsed : Visibility.Visible;
 }
