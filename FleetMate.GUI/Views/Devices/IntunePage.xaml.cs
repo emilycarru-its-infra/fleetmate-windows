@@ -44,7 +44,10 @@ public partial class IntunePage : Page
 
         Loaded += async (s, e) =>
         {
-            if (!_isInitialLoadDone)
+            // Retry on every visit while the list is empty: the page is cached
+            // across tab switches, so a failed first load (elevation hiccup,
+            // service starting up) must not leave it dead forever.
+            if (!_isInitialLoadDone || _filteredDevices.Count == 0)
             {
                 _isInitialLoadDone = true;
                 await LoadDevicesAsync();
