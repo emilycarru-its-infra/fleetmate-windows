@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using FleetMate.Core.Models.Tickets;
 using FleetMate.Core.Services;
@@ -438,6 +439,103 @@ public partial class TicketsPage : Page
         if (!IsInitialized) return;
         _boardGroupBy = (BoardGroupComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Responsible";
         if (_isBoardView) UpdateBoardView();
+    }
+
+    // ── Board drag-and-drop ───────────────────────────────────────
+    // Dropping a card on a column updates the grouped field, exactly like the
+    // macOS board: StatusID / PriorityID / ResponsibleUid / ResponsibleGroupID.
+
+    private const string TicketDragFormat = "FleetMateTicketId";
+    private Point _cardDragStart;
+
+    private void OnBoardCardPreviewMouseDown(object sender, MouseButtonEventArgs e)
+        => _cardDragStart = e.GetPosition(null);
+
+    private void OnBoardCardMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed || sender is not Border card) return;
+
+        // A real drag, not a sloppy click: require the system drag threshold so
+        // plain clicks still open the detail panel.
+        var pos = e.GetPosition(null);
+        if (Math.Abs(pos.X - _cardDragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(pos.Y - _cardDragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
+            return;
+
+        if (card.Tag is int ticketId)
+            DragDrop.DoDragDrop(card, new DataObject(TicketDragFormat, ticketId), DragDropEffects.Move);
+    }
+
+    private void OnBoardColumnDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(TicketDragFormat) ? DragDropEffects.Move : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void OnBoardColumnDrop(object sender, DragEventArgs e)
+    {
+        if (sender is not Border column || column.Tag is not string columnKey) return;
+        if (!e.Data.GetDataPresent(TicketDragFormat)) return;
+        var ticketId = (int)e.Data.GetData(TicketDragFormat)!;
+        await ApplyBoardDropAsync(ticketId, columnKey);
+    }
+
+    private async Task ApplyBoardDropAsync(int ticketId, string columnKey)
+    {
+        if (_tdxService == null || _app == null) return;
+
+        var updates = new Dictionary<string, object?>();
+        switch (_boardGroupBy)
+        {
+            case "Status":
+                var statusId = _allTickets.FirstOrDefault(t => t.StatusName == columnKey)?.StatusId;
+                if (statusId is null or 0) return;
+                updates["StatusID"] = statusId;
+                break;
+
+            case "Priority":
+                var priorityId = _allTickets.FirstOrDefault(t => t.PriorityName == columnKey)?.PriorityId;
+                if (priorityId == null) return;
+                updates["PriorityID"] = priorityId;
+                break;
+
+            case "Group":
+                if (columnKey == "No Group")
+                {
+                    updates["ResponsibleGroupID"] = 0;
+                }
+                else
+                {
+                    var groupId = _allTickets.FirstOrDefault(t => t.ResponsibleGroupName == columnKey)?.ResponsibleGroupId;
+                    if (groupId == null) return;
+                    updates["ResponsibleGroupID"] = groupId;
+                }
+                break;
+
+            default: // Responsible
+                if (columnKey == "Unassigned")
+                {
+                    updates["ResponsibleUid"] = "";
+                }
+                else
+                {
+                    var uid = _allTickets.FirstOrDefault(t => t.ResponsibleFullName == columnKey)?.ResponsibleUid;
+                    if (uid == null) return;
+                    updates["ResponsibleUid"] = uid;
+                }
+                break;
+        }
+
+        var updated = await _tdxService.UpdateTicketAsync(ticketId, updates);
+        if (updated == null)
+        {
+            Serilog.Log.Warning("Board drop: failed to update ticket {Id} ({Field})", ticketId, _boardGroupBy);
+            return;
+        }
+
+        var idx = _app.CachedTickets.FindIndex(t => t.Id == ticketId);
+        if (idx >= 0) _app.CachedTickets[idx] = updated;
+        ApplyFiltersAndSort();
     }
 
     private void UpdateBoardView()
