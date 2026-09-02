@@ -429,9 +429,29 @@ function Build-MsiPackage {
         $exe = Join-Path $staging "fleetmate.exe"
         if (-not (Test-Path $exe)) { throw "Published CLI exe not found: $exe" }
 
-        # Sign the payload exe BEFORE it is embedded in the MSI cab.
+        # Publish the WPF desktop app alongside it. Same single-file
+        # self-contained shape, same version stamp, so the MSI ships one
+        # fleetmate.exe + one fleetmate-gui.exe per architecture.
+        Write-BuildLog "Publishing GUI ($rid) into MSI staging (v$fileVer)..." "INFO"
+        & dotnet publish "$RootDir\FleetMate.GUI\FleetMate.GUI.csproj" `
+            --configuration Release `
+            --runtime $rid `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:Version=$asmVer `
+            -p:InformationalVersion=$fileVer `
+            -p:IncludeSourceRevisionInInformationalVersion=false `
+            --output $staging | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "GUI publish failed ($rid)" }
+
+        $guiExe = Join-Path $staging "fleetmate-gui.exe"
+        if (-not (Test-Path $guiExe)) { throw "Published GUI exe not found: $guiExe" }
+
+        # Sign the payload exes BEFORE they are embedded in the MSI cab.
         if ($Sign -and $Thumbprint) {
             Invoke-SignArtifact -Path $exe -Thumbprint $Thumbprint -Store $Store
+            Invoke-SignArtifact -Path $guiExe -Thumbprint $Thumbprint -Store $Store
         }
 
         Write-BuildLog "Building MSI ($arch)..." "INFO"
@@ -485,7 +505,7 @@ try {
     # Clean if requested
     if ($Clean) {
         Write-BuildLog "Cleaning build artifacts..."
-        foreach ($proj in @('FleetMate.CLI', 'FleetMate.GUI', 'FleetMate.WinUI', 'FleetMate.Core')) {
+        foreach ($proj in @('FleetMate.CLI', 'FleetMate.GUI', 'FleetMate.Core')) {
             Remove-Item -Path "$RootDir\$proj\bin" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path "$RootDir\$proj\obj" -Recurse -Force -ErrorAction SilentlyContinue
         }
@@ -545,11 +565,10 @@ try {
     if ($buildGUI -and -not $PkgOnly -and -not $MsiOnly) {
         Write-BuildLog "Building FleetMate GUI..."
 
-        # The user-facing desktop is native WinUI 3. It must be published as a
-        # self-contained single file for WDAC-compliant signing: a regular .NET
-        # app-host stub is protected before SignTool can add Authenticode data.
-        # Windows App SDK also requires EnableMsixTooling to embed resources.pri
-        # into a single-file unpackaged application.
+        # The user-facing desktop is the WPF app in FleetMate.GUI. It is published
+        # as a self-contained single file for WDAC-compliant signing: a regular
+        # .NET app-host stub is protected before SignTool can add Authenticode
+        # data.
         $guiOutDir = "$RootDir\publish\gui"
 
         # Follow the host architecture unless told otherwise. This was pinned to
@@ -563,18 +582,14 @@ try {
         } else {
             'win-x64'
         }
-        $guiPlatform = if ($guiRid -eq 'win-arm64') { 'arm64' } else { 'x64' }
-
         Write-BuildLog "  runtime: $guiRid"
 
-        & dotnet publish "$RootDir\FleetMate.WinUI\FleetMate.WinUI.csproj" `
+        & dotnet publish "$RootDir\FleetMate.GUI\FleetMate.GUI.csproj" `
             --configuration Release `
             --runtime $guiRid `
             --self-contained true `
-            -p:Platform=$guiPlatform `
             -p:PublishSingleFile=true `
             -p:EnableCompressionInSingleFile=true `
-            -p:EnableMsixTooling=true `
             --output $guiOutDir
 
         if ($LASTEXITCODE -ne 0) { throw "GUI build failed" }
