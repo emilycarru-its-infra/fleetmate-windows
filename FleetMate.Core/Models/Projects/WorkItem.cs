@@ -161,6 +161,7 @@ public class UpdateWorkItemRequest
     public string? AssignedTo { get; set; }
     public int? Priority { get; set; }
     public string? IterationPath { get; set; }
+    public string? AreaPath { get; set; }
     public string? Comment { get; set; }
 }
 
