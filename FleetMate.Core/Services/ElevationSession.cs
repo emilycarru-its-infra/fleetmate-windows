@@ -239,7 +239,9 @@ public sealed class ElevationSession
         // large JSON payloads (a wrap mid-token breaks parsing ~100 records in).
         // Shipping the output as a single base64 stream makes it wrap-proof —
         // injected newlines are stripped before decoding on our side.
-        await SendText($"printf '\\n<<<AZE_BEGIN>>>\\n'; ( {command} ) | base64 -w 400; printf '\\n<<<AZE_END:%d>>>\\n' \"${{PIPESTATUS[0]}}\"; exit\n");
+        // gzip before base64: Graph JSON compresses ~10x, and every byte saved
+        // is a byte the flaky PTY stream cannot drop.
+        await SendText($"printf '\\n<<<AZE_BEGIN>>>\\n'; ( {command} ) | gzip -c | base64 -w 400; printf '\\n<<<AZE_END:%d>>>\\n' \"${{PIPESTATUS[0]}}\"; exit\n");
 
         var sb = new StringBuilder();
         var buffer = new byte[8192];
@@ -269,12 +271,26 @@ public sealed class ElevationSession
         if (clean.Length == 0) return "";
         try
         {
-            return Encoding.UTF8.GetString(Convert.FromBase64String(clean));
+            var bytes = Convert.FromBase64String(clean);
+            if (bytes.Length >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b)
+            {
+                using var input = new System.IO.MemoryStream(bytes);
+                using var gz = new System.IO.Compression.GZipStream(input, System.IO.Compression.CompressionMode.Decompress);
+                using var output = new System.IO.MemoryStream();
+                gz.CopyTo(output);
+                return Encoding.UTF8.GetString(output.ToArray());
+            }
+            return Encoding.UTF8.GetString(bytes);
         }
         catch (FormatException)
         {
             throw new ElevationException(
                 $"Elevation output was not valid base64 ({clean.Length} chars) — the session stream may be corrupted.");
+        }
+        catch (System.IO.InvalidDataException)
+        {
+            throw new ElevationException(
+                $"Elevation output failed gzip decompression ({clean.Length} chars) — the session stream may be corrupted.");
         }
     }
 
