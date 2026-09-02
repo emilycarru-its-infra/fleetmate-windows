@@ -16,6 +16,7 @@
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>1.0.0.0</FileVersion>
     <StartupObject>FleetMate.GUI.Program</StartupObject>
+    <ApplicationIcon>Assets\FleetMate.ico</ApplicationIcon>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <PublishTrimmed>false</PublishTrimmed>
@@ -26,6 +27,11 @@
     <CsWinRTEnabled>false</CsWinRTEnabled>
     <CsWinRTAotOptimizerEnabled>false</CsWinRTAotOptimizerEnabled>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\FleetMate.ico" />
+    <Resource Include="Assets\FleetMate.png" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
