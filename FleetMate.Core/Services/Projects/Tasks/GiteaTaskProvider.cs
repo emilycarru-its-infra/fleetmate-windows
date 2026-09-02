@@ -33,12 +33,15 @@ public class GiteaTaskProvider : ITaskProvider, IDisposable
         _config = config.Tasks?.Providers?.Gitea ?? new GiteaProviderConfig();
         
         var baseUrl = _config.Url?.TrimEnd('/') ?? "";
-        
-        _client = new HttpClient
+
+        // No configured URL means the provider is disabled (IsEnabled guards all
+        // use) — constructing a Uri from the bare relative path would throw and,
+        // because this runs in a page Loaded handler, take down the whole app.
+        _client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        if (!string.IsNullOrEmpty(baseUrl) && Uri.TryCreate($"{baseUrl}/api/v1/", UriKind.Absolute, out var baseAddress))
         {
-            BaseAddress = new Uri($"{baseUrl}/api/v1/"),
-            Timeout = TimeSpan.FromSeconds(30)
-        };
+            _client.BaseAddress = baseAddress;
+        }
         
         _client.DefaultRequestHeaders.Add("Accept", "application/json");
         
