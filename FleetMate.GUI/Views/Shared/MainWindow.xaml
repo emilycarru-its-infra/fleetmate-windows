@@ -18,7 +18,11 @@
         <vm:MainViewModel />
     </Window.DataContext>
 
-    <Grid Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
+    <!-- TextElement.Foreground: a bare WPF TextBlock defaults to black no matter
+         the theme, so in dark mode every TextBlock without an explicit Foreground
+         disappears. Setting the inherited foreground here fixes all of them. -->
+    <Grid Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+          TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="48" />
             <RowDefinition Height="*" />
