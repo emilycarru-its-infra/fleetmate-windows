@@ -51,7 +51,14 @@ public class UnifiedTask
     
     /// <summary>Priority level (1 = highest, 4 = lowest). Null if not set.</summary>
     public int? Priority { get; set; }
-    
+
+    /// <summary>
+    /// Provider-specific display fields (state, areaPath, iterationPath,
+    /// workItemType, boardColumn) — the same contract as the macOS app, which
+    /// drives its board grouping from these keys.
+    /// </summary>
+    public Dictionary<string, string> Metadata { get; set; } = new();
+
     /// <summary>
     /// Creates a composite key for this task across providers.
     /// </summary>
