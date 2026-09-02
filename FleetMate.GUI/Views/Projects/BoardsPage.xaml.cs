@@ -404,6 +404,13 @@ public partial class BoardsPage : Page
         };
         if (request == null) return;
 
+        await ApplyWorkItemUpdateAsync(task, id, request);
+    }
+
+    /// <summary>Apply a DevOps work-item update and refresh the local task + board.</summary>
+    private async Task ApplyWorkItemUpdateAsync(UnifiedTask task, int id, UpdateWorkItemRequest request)
+    {
+        if (_devOpsService == null) return;
         var updated = await _devOpsService.UpdateWorkItemAsync(id, request);
         if (updated == null) return;
 
@@ -426,6 +433,47 @@ public partial class BoardsPage : Page
     {
         "Critical" => 1, "High" => 2, "Medium" => 3, "Low" => 4, _ => null
     };
+
+    // ── Card context menu ─────────────────────────────────────────
+
+    /// <summary>Resolve the card view-model behind a context-menu item.</summary>
+    private static TaskCardVm? VmFromMenuItem(object sender)
+    {
+        DependencyObject? current = sender as MenuItem;
+        while (current != null && current is not System.Windows.Controls.ContextMenu)
+        {
+            current = LogicalTreeHelper.GetParent(current) ?? VisualTreeHelper.GetParent(current);
+        }
+        return (current as System.Windows.Controls.ContextMenu)?.PlacementTarget is Border card
+            && card.Tag is TaskCardVm vm ? vm : null;
+    }
+
+    private void OnTaskOpenInBrowser(object sender, RoutedEventArgs e)
+    {
+        if (VmFromMenuItem(sender)?.Task.ExternalUrl is not { Length: > 0 } url) return;
+        try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); } catch { }
+    }
+
+    private void OnTaskCopyLink(object sender, RoutedEventArgs e)
+    {
+        if (VmFromMenuItem(sender)?.Task.ExternalUrl is not { Length: > 0 } url) return;
+        try { Clipboard.SetText(url); } catch { }
+    }
+
+    private async void OnTaskSetState(object sender, RoutedEventArgs e)
+    {
+        if (VmFromMenuItem(sender) is not { } vm || (sender as MenuItem)?.Header is not string state) return;
+        if (vm.Task.Provider != "azdevops" || !int.TryParse(vm.Task.Id, out var id)) return;
+        await ApplyWorkItemUpdateAsync(vm.Task, id, new UpdateWorkItemRequest { State = state });
+    }
+
+    private async void OnTaskSetPriority(object sender, RoutedEventArgs e)
+    {
+        if (VmFromMenuItem(sender) is not { } vm || (sender as MenuItem)?.Header is not string label) return;
+        if (vm.Task.Provider != "azdevops" || !int.TryParse(vm.Task.Id, out var id)) return;
+        if (PriorityFromLabel(label) is not int priority) return;
+        await ApplyWorkItemUpdateAsync(vm.Task, id, new UpdateWorkItemRequest { Priority = priority });
+    }
 
     // MARK: - View Mode Toggle
 

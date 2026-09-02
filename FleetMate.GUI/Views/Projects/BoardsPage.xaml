@@ -190,6 +190,25 @@
                                                         PreviewMouseLeftButtonDown="OnTaskCardPreviewMouseDown"
                                                         MouseMove="OnTaskCardMouseMove"
                                                         Tag="{Binding}">
+                                                    <Border.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="Open in Browser" Click="OnTaskOpenInBrowser" />
+                                                            <MenuItem Header="Copy Link" Click="OnTaskCopyLink" />
+                                                            <Separator />
+                                                            <MenuItem Header="Set State">
+                                                                <MenuItem Header="New" Click="OnTaskSetState" />
+                                                                <MenuItem Header="Active" Click="OnTaskSetState" />
+                                                                <MenuItem Header="Resolved" Click="OnTaskSetState" />
+                                                                <MenuItem Header="Closed" Click="OnTaskSetState" />
+                                                            </MenuItem>
+                                                            <MenuItem Header="Set Priority">
+                                                                <MenuItem Header="Critical" Click="OnTaskSetPriority" />
+                                                                <MenuItem Header="High" Click="OnTaskSetPriority" />
+                                                                <MenuItem Header="Medium" Click="OnTaskSetPriority" />
+                                                                <MenuItem Header="Low" Click="OnTaskSetPriority" />
+                                                            </MenuItem>
+                                                        </ContextMenu>
+                                                    </Border.ContextMenu>
                                                     <StackPanel>
                                                         <TextBlock Text="{Binding Title}" FontWeight="Medium" TextWrapping="Wrap" MaxHeight="56" />
                                                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
