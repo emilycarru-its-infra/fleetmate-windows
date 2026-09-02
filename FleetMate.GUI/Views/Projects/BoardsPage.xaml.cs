@@ -45,7 +45,11 @@ public partial class BoardsPage : Page
         _app = Application.Current as App;
         _config = _app?.Config ?? FleetMateConfig.Load();
 
-        DetailPanel.CloseRequested += (_, _) => DetailPanel.Visibility = Visibility.Collapsed;
+        DetailPanel.CloseRequested += (_, _) =>
+        {
+            DetailPanel.Visibility = Visibility.Collapsed;
+            DetailColumn.Width = new GridLength(0);
+        };
         DetailPanel.TaskUpdated += async (_, _) => await LoadTasksAsync();
     }
 
@@ -349,6 +353,7 @@ public partial class BoardsPage : Page
             var provider = _registry?.GetProvider(vm.Task.Provider);
             DetailPanel.ShowTask(vm.Task, provider);
             DetailPanel.Visibility = Visibility.Visible;
+            DetailColumn.Width = new GridLength(2, GridUnitType.Star);
         }
     }
 
