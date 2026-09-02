@@ -408,6 +408,8 @@ public class AzureDevOpsService : IDisposable
                 operations.Add(new() { Op = "add", Path = "/fields/Microsoft.VSTS.Common.Priority", Value = request.Priority.Value });
             if (!string.IsNullOrEmpty(request.IterationPath))
                 operations.Add(new() { Op = "add", Path = "/fields/System.IterationPath", Value = request.IterationPath });
+            if (!string.IsNullOrEmpty(request.AreaPath))
+                operations.Add(new() { Op = "add", Path = "/fields/System.AreaPath", Value = request.AreaPath });
             if (!string.IsNullOrEmpty(request.Comment))
                 operations.Add(new() { Op = "add", Path = "/fields/System.History", Value = request.Comment });
 

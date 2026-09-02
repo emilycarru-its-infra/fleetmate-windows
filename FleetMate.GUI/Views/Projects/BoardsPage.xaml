@@ -74,6 +74,7 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
                 <TextBox x:Name="SearchBox" 
@@ -88,15 +89,28 @@
                           ui:ControlHelper.PlaceholderText="Bucket"
                           SelectionChanged="BucketFilter_SelectionChanged" />
 
+                <ComboBox x:Name="GroupByCombo"
+                          Grid.Column="2"
+                          Width="130"
+                          Margin="8,0,0,0"
+                          SelectionChanged="GroupByCombo_SelectionChanged">
+                    <ComboBoxItem Content="State" IsSelected="True" />
+                    <ComboBoxItem Content="Area Path" />
+                    <ComboBoxItem Content="Iteration" />
+                    <ComboBoxItem Content="Type" />
+                    <ComboBoxItem Content="Priority" />
+                    <ComboBoxItem Content="Assigned To" />
+                </ComboBox>
+
                 <CheckBox x:Name="ShowClosedCheckbox" 
-                          Grid.Column="2" 
+                          Grid.Column="3" 
                           Content="Show Closed" 
                           Margin="8,0,0,0"
                           Checked="ShowClosedCheckbox_Changed"
                           Unchecked="ShowClosedCheckbox_Changed" />
 
                 <TextBlock x:Name="TaskCountLabel" 
-                           Grid.Column="3" 
+                           Grid.Column="4" 
                            Margin="16,0,0,0"
                            Style="{StaticResource CaptionTextBlockStyle}"
                            VerticalAlignment="Center" />
@@ -138,192 +152,75 @@
             </Grid>
         </Border>
 
-        <!-- Kanban Board (Board mode) -->
-        <Grid x:Name="KanbanBoard" Grid.Row="3" Margin="0,16,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-
-            <!-- Open Column -->
-            <Border Grid.Column="0" Style="{StaticResource CardStyle}" Margin="0,0,8,0">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
-                    <StackPanel Orientation="Horizontal" Margin="12" VerticalAlignment="Center">
-                        <Ellipse Width="10" Height="10" Fill="#38A169" />
-                        <TextBlock Text="Open" FontWeight="SemiBold" Margin="8,0,0,0" />
-                        <TextBlock x:Name="OpenCount" Text="(0)" Margin="4,0,0,0" Opacity="0.6" />
-                    </StackPanel>
-
-                    <ListView x:Name="OpenTasksList" 
-                              Grid.Row="1" 
-                              BorderThickness="0"
-                              SelectionMode="Single"
-                              SelectionChanged="TasksList_SelectionChanged">
-                        <ListView.ItemTemplate>
-                            <DataTemplate>
-                                <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}"
-                                        CornerRadius="6" Padding="12" Margin="4">
-                                    <StackPanel>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="{Binding Title}" 
-                                                       FontWeight="SemiBold" 
-                                                       TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="1" 
-                                                       Text="{Binding Provider}" 
-                                                       FontSize="10" 
-                                                       Opacity="0.6" />
-                                        </Grid>
-                                        <TextBlock Text="{Binding Bucket}" 
-                                                   FontSize="11" 
-                                                   Opacity="0.7" 
-                                                   Margin="0,4,0,0" />
-                                        <ItemsControl ItemsSource="{Binding Labels}" Margin="0,6,0,0">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate>
-                                                    <WrapPanel />
-                                                </ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Border Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
-                                                            CornerRadius="4" Padding="6,2" Margin="0,0,4,0">
-                                                        <TextBlock Text="{Binding}" FontSize="10" />
-                                                    </Border>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
-                    </ListView>
-                </Grid>
-            </Border>
-
-            <!-- In Progress Column -->
-            <Border Grid.Column="1" Style="{StaticResource CardStyle}" Margin="8,0,8,0">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
-                    <StackPanel Orientation="Horizontal" Margin="12" VerticalAlignment="Center">
-                        <Ellipse Width="10" Height="10" Fill="#3182CE" />
-                        <TextBlock Text="In Progress" FontWeight="SemiBold" Margin="8,0,0,0" />
-                        <TextBlock x:Name="InProgressCount" Text="(0)" Margin="4,0,0,0" Opacity="0.6" />
-                    </StackPanel>
-
-                    <ListView x:Name="InProgressTasksList" 
-                              Grid.Row="1" 
-                              BorderThickness="0"
-                              SelectionMode="Single"
-                              SelectionChanged="TasksList_SelectionChanged">
-                        <ListView.ItemTemplate>
-                            <DataTemplate>
-                                <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}"
-                                        CornerRadius="6" Padding="12" Margin="4">
-                                    <StackPanel>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="{Binding Title}" 
-                                                       FontWeight="SemiBold" 
-                                                       TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="1" 
-                                                       Text="{Binding Provider}" 
-                                                       FontSize="10" 
-                                                       Opacity="0.6" />
-                                        </Grid>
-                                        <TextBlock Text="{Binding Bucket}" 
-                                                   FontSize="11" 
-                                                   Opacity="0.7" 
-                                                   Margin="0,4,0,0" />
-                                        <ItemsControl ItemsSource="{Binding Labels}" Margin="0,6,0,0">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate>
-                                                    <WrapPanel />
-                                                </ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Border Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
-                                                            CornerRadius="4" Padding="6,2" Margin="0,0,4,0">
-                                                        <TextBlock Text="{Binding}" FontSize="10" />
-                                                    </Border>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
-                    </ListView>
-                </Grid>
-            </Border>
-
-            <!-- Closed Column -->
-            <Border Grid.Column="2" Style="{StaticResource CardStyle}" Margin="8,0,0,0">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
-                    <StackPanel Orientation="Horizontal" Margin="12" VerticalAlignment="Center">
-                        <Ellipse Width="10" Height="10" Fill="#718096" />
-                        <TextBlock Text="Closed" FontWeight="SemiBold" Margin="8,0,0,0" />
-                        <TextBlock x:Name="ClosedCount" Text="(0)" Margin="4,0,0,0" Opacity="0.6" />
-                    </StackPanel>
-
-                    <ListView x:Name="ClosedTasksList" 
-                              Grid.Row="1" 
-                              BorderThickness="0"
-                              SelectionMode="Single"
-                              SelectionChanged="TasksList_SelectionChanged">
-                        <ListView.ItemTemplate>
-                            <DataTemplate>
-                                <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}"
-                                        CornerRadius="6" Padding="12" Margin="4" Opacity="0.7">
-                                    <StackPanel>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="{Binding Title}" 
-                                                       FontWeight="SemiBold" 
-                                                       TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="1" 
-                                                       Text="{Binding Provider}" 
-                                                       FontSize="10" 
-                                                       Opacity="0.6" />
-                                        </Grid>
-                                        <TextBlock Text="{Binding Bucket}" 
-                                                   FontSize="11" 
-                                                   Opacity="0.7" 
-                                                   Margin="0,4,0,0" />
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
-                    </ListView>
-                </Grid>
-            </Border>
-        </Grid>
-
+        <!-- Kanban Board (Board mode) - columns are computed from the group-by
+             dimension, macOS parity, and cards drag between columns to update
+             the grouped field. -->
+        <ScrollViewer x:Name="KanbanBoard" Grid.Row="3" Margin="0,16,0,0"
+                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <ItemsControl x:Name="TaskBoardColumnsControl">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="{DynamicResource SubtleFillBrush}" CornerRadius="8" Width="270"
+                                Margin="0,0,14,0" VerticalAlignment="Top"
+                                AllowDrop="True" Drop="OnTaskColumnDrop" DragOver="OnTaskColumnDragOver"
+                                Tag="{Binding Title}">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <StackPanel Orientation="Horizontal" Margin="12,10">
+                                    <Ellipse Width="10" Height="10" Fill="{Binding Color}" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Margin="8,0,0,0" />
+                                    <TextBlock Text="{Binding CountLabel}" Margin="6,0,0,0"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                </StackPanel>
+                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="700">
+                                    <ItemsControl ItemsSource="{Binding Tasks}" Margin="8,0,8,8">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="{DynamicResource CardBackgroundBrush}" CornerRadius="6"
+                                                        Padding="10" Margin="0,0,0,8" Cursor="Hand"
+                                                        MouseLeftButtonUp="OnTaskCardClick"
+                                                        PreviewMouseLeftButtonDown="OnTaskCardPreviewMouseDown"
+                                                        MouseMove="OnTaskCardMouseMove"
+                                                        Tag="{Binding}">
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Title}" FontWeight="Medium" TextWrapping="Wrap" MaxHeight="56" />
+                                                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                            <Border Background="#203182CE" CornerRadius="3" Padding="5,1" Margin="0,0,6,0"
+                                                                    Visibility="{Binding TypeVisibility}">
+                                                                <TextBlock Text="{Binding TypeName}" FontSize="10" />
+                                                            </Border>
+                                                            <TextBlock Text="{Binding ProviderName}" FontSize="10" VerticalAlignment="Center"
+                                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                        </StackPanel>
+                                                        <TextBlock Text="{Binding AreaPath}" FontSize="10" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                                                   Visibility="{Binding AreaVisibility}" />
+                                                        <TextBlock Text="{Binding Iteration}" FontSize="10" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                                                   Visibility="{Binding IterationVisibility}" />
+                                                        <TextBlock Text="{Binding AssigneesLabel}" FontSize="10" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"
+                                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                                                   Visibility="{Binding AssigneesVisibility}" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
         <!-- Work Items List (List mode) -->
         <Border x:Name="WorkItemsList" Grid.Row="3" Margin="0,16,0,0" Visibility="Collapsed">
             <ListView x:Name="WorkItemsListView" 
