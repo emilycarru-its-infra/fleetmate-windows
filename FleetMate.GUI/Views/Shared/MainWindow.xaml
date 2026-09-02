@@ -21,7 +21,7 @@
     <!-- TextElement.Foreground: a bare WPF TextBlock defaults to black no matter
          the theme, so in dark mode every TextBlock without an explicit Foreground
          disappears. Setting the inherited foreground here fixes all of them. -->
-    <Grid Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+    <Grid Background="{DynamicResource AppBackgroundBrush}"
           TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="48" />
@@ -89,13 +89,33 @@
                     </StackPanel>
                 </Border>
 
-                <RadioButton Grid.Column="2" x:Name="TabSettings" ToolTip="Settings"
-                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                             Tag="Settings" GroupName="MainTabs" Checked="OnTabChecked"
-                             Style="{StaticResource NavigationTabStyle}"
-                             HorizontalAlignment="Right" Margin="0,0,116,0">
-                    <ui:FontIcon Glyph="&#xE713;" FontSize="14" />
-                </RadioButton>
+                <!-- Auth status + settings live in the chrome so they are reachable
+                     from any tab, matching the macOS toolbar. -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right"
+                            Margin="0,0,116,0">
+                    <Button x:Name="AuthButton" ToolTip="Authentication status" Click="OnAuthClicked"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Style="{StaticResource ChromeIconButtonStyle}">
+                        <ui:FontIcon Glyph="&#xE72E;" FontSize="14" />
+                    </Button>
+                    <RadioButton x:Name="TabSettings" ToolTip="Settings"
+                                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                                 Tag="Settings" GroupName="MainTabs" Checked="OnTabChecked"
+                                 Style="{StaticResource NavigationTabStyle}">
+                        <ui:FontIcon Glyph="&#xE713;" FontSize="14" />
+                    </RadioButton>
+                    <Popup x:Name="AuthPopup" PlacementTarget="{Binding ElementName=AuthButton}"
+                           Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
+                        <Border Background="{DynamicResource CardBackgroundBrush}"
+                                BorderBrush="{DynamicResource CardBorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Width="480" MaxHeight="600"
+                                TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="580">
+                                <StackPanel x:Name="AuthSystemsPanel" Margin="16" />
+                            </ScrollViewer>
+                        </Border>
+                    </Popup>
+                </StackPanel>
             </Grid>
         </Border>
 

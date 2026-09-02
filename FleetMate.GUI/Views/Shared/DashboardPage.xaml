@@ -25,24 +25,6 @@
                             <TextBlock Text="Refresh" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="AuthButton" Click="OnAuthClicked"
-                            Style="{StaticResource ChromeIconButtonStyle}" ToolTip="Authentication status">
-                        <StackPanel Orientation="Horizontal">
-                            <ui:FontIcon Glyph="&#xE72E;" FontSize="13" Margin="0,0,6,0" />
-                            <TextBlock Text="Authentication" />
-                        </StackPanel>
-                    </Button>
-                    <Popup x:Name="AuthPopup" PlacementTarget="{Binding ElementName=AuthButton}" Placement="Bottom"
-                           StaysOpen="False" AllowsTransparency="True">
-                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
-                                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
-                                BorderThickness="1" CornerRadius="8" Width="480" MaxHeight="600"
-                                Padding="0">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="580">
-                                <StackPanel x:Name="AuthSystemsPanel" Margin="16" />
-                            </ScrollViewer>
-                        </Border>
-                    </Popup>
                 </StackPanel>
                 <StackPanel>
                     <TextBlock Text="Dashboard" Style="{StaticResource TitleTextStyle}" Margin="0,0,0,2" />

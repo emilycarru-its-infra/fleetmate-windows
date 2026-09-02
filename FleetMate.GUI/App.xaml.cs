@@ -702,7 +702,10 @@ public partial class App : Application
             // Initialize GraphService if configured
             if (Config.Graph != null && !string.IsNullOrEmpty(Config.Graph.TenantId))
             {
-                GraphService = new GraphService(Config.Graph);
+                // Elevation config must ride along: without it the Graph transport
+                // builds an empty ElevationConfig and every call fails as
+                // "aze elevation is not configured" even on provisioned machines.
+                GraphService = new GraphService(Config.Graph, Config.Elevation);
                 Log.Information("GraphService initialized");
             }
 
