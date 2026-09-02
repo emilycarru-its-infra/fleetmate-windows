@@ -6,13 +6,13 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ui:ThemeResources />
-                <ui:XamlControlsResources />
                 <!-- App palette: layered surfaces like the macOS app. ModernWPF's
                      Alt* brushes resolve to pure black/white, which is why an
-                     unthemed dark window reads as a black void. -->
-                <ui:ResourceDictionaryEx>
-                    <ui:ResourceDictionaryEx.ThemeDictionaries>
+                     unthemed dark window reads as a black void. The custom brushes
+                     must live in ThemeResources' own ThemeDictionaries — a separate
+                     ResourceDictionaryEx in App.Resources is never theme-resolved. -->
+                <ui:ThemeResources>
+                    <ui:ThemeResources.ThemeDictionaries>
                         <ResourceDictionary x:Key="Light">
                             <SolidColorBrush x:Key="AppBackgroundBrush" Color="#F5F5F7" />
                             <SolidColorBrush x:Key="CardBackgroundBrush" Color="#FFFFFF" />
@@ -25,8 +25,9 @@
                             <SolidColorBrush x:Key="CardBorderBrush" Color="#3C3C41" />
                             <SolidColorBrush x:Key="SubtleFillBrush" Color="#37373C" />
                         </ResourceDictionary>
-                    </ui:ResourceDictionaryEx.ThemeDictionaries>
-                </ui:ResourceDictionaryEx>
+                    </ui:ThemeResources.ThemeDictionaries>
+                </ui:ThemeResources>
+                <ui:XamlControlsResources />
             </ResourceDictionary.MergedDictionaries>
 
             <!-- Converters -->
@@ -88,6 +89,10 @@
             </Style>
 
             <Style x:Key="FleetListViewItemStyle" TargetType="ListViewItem">
+                <!-- This style REPLACES the implicit themed ListViewItem style, so
+                     without an explicit Foreground every row falls back to WPF's
+                     default black — invisible in dark mode. -->
+                <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                 <Setter Property="VerticalContentAlignment" Value="Center" />
                 <Setter Property="Padding" Value="5,2" />

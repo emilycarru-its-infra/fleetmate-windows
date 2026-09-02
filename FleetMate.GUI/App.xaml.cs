@@ -537,6 +537,12 @@ public partial class App : Application
             };
         }
 
+        // The layered palette is applied in code: setting the brushes directly in
+        // Application.Resources is deterministic, where ThemeDictionaries-based
+        // custom resources proved not to resolve reliably at runtime.
+        ApplyPaletteBrushes();
+        ThemeManager.Current.ActualApplicationThemeChanged += (_, _) => ApplyPaletteBrushes();
+
         // Initialize auth manager
         AuthManager = new AuthManager(Config);
 
@@ -832,6 +838,26 @@ public partial class App : Application
     private static FleetMateConfig LoadDesktopConfiguration()
     {
         return FleetMateConfig.LoadDesktop();
+    }
+
+    /// <summary>
+    /// Layered surface palette (macOS-style), applied per theme. DynamicResource
+    /// consumers pick up the change immediately when the theme flips.
+    /// </summary>
+    private void ApplyPaletteBrushes()
+    {
+        var dark = ThemeManager.Current.ActualApplicationTheme == ApplicationTheme.Dark;
+        void Set(string key, string darkHex, string lightHex)
+        {
+            var brush = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(dark ? darkHex : lightHex));
+            brush.Freeze();
+            Resources[key] = brush;
+        }
+        Set("AppBackgroundBrush", "#232326", "#F5F5F7");
+        Set("CardBackgroundBrush", "#2C2C30", "#FFFFFF");
+        Set("CardBorderBrush", "#3C3C41", "#E3E3E7");
+        Set("SubtleFillBrush", "#37373C", "#E9E9EC");
     }
 
     protected override void OnExit(ExitEventArgs e)

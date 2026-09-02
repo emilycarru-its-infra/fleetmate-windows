@@ -217,7 +217,12 @@ public sealed class ElevationSession
         await SendText(password);
         await SendText("stty -echo\n");
         await Task.Delay(2000);
-        await SendText($"printf '\\n<<<AZE_BEGIN>>>\\n'; ( {command} ); printf '\\n<<<AZE_END:%d>>>\\n' \"$?\"; exit\n");
+        // The exec channel is a PTY: any output line longer than the terminal
+        // width is hard-wrapped with injected newlines, which silently corrupts
+        // large JSON payloads (a wrap mid-token breaks parsing ~100 records in).
+        // Shipping the output as a single base64 stream makes it wrap-proof —
+        // injected newlines are stripped before decoding on our side.
+        await SendText($"printf '\\n<<<AZE_BEGIN>>>\\n'; ( {command} ) | base64 -w 0; printf '\\n<<<AZE_END:%d>>>\\n' \"${{PIPESTATUS[0]}}\"; exit\n");
 
         var sb = new StringBuilder();
         var buffer = new byte[8192];
@@ -233,7 +238,28 @@ public sealed class ElevationSession
         }
         try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None); } catch { }
 
-        return ParseExecOutput(sb.ToString());
+        var (payload, code) = ParseExecOutput(sb.ToString());
+        return (DecodeBase64Payload(payload), code);
+    }
+
+    /// <summary>
+    /// Decode the base64 stream produced in-session. PTY wrapping may have
+    /// injected newlines (or other whitespace) anywhere in the stream, so
+    /// everything outside the base64 alphabet is dropped before decoding.
+    /// </summary>
+    private static string DecodeBase64Payload(string payload)
+    {
+        var clean = Regex.Replace(payload, @"[^A-Za-z0-9+/=]", "");
+        if (clean.Length == 0) return "";
+        try
+        {
+            return Encoding.UTF8.GetString(Convert.FromBase64String(clean));
+        }
+        catch (FormatException)
+        {
+            throw new ElevationException(
+                $"Elevation output was not valid base64 ({clean.Length} chars) — the session stream may be corrupted.");
+        }
     }
 
     /// <summary>
