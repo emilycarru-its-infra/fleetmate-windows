@@ -1155,7 +1155,11 @@ public class SnipeService : IDisposable
                 Log.Warning("Failed to fetch activity: {Status}", response.StatusCode);
                 return new List<SnipeActivity>();
             }
-            var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeActivity>>(_jsonOptions);
+            // The activity report replies with "charset=utf8" (not "utf-8"),
+            // which ReadFromJsonAsync rejects as an unknown encoding — so read
+            // the body as a string and deserialize it ourselves.
+            var json = await response.Content.ReadAsStringAsync();
+            var wrapper = System.Text.Json.JsonSerializer.Deserialize<SnipeListResponse<SnipeActivity>>(json, _jsonOptions);
             return wrapper?.Rows ?? new List<SnipeActivity>();
         }
         catch (Exception ex)
