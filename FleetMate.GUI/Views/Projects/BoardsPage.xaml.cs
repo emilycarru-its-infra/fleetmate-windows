@@ -50,6 +50,10 @@ public partial class BoardsPage : Page
             DetailPanel.Visibility = Visibility.Collapsed;
             DetailColumn.Width = new GridLength(0);
         };
+
+        // Trackpad horizontal swipes and Shift+wheel scroll the boards.
+        Shared.HorizontalWheel.Attach(KanbanBoard);
+        Shared.HorizontalWheel.Attach(ProjectsBoard);
         DetailPanel.TaskUpdated += async (_, _) => await LoadTasksAsync();
     }
 
