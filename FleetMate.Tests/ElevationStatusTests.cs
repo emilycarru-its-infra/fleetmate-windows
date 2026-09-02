@@ -116,10 +116,67 @@ public class ElevationStatusTests
     /// Cimian's directory, where nobody would look for FleetMate diagnostics.
     /// </summary>
     [Fact]
-    public void LogPath_IsUnderFleetMate()
+    public void LogPath_IsUnderTheManagedFleetRoot()
     {
         var config = new FleetMateConfig();
 
-        Assert.Equal(@"C:\ProgramData\FleetMate\logs", config.LogPath);
+        // Every managed tool writes to %ProgramData%\Managed<Tool>\logs; resolved from
+        // ProgramData rather than a hardcoded drive, which group policy can relocate.
+        Assert.Equal(
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "ManagedFleet", "logs"),
+            config.LogPath);
+    }
+
+    [Fact]
+    public void MigrateLegacyLogs_MovesHistoryOutOfEveryPreviousRoot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "fm-logs-" + Guid.NewGuid().ToString("N"));
+        var oldA = Path.Combine(root, "FleetMate", "logs");
+        var oldB = Path.Combine(root, "Cimian", "Logs");
+        var destination = Path.Combine(root, "ManagedFleet", "logs");
+        Directory.CreateDirectory(oldA);
+        Directory.CreateDirectory(oldB);
+        File.WriteAllText(Path.Combine(oldA, "fleetmate-20260812.log"), "a");
+        File.WriteAllText(Path.Combine(oldB, "fleetmate-20260824_001.log"), "b");
+        File.WriteAllText(Path.Combine(oldB, "unrelated.txt"), "not ours");
+
+        try
+        {
+            var moved = FleetMateConfig.MigrateLegacyLogs(destination, new[] { oldA, oldB });
+
+            Assert.Equal(2, moved);
+            Assert.True(File.Exists(Path.Combine(destination, "fleetmate-20260812.log")));
+            Assert.True(File.Exists(Path.Combine(destination, "fleetmate-20260824_001.log")));
+            // Only our own logs move; anything else in a shared directory is left alone.
+            Assert.True(File.Exists(Path.Combine(oldB, "unrelated.txt")));
+            // Safe to run again.
+            Assert.Equal(0, FleetMateConfig.MigrateLegacyLogs(destination, new[] { oldA, oldB }));
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public void MigrateLegacyLogs_KeepsTheExistingFileWhenBothSidesHaveTheName()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "fm-logs-" + Guid.NewGuid().ToString("N"));
+        var legacy = Path.Combine(root, "old");
+        var destination = Path.Combine(root, "new");
+        Directory.CreateDirectory(legacy);
+        Directory.CreateDirectory(destination);
+        File.WriteAllText(Path.Combine(legacy, "fleetmate-20260812.log"), "legacy");
+        File.WriteAllText(Path.Combine(destination, "fleetmate-20260812.log"), "current");
+
+        try
+        {
+            Assert.Equal(0, FleetMateConfig.MigrateLegacyLogs(destination, new[] { legacy }));
+            Assert.Equal("current", File.ReadAllText(Path.Combine(destination, "fleetmate-20260812.log")));
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
     }
 }
