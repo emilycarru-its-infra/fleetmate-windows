@@ -29,6 +29,7 @@ namespace FleetMate.Core.Config;
 /// - GRAPH_TENANT_ID: Azure AD tenant ID for Microsoft Graph
 /// - GRAPH_CLIENT_ID: Azure AD application client ID
 /// - GRAPH_CLIENT_SECRET: Azure AD application client secret (optional, uses Azure CLI SSO if not set)
+/// - AZDEVOPS_URL: Azure DevOps host (defaults to a neutral placeholder)
 /// - DEVOPS_ORGANIZATION: Azure DevOps organization name
 /// - DEVOPS_PROJECT: Azure DevOps project name
 /// - DEVOPS_CLIENT_ID: Azure AD app client ID for OAuth2 SSO (optional)
@@ -234,6 +235,13 @@ public class FleetMateConfig
         if (!string.IsNullOrEmpty(snipeAudience))
             config.SnipeOidcAudience = snipeAudience;
 
+        var devOpsBaseUrlEnv = Environment.GetEnvironmentVariable("AZDEVOPS_URL");
+        if (!string.IsNullOrWhiteSpace(devOpsBaseUrlEnv))
+        {
+            config.AzureDevOps ??= new AzureDevOpsConfig();
+            config.AzureDevOps.HostUrl = devOpsBaseUrlEnv;
+        }
+
         var entraClientId = Environment.GetEnvironmentVariable("ENTRA_CLIENT_ID");
         if (!string.IsNullOrEmpty(entraClientId))
             config.EntraClientId = entraClientId;
@@ -417,6 +425,9 @@ public class FleetMateConfig
 
             // Azure DevOps credentials
             config.AzureDevOps ??= new AzureDevOpsConfig();
+            var devOpsBaseUrl = key.GetValue("DevOpsBaseUrl") as string;
+            if (!string.IsNullOrWhiteSpace(devOpsBaseUrl))
+                config.AzureDevOps.HostUrl = devOpsBaseUrl;
             var devOpsOrganization = key.GetValue("DevOpsOrganization") as string;
             if (!string.IsNullOrEmpty(devOpsOrganization))
                 config.AzureDevOps.Organization = devOpsOrganization;
@@ -475,7 +486,7 @@ public class FleetMateConfig
         var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "GraphTenantId", "GraphClientId", "SnipeUrl", "SnipeOidcAudience",
-            "TdxBaseUrl", "TdxTicketingAppId", "DevOpsOrganization", "DevOpsProject",
+            "TdxBaseUrl", "TdxTicketingAppId", "DevOpsBaseUrl", "DevOpsOrganization", "DevOpsProject",
             "ReportMateUrl"
         };
 
@@ -726,9 +737,16 @@ public class AzureDevOpsConfig
     public string? TenantId { get; set; }
 
     /// <summary>
-    /// Base URL for Azure DevOps API
+    /// Azure DevOps host. The public build ships a neutral placeholder; the real
+    /// host comes from the DevOpsBaseUrl registry value or AZDEVOPS_URL, never code.
     /// </summary>
-    public string BaseUrl => $"https://azure-devops.example.com/{Organization}";
+    public const string DefaultHostUrl = "https://azure-devops.example.com";
+    public string HostUrl { get; set; } = DefaultHostUrl;
+
+    /// <summary>
+    /// Base URL for Azure DevOps API: the configured host plus the organization
+    /// </summary>
+    public string BaseUrl => $"{HostUrl.TrimEnd('/')}/{Organization}";
 
     /// <summary>
     /// Package-readiness board sync (fleetmate test/qa -> DevOps work items).
