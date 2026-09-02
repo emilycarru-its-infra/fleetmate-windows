@@ -152,10 +152,39 @@
             </Grid>
         </Border>
 
+        <!-- GitHub Projects v2 Dynamic Board (Projects mode) -->
+        <Border x:Name="ProjectsFilters" Grid.Row="2" Style="{StaticResource CardStyle}" Margin="0,16,0,0" Padding="12" Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBox x:Name="ProjectsSearchBox" 
+                         ui:ControlHelper.PlaceholderText="Search project items..." 
+                         Grid.Column="0"
+                         TextChanged="ProjectsSearchBox_TextChanged" />
+
+                <TextBlock x:Name="ProjectsCountLabel" 
+                           Grid.Column="1" 
+                           Margin="16,0,0,0"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <!-- Row 3: mode content on the left, inline detail sidebar on the right
+             (macOS 60/40 layout; the sidebar column expands only when a task is selected). -->
+        <Grid Grid.Row="3">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*" />
+                <ColumnDefinition x:Name="DetailColumn" Width="0" />
+            </Grid.ColumnDefinitions>
+
         <!-- Kanban Board (Board mode) - columns are computed from the group-by
              dimension, macOS parity, and cards drag between columns to update
              the grouped field. -->
-        <ScrollViewer x:Name="KanbanBoard" Grid.Row="3" Margin="0,16,0,0"
+        <ScrollViewer x:Name="KanbanBoard" Margin="0,16,0,0"
                       HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
             <ItemsControl x:Name="TaskBoardColumnsControl">
                 <ItemsControl.ItemsPanel>
@@ -241,7 +270,7 @@
             </ItemsControl>
         </ScrollViewer>
         <!-- Work Items List (List mode) -->
-        <Border x:Name="WorkItemsList" Grid.Row="3" Margin="0,16,0,0" Visibility="Collapsed">
+        <Border x:Name="WorkItemsList" Margin="0,16,0,0" Visibility="Collapsed">
             <ListView x:Name="WorkItemsListView" 
                       BorderThickness="0"
                       SelectionMode="Single"
@@ -265,35 +294,16 @@
             </ListView>
         </Border>
 
-        <!-- GitHub Projects v2 Dynamic Board (Projects mode) -->
-        <Border x:Name="ProjectsFilters" Grid.Row="2" Style="{StaticResource CardStyle}" Margin="0,16,0,0" Padding="12" Visibility="Collapsed">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
 
-                <TextBox x:Name="ProjectsSearchBox" 
-                         ui:ControlHelper.PlaceholderText="Search project items..." 
-                         Grid.Column="0"
-                         TextChanged="ProjectsSearchBox_TextChanged" />
-
-                <TextBlock x:Name="ProjectsCountLabel" 
-                           Grid.Column="1" 
-                           Margin="16,0,0,0"
-                           Style="{StaticResource CaptionTextBlockStyle}"
-                           VerticalAlignment="Center" />
-            </Grid>
-        </Border>
-
-        <ScrollViewer x:Name="ProjectsBoard" Grid.Row="3" Margin="0,16,0,0" Visibility="Collapsed"
+        <ScrollViewer x:Name="ProjectsBoard" Margin="0,16,0,0" Visibility="Collapsed"
                       HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
             <StackPanel x:Name="ProjectsColumnsPanel" Orientation="Horizontal" />
         </ScrollViewer>
 
         <!-- Task Detail Sidebar -->
-        <local:TaskDetailPanel x:Name="DetailPanel" Grid.Row="3" HorizontalAlignment="Right"
+        <local:TaskDetailPanel x:Name="DetailPanel" Grid.Column="1"
                                Visibility="Collapsed" Margin="16,16,0,0" />
+        </Grid>
 
         <!-- Loading Overlay -->
         <Border x:Name="LoadingOverlay" 
