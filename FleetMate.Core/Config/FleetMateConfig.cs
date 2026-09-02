@@ -740,7 +740,9 @@ public class AzureDevOpsConfig
     /// Azure DevOps host. The public build ships a neutral placeholder; the real
     /// host comes from the DevOpsBaseUrl registry value or AZDEVOPS_URL, never code.
     /// </summary>
-    public const string DefaultHostUrl = "https://azure-devops.example.com";
+    // dev.azure.com is Microsoft's public Azure DevOps endpoint, not an
+    // org-specific value — it is the correct generic default.
+    public const string DefaultHostUrl = "https://dev.azure.com";
     public string HostUrl { get; set; } = DefaultHostUrl;
 
     /// <summary>
