@@ -1156,10 +1156,11 @@ public class SnipeService : IDisposable
                 return new List<SnipeActivity>();
             }
             // The activity report replies with "charset=utf8" (not "utf-8"),
-            // which ReadFromJsonAsync rejects as an unknown encoding — so read
-            // the body as a string and deserialize it ourselves.
-            var json = await response.Content.ReadAsStringAsync();
-            var wrapper = System.Text.Json.JsonSerializer.Deserialize<SnipeListResponse<SnipeActivity>>(json, _jsonOptions);
+            // which both ReadFromJsonAsync AND ReadAsStringAsync reject as an
+            // unknown encoding — so read raw bytes, which ignore the header,
+            // and deserialize them ourselves.
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            var wrapper = System.Text.Json.JsonSerializer.Deserialize<SnipeListResponse<SnipeActivity>>(bytes, _jsonOptions);
             return wrapper?.Rows ?? new List<SnipeActivity>();
         }
         catch (Exception ex)
