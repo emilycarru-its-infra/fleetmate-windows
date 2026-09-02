@@ -19,7 +19,7 @@ public class TdxJwtClaimTests
     [Fact]
     public void Extracts_GivenName_And_Email()
     {
-        var jwt = MakeJwt(new { given_name = "Nigel", email = "alex@example.edu" });
+        var jwt = MakeJwt(new { given_name = "Alex", email = "alex@example.edu" });
         var (name, email) = TdxJwt.ExtractUserInfo(jwt);
         Assert.Equal("Nigel", name);
         Assert.Equal("alex@example.edu", email);
@@ -28,10 +28,10 @@ public class TdxJwtClaimTests
     [Fact]
     public void FallsBack_To_UniqueName_ForBoth()
     {
-        var jwt = MakeJwt(new { unique_name = "user@example.com" });
+        var jwt = MakeJwt(new { unique_name = "user@example.edu" });
         var (name, email) = TdxJwt.ExtractUserInfo(jwt);
-        Assert.Equal("user@example.com", name);
-        Assert.Equal("user@example.com", email);
+        Assert.Equal("user@example.edu", name);
+        Assert.Equal("user@example.edu", email);
     }
 
     [Fact]

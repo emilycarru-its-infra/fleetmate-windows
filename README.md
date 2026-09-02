@@ -93,7 +93,7 @@ fleetmate snipe checkin 923 --note "Returned from user"
 fleetmate snipe audit 923 --location 5
 
 # Users and locations
-fleetmate snipe users --search "bryan"
+fleetmate snipe users --search "smith"
 fleetmate snipe user 42
 fleetmate snipe locations
 
@@ -141,7 +141,7 @@ fleetmate ssh exec ASSET-000 "hostname"
 fleetmate ssh exec REMOTE-24 "Get-Service Cimian"
 
 # Batch execution
-fleetmate ssh batch "ASSET-000,REMOTE-24,STUDIO-10" "uptime"
+fleetmate ssh batch "ASSET-000,ASSET-000,ASSET-000" "uptime"
 
 # Test connectivity
 fleetmate ssh test ASSET-000
@@ -164,7 +164,7 @@ Query Intune devices and Entra users:
 ```powershell
 # Intune devices
 fleetmate intune devices
-fleetmate intune device EXAMPLE4  # by serial
+fleetmate intune device EXAMPLE1  # by serial
 fleetmate intune compliance <device-id>
 
 # Entra users
@@ -216,7 +216,7 @@ All commands support `--json` for programmatic consumption:
 ```powershell
 fleetmate snipe asset ASSET-000 --json | ConvertFrom-Json
 fleetmate tdx assets --search ASSET-000 --json | ConvertFrom-Json
-fleetmate intune device EXAMPLE4 --json | ConvertFrom-Json
+fleetmate intune device EXAMPLE1 --json | ConvertFrom-Json
 ```
 
 ## System Check Demo
@@ -242,14 +242,14 @@ FleetMate system check for asset tag ASSET-000
 Timestamp: 2026-01-18 23:41:26Z
 
 === ReportMate: device lookup ===
-Remote Compute 24 (Serial: EXAMPLE4)
+Remote Compute 24 (Serial: EXAMPLE1)
 
 === Snipe: asset detail ===
 +-------------------- Asset Details --------------------+
 ID         : 923
 Asset Tag  : ASSET-000
 Name       : Remote Compute 24
-Serial     : EXAMPLE4
+Serial     : EXAMPLE1
 Model      : Dell Precision 3660 Tower
 Status     : Ready to Deploy
 Location   : IT Storage
@@ -259,7 +259,7 @@ Location   : IT Storage
 +-------------------- TDX Asset --------------------+
 Name        : Remote Compute 24
 Asset Tag   : ASSET-000
-Serial      : EXAMPLE4
+Serial      : EXAMPLE1
 Model       : Precision 3660 Tower
 Manufacturer: Dell
 Status      : In Use
