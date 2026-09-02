@@ -39,10 +39,22 @@
             
             <!-- View Mode Toggle -->
             <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
-                <RadioButton x:Name="ListViewRadio" Content="List" IsChecked="True" GroupName="ViewMode"
+                <RadioButton x:Name="ListViewRadio" Content="List" GroupName="ViewMode"
                              Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
-                <RadioButton x:Name="BoardViewRadio" Content="Board" GroupName="ViewMode"
+                <RadioButton x:Name="BoardViewRadio" Content="Board" IsChecked="True" GroupName="ViewMode"
                              Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
+            </StackPanel>
+
+            <!-- Board column dimension, mirroring the macOS BoardGroupBy options. -->
+            <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
+                <TextBlock Text="Columns:" VerticalAlignment="Center" Margin="0,0,4,0"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <ComboBox x:Name="BoardGroupComboBox" Width="130" SelectionChanged="OnBoardGroupChanged">
+                    <ComboBoxItem Content="Status" />
+                    <ComboBoxItem Content="Responsible" IsSelected="True" />
+                    <ComboBoxItem Content="Priority" />
+                    <ComboBoxItem Content="Group" />
+                </ComboBox>
             </StackPanel>
 
             <!-- Fold controls sit with view-mode and sort, not with the filters:
@@ -241,8 +253,8 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" 
-                                    CornerRadius="8" Width="280" Margin="0,0,16,0">
+                            <Border Background="{DynamicResource SubtleFillBrush}"
+                                    CornerRadius="8" Width="280" Margin="0,0,16,0" VerticalAlignment="Top">
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
@@ -264,7 +276,7 @@
                                         <ItemsControl ItemsSource="{Binding Rows}" Margin="8">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Border Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                                                    <Border Background="{DynamicResource CardBackgroundBrush}"
                                                             Padding="10" CornerRadius="6" Margin="{Binding CardIndentMargin}"
                                                             MouseLeftButtonUp="OnBoardCardClick" Cursor="Hand"
                                                             Tag="{Binding Id}">
