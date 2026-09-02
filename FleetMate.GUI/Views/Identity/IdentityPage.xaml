@@ -139,6 +139,8 @@
 
                                 <!-- Header -->
                                 <DockPanel Grid.Row="0" Margin="0,0,0,12">
+                                    <Button DockPanel.Dock="Right" x:Name="ToggleAccountButton" Content="Disable Account"
+                                            VerticalAlignment="Top" Click="OnToggleAccountClicked" />
                                     <Border DockPanel.Dock="Left" Width="48" Height="48" CornerRadius="24"
                                             Background="{DynamicResource SystemControlBackgroundAccentBrush}"
                                             Margin="0,0,12,0">
@@ -215,21 +217,38 @@
 
                                     <TabItem Header="Groups">
                                         <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="*" />
+                                            </Grid.RowDefinitions>
+                                            <DockPanel Grid.Row="0" Margin="0,4,0,4">
+                                                <Button DockPanel.Dock="Right" Content="Add to Group" Margin="8,0,0,0"
+                                                        Click="OnAddToGroupClicked" />
+                                                <TextBox x:Name="AddGroupBox"
+                                                         ui:ControlHelper.PlaceholderText="Group name or id..." />
+                                            </DockPanel>
+                                            <Grid Grid.Row="1">
                                             <TextBlock x:Name="UserGroupsEmpty" Padding="12"
                                                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                                                        VerticalAlignment="Center" HorizontalAlignment="Center" />
                                             <ListView x:Name="UserGroupsList" BorderThickness="0">
                                                 <ListView.ItemTemplate>
                                                     <DataTemplate>
-                                                        <StackPanel Margin="2,4">
-                                                            <TextBlock Text="{Binding DisplayName}" FontSize="12" />
-                                                            <TextBlock Text="{Binding Description}" FontSize="11"
-                                                                       TextTrimming="CharacterEllipsis"
-                                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                                        </StackPanel>
+                                                        <DockPanel Margin="2,4">
+                                                            <Button DockPanel.Dock="Right" Content="Remove" FontSize="11"
+                                                                    Padding="8,2" VerticalAlignment="Center"
+                                                                    Click="OnRemoveFromGroupClicked" Tag="{Binding}" />
+                                                            <StackPanel>
+                                                                <TextBlock Text="{Binding DisplayName}" FontSize="12" />
+                                                                <TextBlock Text="{Binding Description}" FontSize="11"
+                                                                           TextTrimming="CharacterEllipsis"
+                                                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                            </StackPanel>
+                                                        </DockPanel>
                                                     </DataTemplate>
                                                 </ListView.ItemTemplate>
                                             </ListView>
+                                            </Grid>
                                         </Grid>
                                     </TabItem>
                                 </TabControl>
