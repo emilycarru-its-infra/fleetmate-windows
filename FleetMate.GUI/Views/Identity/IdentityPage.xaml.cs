@@ -239,6 +239,7 @@ public partial class IdentityPage : Page
         UserSubtitleText.Text = vm.Subtitle;
         UserBadgeText.Text = vm.AccountBadgeText;
         UserBadgeText.Foreground = vm.AccountBadgeBrush;
+        ToggleAccountButton.Content = vm.User.AccountEnabled == false ? "Enable Account" : "Disable Account";
         UserPropertiesControl.ItemsSource = vm.Sections;
 
         await LoadUserRelationsAsync(vm);
@@ -296,5 +297,70 @@ public partial class IdentityPage : Page
             UserDevicesEmpty.Text = $"Could not load devices: {ex.Message}";
             UserGroupsEmpty.Text = $"Could not load groups: {ex.Message}";
         }
+    }
+
+    // ── User actions (enable/disable, group membership) ───────────
+
+    private EntraUserViewModel? SelectedUserVm => UsersListView.SelectedItem as EntraUserViewModel;
+
+    private async void OnToggleAccountClicked(object sender, RoutedEventArgs e)
+    {
+        if (_graphService == null || SelectedUserVm is not { } vm) return;
+        var enable = vm.User.AccountEnabled == false;
+        var verb = enable ? "Enable" : "Disable";
+        if (MessageBox.Show($"{verb} the account {vm.UserPrincipalName}?", $"Confirm {verb}",
+                MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+
+        var ok = await _graphService.SetUserAccountEnabledAsync(vm.User.Id, enable);
+        if (!ok)
+        {
+            MessageBox.Show("The account update failed — see the FleetMate log for detail.",
+                "Account", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        vm.User.AccountEnabled = enable;
+        UserBadgeText.Text = vm.AccountBadgeText;
+        UserBadgeText.Foreground = vm.AccountBadgeBrush;
+        ToggleAccountButton.Content = enable ? "Disable Account" : "Enable Account";
+        UsersListView.Items.Refresh();
+    }
+
+    private async void OnAddToGroupClicked(object sender, RoutedEventArgs e)
+    {
+        if (_graphService == null || SelectedUserVm is not { } vm) return;
+        var group = AddGroupBox.Text?.Trim();
+        if (string.IsNullOrEmpty(group)) return;
+
+        var ok = await _graphService.AddGroupMemberAsync(group, vm.User.Id);
+        if (!ok)
+        {
+            MessageBox.Show($"Could not add {vm.DisplayName} to '{group}'.",
+                "Groups", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        AddGroupBox.Text = "";
+        vm.User.MemberOf = new List<EntraGroup>();
+        await LoadUserRelationsAsync(vm);
+    }
+
+    private async void OnRemoveFromGroupClicked(object sender, RoutedEventArgs e)
+    {
+        if (_graphService == null || SelectedUserVm is not { } vm) return;
+        if ((sender as Button)?.Tag is not EntraGroup group) return;
+        if (MessageBox.Show($"Remove {vm.DisplayName} from '{group.DisplayName}'?", "Confirm Remove",
+                MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+
+        var ok = await _graphService.RemoveGroupMemberAsync(group.Id, vm.User.Id);
+        if (!ok)
+        {
+            MessageBox.Show($"Could not remove {vm.DisplayName} from '{group.DisplayName}'.",
+                "Groups", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+
+        vm.User.MemberOf = new List<EntraGroup>();
+        await LoadUserRelationsAsync(vm);
     }
 }
