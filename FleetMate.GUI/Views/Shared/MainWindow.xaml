@@ -7,6 +7,7 @@
         ui:WindowHelper.UseModernWindowStyle="True"
         ui:TitleBar.ExtendViewIntoTitleBar="True"
         Title="FleetMate"
+        Icon="/Assets/FleetMate.ico"
         Height="850"
         Width="1400"
         MinHeight="600"
@@ -17,7 +18,11 @@
         <vm:MainViewModel />
     </Window.DataContext>
 
-    <Grid Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
+    <!-- TextElement.Foreground: a bare WPF TextBlock defaults to black no matter
+         the theme, so in dark mode every TextBlock without an explicit Foreground
+         disappears. Setting the inherited foreground here fixes all of them. -->
+    <Grid Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+          TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="48" />
             <RowDefinition Height="*" />
@@ -39,26 +44,58 @@
                         BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
                         BorderThickness="1" Padding="2">
                     <StackPanel Orientation="Horizontal" x:Name="TabBar">
-                        <RadioButton x:Name="TabDashboard" Content="Dashboard" Tag="Dashboard" GroupName="MainTabs"
-                                     IsChecked="True" Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}" />
-                        <RadioButton x:Name="TabDevices" Content="▰  Devices" Tag="Devices" GroupName="MainTabs"
-                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}" />
-                        <RadioButton x:Name="TabInventory" Content="◇  Inventory" Tag="Inventory" GroupName="MainTabs"
-                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}" />
-                        <RadioButton x:Name="TabTickets" Content="▣  Tickets" Tag="Tickets" GroupName="MainTabs"
-                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}" />
-                        <RadioButton x:Name="TabBoards" Content="▤  Projects" Tag="Projects" GroupName="MainTabs"
-                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}" />
-                        <RadioButton x:Name="TabIdentity" Content="♙  Identity" Tag="Identity" GroupName="MainTabs"
-                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}" />
+                        <RadioButton x:Name="TabDashboard" Tag="Dashboard" GroupName="MainTabs"
+                                     IsChecked="True" Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon Glyph="&#xE80F;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Dashboard" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="TabDevices" Tag="Devices" GroupName="MainTabs"
+                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon Glyph="&#xE7F8;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Devices" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="TabInventory" Tag="Inventory" GroupName="MainTabs"
+                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon Glyph="&#xE7B8;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Inventory" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="TabTickets" Tag="Tickets" GroupName="MainTabs"
+                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon Glyph="&#xE8EA;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Tickets" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="TabBoards" Tag="Projects" GroupName="MainTabs"
+                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon Glyph="&#xE762;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Projects" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="TabIdentity" Tag="Identity" GroupName="MainTabs"
+                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon Glyph="&#xE716;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Identity" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
                     </StackPanel>
                 </Border>
 
-                <RadioButton Grid.Column="2" x:Name="TabSettings" Content="⚙" ToolTip="Settings"
+                <RadioButton Grid.Column="2" x:Name="TabSettings" ToolTip="Settings"
                              shell:WindowChrome.IsHitTestVisibleInChrome="True"
                              Tag="Settings" GroupName="MainTabs" Checked="OnTabChecked"
                              Style="{StaticResource NavigationTabStyle}"
-                             HorizontalAlignment="Right" Margin="0,0,116,0" FontSize="15" />
+                             HorizontalAlignment="Right" Margin="0,0,116,0">
+                    <ui:FontIcon Glyph="&#xE713;" FontSize="14" />
+                </RadioButton>
             </Grid>
         </Border>
 
