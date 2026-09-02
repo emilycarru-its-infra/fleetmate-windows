@@ -254,7 +254,9 @@
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Border Background="{DynamicResource SubtleFillBrush}"
-                                    CornerRadius="8" Width="280" Margin="0,0,16,0" VerticalAlignment="Top">
+                                    CornerRadius="8" Width="280" Margin="0,0,16,0" VerticalAlignment="Top"
+                                    AllowDrop="True" Drop="OnBoardColumnDrop" DragOver="OnBoardColumnDragOver"
+                                    Tag="{Binding StatusName}">
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
@@ -279,6 +281,8 @@
                                                     <Border Background="{DynamicResource CardBackgroundBrush}"
                                                             Padding="10" CornerRadius="6" Margin="{Binding CardIndentMargin}"
                                                             MouseLeftButtonUp="OnBoardCardClick" Cursor="Hand"
+                                                            PreviewMouseLeftButtonDown="OnBoardCardPreviewMouseDown"
+                                                            MouseMove="OnBoardCardMouseMove"
                                                             Tag="{Binding Id}">
                                                         <Border.Effect>
                                                             <DropShadowEffect BlurRadius="4" ShadowDepth="1" Opacity="0.2" />
