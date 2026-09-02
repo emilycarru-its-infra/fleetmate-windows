@@ -180,8 +180,9 @@ public sealed class ElevationSession
         // envelope detects that as a decode failure, and a fresh exec is cheap
         // compared to failing the whole call.
         ElevationException? lastCorruption = null;
-        for (var attempt = 1; attempt <= 3; attempt++)
+        for (var attempt = 1; attempt <= 5; attempt++)
         {
+            if (attempt > 1) await Task.Delay(250 * attempt);
             var execResp = await RunAzAsync("rest", "--method", "post", "--uri", uri, "--body", body);
             if (execResp.Code != 0)
                 throw new ElevationException($"Exec handshake failed: {(string.IsNullOrEmpty(execResp.Err) ? execResp.Out : execResp.Err)}");
@@ -199,7 +200,7 @@ public sealed class ElevationSession
             catch (ElevationException ex)
             {
                 lastCorruption = ex;
-                Serilog.Log.Warning("Elevation output corrupted (attempt {Attempt}/3); retrying", attempt);
+                Serilog.Log.Warning("Elevation output corrupted (attempt {Attempt}/5); retrying", attempt);
             }
         }
         throw lastCorruption!;
