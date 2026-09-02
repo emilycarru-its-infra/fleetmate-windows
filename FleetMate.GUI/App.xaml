@@ -85,7 +85,46 @@
                 </Style.Triggers>
             </Style>
 
+            <!-- The stock WPF DataGrid paints a white body, white headers, and
+                 black text regardless of the ModernWPF theme, so every surface
+                 it owns is restated in theme brushes here. -->
+            <Style x:Key="FleetDataGridColumnHeaderStyle" TargetType="DataGridColumnHeader">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                <Setter Property="Padding" Value="8,4" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="FontSize" Value="12" />
+            </Style>
+
+            <Style x:Key="FleetDataGridCellStyle" TargetType="DataGridCell">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="DataGridCell">
+                            <Border Background="{TemplateBinding Background}" Padding="8,0">
+                                <ContentPresenter VerticalAlignment="Center" />
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Style.Triggers>
+                    <Trigger Property="IsSelected" Value="True">
+                        <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListAccentLowBrush}" />
+                        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="FleetDataGridRowStyle" TargetType="DataGridRow">
+                <Setter Property="Background" Value="Transparent" />
+            </Style>
+
             <Style x:Key="FleetDataGridStyle" TargetType="DataGrid">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
                 <Setter Property="BorderThickness" Value="0" />
                 <Setter Property="RowHeight" Value="27" />
                 <Setter Property="ColumnHeaderHeight" Value="29" />
@@ -96,6 +135,9 @@
                 <Setter Property="AlternatingRowBackground" Value="{DynamicResource SystemControlBackgroundListLowBrush}" />
                 <Setter Property="RowBackground" Value="Transparent" />
                 <Setter Property="HeadersVisibility" Value="Column" />
+                <Setter Property="ColumnHeaderStyle" Value="{StaticResource FleetDataGridColumnHeaderStyle}" />
+                <Setter Property="CellStyle" Value="{StaticResource FleetDataGridCellStyle}" />
+                <Setter Property="RowStyle" Value="{StaticResource FleetDataGridRowStyle}" />
             </Style>
 
             <!-- Typography -->

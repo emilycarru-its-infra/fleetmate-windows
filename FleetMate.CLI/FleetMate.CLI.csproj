@@ -7,6 +7,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>fleetmate</AssemblyName>
     <RootNamespace>FleetMate</RootNamespace>
+    <ApplicationIcon>..\FleetMate.GUI\Assets\FleetMate.ico</ApplicationIcon>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
