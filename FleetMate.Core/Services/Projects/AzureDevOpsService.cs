@@ -82,7 +82,7 @@ public class AzureDevOpsService : IDisposable
 
         _client = new HttpClient
         {
-            BaseAddress = new Uri($"https://azure-devops.example.com/{config.Organization}/"),
+            BaseAddress = new Uri($"{config.BaseUrl}/"),
             Timeout = TimeSpan.FromSeconds(60)
         };
 
@@ -587,7 +587,7 @@ public class AzureDevOpsService : IDisposable
     private DevOpsIdentitySummary? _identityCache;
 
     /// <summary>Organization root, used to build web links to pull requests.</summary>
-    private string OrgUrl => $"https://azure-devops.example.com/{_config.Organization}";
+    private string OrgUrl => _config.BaseUrl;
 
     /// <summary>
     /// Cached identity of the signed-in user. Returns an unresolved summary if it
@@ -837,7 +837,7 @@ public class AzureDevOpsService : IDisposable
 
     internal static string PullRequestWebUrl(string? orgUrl, string project, string repository, int pullRequestId)
     {
-        var root = (orgUrl ?? "https://azure-devops.example.com").TrimEnd('/');
+        var root = (orgUrl ?? AzureDevOpsConfig.DefaultHostUrl).TrimEnd('/');
         return $"{root}/{Uri.EscapeDataString(project)}/_git/{Uri.EscapeDataString(repository)}/pullrequest/{pullRequestId}";
     }
 
