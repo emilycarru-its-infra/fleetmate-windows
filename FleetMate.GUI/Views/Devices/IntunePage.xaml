@@ -206,6 +206,24 @@
                                 </StackPanel>
                             </Expander>
 
+                            <!-- Autopilot Reset Section -->
+                            <Expander Header="♻ Autopilot Reset">
+                                <StackPanel Margin="8">
+                                    <TextBlock Text="Reimage the selected devices through Windows Autopilot: removes apps and settings, keeps enrollment, and re-provisions."
+                                               TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
+                                    <Button Content="Autopilot Reset" Click="OnAutopilotResetClicked" HorizontalAlignment="Stretch" Background="Red" Foreground="White" />
+                                </StackPanel>
+                            </Expander>
+
+                            <!-- Delete Record Section -->
+                            <Expander Header="🧹 Delete Intune Record">
+                                <StackPanel Margin="8">
+                                    <TextBlock Text="Delete the Intune device record server-side only. Nothing is sent to the device; use for stale or duplicate records."
+                                               TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
+                                    <Button Content="Delete Record" Click="OnDeleteRecordClicked" HorizontalAlignment="Stretch" Background="Red" Foreground="White" />
+                                </StackPanel>
+                            </Expander>
+
                             <!-- App Reinstall Section -->
                             <Expander Header="📦 Reinstall App">
                                 <StackPanel Margin="8">
