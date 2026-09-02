@@ -390,6 +390,70 @@ public partial class IntunePage : Page
         }
     }
 
+    private async void OnAutopilotResetClicked(object sender, RoutedEventArgs e)
+    {
+        if (_graphService == null) return;
+
+        var deviceIds = GetSelectedDeviceIds().ToList();
+        var result = MessageBox.Show(
+            $"Autopilot-reset {deviceIds.Count} device(s)? Apps and settings are removed; enrollment is kept and the device re-provisions.",
+            "Confirm Autopilot Reset",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (result != MessageBoxResult.Yes) return;
+
+        ShowActionMessage($"Autopilot-resetting {deviceIds.Count} device(s)...", isLoading: true);
+        try
+        {
+            var successful = 0;
+            foreach (var id in deviceIds)
+            {
+                var actionResult = await _graphService.AutopilotResetDeviceAsync(id, confirmed: true);
+                if (actionResult.Success) successful++;
+            }
+            var failed = deviceIds.Count - successful;
+            ShowActionMessage(failed == 0
+                ? $"Autopilot reset sent to {successful} device(s)"
+                : $"Autopilot reset sent to {successful}, {failed} failed");
+        }
+        catch (Exception ex)
+        {
+            ShowActionMessage($"Error: {ex.Message}", isError: true);
+        }
+    }
+
+    private async void OnDeleteRecordClicked(object sender, RoutedEventArgs e)
+    {
+        if (_graphService == null) return;
+
+        var deviceIds = GetSelectedDeviceIds().ToList();
+        var result = MessageBox.Show(
+            $"Delete the Intune record for {deviceIds.Count} device(s)? This is server-side only and cannot be undone from here.",
+            "Confirm Delete Record",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (result != MessageBoxResult.Yes) return;
+
+        ShowActionMessage($"Deleting {deviceIds.Count} record(s)...", isLoading: true);
+        try
+        {
+            var successful = 0;
+            foreach (var id in deviceIds)
+            {
+                var actionResult = await _graphService.DeleteManagedDeviceAsync(id, confirmed: true);
+                if (actionResult.Success) successful++;
+            }
+            var failed = deviceIds.Count - successful;
+            ShowActionMessage(failed == 0
+                ? $"Deleted {successful} record(s)"
+                : $"Deleted {successful}, {failed} failed");
+        }
+        catch (Exception ex)
+        {
+            ShowActionMessage($"Error: {ex.Message}", isError: true);
+        }
+    }
+
     private async void OnWipeClicked(object sender, RoutedEventArgs e)
     {
         if (_graphService == null) return;
