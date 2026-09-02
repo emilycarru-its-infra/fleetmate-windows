@@ -176,16 +176,33 @@ public sealed class ElevationSession
         var uri = $"https://management.azure.com/subscriptions/{sub}/resourceGroups/{_config.ResourceGroup!}/providers/Microsoft.ContainerInstance/containerGroups/{name}/containers/{name}/exec?api-version={ExecApiVersion}";
         var body = "{\"command\":\"/bin/bash\",\"terminalSize\":{\"rows\":24,\"cols\":500}}";
 
-        var execResp = await RunAzAsync("rest", "--method", "post", "--uri", uri, "--body", body);
-        if (execResp.Code != 0)
-            throw new ElevationException($"Exec handshake failed: {(string.IsNullOrEmpty(execResp.Err) ? execResp.Out : execResp.Err)}");
+        // The PTY stream occasionally drops bytes on large payloads; the base64
+        // envelope detects that as a decode failure, and a fresh exec is cheap
+        // compared to failing the whole call.
+        ElevationException? lastCorruption = null;
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            var execResp = await RunAzAsync("rest", "--method", "post", "--uri", uri, "--body", body);
+            if (execResp.Code != 0)
+                throw new ElevationException($"Exec handshake failed: {(string.IsNullOrEmpty(execResp.Err) ? execResp.Out : execResp.Err)}");
 
-        using var doc = JsonDocument.Parse(execResp.Out);
-        var wsUri = doc.RootElement.GetProperty("webSocketUri").GetString();
-        var password = doc.RootElement.GetProperty("password").GetString();
-        if (wsUri == null || password == null) throw new ElevationException("Exec response missing webSocketUri/password");
+            using var doc = JsonDocument.Parse(execResp.Out);
+            var wsUri = doc.RootElement.GetProperty("webSocketUri").GetString();
+            var password = doc.RootElement.GetProperty("password").GetString();
+            if (wsUri == null || password == null) throw new ElevationException("Exec response missing webSocketUri/password");
 
-        return await RunWebSocketAsync(new Uri(wsUri), password, command);
+            var (payload, code) = await RunWebSocketAsync(new Uri(wsUri), password, command);
+            try
+            {
+                return (DecodeBase64Payload(payload), code);
+            }
+            catch (ElevationException ex)
+            {
+                lastCorruption = ex;
+                Serilog.Log.Warning("Elevation output corrupted (attempt {Attempt}/3); retrying", attempt);
+            }
+        }
+        throw lastCorruption!;
     }
 
     // Backstop for the ExecAsync invariant: only sanctioned `az rest` calls are allowed
@@ -222,7 +239,7 @@ public sealed class ElevationSession
         // large JSON payloads (a wrap mid-token breaks parsing ~100 records in).
         // Shipping the output as a single base64 stream makes it wrap-proof —
         // injected newlines are stripped before decoding on our side.
-        await SendText($"printf '\\n<<<AZE_BEGIN>>>\\n'; ( {command} ) | base64 -w 0; printf '\\n<<<AZE_END:%d>>>\\n' \"${{PIPESTATUS[0]}}\"; exit\n");
+        await SendText($"printf '\\n<<<AZE_BEGIN>>>\\n'; ( {command} ) | base64 -w 400; printf '\\n<<<AZE_END:%d>>>\\n' \"${{PIPESTATUS[0]}}\"; exit\n");
 
         var sb = new StringBuilder();
         var buffer = new byte[8192];
@@ -238,8 +255,7 @@ public sealed class ElevationSession
         }
         try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None); } catch { }
 
-        var (payload, code) = ParseExecOutput(sb.ToString());
-        return (DecodeBase64Payload(payload), code);
+        return ParseExecOutput(sb.ToString());
     }
 
     /// <summary>
