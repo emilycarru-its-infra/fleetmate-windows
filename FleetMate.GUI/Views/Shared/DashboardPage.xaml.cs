@@ -236,6 +236,24 @@ public partial class DashboardPage : Page
             await Task.WhenAll(tasks);
     }
 
+    // ── Chart theming ─────────────────────────────────────────────
+    // LiveCharts paints its own text; it knows nothing about the WPF theme, so
+    // every legend and axis must be handed a paint that matches it.
+
+    private static bool IsDarkTheme =>
+        ModernWpf.ThemeManager.Current.ActualApplicationTheme == ModernWpf.ApplicationTheme.Dark;
+
+    private static SolidColorPaint ChartTextPaint =>
+        new(IsDarkTheme ? new SKColor(255, 255, 255, 222) : new SKColor(0, 0, 0, 200));
+
+    private static Axis ThemedValueAxis() => new()
+    {
+        LabelsPaint = ChartTextPaint,
+        TextSize = 10,
+        SeparatorsPaint = new SolidColorPaint(
+            IsDarkTheme ? new SKColor(255, 255, 255, 30) : new SKColor(0, 0, 0, 25))
+    };
+
     // ── KPI Strip ─────────────────────────────────────────────────
 
     private void PopulateKpiStrip()
@@ -371,9 +389,12 @@ public partial class DashboardPage : Page
                         new()
                         {
                             Labels = catGroups.Select(g => g.Key).ToArray(),
-                            LabelsRotation = 15, TextSize = 10
+                            LabelsRotation = 15, TextSize = 10,
+                            LabelsPaint = ChartTextPaint,
+                            SeparatorsPaint = null
                         }
                     },
+                    YAxes = new Axis[] { ThemedValueAxis() },
                     Series = catGroups.Select((g, i) => new ColumnSeries<int>
                     {
                         Values = new[] { g.Count() },
@@ -404,6 +425,7 @@ public partial class DashboardPage : Page
                 {
                     Height = 160,
                     LegendPosition = LiveChartsCore.Measure.LegendPosition.Right,
+                    LegendTextPaint = ChartTextPaint,
                     Series = osCounts.Select((g, i) => new PieSeries<int>
                     {
                         Values = new[] { g.Count() },
@@ -430,6 +452,7 @@ public partial class DashboardPage : Page
                 {
                     Height = 160,
                     LegendPosition = LiveChartsCore.Measure.LegendPosition.Right,
+                    LegendTextPaint = ChartTextPaint,
                     Series = new ISeries[]
                     {
                         new PieSeries<int> { Values = new[] { open }, Name = $"Open ({open})",
@@ -471,7 +494,8 @@ public partial class DashboardPage : Page
                     {
                         Height = 160,
                         LegendPosition = LiveChartsCore.Measure.LegendPosition.Hidden,
-                        XAxes = new Axis[] { new() { Labels = priorities.Select(g => g.Key).ToArray(), TextSize = 10 } },
+                        XAxes = new Axis[] { new() { Labels = priorities.Select(g => g.Key).ToArray(), TextSize = 10, LabelsPaint = ChartTextPaint, SeparatorsPaint = null } },
+                        YAxes = new Axis[] { ThemedValueAxis() },
                         Series = priorities.Select((g, i) => new ColumnSeries<int>
                         {
                             Values = new[] { g.Count() },
@@ -503,6 +527,7 @@ public partial class DashboardPage : Page
                 {
                     Height = 160,
                     LegendPosition = LiveChartsCore.Measure.LegendPosition.Right,
+                    LegendTextPaint = ChartTextPaint,
                     Series = stateCounts.Select((g, i) => new PieSeries<int>
                     {
                         Values = new[] { g.Count() },
@@ -590,9 +615,12 @@ public partial class DashboardPage : Page
                                         new()
                                         {
                                             Labels = cats.Select(g => CategoryLabel(g.Key)).ToArray(),
-                                            LabelsRotation = 15, TextSize = 10
+                                            LabelsRotation = 15, TextSize = 10,
+                                            LabelsPaint = ChartTextPaint,
+                                            SeparatorsPaint = null
                                         }
                                     },
+                                    YAxes = new Axis[] { ThemedValueAxis() },
                                     Series = new ISeries[]
                                     {
                                         new ColumnSeries<int>
@@ -646,6 +674,7 @@ public partial class DashboardPage : Page
                 {
                     Height = 160,
                     LegendPosition = LiveChartsCore.Measure.LegendPosition.Right,
+                    LegendTextPaint = ChartTextPaint,
                     Series = new ISeries[]
                     {
                         new PieSeries<int> { Values = new[] { compliant }, Name = $"Compliant ({compliant})",
@@ -684,6 +713,7 @@ public partial class DashboardPage : Page
                 {
                     Height = 160,
                     LegendPosition = LiveChartsCore.Measure.LegendPosition.Right,
+                    LegendTextPaint = ChartTextPaint,
                     Series = statusGroups.Select((g, i) => new PieSeries<int>
                     {
                         Values = new[] { g.Count() },
@@ -768,12 +798,8 @@ public partial class DashboardPage : Page
                 AddAlertPill($"{stale} stale devices (30d+)", "#FFFF9800", "Devices");
         }
 
-        if (tickets.Count > 0)
-        {
-            var slaViolated = tickets.Count(t => t.IsSlaViolated);
-            if (slaViolated > 0)
-                AddAlertPill($"{slaViolated} SLA violations", "#FFF44336", "Tickets");
-        }
+        // No SLA-violations pill here: the Mac dashboard has none, and Windows
+        // follows the Mac layout.
 
         if (assets.Count > 0)
         {
