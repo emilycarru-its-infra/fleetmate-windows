@@ -363,7 +363,7 @@
         <!-- Loading Overlay -->
         <Border x:Name="LoadingOverlay" 
                 Grid.RowSpan="4" 
-                Background="{DynamicResource SystemControlBackgroundAltHighBrush}" 
+                Background="{DynamicResource AppBackgroundBrush}" 
                 Opacity="0.8"
                 Visibility="Collapsed">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
