@@ -22,6 +22,11 @@ public partial class AssetsPage : Page
     private List<SnipeAsset> _allAssets = new();
     private SnipeAsset? _selectedAsset;
     private bool _isInitialLoadDone;
+
+    // Default sort: most recently touched assets first (macOS parity); any
+    // column header click re-sorts by that column, clicking again flips it.
+    private string _sortField = "Recent";
+    private bool _sortDescending = true;
     private List<SnipeStatusLabelFull> _statusLabels = new();
     private bool _hasEdits;
     private bool _isLoadingDetail;
@@ -51,6 +56,8 @@ public partial class AssetsPage : Page
     public AssetsPage()
     {
         InitializeComponent();
+        AssetListView.AddHandler(System.Windows.Controls.Primitives.ButtonBase.ClickEvent,
+            new RoutedEventHandler(OnColumnHeaderClicked));
         _config = Application.Current is App currentApp ? currentApp.Config : FleetMateConfig.Load();
 
         if (Application.Current is App app && app.SnipeService != null)
@@ -142,9 +149,52 @@ public partial class AssetsPage : Page
         if (!string.IsNullOrEmpty(areaFilter) && areaFilter != "All")
             filtered = filtered.Where(a => GetCustomFieldValue(a, "Area") == areaFilter);
 
-        var list = filtered.ToList();
+        var list = ApplySort(filtered).ToList();
         AssetListView.ItemsSource = list;
         AssetCountLabel.Text = $"{list.Count} assets";
+    }
+
+    private IEnumerable<SnipeAsset> ApplySort(IEnumerable<SnipeAsset> assets)
+    {
+        Func<SnipeAsset, string> key = _sortField switch
+        {
+            "Asset Tag" => a => a.AssetTag ?? "",
+            "Name" => a => a.DisplayName ?? "",
+            "Serial" => a => a.Serial ?? "",
+            "Model" => a => a.Model?.Name ?? "",
+            "Status" => a => a.StatusLabel?.Name ?? "",
+            "Assigned To" => a => a.AssignedTo?.Name ?? "",
+            "Category" => a => a.Category?.Name ?? "",
+            "Manufacturer" => a => a.Manufacturer?.Name ?? "",
+            "Platform" => a => GetCustomFieldValue(a, "Platform") ?? "",
+            "Usage" => a => GetCustomFieldValue(a, "Usage") ?? "",
+            "Catalog" => a => GetCustomFieldValue(a, "Catalog") ?? "",
+            "Area" => a => GetCustomFieldValue(a, "Area") ?? "",
+            // "Recent": Snipe timestamps are "yyyy-MM-dd HH:mm:ss", which sorts
+            // correctly as text.
+            _ => a => a.UpdatedAt?.DateTime ?? ""
+        };
+        return _sortDescending
+            ? assets.OrderByDescending(key, StringComparer.OrdinalIgnoreCase)
+            : assets.OrderBy(key, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void OnColumnHeaderClicked(object sender, RoutedEventArgs e)
+    {
+        if (e.OriginalSource is not GridViewColumnHeader header ||
+            header.Column?.Header is not string field || string.IsNullOrEmpty(field))
+            return;
+
+        if (_sortField == field)
+        {
+            _sortDescending = !_sortDescending;
+        }
+        else
+        {
+            _sortField = field;
+            _sortDescending = false;
+        }
+        UpdateDisplay();
     }
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
