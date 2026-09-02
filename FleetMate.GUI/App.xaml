@@ -8,6 +8,25 @@
             <ResourceDictionary.MergedDictionaries>
                 <ui:ThemeResources />
                 <ui:XamlControlsResources />
+                <!-- App palette: layered surfaces like the macOS app. ModernWPF's
+                     Alt* brushes resolve to pure black/white, which is why an
+                     unthemed dark window reads as a black void. -->
+                <ui:ResourceDictionaryEx>
+                    <ui:ResourceDictionaryEx.ThemeDictionaries>
+                        <ResourceDictionary x:Key="Light">
+                            <SolidColorBrush x:Key="AppBackgroundBrush" Color="#F5F5F7" />
+                            <SolidColorBrush x:Key="CardBackgroundBrush" Color="#FFFFFF" />
+                            <SolidColorBrush x:Key="CardBorderBrush" Color="#E3E3E7" />
+                            <SolidColorBrush x:Key="SubtleFillBrush" Color="#E9E9EC" />
+                        </ResourceDictionary>
+                        <ResourceDictionary x:Key="Dark">
+                            <SolidColorBrush x:Key="AppBackgroundBrush" Color="#232326" />
+                            <SolidColorBrush x:Key="CardBackgroundBrush" Color="#2C2C30" />
+                            <SolidColorBrush x:Key="CardBorderBrush" Color="#3C3C41" />
+                            <SolidColorBrush x:Key="SubtleFillBrush" Color="#37373C" />
+                        </ResourceDictionary>
+                    </ui:ResourceDictionaryEx.ThemeDictionaries>
+                </ui:ResourceDictionaryEx>
             </ResourceDictionary.MergedDictionaries>
 
             <!-- Converters -->
@@ -19,10 +38,10 @@
 
             <!-- Shared surfaces -->
             <Style x:Key="CardStyle" TargetType="Border">
-                <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundAltHighBrush}" />
+                <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
                 <Setter Property="CornerRadius" Value="8" />
                 <Setter Property="Padding" Value="12" />
-                <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}" />
                 <Setter Property="BorderThickness" Value="1" />
                 <Setter Property="Margin" Value="0,0,0,10" />
             </Style>
@@ -45,11 +64,11 @@
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
                                     <Setter TargetName="Chrome" Property="Background"
-                                            Value="{DynamicResource SystemControlBackgroundAltMediumLowBrush}" />
+                                            Value="{DynamicResource SubtleFillBrush}" />
                                 </Trigger>
                                 <Trigger Property="IsChecked" Value="True">
                                     <Setter TargetName="Chrome" Property="Background"
-                                            Value="{DynamicResource SystemControlBackgroundAltMediumLowBrush}" />
+                                            Value="{DynamicResource SubtleFillBrush}" />
                                     <Setter Property="Foreground"
                                             Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
                                     <Setter Property="FontWeight" Value="SemiBold" />
@@ -75,9 +94,6 @@
                 <Setter Property="MinHeight" Value="26" />
                 <Setter Property="BorderThickness" Value="0" />
                 <Style.Triggers>
-                    <Trigger Property="ItemsControl.AlternationIndex" Value="1">
-                        <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListLowBrush}" />
-                    </Trigger>
                     <Trigger Property="IsSelected" Value="True">
                         <Setter Property="Background" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
                         <Setter Property="Foreground" Value="White" />
@@ -130,9 +146,10 @@
                 <Setter Property="ColumnHeaderHeight" Value="29" />
                 <Setter Property="CanUserAddRows" Value="False" />
                 <Setter Property="CanUserResizeRows" Value="False" />
-                <Setter Property="GridLinesVisibility" Value="Horizontal" />
-                <Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
-                <Setter Property="AlternatingRowBackground" Value="{DynamicResource SystemControlBackgroundListLowBrush}" />
+                <!-- No grid lines, no alternating stripes: rows read like the
+                     macOS list, not a spreadsheet. -->
+                <Setter Property="GridLinesVisibility" Value="None" />
+                <Setter Property="AlternatingRowBackground" Value="Transparent" />
                 <Setter Property="RowBackground" Value="Transparent" />
                 <Setter Property="HeadersVisibility" Value="Column" />
                 <Setter Property="ColumnHeaderStyle" Value="{StaticResource FleetDataGridColumnHeaderStyle}" />
