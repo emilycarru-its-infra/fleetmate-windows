@@ -83,6 +83,9 @@ public partial class TicketsPage : Page
 
         TicketsListView.ItemsSource = _ticketRows;
 
+        // Trackpad horizontal swipes and Shift+wheel scroll the board.
+        Shared.HorizontalWheel.Attach(BoardViewPanel);
+
         // The Board radio is checked in XAML, but its Checked event fires while
         // the page is still parsing, where OnViewModeChanged deliberately bails.
         // Apply the initial view mode now that everything exists.
