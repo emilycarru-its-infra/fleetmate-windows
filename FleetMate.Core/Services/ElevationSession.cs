@@ -176,16 +176,33 @@ public sealed class ElevationSession
         var uri = $"https://management.azure.com/subscriptions/{sub}/resourceGroups/{_config.ResourceGroup!}/providers/Microsoft.ContainerInstance/containerGroups/{name}/containers/{name}/exec?api-version={ExecApiVersion}";
         var body = "{\"command\":\"/bin/bash\",\"terminalSize\":{\"rows\":24,\"cols\":500}}";
 
-        var execResp = await RunAzAsync("rest", "--method", "post", "--uri", uri, "--body", body);
-        if (execResp.Code != 0)
-            throw new ElevationException($"Exec handshake failed: {(string.IsNullOrEmpty(execResp.Err) ? execResp.Out : execResp.Err)}");
+        // The PTY stream occasionally drops bytes on large payloads; the base64
+        // envelope detects that as a decode failure, and a fresh exec is cheap
+        // compared to failing the whole call.
+        ElevationException? lastCorruption = null;
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            var execResp = await RunAzAsync("rest", "--method", "post", "--uri", uri, "--body", body);
+            if (execResp.Code != 0)
+                throw new ElevationException($"Exec handshake failed: {(string.IsNullOrEmpty(execResp.Err) ? execResp.Out : execResp.Err)}");
 
-        using var doc = JsonDocument.Parse(execResp.Out);
-        var wsUri = doc.RootElement.GetProperty("webSocketUri").GetString();
-        var password = doc.RootElement.GetProperty("password").GetString();
-        if (wsUri == null || password == null) throw new ElevationException("Exec response missing webSocketUri/password");
+            using var doc = JsonDocument.Parse(execResp.Out);
+            var wsUri = doc.RootElement.GetProperty("webSocketUri").GetString();
+            var password = doc.RootElement.GetProperty("password").GetString();
+            if (wsUri == null || password == null) throw new ElevationException("Exec response missing webSocketUri/password");
 
-        return await RunWebSocketAsync(new Uri(wsUri), password, command);
+            var (payload, code) = await RunWebSocketAsync(new Uri(wsUri), password, command);
+            try
+            {
+                return (DecodeBase64Payload(payload), code);
+            }
+            catch (ElevationException ex)
+            {
+                lastCorruption = ex;
+                Serilog.Log.Warning("Elevation output corrupted (attempt {Attempt}/3); retrying", attempt);
+            }
+        }
+        throw lastCorruption!;
     }
 
     // Backstop for the ExecAsync invariant: only sanctioned `az rest` calls are allowed
@@ -217,7 +234,12 @@ public sealed class ElevationSession
         await SendText(password);
         await SendText("stty -echo\n");
         await Task.Delay(2000);
-        await SendText($"printf '\\n<<<AZE_BEGIN>>>\\n'; ( {command} ); printf '\\n<<<AZE_END:%d>>>\\n' \"$?\"; exit\n");
+        // The exec channel is a PTY: any output line longer than the terminal
+        // width is hard-wrapped with injected newlines, which silently corrupts
+        // large JSON payloads (a wrap mid-token breaks parsing ~100 records in).
+        // Shipping the output as a single base64 stream makes it wrap-proof —
+        // injected newlines are stripped before decoding on our side.
+        await SendText($"printf '\\n<<<AZE_BEGIN>>>\\n'; ( {command} ) | base64 -w 400; printf '\\n<<<AZE_END:%d>>>\\n' \"${{PIPESTATUS[0]}}\"; exit\n");
 
         var sb = new StringBuilder();
         var buffer = new byte[8192];
@@ -234,6 +256,26 @@ public sealed class ElevationSession
         try { await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None); } catch { }
 
         return ParseExecOutput(sb.ToString());
+    }
+
+    /// <summary>
+    /// Decode the base64 stream produced in-session. PTY wrapping may have
+    /// injected newlines (or other whitespace) anywhere in the stream, so
+    /// everything outside the base64 alphabet is dropped before decoding.
+    /// </summary>
+    private static string DecodeBase64Payload(string payload)
+    {
+        var clean = Regex.Replace(payload, @"[^A-Za-z0-9+/=]", "");
+        if (clean.Length == 0) return "";
+        try
+        {
+            return Encoding.UTF8.GetString(Convert.FromBase64String(clean));
+        }
+        catch (FormatException)
+        {
+            throw new ElevationException(
+                $"Elevation output was not valid base64 ({clean.Length} chars) — the session stream may be corrupted.");
+        }
     }
 
     /// <summary>
