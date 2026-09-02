@@ -46,7 +46,8 @@ public partial class TicketsPage : Page
     private string _sortField = "Modified";  // Default to Modified date
     private bool _detailPanelVisible = false;
     private bool _showClosed = false;  // Default to hiding closed tickets (Show Closed unchecked)
-    private bool _isBoardView = false;  // List vs Board view mode
+    private bool _isBoardView = true;   // List vs Board view mode (Board is the default, macOS parity)
+    private string _boardGroupBy = "Responsible"; // Status | Responsible | Priority | Group
     private string _feedFilter = "Comments";  // Comments (default), Activity, All
     private int _maxResults = 500;  // Default max results
     private bool _isInitialLoadDone;
@@ -81,7 +82,12 @@ public partial class TicketsPage : Page
 
         TicketsListView.ItemsSource = _ticketRows;
 
-        Loaded += async (s, e) => 
+        // The Board radio is checked in XAML, but its Checked event fires while
+        // the page is still parsing, where OnViewModeChanged deliberately bails.
+        // Apply the initial view mode now that everything exists.
+        OnViewModeChanged(this, new RoutedEventArgs());
+
+        Loaded += async (s, e) =>
         {
             if (!_isInitialLoadDone)
             {
@@ -427,16 +433,46 @@ public partial class TicketsPage : Page
         }
     }
     
+    private void OnBoardGroupChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsInitialized) return;
+        _boardGroupBy = (BoardGroupComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Responsible";
+        if (_isBoardView) UpdateBoardView();
+    }
+
     private void UpdateBoardView()
     {
-        // Group filtered tickets by status
-        var columns = _filteredTickets
-            .GroupBy(t => t.StatusName ?? "Unknown")
-            .OrderBy(g => GetStatusOrder(g.Key))
+        // Column dimension mirrors the macOS BoardGroupBy options: Status,
+        // Responsible (default), Priority, Group.
+        Func<TdxTicket, string> key = _boardGroupBy switch
+        {
+            "Status" => t => t.StatusName ?? "Unknown",
+            "Priority" => t => t.PriorityName ?? "No Priority",
+            "Group" => t => string.IsNullOrEmpty(t.ResponsibleGroupName) ? "No Group" : t.ResponsibleGroupName!,
+            _ => t => string.IsNullOrEmpty(t.ResponsibleFullName) ? "Unassigned" : t.ResponsibleFullName!
+        };
+
+        var grouped = _filteredTickets.GroupBy(key);
+        var ordered = _boardGroupBy switch
+        {
+            "Status" => grouped.OrderBy(g => GetStatusOrder(g.Key)),
+            "Priority" => grouped.OrderBy(g => GetPriorityOrder(g.Key)),
+            _ => grouped
+                .OrderBy(g => g.Key is "Unassigned" or "No Group" ? 1 : 0)
+                .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+        };
+
+        var i = 0;
+        var columns = ordered
             .Select(g => new BoardColumn
             {
                 StatusName = g.Key,
-                HeaderColor = GetStatusColor(g.Key),
+                HeaderColor = _boardGroupBy switch
+                {
+                    "Status" => GetStatusColor(g.Key),
+                    "Priority" => GetPriorityColor(g.Key),
+                    _ => ColumnPalette[i++ % ColumnPalette.Length]
+                },
                 // The count is of tickets in the column, not visible cards — a
                 // folded subtree must not read as work that disappeared.
                 Count = g.Count(),
@@ -446,9 +482,30 @@ public partial class TicketsPage : Page
                     .ToList(),
             })
             .ToList();
-        
+
         BoardColumnsControl.ItemsSource = columns;
     }
+
+    private static readonly SolidColorBrush[] ColumnPalette =
+    {
+        new(Color.FromRgb(0x3A, 0x6E, 0xA5)), new(Color.FromRgb(0x5B, 0x8C, 0x5A)),
+        new(Color.FromRgb(0x8E, 0x6B, 0xA5)), new(Color.FromRgb(0xA5, 0x7C, 0x3A)),
+        new(Color.FromRgb(0x4C, 0x8C, 0x8C)), new(Color.FromRgb(0xA5, 0x5A, 0x6E)),
+    };
+
+    private static int GetPriorityOrder(string priority) => priority.ToLower() switch
+    {
+        "emergency" => 0, "high" => 1, "medium" => 2, "low" => 3, _ => 4
+    };
+
+    private static SolidColorBrush GetPriorityColor(string priority) => priority.ToLower() switch
+    {
+        "emergency" => new SolidColorBrush(Color.FromRgb(0xC0, 0x40, 0x40)),
+        "high" => new SolidColorBrush(Color.FromRgb(0xE0, 0x70, 0x30)),
+        "medium" => new SolidColorBrush(Color.FromRgb(0xE0, 0xA8, 0x30)),
+        "low" => new SolidColorBrush(Color.FromRgb(0x40, 0xA0, 0x60)),
+        _ => new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80))
+    };
     
     private static SolidColorBrush GetStatusColor(string status)
     {
