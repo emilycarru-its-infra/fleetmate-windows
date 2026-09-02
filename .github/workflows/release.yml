@@ -67,16 +67,17 @@ jobs:
                 ForEach-Object { Copy-Item $_.FullName "release/" -Force }
             }
           }
-          if (Test-Path "publish") {
-            Get-ChildItem publish -Recurse -File -Include fleetmate.exe,fleetmate-gui.exe -ErrorAction SilentlyContinue |
-              Group-Object DirectoryName |
-              ForEach-Object {
-                $arch = if ($_.Name -match 'win-arm64') { 'arm64' } elseif ($_.Name -match 'win-x64') { 'x64' } else { 'unknown' }
-                $files = $_.Group | ForEach-Object { $_.FullName }
-                if ($files.Count -gt 0) {
-                  Compress-Archive -Path $files -DestinationPath "release/fleetmate-$arch.zip" -Force
-                }
-              }
+          # build.ps1 -MsiOnly publishes fleetmate.exe + fleetmate-gui.exe per
+          # architecture into publish\msi-staging\<arch>. Zip those directly —
+          # the directory name IS the arch, so nothing has to be inferred from a
+          # runtime identifier (the old publish\cli / publish\gui layout carried
+          # no RID in its path and always produced fleetmate-unknown.zip).
+          foreach ($arch in @('x64', 'arm64')) {
+            $staging = "publish/msi-staging/$arch"
+            if (-not (Test-Path $staging)) { throw "MSI staging for $arch not found at $staging" }
+            $files = Get-ChildItem $staging -File -Include fleetmate.exe,fleetmate-gui.exe -Recurse | ForEach-Object { $_.FullName }
+            if ($files.Count -ne 2) { throw "Expected fleetmate.exe and fleetmate-gui.exe in $staging, found: $($files -join ', ')" }
+            Compress-Archive -Path $files -DestinationPath "release/fleetmate-$arch.zip" -Force
           }
           Get-ChildItem release | Format-Table Name, Length
 

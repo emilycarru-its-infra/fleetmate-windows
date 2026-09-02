@@ -8,10 +8,8 @@ $repo = Split-Path -Parent $PSScriptRoot
 Push-Location $repo
 try {
     if (-not $SkipBuild) {
-        & dotnet build FleetMate.WinUI\FleetMate.WinUI.csproj -c Debug -p:Platform=x64 --no-restore
-        if ($LASTEXITCODE) { throw "WinUI build failed ($LASTEXITCODE)" }
         & dotnet build FleetMate.GUI\FleetMate.GUI.csproj -c Debug --no-restore
-        if ($LASTEXITCODE) { throw "Desktop compatibility build failed ($LASTEXITCODE)" }
+        if ($LASTEXITCODE) { throw "GUI build failed ($LASTEXITCODE)" }
     }
 
     if (-not $SkipUnitTests) {

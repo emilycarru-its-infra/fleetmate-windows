@@ -113,9 +113,19 @@
         <!-- Main Content -->
         <Grid Grid.Row="2" Grid.ColumnSpan="2">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" MinWidth="480" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition x:Name="DetailPanelColumn" Width="0" />
             </Grid.ColumnDefinitions>
+
+            <!-- Drag handle between the ticket list and the detail panel. Only
+                 shown while the panel is open; the panel's column keeps whatever
+                 width the operator drags it to. -->
+            <GridSplitter x:Name="DetailPanelSplitter" Grid.Column="1" Width="6" Margin="5,0"
+                          HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                          Background="Transparent" ShowsPreview="False"
+                          ResizeBehavior="PreviousAndNext" ResizeDirection="Columns"
+                          Visibility="Collapsed" />
 
             <!-- Ticket List View -->
             <Border x:Name="ListViewPanel" Grid.Column="0" Style="{StaticResource CardStyle}">
@@ -310,8 +320,8 @@
             </ScrollViewer>
 
             <!-- Detail Panel -->
-            <Border x:Name="DetailPanel" Grid.Column="1" Style="{StaticResource CardStyle}" Margin="16,0,0,0" Visibility="Collapsed">
-                <Grid Width="380">
+            <Border x:Name="DetailPanel" Grid.Column="2" Style="{StaticResource CardStyle}" Margin="0" Visibility="Collapsed">
+                <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />

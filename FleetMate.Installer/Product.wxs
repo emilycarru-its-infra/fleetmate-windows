@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- WiX v6 installer for the FleetMate CLI (mgmt tool).
-     Mirrors bootstrapmate/windows packaging so cimian-bootstrap-mgmt can
-     fetch + sign + repack + deploy it as another mgmt tool. FleetMate is an
-     operator CLI, so this is deliberately lean: install the self-contained
-     exe to Program Files, put it on the system PATH, and write registry
-     values Intune uses for detection. No post-install run or self-heal task. -->
+<!-- WiX v6 installer for FleetMate (mgmt tool): the operator CLI plus the
+     WPF desktop app. Mirrors bootstrapmate/windows packaging so
+     cimian-bootstrap-mgmt can fetch + sign + repack + deploy it as another
+     mgmt tool. Deliberately lean: install the two self-contained exes to
+     Program Files, put the directory on the system PATH, add a Start Menu
+     shortcut for the desktop app, and write registry values Intune uses for
+     detection. No post-install run or self-heal task. -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
@@ -47,12 +48,27 @@
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLDIR" Name="FleetMate" />
     </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
 
     <!-- The CLI is published self-contained single-file, so one exe is the
-         entire payload. -->
+         entire CLI payload. -->
     <Component Id="FleetMateExecutable" Directory="INSTALLDIR" Guid="{C4E6AECC-4EA4-4AEE-9ACE-C61D57B1C9E8}">
       <File Id="FleetMateExe" Source="$(var.BIN_DIR)\fleetmate.exe" KeyPath="yes" Vital="yes" />
       <RemoveFile Id="RemoveOldExecutable" Name="fleetmate.exe" On="both" />
+    </Component>
+
+    <!-- The WPF desktop app, likewise one self-contained exe. The Start Menu
+         shortcut is what operators actually launch. -->
+    <Component Id="FleetMateGuiExecutable" Directory="INSTALLDIR" Guid="{7A2D0C51-9E3B-4F6A-8C1D-2B5E4F7A9D13}">
+      <File Id="FleetMateGuiExe" Source="$(var.BIN_DIR)\fleetmate-gui.exe" KeyPath="yes" Vital="yes">
+        <Shortcut Id="FleetMateStartMenuShortcut"
+                  Directory="ProgramMenuFolder"
+                  Name="FleetMate"
+                  Description="FleetMate fleet management"
+                  WorkingDirectory="INSTALLDIR"
+                  Advertise="yes" />
+      </File>
+      <RemoveFile Id="RemoveOldGuiExecutable" Name="fleetmate-gui.exe" On="both" />
     </Component>
 
     <!-- Registry entries for installation tracking AND Intune Win32 detection.
@@ -74,6 +90,7 @@
 
     <Feature Id="DefaultFeature" Level="1">
       <ComponentRef Id="FleetMateExecutable" />
+      <ComponentRef Id="FleetMateGuiExecutable" />
       <ComponentRef Id="RegistryEntries" />
       <ComponentRef Id="SetPathComponent" />
     </Feature>

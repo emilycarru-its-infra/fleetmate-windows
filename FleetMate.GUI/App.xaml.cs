@@ -496,8 +496,31 @@ public partial class App : Application
             .WriteTo.File(logPath,
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 7,
+                shared: true,
                 outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
             .CreateLogger();
+
+        // Record every unhandled failure before the process dies. Without
+        // these, a crash on the UI thread or a faulted background task leaves
+        // no trace in debug.log and nothing to diagnose after the fact.
+        DispatcherUnhandledException += (_, args) =>
+        {
+            Log.Fatal(args.Exception, "Unhandled exception on the UI thread");
+            Log.CloseAndFlush();
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            Log.Fatal(args.ExceptionObject as Exception, "Unhandled exception (terminating={IsTerminating})", args.IsTerminating);
+            Log.CloseAndFlush();
+        };
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            Log.Error(args.Exception, "Unobserved task exception");
+            args.SetObserved();
+        };
+        Log.Information("FleetMate GUI starting (pid {Pid}, version {Version})",
+            Environment.ProcessId,
+            typeof(App).Assembly.GetName().Version);
 
         // Load configuration
         Config = LoadDesktopConfiguration();
