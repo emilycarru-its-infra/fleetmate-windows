@@ -1,4 +1,4 @@
-using System.CommandLine;
+﻿using System.CommandLine;
 using System.Text.Json;
 using FleetMate.Core.Models.Devices;
 using FleetMate.Core.Models.Identity;
@@ -39,6 +39,7 @@ public static class IntuneCommand
         command.AddCommand(CreateAutopilotResetCommand(graphService));
         command.AddCommand(CreateDeleteCommand(graphService));
         command.AddCommand(CreateAutopilotCommand(graphService));
+        command.AddCommand(CreateAutopilotDeleteCommand(graphService));
         command.AddCommand(CreateCleanupCommand(graphService));
         command.AddCommand(CreateCimianPushCommand(graphService));
         command.AddCommand(CreateSettingsCommand(graphService));
@@ -130,6 +131,100 @@ public static class IntuneCommand
 
             if (!DisplayRecordState(state!)) context.ExitCode = 1;
         });
+        return command;
+    }
+
+    /// <summary>
+    /// The caution shown before an AutoPilot identity is deleted. Split out so the
+    /// wording is testable: this text is the only thing standing between an
+    /// operator and a hardware hash that Graph will not give back.
+    /// </summary>
+    internal static string AutopilotDeleteWarning(GraphService.DeviceRecordState state)
+    {
+        var lines = new List<string>
+        {
+            $"[red]Deleting the AutoPilot identity for {Markup.Escape(state.Serial)} cannot be undone from here.[/]",
+            "[dim]It holds the hardware hash, which Graph never returns. Restoring it means recapturing the hash at OOBE on the machine itself.[/]",
+        };
+
+        // A device that still has an Intune record is enrolled and working. This
+        // command exists to clear a registration whose pre-created Entra object
+        // was destroyed - not to unregister a live machine.
+        if (state.Intune != null)
+            lines.Add($"[red]This device still has an Intune record ({Markup.Escape(state.Intune.DeviceName)}) — it is still enrolled. This is almost certainly the wrong device.[/]");
+
+        if (state.EntraDevices.Count > 0)
+            lines.Add($"[yellow]Entra still holds {state.EntraDevices.Count} device object(s) for it — deleting AutoPilot will not remove those.[/]");
+
+        return string.Join("\n", lines);
+    }
+
+    private static Command CreateAutopilotDeleteCommand(GraphService? graphService)
+    {
+        var command = new Command("autopilot-delete",
+            "Delete a device's AutoPilot identity (DESTRUCTIVE; the hardware hash must be recaptured at OOBE)");
+        var serialArg = new Argument<string>(name: "serial", description: "Device serial number");
+        var confirmOption = new Option<bool>(aliases: ["--confirm"], description: "Required to actually delete");
+        command.AddArgument(serialArg);
+        command.AddOption(confirmOption);
+
+        // Context handler so a failed lookup exits non-zero; Program.cs returns the
+        // pipeline result, so Environment.ExitCode would be discarded.
+        command.SetHandler(async (context) =>
+        {
+            var serial = context.ParseResult.GetValueForArgument(serialArg);
+            var confirm = context.ParseResult.GetValueForOption(confirmOption);
+
+            if (!EnsureConfigured(graphService))
+            {
+                context.ExitCode = 1;
+                return;
+            }
+
+            GraphService.DeviceRecordState? state = null;
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .StartAsync($"Reading records for {serial}...", async ctx =>
+                {
+                    state = await graphService!.GetDeviceRecordStateAsync(serial);
+                });
+
+            // Never delete on the strength of a lookup that never reached Graph:
+            // it reports every record as absent, which reads here as "nothing to
+            // lose".
+            if (state!.LookupFailed)
+            {
+                AnsiConsole.MarkupLine($"[red]Could not read the records for {Markup.Escape(serial)}, so nothing was changed.[/]");
+                AnsiConsole.MarkupLine($"[dim]{Markup.Escape(state.LookupError ?? "reason unavailable")}[/]");
+                context.ExitCode = 1;
+                return;
+            }
+
+            if (state.Autopilot == null)
+            {
+                AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(serial)} has no AutoPilot identity — nothing to delete.[/]");
+                context.ExitCode = 1;
+                return;
+            }
+
+            AnsiConsole.MarkupLine(AutopilotDeleteWarning(state));
+            AnsiConsole.MarkupLine($"[dim]AutoPilot id {Markup.Escape(state.Autopilot.Id)}  {Markup.Escape(state.Autopilot.Manufacturer ?? "")} {Markup.Escape(state.Autopilot.Model ?? "")}[/]");
+
+            if (!confirm)
+            {
+                AnsiConsole.MarkupLine("[yellow]Dry run.[/] Re-run with [cyan]--confirm[/] to delete it.");
+                return;
+            }
+
+            var result = await graphService!.DeleteAutopilotDeviceAsync(state.Autopilot.Id, confirmed: true);
+            ReportAction(result, "delete AutoPilot identity");
+
+            if (result.Success)
+                AnsiConsole.MarkupLine("[dim]Deletion is asynchronous — the record clears in a few minutes. Re-importing the hash before it clears fails as already-assigned.[/]");
+            else
+                context.ExitCode = 1;
+        });
+
         return command;
     }
 
