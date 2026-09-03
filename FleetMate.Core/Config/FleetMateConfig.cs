@@ -119,10 +119,71 @@ public class FleetMateConfig
     // sbin-installer installs .pkg/.nupkg, msiexec installs .msi.
     public string SbinInstallerPath { get; set; } = @"C:\Program Files\sbin\installer.exe";
     
-    // Logging. FleetMate's own logs live under FleetMate: they were landing in
-    // Cimian's log directory, which made them look like Cimian output and put
-    // this tool's diagnostics somewhere nobody would think to look for them.
-    public string LogPath { get; set; } = @"C:\ProgramData\FleetMate\logs";
+    // Logging. Every managed tool writes to %ProgramData%\Managed<Tool>\logs, so
+    // FleetMate's own diagnostics sit under ManagedFleet with the rest of them and
+    // are collected the same way. Earlier builds wrote to Cimian's log directory,
+    // where they read as Cimian output, and then to a FleetMate root of their own,
+    // which was nobody's convention; DefaultLogPath is resolved from ProgramData
+    // rather than hardcoding a drive, which group policy can relocate.
+    public static readonly string DefaultLogPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "ManagedFleet", "logs");
+
+    /// <summary>
+    /// Roots earlier builds logged to. The first run after an upgrade moves any files
+    /// found here into <see cref="DefaultLogPath"/> so history is not stranded in a
+    /// directory nothing writes to any more.
+    /// </summary>
+    public static readonly string[] LegacyLogPaths =
+    {
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "FleetMate", "logs"),
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Cimian", "Logs")
+    };
+
+    public string LogPath { get; set; } = DefaultLogPath;
+
+    /// <summary>
+    /// One-time move of any log left in a previous root into <paramref name="destination"/>,
+    /// returning how many files were moved. A name already taken at the destination is left
+    /// alone, so this is safe to call on every start, and it never throws: a diagnostic log
+    /// that cannot be moved must not stop the tool running.
+    /// </summary>
+    public static int MigrateLegacyLogs(string destination, IEnumerable<string>? legacyRoots = null)
+    {
+        var moved = 0;
+        try
+        {
+            Directory.CreateDirectory(destination);
+            foreach (var root in legacyRoots ?? LegacyLogPaths)
+            {
+                if (!Directory.Exists(root) ||
+                    string.Equals(Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar),
+                                  Path.GetFullPath(destination).TrimEnd(Path.DirectorySeparatorChar),
+                                  StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                foreach (var file in Directory.GetFiles(root, "fleetmate-*.log"))
+                {
+                    try
+                    {
+                        var target = Path.Combine(destination, Path.GetFileName(file));
+                        if (File.Exists(target)) continue;
+                        File.Move(file, target);
+                        moved++;
+                    }
+                    catch
+                    {
+                        // A log held open by another instance stays where it is.
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Keeping history is nice to have; never block startup on it.
+        }
+        return moved;
+    }
     public string LogLevel { get; set; } = "Information";
     
     // Cache settings
