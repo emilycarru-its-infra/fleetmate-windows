@@ -28,6 +28,7 @@ class Program
         // Setup logging
         var logPath = Path.Combine(config.LogPath, "fleetmate-.log");
         Directory.CreateDirectory(config.LogPath);
+        FleetMateConfig.MigrateLegacyLogs(config.LogPath);
         
         var logLevel = Enum.TryParse<LogEventLevel>(config.LogLevel, true, out var level) 
             ? level : LogEventLevel.Information;
