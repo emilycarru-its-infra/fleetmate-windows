@@ -39,6 +39,14 @@ public class NetworkInfo
     
     [JsonPropertyName("activeConnection")]
     public ActiveConnection? ActiveConnection { get; set; }
+
+    /// <summary>
+    /// When the network module was last collected. This can lag the device's
+    /// own lastSeen by days, and the address beside it is only as current as
+    /// this timestamp; anything showing an address should show its age too.
+    /// </summary>
+    [JsonPropertyName("collectedAt")]
+    public DateTime? CollectedAt { get; set; }
     
     /// <summary>
     /// Get the primary IPv4 address from activeConnection or first interface

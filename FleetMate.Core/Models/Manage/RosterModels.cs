@@ -36,6 +36,9 @@ public class RosterComputer
     /// </summary>
     public bool IsInService => Status.TrimStart().StartsWith("Active", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>The roster's friendly name (allocation), falling back to <see cref="DisplayName"/>.</summary>
+    public string FriendlyName => !string.IsNullOrWhiteSpace(Allocation) ? Allocation : DisplayName;
+
     /// <summary>What to show for the machine: hostname, else the assignee, else the serial.</summary>
     public string DisplayName =>
         HasHostname ? Hostname

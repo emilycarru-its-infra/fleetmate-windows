@@ -1,0 +1,88 @@
+<Window x:Class="FleetMate.GUI.Views.Manage.AddDeviceDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        ui:WindowHelper.UseModernWindowStyle="True"
+        Title="Add devices" Width="640" Height="560" MinWidth="520" MinHeight="420"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <Grid Margin="18" TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Target group -->
+        <Grid Grid.Row="0" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Add to" VerticalAlignment="Center" Margin="0,0,10,0" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            <ComboBox x:Name="GroupCombo" Grid.Column="1" SelectionChanged="OnGroupComboChanged" />
+            <TextBox x:Name="NewGroupBox" Grid.Column="2" Margin="8,0,0,0" ui:ControlHelper.PlaceholderText="New group name" Visibility="Collapsed" />
+        </Grid>
+
+        <!-- Mode -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+            <RadioButton x:Name="BrowseMode" Content="Browse roster" IsChecked="True" Checked="OnModeChanged" Margin="0,0,16,0" />
+            <RadioButton x:Name="ManualMode" Content="Hostname or IP" Checked="OnModeChanged" Margin="0,0,16,0" />
+            <RadioButton x:Name="ImportMode" Content="Paste or import list" Checked="OnModeChanged" />
+        </StackPanel>
+
+        <!-- Browse -->
+        <DockPanel x:Name="BrowsePanel" Grid.Row="2">
+            <TextBox DockPanel.Dock="Top" x:Name="BrowseSearch" ui:ControlHelper.PlaceholderText="Filter by name, room, person, serial..." TextChanged="OnBrowseSearchChanged" Margin="0,0,0,6" />
+            <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
+                <Button DockPanel.Dock="Right" Content="Select all in view" Padding="8,3" FontSize="11" Click="OnBrowseSelectAll" />
+                <TextBlock x:Name="BrowseCount" VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            </DockPanel>
+            <ListBox x:Name="BrowseList" SelectionMode="Extended" Background="Transparent"
+                     Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="0,2">
+                            <TextBlock Text="{Binding FriendlyName}" />
+                            <TextBlock FontSize="10" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}">
+                                <Run Text="{Binding Hostname, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding Location, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding Fleet, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding Serial, Mode=OneWay}" />
+                            </TextBlock>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </DockPanel>
+
+        <!-- Manual -->
+        <StackPanel x:Name="ManualPanel" Grid.Row="2" Visibility="Collapsed">
+            <TextBlock Text="Hostname" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            <TextBox x:Name="ManualHost" Margin="0,4,0,10" ui:ControlHelper.PlaceholderText="Optional when an address is given" />
+            <TextBlock Text="IP address" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            <TextBox x:Name="ManualIp" Margin="0,4,0,10" ui:ControlHelper.PlaceholderText="Optional when the hostname resolves" />
+            <TextBlock Text="A machine that is not in the roster is added as an ad-hoc device: the group remembers its address once it answers."
+                       TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+        </StackPanel>
+
+        <!-- Import -->
+        <DockPanel x:Name="ImportPanel" Grid.Row="2" Visibility="Collapsed">
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                <Button DockPanel.Dock="Right" Content="Import file..." Padding="8,3" FontSize="11" Click="OnImportFile" />
+                <TextBlock Text="One device per line: hostname, IP, or hostname,IP. CSV files with a hostname or serial column also work."
+                           TextWrapping="Wrap" FontSize="11" VerticalAlignment="Center" Margin="0,0,10,0"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            </DockPanel>
+            <TextBox x:Name="ImportText" AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto"
+                     FontFamily="Consolas" FontSize="12" />
+        </DockPanel>
+
+        <!-- Buttons -->
+        <DockPanel Grid.Row="3" Margin="0,14,0,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Content="Close" Margin="0,0,8,0" Padding="16,5" IsCancel="True" />
+                <Button x:Name="AddButton" Content="Add" Padding="16,5" Style="{StaticResource AccentButtonStyle}" Click="OnAdd" />
+            </StackPanel>
+            <TextBlock x:Name="StatusText" VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+        </DockPanel>
+    </Grid>
+</Window>

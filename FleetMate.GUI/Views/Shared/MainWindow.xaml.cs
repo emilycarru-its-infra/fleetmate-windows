@@ -9,6 +9,7 @@ using FleetMate.GUI.Views.Inventory;
 using FleetMate.GUI.Views.Tickets;
 using FleetMate.GUI.Views.Projects;
 using FleetMate.GUI.Views.Identity;
+using FleetMate.GUI.Views.Manage;
 
 namespace FleetMate.GUI.Views.Shared;
 
@@ -61,6 +62,7 @@ public partial class MainWindow : Window
     {
         "Dashboard" => new DashboardPage(),
         "Devices" => new IntunePage(),
+        "Manage" => new ManagePage(),
         "Inventory" => new AssetsPage(),
         "Tickets" => new TicketsPage(),
         "Projects" => new BoardsPage(),

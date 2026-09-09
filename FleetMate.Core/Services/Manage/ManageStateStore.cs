@@ -71,18 +71,34 @@ public class ManageStateStore
         }
     }
 
+    /// <summary>
+    /// Write atomically through a temp file. A rapid sequence of saves can hit
+    /// a sharing violation from a scanner holding the previous file open, so
+    /// the rename is retried briefly rather than silently dropping the write.
+    /// </summary>
     private void Save<T>(string path, T value)
     {
-        try
+        var json = JsonSerializer.Serialize(value, JsonOptions);
+        for (var attempt = 1; ; attempt++)
         {
-            Directory.CreateDirectory(Root);
-            var tmp = path + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(value, JsonOptions));
-            File.Move(tmp, path, overwrite: true);
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "Could not write {Path}", path);
+            try
+            {
+                Directory.CreateDirectory(Root);
+                var tmp = path + "." + Guid.NewGuid().ToString("N")[..8] + ".tmp";
+                File.WriteAllText(tmp, json);
+                File.Move(tmp, path, overwrite: true);
+                return;
+            }
+            catch (IOException ex) when (attempt < 6)
+            {
+                Log.Debug(ex, "Write to {Path} contended (attempt {Attempt}); retrying", path, attempt);
+                Thread.Sleep(30 * attempt);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Could not write {Path}", path);
+                return;
+            }
         }
     }
 }
