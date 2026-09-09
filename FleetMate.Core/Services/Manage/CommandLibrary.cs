@@ -192,7 +192,37 @@ public class CommandLibrary
         return issues;
     }
 
-    /// <summary>The minimal library used when no file is available.</summary>
+    public const string BundledResourceName = "FleetMate.Core.Resources.Manage.commands.windows.yaml";
+
+    /// <summary>The raw YAML of the library that ships inside the assembly.</summary>
+    public static string BundledYaml()
+    {
+        using var stream = typeof(CommandLibrary).Assembly.GetManifestResourceStream(BundledResourceName)
+            ?? throw new InvalidOperationException($"Embedded resource {BundledResourceName} is missing");
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        return reader.ReadToEnd();
+    }
+
+    /// <summary>
+    /// The library that ships with FleetMate: the Windows counterpart of the
+    /// macOS lab-operations library, with a trust level on every command.
+    /// Falls back to the minimal built-in set if the resource cannot be read.
+    /// </summary>
+    public static List<CommandCategory> LoadBundled()
+    {
+        try
+        {
+            var parsed = Parse(BundledYaml());
+            return parsed.Count == 0 ? DefaultCategories() : parsed;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Bundled command library did not load; using the minimal defaults");
+            return DefaultCategories();
+        }
+    }
+
+    /// <summary>The minimal library used when nothing else is available.</summary>
     public static List<CommandCategory> DefaultCategories() => new()
     {
         new CommandCategory("System", new[]

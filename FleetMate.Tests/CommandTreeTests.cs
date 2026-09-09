@@ -47,6 +47,7 @@ public class CommandTreeTests
         root.AddCommand(ConfigureCommand.Create(config));
         root.AddCommand(SnipeCommand.Create(null));
         root.AddCommand(SshCommand.Create(null, reportMate));
+        root.AddCommand(ManageCommand.Create(config, reportMate));
         root.AddCommand(DeadlineCommand.Create(null));
         root.AddCommand(DevOpsCommand.Create(null, reportMate));
         root.AddCommand(CimianCommand.Create(null, null, cimianService));
@@ -63,7 +64,7 @@ public class CommandTreeTests
     private static readonly string[] ExpectedCommands =
     {
         "errors", "troubleshoot", "device", "test", "lint", "validate", "qa",
-        "status", "configure", "snipe", "ssh", "deadline", "devops", "cimian",
+        "status", "configure", "snipe", "ssh", "manage", "deadline", "devops", "cimian",
         "intune", "entra", "tdx", "tasks", "projects", "reportmate",
     };
 
@@ -77,9 +78,9 @@ public class CommandTreeTests
     }
 
     [Fact]
-    public void Root_HasTwentyCommands()
+    public void Root_HasTwentyOneCommands()
     {
-        Assert.Equal(20, BuildRoot().Subcommands.Count);
+        Assert.Equal(21, BuildRoot().Subcommands.Count);
     }
 
     [Theory]

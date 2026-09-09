@@ -1,0 +1,575 @@
+# FleetMate Manage: bundled Windows command library.
+#
+# Every command is PowerShell, sent to the machine through the fleet SSH
+# session as an encoded command and run as the fleet admin account. Trust:
+#   safe         reads state only
+#   caution      changes state or affects the signed-in user
+#   destructive  deletes data, restarts, resets services, or reaches the fleet
+# Placeholders in <ANGLE_BRACKETS> are prompted for at run time; a name
+# containing PASSWORD is masked. Copied to the per-user library on first use
+# and merged into it afterwards; edit the per-user copy, not this file.
+categories:
+  - name: System
+    commands:
+      - label: Hostname
+        command: hostname
+        trust: safe
+      - label: Uptime
+        command: $up=(Get-Date)-(Get-CimInstance Win32_OperatingSystem).LastBootUpTime; "{0}d {1}h {2}m" -f [int]$up.TotalDays,$up.Hours,$up.Minutes
+        trust: safe
+      - label: Windows version (short)
+        command: (Get-CimInstance Win32_OperatingSystem).Caption + ' ' + (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').DisplayVersion
+        trust: safe
+      - label: Windows version (full)
+        command: Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber, OSArchitecture, InstallDate | Format-List
+        trust: safe
+      - label: Hardware summary (model, CPU, RAM, disk)
+        command: |-
+          |-
+          $cs=Get-CimInstance Win32_ComputerSystem; $cpu=Get-CimInstance Win32_Processor | Select-Object -First 1; $d=Get-PSDrive C
+          "Model: $($cs.Manufacturer) $($cs.Model)"; "CPU: $($cpu.Name.Trim())"; "RAM: {0:N1} GB" -f ($cs.TotalPhysicalMemory/1GB); "Disk C: {0:N0} GB total, {1:N0} GB free" -f (($d.Used+$d.Free)/1GB), ($d.Free/1GB)
+        trust: safe
+      - label: Identity summary (serial, hostname, join state)
+        command: |-
+          |-
+          "Serial: $((Get-CimInstance Win32_BIOS).SerialNumber)"; "Hostname: $env:COMPUTERNAME"
+          $d=(dsregcmd /status) -join "`n"; "Entra joined: $(if($d -match 'AzureAdJoined\s*:\s*YES'){'yes'}else{'no'})"; "Domain joined: $(if($d -match 'DomainJoined\s*:\s*YES'){'yes'}else{'no'})"; "Device ID: $(([regex]'DeviceId\s*:\s*(\S+)').Match($d).Groups[1].Value)"
+        trust: safe
+      - label: Serial number
+        command: (Get-CimInstance Win32_BIOS).SerialNumber
+        trust: safe
+      - label: RAM (GB)
+        command: '[math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 1)'
+        trust: safe
+      - label: Installed applications (name, version)
+        command: |-
+          |-
+          Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object DisplayName | Sort-Object DisplayName -Unique | ForEach-Object { "$($_.DisplayName)`t$($_.DisplayVersion)" }
+        trust: safe
+      - label: Architecture
+        command: $env:PROCESSOR_ARCHITECTURE
+        trust: safe
+      - label: Date, time and time zone
+        command: (Get-Date).ToString('yyyy-MM-dd HH:mm:ss') + '  ' + (Get-TimeZone).Id
+        trust: safe
+      - label: Top processes by CPU
+        command: Get-Process | Sort-Object CPU -Descending | Select-Object -First 10 Name, Id, @{n='CPU_s';e={[math]::Round($_.CPU,1)}}, @{n='MB';e={[math]::Round($_.WorkingSet64/1MB)}} | Format-Table -AutoSize
+        trust: safe
+      - label: Top processes by memory
+        command: Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 10 Name, Id, @{n='MB';e={[math]::Round($_.WorkingSet64/1MB)}} | Format-Table -AutoSize
+        trust: safe
+      - label: Memory pressure
+        command: $os=Get-CimInstance Win32_OperatingSystem; "Free {0:N0} MB of {1:N0} MB ({2:P0} used)" -f ($os.FreePhysicalMemory/1KB), ($os.TotalVisibleMemorySize/1KB), (1-$os.FreePhysicalMemory/$os.TotalVisibleMemorySize)
+        trust: safe
+      - label: Pending reboot check
+        command: |-
+          |-
+          $p=@(); if(Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending'){$p+='CBS'}; if(Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'){$p+='WindowsUpdate'}; if((Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -ErrorAction SilentlyContinue).PendingFileRenameOperations){$p+='FileRename'}; if($p){"Reboot pending: $($p -join ', ')"}else{'No reboot pending'}
+        trust: safe
+      - label: Rename computer (template)
+        command: Rename-Computer -NewName '<NEW_NAME>' -Force; 'Renamed; restart required'
+        trust: destructive
+
+  - name: Storage
+    commands:
+      - label: Disk usage (C:)
+        command: $d=Get-PSDrive C; "Used {0:N1} GB, free {1:N1} GB ({2:P0} free)" -f ($d.Used/1GB), ($d.Free/1GB), ($d.Free/($d.Used+$d.Free))
+        trust: safe
+      - label: All volumes
+        command: Get-Volume | Where-Object DriveLetter | Select-Object DriveLetter, FileSystemLabel, @{n='SizeGB';e={[math]::Round($_.Size/1GB)}}, @{n='FreeGB';e={[math]::Round($_.SizeRemaining/1GB)}}, HealthStatus | Format-Table -AutoSize
+        trust: safe
+      - label: User profile sizes
+        command: Get-ChildItem C:\Users -Directory | ForEach-Object { $s=(Get-ChildItem $_.FullName -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum; "{0,-24} {1,8:N1} GB" -f $_.Name, ($s/1GB) } | Sort-Object
+        trust: safe
+      - label: Largest folders under ProgramData
+        command: Get-ChildItem C:\ProgramData -Directory -Force | ForEach-Object { $s=(Get-ChildItem $_.FullName -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum; [pscustomobject]@{Folder=$_.Name; GB=[math]::Round($s/1GB,2)} } | Sort-Object GB -Descending | Select-Object -First 12 | Format-Table -AutoSize
+        trust: safe
+      - label: Managed install cache size
+        command: $p='C:\ProgramData\ManagedInstalls\Cache'; if(Test-Path $p){ "{0:N1} GB in $p" -f ((Get-ChildItem $p -Recurse -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum/1GB) } else { 'No cache folder' }
+        trust: safe
+      - label: Recycle bin size (all users)
+        command: '"{0:N1} GB" -f ((Get-ChildItem ''C:\$Recycle.Bin'' -Recurse -Force -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum/1GB)'
+        trust: safe
+      - label: Empty recycle bins
+        command: Clear-RecycleBin -Force -ErrorAction SilentlyContinue; 'Recycle bins emptied'
+        trust: destructive
+      - label: Clear Windows temp folders
+        command: Get-ChildItem "$env:SystemRoot\Temp",'C:\Users\*\AppData\Local\Temp' -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-1) } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue; 'Temp folders cleared'
+        trust: destructive
+      - label: Clear managed install cache
+        command: Remove-Item 'C:\ProgramData\ManagedInstalls\Cache\*' -Recurse -Force -ErrorAction SilentlyContinue; 'Managed install cache cleared'
+        trust: destructive
+      - label: Disk health (SMART)
+        command: Get-PhysicalDisk | Select-Object FriendlyName, MediaType, HealthStatus, OperationalStatus, @{n='SizeGB';e={[math]::Round($_.Size/1GB)}} | Format-Table -AutoSize
+        trust: safe
+
+  - name: Cimian Config
+    commands:
+      - label: Client identifier
+        command: (Get-Content 'C:\ProgramData\ManagedInstalls\Config.yaml' -ErrorAction SilentlyContinue | Select-String '^\s*ClientIdentifier').Line
+        trust: safe
+      - label: Full client config
+        command: Get-Content 'C:\ProgramData\ManagedInstalls\Config.yaml' -ErrorAction SilentlyContinue
+        trust: safe
+      - label: Software repo URL
+        command: (Get-Content 'C:\ProgramData\ManagedInstalls\Config.yaml' -ErrorAction SilentlyContinue | Select-String '^\s*SoftwareRepoURL').Line
+        trust: safe
+      - label: Client version
+        command: $p=Get-ChildItem 'C:\Program Files\Cimian\*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1; if($p){ "$($p.Name) $($p.VersionInfo.FileVersion)" } else { 'Client not found under Program Files' }
+        trust: safe
+      - label: Client service state
+        command: Get-Service -Name 'Cimian*' -ErrorAction SilentlyContinue | Select-Object Name, Status, StartType | Format-Table -AutoSize
+        trust: safe
+      - label: Scheduled tasks for the client
+        command: Get-ScheduledTask -TaskPath '\Cimian\' -ErrorAction SilentlyContinue | Select-Object TaskName, State, @{n='LastRun';e={($_ | Get-ScheduledTaskInfo).LastRunTime}}, @{n='LastResult';e={($_ | Get-ScheduledTaskInfo).LastTaskResult}} | Format-Table -AutoSize
+        trust: safe
+      - label: Manifest and catalog files present
+        command: Get-ChildItem 'C:\ProgramData\ManagedInstalls\manifests','C:\ProgramData\ManagedInstalls\catalogs' -Recurse -File -ErrorAction SilentlyContinue | Select-Object FullName, LastWriteTime, Length | Format-Table -AutoSize
+        trust: safe
+      - label: Set client identifier (template)
+        command: |-
+          |-
+          $f='C:\ProgramData\ManagedInstalls\Config.yaml'; $c=Get-Content $f -Raw; $c=[regex]::Replace($c,'(?m)^\s*ClientIdentifier\s*:.*$','ClientIdentifier: <CLIENT_IDENTIFIER>'); Set-Content $f $c -Encoding UTF8; "ClientIdentifier set to <CLIENT_IDENTIFIER>"
+        trust: caution
+
+  - name: Cimian Operations
+    commands:
+      - label: Last run summary
+        command: |-
+          |-
+          $l='C:\ProgramData\ManagedInstalls\Logs\ManagedSoftwareUpdate.log'; if(Test-Path $l){ "Last write: $((Get-Item $l).LastWriteTime)"; Get-Content $l -Tail 400 | Select-String -Pattern 'Installing|Installed|Removing|Removed|ERROR|WARN|Finished|Completed' | Select-Object -Last 25 | ForEach-Object { $_.Line } } else { 'No log found' }
+        trust: safe
+      - label: Check only (what would change)
+        command: managedsoftwareupdate --checkonly 2>&1
+        trust: safe
+      - label: Check and install everything pending
+        command: managedsoftwareupdate --auto 2>&1
+        trust: caution
+      - label: Install only (no new check)
+        command: managedsoftwareupdate --installonly 2>&1
+        trust: caution
+      - label: Run and show the log tail
+        command: managedsoftwareupdate --auto 2>&1 | Out-Null; Get-Content 'C:\ProgramData\ManagedInstalls\Logs\ManagedSoftwareUpdate.log' -Tail 60
+        trust: caution
+      - label: Pending installs from the last report
+        command: |-
+          |-
+          $r=Get-ChildItem 'C:\ProgramData\ManagedInstalls\*Report*' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if($r){ Get-Content $r.FullName | Select-String -Pattern 'ItemsToInstall|ItemsToRemove|ProblemInstalls|name:|display_name:|installed_version|version_to_install' | ForEach-Object { $_.Line } } else { 'No report found' }
+        trust: safe
+      - label: Errors and warnings from the last run
+        command: Get-Content 'C:\ProgramData\ManagedInstalls\Logs\ManagedSoftwareUpdate.log' -Tail 600 -ErrorAction SilentlyContinue | Select-String -Pattern 'ERROR|WARN' | Select-Object -Last 40 | ForEach-Object { $_.Line }
+        trust: safe
+      - label: List cached packages
+        command: Get-ChildItem 'C:\ProgramData\ManagedInstalls\Cache' -Recurse -File -ErrorAction SilentlyContinue | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB)}}, LastWriteTime | Sort-Object LastWriteTime -Descending | Format-Table -AutoSize
+        trust: safe
+      - label: Restart the client service
+        command: Get-Service -Name 'Cimian*' -ErrorAction SilentlyContinue | Restart-Service -Force; Get-Service -Name 'Cimian*' | Select-Object Name, Status | Format-Table -AutoSize
+        trust: caution
+      - label: Start the scheduled client run now
+        command: $t=Get-ScheduledTask -TaskPath '\Cimian\' -ErrorAction SilentlyContinue | Select-Object -First 1; if($t){ Start-ScheduledTask -InputObject $t; "Started $($t.TaskName)" } else { 'No client task found' }
+        trust: caution
+      - label: Set bootstrap flag (full run at next start)
+        command: New-Item -ItemType File -Path 'C:\ProgramData\ManagedInstalls\.cimian_bootstrap' -Force | Out-Null; 'Bootstrap flag set'
+        trust: caution
+      - label: Remove bootstrap flag
+        command: Remove-Item 'C:\ProgramData\ManagedInstalls\.cimian_bootstrap' -Force -ErrorAction SilentlyContinue; 'Bootstrap flag removed'
+        trust: caution
+      - label: Today's install log
+        command: Get-Content 'C:\ProgramData\ManagedInstalls\Logs\ManagedSoftwareUpdate.log' -ErrorAction SilentlyContinue | Select-String -Pattern ("^" + (Get-Date).ToString('yyyy-MM-dd')) | ForEach-Object { $_.Line } | Select-Object -Last 200
+        trust: safe
+
+  - name: Windows Update
+    commands:
+      - label: Installed updates (last 20)
+        command: Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 20 HotFixID, Description, InstalledOn | Format-Table -AutoSize
+        trust: safe
+      - label: Windows Update service state
+        command: Get-Service wuauserv, UsoSvc, BITS | Select-Object Name, Status, StartType | Format-Table -AutoSize
+        trust: safe
+      - label: Update policy source (WSUS or Microsoft)
+        command: |-
+          |-
+          $p=Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -ErrorAction SilentlyContinue; if($p.UseWUServer -eq 1){ "WSUS: $((Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate').WUServer)" } else { 'Microsoft Update (no WSUS policy)' }
+        trust: safe
+      - label: Scan for updates now
+        command: UsoClient StartScan; 'Scan requested'
+        trust: caution
+      - label: Download and install available updates
+        command: UsoClient StartScan; Start-Sleep 5; UsoClient StartDownload; UsoClient StartInstall; 'Download and install requested'
+        trust: caution
+      - label: Update history from the event log (last 30)
+        command: Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-WindowsUpdateClient'} -MaxEvents 30 -ErrorAction SilentlyContinue | Select-Object TimeCreated, Id, @{n='Message';e={$_.Message.Split("`n")[0]}} | Format-Table -AutoSize -Wrap
+        trust: safe
+      - label: Restart to finish updates
+        command: shutdown.exe /r /t 30 /c 'Restart to finish Windows updates'; 'Restart in 30 seconds'
+        trust: destructive
+
+  - name: MDM & Enrollment
+    commands:
+      - label: Join and enrollment status
+        command: dsregcmd /status | Select-String -Pattern 'AzureAdJoined|DomainJoined|DeviceId|TenantName|MdmUrl|AzureAdPrt|WorkplaceJoined' | ForEach-Object { $_.Line.Trim() }
+        trust: safe
+      - label: MDM enrollment details
+        command: Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Enrollments' -ErrorAction SilentlyContinue | ForEach-Object { $p=Get-ItemProperty $_.PSPath; if($p.UPN -or $p.ProviderID){ "$($_.PSChildName)  provider=$($p.ProviderID)  upn=$($p.UPN)  state=$($p.EnrollmentState)" } }
+        trust: safe
+      - label: Last MDM sync time
+        command: Get-WinEvent -LogName 'Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin' -MaxEvents 200 -ErrorAction SilentlyContinue | Where-Object Id -in 208,209 | Select-Object -First 1 TimeCreated, Id, @{n='Message';e={$_.Message.Split("`n")[0]}} | Format-List
+        trust: safe
+      - label: Trigger MDM sync
+        command: |-
+          Get-ScheduledTask -TaskPath '\Microsoft\Windows\EnterpriseMgmt\*' -TaskName 'Schedule #3 created by enrollment client' -ErrorAction SilentlyContinue | Start-ScheduledTask; 'Sync requested'
+        trust: caution
+      - label: Autopilot profile present
+        command: $p='HKLM:\SOFTWARE\Microsoft\Provisioning\Diagnostics\AutoPilot'; if(Test-Path $p){ Get-ItemProperty $p | Select-Object CloudAssignedTenantDomain, CloudAssignedDeviceName, DeploymentMode | Format-List } else { 'No Autopilot profile cached' }
+        trust: safe
+      - label: Device certificate for MDM
+        command: Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Issuer -match 'Intune|Microsoft' } | Select-Object Subject, NotAfter, Thumbprint | Format-Table -AutoSize
+        trust: safe
+      - label: MDM diagnostics errors (last 20)
+        command: Get-WinEvent -LogName 'Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider/Admin' -MaxEvents 400 -ErrorAction SilentlyContinue | Where-Object LevelDisplayName -eq 'Error' | Select-Object -First 20 TimeCreated, Id, @{n='Message';e={$_.Message.Split("`n")[0]}} | Format-Table -AutoSize -Wrap
+        trust: safe
+      - label: Leave Entra join (re-enrol afterwards)
+        command: dsregcmd /leave; 'Left Entra join; the device must be re-enrolled'
+        trust: destructive
+
+  - name: Security & Profiles
+    commands:
+      - label: BitLocker status
+        command: |-
+          Get-BitLockerVolume -MountPoint C: | Select-Object MountPoint, VolumeStatus, ProtectionStatus, EncryptionPercentage, KeyProtector | Format-List
+        trust: safe
+      - label: Defender status
+        command: Get-MpComputerStatus | Select-Object AMServiceEnabled, RealTimeProtectionEnabled, AntivirusSignatureLastUpdated, AntivirusSignatureVersion, QuickScanStartTime | Format-List
+        trust: safe
+      - label: Defender threats (last 10)
+        command: Get-MpThreatDetection -ErrorAction SilentlyContinue | Sort-Object InitialDetectionTime -Descending | Select-Object -First 10 InitialDetectionTime, ThreatID, ProcessName, Resources | Format-Table -AutoSize -Wrap
+        trust: safe
+      - label: Update Defender signatures
+        command: Update-MpSignature; 'Signature update requested'
+        trust: caution
+      - label: Run Defender quick scan
+        command: Start-MpScan -ScanType QuickScan; 'Quick scan started'
+        trust: caution
+      - label: Firewall profiles
+        command: Get-NetFirewallProfile | Select-Object Name, Enabled, DefaultInboundAction | Format-Table -AutoSize
+        trust: safe
+      - label: Local administrators
+        command: Get-LocalGroupMember Administrators | Select-Object Name, ObjectClass, PrincipalSource | Format-Table -AutoSize
+        trust: safe
+      - label: Remote Desktop state
+        command: |-
+          |-
+          $pol=Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services' -ErrorAction SilentlyContinue; $ts=Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'
+          $deny=if($null -ne $pol.fDenyTSConnections){$pol.fDenyTSConnections}else{$ts.fDenyTSConnections}; "RDP: $(if($deny -eq 0){'enabled'}else{'disabled'})  NLA: $((Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp').UserAuthentication)  Listening: $([bool](Get-NetTCPConnection -LocalPort 3389 -State Listen -ErrorAction SilentlyContinue))"
+        trust: safe
+      - label: SSH server state
+        command: |-
+          |-
+          Get-Service sshd -ErrorAction SilentlyContinue | Select-Object Status, StartType | Format-List; "Listening: $([bool](Get-NetTCPConnection -LocalPort 22 -State Listen -ErrorAction SilentlyContinue))"
+        trust: safe
+      - label: Remote access readiness
+        command: |-
+          |-
+          "SSH: $((Get-Service sshd -ErrorAction SilentlyContinue).Status) / port 22 $(if(Get-NetTCPConnection -LocalPort 22 -State Listen -ErrorAction SilentlyContinue){'open'}else{'closed'})"; "RDP port 3389 $(if(Get-NetTCPConnection -LocalPort 3389 -State Listen -ErrorAction SilentlyContinue){'open'}else{'closed'})"; "Admin keys file: $(Test-Path "$env:ProgramData\ssh\administrators_authorized_keys")"
+        trust: safe
+      - label: Enable Remote Desktop
+        command: Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0; Enable-NetFirewallRule -DisplayGroup 'Remote Desktop'; 'Remote Desktop enabled'
+        trust: caution
+      - label: Restart the SSH server
+        command: Restart-Service sshd -Force; (Get-Service sshd).Status
+        trust: caution
+      - label: Applied policies summary (gpresult)
+        command: gpresult /r /scope:computer 2>&1 | Select-String -Pattern 'Applied Group Policy|OU=|Last time' -Context 0,6 | ForEach-Object { $_.Line; $_.Context.PostContext } | Select-Object -First 40
+        trust: safe
+      - label: Certificates expiring within 60 days
+        command: Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.NotAfter -lt (Get-Date).AddDays(60) } | Select-Object Subject, NotAfter | Format-Table -AutoSize
+        trust: safe
+      - label: Secure Boot and TPM
+        command: "\"Secure Boot: $(try { Confirm-SecureBootUEFI } catch { 'unknown' })\"; Get-Tpm | Select-Object TpmPresent, TpmReady, TpmEnabled | Format-List"
+        trust: safe
+      - label: Suspend BitLocker for one restart
+        command: |-
+          Suspend-BitLocker -MountPoint C: -RebootCount 1; 'BitLocker suspended for one restart'
+        trust: destructive
+      - label: Disable BitLocker (decrypt)
+        command: Disable-BitLocker -MountPoint C:; 'Decryption started'
+        trust: destructive
+
+  - name: Users & Sessions
+    commands:
+      - label: Who is signed in
+        command: quser 2>&1
+        trust: safe
+      - label: Console user
+        command: (Get-CimInstance Win32_ComputerSystem).UserName
+        trust: safe
+      - label: Recent sign-ins (last 15)
+        command: Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4624} -MaxEvents 400 -ErrorAction SilentlyContinue | Where-Object { $_.Properties[8].Value -in 2,10,11 } | Select-Object -First 15 TimeCreated, @{n='User';e={$_.Properties[5].Value}}, @{n='Type';e={$_.Properties[8].Value}} | Format-Table -AutoSize
+        trust: safe
+      - label: Local users
+        command: Get-LocalUser | Select-Object Name, Enabled, LastLogon, PasswordRequired | Format-Table -AutoSize
+        trust: safe
+      - label: User profiles on disk
+        command: Get-CimInstance Win32_UserProfile | Where-Object { -not $_.Special } | Select-Object LocalPath, LastUseTime, Loaded | Sort-Object LastUseTime -Descending | Format-Table -AutoSize
+        trust: safe
+      - label: Auto-logon configured?
+        command: $w=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'; "AutoAdminLogon=$($w.AutoAdminLogon) DefaultUserName=$($w.DefaultUserName) DefaultDomainName=$($w.DefaultDomainName)"
+        trust: safe
+      - label: Log out the console user
+        command: $s=(quser 2>$null | Select-String '^\s*>?\S+\s+console\s+(\d+)' | ForEach-Object { $_.Matches[0].Groups[1].Value } | Select-Object -First 1); if($s){ logoff $s; "Logged off session $s" } else { 'No console session' }
+        trust: destructive
+      - label: Lock the console session
+        command: $s=(quser 2>$null | Select-String '^\s*>?\S+\s+console\s+(\d+)' | ForEach-Object { $_.Matches[0].Groups[1].Value } | Select-Object -First 1); if($s){ tsdiscon $s; "Locked session $s" } else { 'No console session' }
+        trust: caution
+      - label: Create local admin (template)
+        command: $p=ConvertTo-SecureString '<PASSWORD>' -AsPlainText -Force; New-LocalUser -Name '<USERNAME>' -Password $p -PasswordNeverExpires -AccountNeverExpires | Out-Null; Add-LocalGroupMember -Group Administrators -Member '<USERNAME>'; "Created <USERNAME> as a local administrator"
+        trust: caution
+      - label: Remove local user (template)
+        command: Remove-LocalUser -Name '<USERNAME>'; "Removed <USERNAME>"
+        trust: destructive
+      - label: Delete a stale profile (template)
+        command: Get-CimInstance Win32_UserProfile | Where-Object { $_.LocalPath -like '*\<USERNAME>' -and -not $_.Loaded } | Remove-CimInstance; "Profile for <USERNAME> removed"
+        trust: destructive
+      - label: Message the console user (template)
+        command: msg * /time:60 '<MESSAGE>'; 'Message sent'
+        trust: caution
+
+  - name: Network
+    commands:
+      - label: IP configuration
+        command: Get-NetIPConfiguration | Where-Object { $_.NetAdapter.Status -eq 'Up' } | Select-Object InterfaceAlias, @{n='IPv4';e={$_.IPv4Address.IPAddress}}, @{n='Gateway';e={$_.IPv4DefaultGateway.NextHop}}, @{n='DNS';e={$_.DNSServer.ServerAddresses -join ', '}} | Format-Table -AutoSize
+        trust: safe
+      - label: All IPv4 addresses
+        command: Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | Select-Object InterfaceAlias, IPAddress | Format-Table -AutoSize
+        trust: safe
+      - label: DNS servers
+        command: Get-DnsClientServerAddress -AddressFamily IPv4 | Where-Object ServerAddresses | Select-Object InterfaceAlias, @{n='Servers';e={$_.ServerAddresses -join ', '}} | Format-Table -AutoSize
+        trust: safe
+      - label: Wi-Fi network and signal
+        command: netsh wlan show interfaces | Select-String -Pattern '^\s+(SSID|Signal|State|Radio type)' | ForEach-Object { $_.Line.Trim() }
+        trust: safe
+      - label: Adapters and link speed
+        command: Get-NetAdapter | Select-Object Name, Status, LinkSpeed, MacAddress | Format-Table -AutoSize
+        trust: safe
+      - label: Open connections (established)
+        command: Get-NetTCPConnection -State Established | Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, OwningProcess | Sort-Object RemoteAddress | Format-Table -AutoSize
+        trust: safe
+      - label: Listening ports
+        command: Get-NetTCPConnection -State Listen | Select-Object LocalPort, OwningProcess, @{n='Process';e={(Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName}} | Sort-Object LocalPort -Unique | Format-Table -AutoSize
+        trust: safe
+      - label: Test reachability (template)
+        command: Test-NetConnection -ComputerName '<HOST>' -Port <PORT> | Select-Object ComputerName, RemotePort, TcpTestSucceeded, PingSucceeded | Format-List
+        trust: safe
+      - label: Flush DNS cache
+        command: Clear-DnsClientCache; 'DNS cache flushed'
+        trust: caution
+      - label: Renew DHCP lease
+        command: ipconfig /release | Out-Null; ipconfig /renew | Out-Null; (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' }).IPAddress
+        trust: caution
+      - label: Restart the network adapters
+        command: Get-NetAdapter | Where-Object Status -eq 'Up' | Restart-NetAdapter; 'Adapters restarted'
+        trust: caution
+      - label: Forget all saved Wi-Fi profiles
+        command: netsh wlan delete profile name=* i=* | Out-Null; 'Saved Wi-Fi profiles removed'
+        trust: destructive
+
+  - name: Printing
+    commands:
+      - label: Installed printers
+        command: Get-Printer | Select-Object Name, DriverName, PortName, PrinterStatus, Shared | Format-Table -AutoSize
+        trust: safe
+      - label: Default printer
+        command: (Get-CimInstance Win32_Printer | Where-Object Default).Name
+        trust: safe
+      - label: Print queue (all printers)
+        command: Get-Printer | ForEach-Object { Get-PrintJob -PrinterName $_.Name -ErrorAction SilentlyContinue } | Select-Object PrinterName, DocumentName, UserName, JobStatus, SubmittedTime | Format-Table -AutoSize
+        trust: safe
+      - label: Spooler service
+        command: Get-Service Spooler | Select-Object Status, StartType | Format-List
+        trust: safe
+      - label: Printer ports
+        command: Get-PrinterPort | Select-Object Name, PrinterHostAddress, PortNumber | Format-Table -AutoSize
+        trust: safe
+      - label: Cancel all print jobs
+        command: Get-Printer | ForEach-Object { Get-PrintJob -PrinterName $_.Name -ErrorAction SilentlyContinue | Remove-PrintJob }; 'All print jobs cancelled'
+        trust: destructive
+      - label: Restart the spooler and clear stuck jobs
+        command: Stop-Service Spooler -Force; Remove-Item "$env:SystemRoot\System32\spool\PRINTERS\*" -Force -ErrorAction SilentlyContinue; Start-Service Spooler; (Get-Service Spooler).Status
+        trust: destructive
+      - label: Remove a printer (template)
+        command: Remove-Printer -Name '<PRINTER_NAME>'; "Removed <PRINTER_NAME>"
+        trust: destructive
+      - label: Set default printer (template)
+        command: (Get-CimInstance Win32_Printer -Filter "Name='<PRINTER_NAME>'").SetDefaultPrinter() | Out-Null; "Default printer set to <PRINTER_NAME>"
+        trust: caution
+
+  - name: Diagnostics
+    commands:
+      - label: Running apps with windows
+        command: $sid=(Get-Process explorer -ErrorAction SilentlyContinue | Select-Object -First 1).SessionId; Get-Process | Where-Object { $_.SessionId -eq $sid -and $_.MainWindowHandle -ne 0 } | Select-Object ProcessName, Id, @{n='MB';e={[math]::Round($_.WorkingSet64/1MB)}} | Sort-Object MB -Descending | Format-Table -AutoSize
+        trust: safe
+      - label: Services not running that should be
+        command: Get-Service | Where-Object { $_.StartType -eq 'Automatic' -and $_.Status -ne 'Running' } | Select-Object Name, DisplayName, Status | Format-Table -AutoSize
+        trust: safe
+      - label: Recent application crashes (last 15)
+        command: Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='Application Error'} -MaxEvents 15 -ErrorAction SilentlyContinue | Select-Object TimeCreated, @{n='App';e={$_.Properties[0].Value}}, @{n='Module';e={$_.Properties[3].Value}} | Format-Table -AutoSize
+        trust: safe
+      - label: Unexpected shutdowns (last 10)
+        command: Get-WinEvent -FilterHashtable @{LogName='System'; Id=41,6008,1074} -MaxEvents 10 -ErrorAction SilentlyContinue | Select-Object TimeCreated, Id, @{n='Message';e={$_.Message.Split("`n")[0]}} | Format-Table -AutoSize -Wrap
+        trust: safe
+      - label: Drivers with problems
+        command: Get-CimInstance Win32_PnPEntity | Where-Object { $_.ConfigManagerErrorCode -ne 0 } | Select-Object Name, ConfigManagerErrorCode, Status | Format-Table -AutoSize
+        trust: safe
+      - label: GPU and driver version
+        command: Get-CimInstance Win32_VideoController | Select-Object Name, DriverVersion, DriverDate, @{n='VRAM_GB';e={[math]::Round($_.AdapterRAM/1GB,1)}} | Format-Table -AutoSize
+        trust: safe
+      - label: Displays connected
+        command: Get-CimInstance -Namespace root\wmi -ClassName WmiMonitorID -ErrorAction SilentlyContinue | ForEach-Object { ($_.UserFriendlyName | Where-Object { $_ } | ForEach-Object { [char]$_ }) -join '' }
+        trust: safe
+      - label: Kill a process by name (template)
+        command: Stop-Process -Name '<PROCESS_NAME>' -Force; "Stopped <PROCESS_NAME>"
+        trust: destructive
+      - label: Restart a service (template)
+        command: Restart-Service -Name '<SERVICE_NAME>' -Force; (Get-Service '<SERVICE_NAME>').Status
+        trust: caution
+      - label: Restart Explorer for the console user
+        command: Get-Process explorer -ErrorAction SilentlyContinue | Stop-Process -Force; 'Explorer restarted (Windows relaunches it)'
+        trust: destructive
+      - label: System file check (quick verify)
+        command: sfc /verifyonly 2>&1 | Select-Object -Last 5
+        trust: safe
+      - label: Time sync status
+        command: w32tm /query /status 2>&1 | Select-String -Pattern 'Source|Last Successful|Stratum' | ForEach-Object { $_.Line.Trim() }
+        trust: safe
+      - label: Resync time now
+        command: w32tm /resync /force 2>&1
+        trust: caution
+
+  - name: Logs
+    commands:
+      - label: Managed software log (last 100)
+        command: Get-Content 'C:\ProgramData\ManagedInstalls\Logs\ManagedSoftwareUpdate.log' -Tail 100 -ErrorAction SilentlyContinue
+        trust: safe
+      - label: Managed software log (search, template)
+        command: Get-Content 'C:\ProgramData\ManagedInstalls\Logs\ManagedSoftwareUpdate.log' -ErrorAction SilentlyContinue | Select-String -Pattern '<PATTERN>' | Select-Object -Last 60 | ForEach-Object { $_.Line }
+        trust: safe
+      - label: Managed logs folder listing
+        command: Get-ChildItem C:\ProgramData\Managed* -Recurse -File -Include *.log -ErrorAction SilentlyContinue | Select-Object FullName, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}, LastWriteTime | Sort-Object LastWriteTime -Descending | Select-Object -First 30 | Format-Table -AutoSize
+        trust: safe
+      - label: System log errors (last hour)
+        command: Get-WinEvent -FilterHashtable @{LogName='System'; Level=1,2; StartTime=(Get-Date).AddHours(-1)} -ErrorAction SilentlyContinue | Select-Object TimeCreated, ProviderName, Id, @{n='Message';e={$_.Message.Split("`n")[0]}} | Format-Table -AutoSize -Wrap
+        trust: safe
+      - label: Application log errors (last hour)
+        command: Get-WinEvent -FilterHashtable @{LogName='Application'; Level=1,2; StartTime=(Get-Date).AddHours(-1)} -ErrorAction SilentlyContinue | Select-Object TimeCreated, ProviderName, Id, @{n='Message';e={$_.Message.Split("`n")[0]}} | Format-Table -AutoSize -Wrap
+        trust: safe
+      - label: Last 50 system events
+        command: Get-WinEvent -LogName System -MaxEvents 50 | Select-Object TimeCreated, LevelDisplayName, ProviderName, Id | Format-Table -AutoSize
+        trust: safe
+      - label: Setup log for the client (tail)
+        command: Get-ChildItem 'C:\ProgramData\ManagedInstalls\Logs\*' -Include *install*.log -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object { "== $($_.Name)"; Get-Content $_.FullName -Tail 60 }
+        trust: safe
+      - label: Search all event logs for text (template)
+        command: Get-WinEvent -FilterHashtable @{LogName='System','Application'; StartTime=(Get-Date).AddDays(-1)} -ErrorAction SilentlyContinue | Where-Object { $_.Message -match '<PATTERN>' } | Select-Object -First 30 TimeCreated, LogName, Id, @{n='Message';e={$_.Message.Split("`n")[0]}} | Format-Table -AutoSize -Wrap
+        trust: safe
+      - label: Clear the managed software log
+        command: Clear-Content 'C:\ProgramData\ManagedInstalls\Logs\ManagedSoftwareUpdate.log' -ErrorAction SilentlyContinue; 'Log cleared'
+        trust: destructive
+
+  - name: Power
+    commands:
+      - label: Restart in 1 minute
+        command: shutdown.exe /r /t 60 /c 'Restart requested by FleetMate'; 'Restart in 60 seconds'
+        trust: destructive
+      - label: Restart now
+        command: shutdown.exe /r /t 5 /f /c 'Restart requested by FleetMate'; 'Restart in 5 seconds'
+        trust: destructive
+      - label: Shut down now
+        command: shutdown.exe /s /t 5 /f /c 'Shutdown requested by FleetMate'; 'Shutdown in 5 seconds'
+        trust: destructive
+      - label: Cancel a pending shutdown
+        command: shutdown.exe /a 2>&1; 'Pending shutdown cancelled'
+        trust: caution
+      - label: Sleep now
+        command: rundll32.exe powrprof.dll,SetSuspendState 0,1,0; 'Sleep requested'
+        trust: destructive
+      - label: Active power plan
+        command: powercfg /getactivescheme
+        trust: safe
+      - label: Sleep and display timeouts
+        command: powercfg /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE 2>&1 | Select-String -Pattern 'Current AC|Current DC' | ForEach-Object { 'Sleep ' + $_.Line.Trim() }; powercfg /query SCHEME_CURRENT SUB_VIDEO VIDEOIDLE 2>&1 | Select-String -Pattern 'Current AC|Current DC' | ForEach-Object { 'Display ' + $_.Line.Trim() }
+        trust: safe
+      - label: Last wake source
+        command: powercfg /lastwake 2>&1
+        trust: safe
+      - label: Battery report (laptops)
+        command: $b=Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue; if($b){ $b | Select-Object EstimatedChargeRemaining, BatteryStatus, DesignVoltage | Format-List } else { 'No battery' }
+        trust: safe
+      - label: Set High performance plan
+        command: powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c; powercfg /getactivescheme
+        trust: caution
+      - label: Never sleep on AC
+        command: powercfg /change standby-timeout-ac 0; powercfg /change monitor-timeout-ac 0; 'Sleep and display timeouts disabled on AC'
+        trust: caution
+      - label: Restore default power settings
+        command: powercfg /restoredefaultschemes; 'Default power schemes restored'
+        trust: destructive
+
+  - name: Adobe
+    commands:
+      - label: Creative Cloud desktop version
+        command: $p='C:\Program Files\Adobe\Adobe Creative Cloud\ACC\Creative Cloud.exe'; if(Test-Path $p){ (Get-Item $p).VersionInfo.FileVersion } else { 'Creative Cloud desktop not installed' }
+        trust: safe
+      - label: Installed Adobe apps and versions
+        command: Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object { $_.Publisher -like 'Adobe*' -and $_.DisplayName } | Sort-Object DisplayName -Unique | ForEach-Object { "$($_.DisplayName)`t$($_.DisplayVersion)" }
+        trust: safe
+      - label: Available Adobe updates (RUM)
+        command: $r='C:\Program Files (x86)\Common Files\Adobe\OOBE_Enterprise\RemoteUpdateManager\RemoteUpdateManager.exe'; if(Test-Path $r){ & $r --action=list 2>&1 | Select-Object -Last 40 } else { 'Remote Update Manager not installed' }
+        trust: safe
+      - label: Install Adobe updates (RUM)
+        command: $r='C:\Program Files (x86)\Common Files\Adobe\OOBE_Enterprise\RemoteUpdateManager\RemoteUpdateManager.exe'; if(Test-Path $r){ & $r --action=install 2>&1 | Select-Object -Last 40 } else { 'Remote Update Manager not installed' }
+        trust: caution
+      - label: RUM log (tail)
+        command: Get-Content "$env:TEMP\RemoteUpdateManager.log" -Tail 60 -ErrorAction SilentlyContinue
+        trust: safe
+      - label: Adobe processes running
+        command: Get-Process | Where-Object { $_.Company -like 'Adobe*' -or $_.ProcessName -match '^(Adobe|CC|Creative|Photoshop|Illustrator|InDesign|Premiere|AfterFX|Acrobat)' } | Select-Object ProcessName, Id, @{n='MB';e={[math]::Round($_.WorkingSet64/1MB)}} | Format-Table -AutoSize
+        trust: safe
+      - label: Clear Adobe licensing cache (fix sign-in)
+        command: Get-Process -Name 'Adobe*','CC*','Creative Cloud*' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Remove-Item 'C:\ProgramData\Adobe\SLStore','C:\ProgramData\Adobe\SLStore_v2' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item 'C:\Users\*\AppData\Roaming\Adobe\OOBE\opm.db' -Force -ErrorAction SilentlyContinue; 'Adobe licensing cache cleared; sign in again'
+        trust: destructive
+      - label: Uninstall Acrobat (via registry uninstall string)
+        command: $u=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like 'Adobe Acrobat*' } | Select-Object -First 1; if($u -and $u.PSChildName -match '^\{'){ Start-Process msiexec.exe -ArgumentList "/x $($u.PSChildName) /qn /norestart" -Wait; 'Acrobat uninstall finished' } else { 'Acrobat MSI product not found' }
+        trust: destructive
+
+  - name: StartSet
+    commands:
+      - label: StartSet log (tail)
+        command: Get-ChildItem 'C:\ProgramData\ManagedStartSet\Logs\*.log' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object { "== $($_.Name)"; Get-Content $_.FullName -Tail 80 }
+        trust: safe
+      - label: List scripts (all stages)
+        command: Get-ChildItem 'C:\ProgramData\ManagedStartSet' -Directory -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.Name)"; Get-ChildItem $_.FullName -File -ErrorAction SilentlyContinue | ForEach-Object { "   $($_.Name)  $($_.LastWriteTime)" } }
+        trust: safe
+      - label: List login-every scripts
+        command: Get-ChildItem 'C:\ProgramData\ManagedStartSet\login-every' -File -ErrorAction SilentlyContinue | Select-Object Name, LastWriteTime | Format-Table -AutoSize
+        trust: safe
+      - label: List login-once scripts
+        command: Get-ChildItem 'C:\ProgramData\ManagedStartSet\login-once' -File -ErrorAction SilentlyContinue | Select-Object Name, LastWriteTime | Format-Table -AutoSize
+        trust: safe
+      - label: List boot scripts
+        command: Get-ChildItem 'C:\ProgramData\ManagedStartSet\boot-every','C:\ProgramData\ManagedStartSet\boot-once' -File -ErrorAction SilentlyContinue | Select-Object Directory, Name, LastWriteTime | Format-Table -AutoSize
+        trust: safe
+      - label: Scheduled tasks for StartSet
+        command: Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskName -like '*StartSet*' } | Select-Object TaskName, State, @{n='LastRun';e={($_ | Get-ScheduledTaskInfo).LastRunTime}} | Format-Table -AutoSize
+        trust: safe
+      - label: Run boot scripts now
+        command: $t=Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskName -like '*StartSet*boot*' } | Select-Object -First 1; if($t){ Start-ScheduledTask -InputObject $t; "Started $($t.TaskName)" } else { 'No StartSet boot task found' }
+        trust: caution
+      - label: Run on-demand scripts now
+        command: $t=Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskName -like '*StartSet*demand*' } | Select-Object -First 1; if($t){ Start-ScheduledTask -InputObject $t; "Started $($t.TaskName)" } else { 'No StartSet on-demand task found' }
+        trust: caution
+      - label: Errors in the StartSet log
+        command: Get-ChildItem 'C:\ProgramData\ManagedStartSet\Logs\*.log' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object { Get-Content $_.FullName | Select-String -Pattern 'ERROR|WARN|Exception' | Select-Object -Last 40 | ForEach-Object { $_.Line } }
+        trust: safe
+      - label: Clear login-once state so scripts run again
+        command: Remove-Item 'C:\ProgramData\ManagedStartSet\State\login-once*' -Recurse -Force -ErrorAction SilentlyContinue; 'Login-once state cleared'
+        trust: destructive
