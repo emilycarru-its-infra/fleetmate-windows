@@ -1,3 +1,4 @@
+using System.IO;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using FleetMate.Core.Config;
@@ -7,6 +8,11 @@ using FleetMate.Core.Services.Manage;
 using Serilog;
 
 namespace FleetMate.GUI.ViewModels.Manage;
+
+internal static class ObjectExtensions
+{
+    public static void Let<T>(this T value, Action<T> action) where T : class => action(value);
+}
 
 /// <summary>
 /// State of the Manage tab: the roster, the selected room or group, the
@@ -23,15 +29,29 @@ public partial class ManageViewModel : ObservableObject
     private readonly HostScanner _scanner;
     private readonly MachineProbeService? _prober;
     private readonly RemoteSessionLauncher? _launcher;
+    private readonly CommandRunner? _commandRunner;
     private readonly SynchronizationContext? _ui;
 
     private CancellationTokenSource? _scanCts;
     private CancellationTokenSource? _probeCts;
+    private CancellationTokenSource? _runCts;
 
     public FleetRoster Roster { get; private set; } = FleetRoster.Empty;
     public ObservableCollection<CustomGroup> CustomGroups { get; } = new();
     public ObservableCollection<MachineRowViewModel> Rows { get; } = new();
     public List<CommandHistoryEntry> History { get; private set; } = new();
+    public ObservableCollection<CommandCategory> Categories { get; } = new();
+    public ObservableCollection<CommandResultViewModel> Results { get; } = new();
+
+    [ObservableProperty] private CommandCategory? _selectedCategory;
+    [ObservableProperty] private ManagedCommand? _selectedCommand;
+    [ObservableProperty] private string _customCommand = "";
+    [ObservableProperty] private bool _isRunning;
+    [ObservableProperty] private string _runStatus = "";
+    [ObservableProperty] private string _lastRunLabel = "";
+
+    /// <summary>Raised on the UI thread when a fleet run finishes, with success, failed and offline counts.</summary>
+    public event Action<int, int, int>? RunCompleted;
 
     [ObservableProperty] private RosterRoom? _selectedRoom;
     [ObservableProperty] private CustomGroup? _selectedGroup;
@@ -59,8 +79,11 @@ public partial class ManageViewModel : ObservableObject
         _launcher = launcher;
         _scanner = new HostScanner(directory, probe);
         _prober = runner == null ? null : new MachineProbeService(runner) { Concurrency = Math.Max(1, config.ProbeConcurrency) };
+        _commandRunner = runner == null ? null : new CommandRunner(runner) { Concurrency = Math.Max(1, config.ProbeConcurrency) };
         _ui = SynchronizationContext.Current;
     }
+
+    public bool CanRun => _commandRunner != null;
 
     public bool CanProbe => _prober != null;
     public bool CanLaunch => _launcher != null;
@@ -71,10 +94,246 @@ public partial class ManageViewModel : ObservableObject
     public int OnlineCount => Rows.Count(r => r.IsOnline);
     public IEnumerable<MachineRowViewModel> OnlineSelectedRows => Rows.Where(r => r.IsSelected && r.IsOnline);
 
+    // ── Command library ──────────────────────────────────────────────────
+
+    public string CommandsPath => _config.ResolvedCommandsPath;
+
+    /// <summary>
+    /// Load the library, seeding the per-user file from the built-in set when
+    /// it does not exist yet, and adding any built-in command the file lacks.
+    /// </summary>
+    public void LoadCommandLibrary()
+    {
+        var path = CommandsPath;
+        List<CommandCategory> categories;
+        if (File.Exists(path))
+        {
+            categories = CommandLibrary.Load(path);
+            if (CommandLibrary.MergeMissing(categories, CommandLibrary.DefaultCategories()))
+                TrySaveLibrary(categories);
+        }
+        else
+        {
+            categories = CommandLibrary.DefaultCategories();
+            TrySaveLibrary(categories);
+        }
+
+        var previousCategory = SelectedCategory?.Name;
+        var previousCommand = SelectedCommand?.Label;
+        Categories.Clear();
+        foreach (var c in categories) Categories.Add(c);
+        SelectedCategory = Categories.FirstOrDefault(c => c.Name == previousCategory) ?? Categories.FirstOrDefault();
+        SelectedCommand = SelectedCategory?.Commands.FirstOrDefault(c => c.Label == previousCommand);
+    }
+
+    private void TrySaveLibrary(IEnumerable<CommandCategory> categories)
+    {
+        try { CommandLibrary.Save(categories, CommandsPath); }
+        catch (Exception ex) { Log.Warning(ex, "Could not save the command library to {Path}", CommandsPath); }
+    }
+
+    public void SaveLibrary() => TrySaveLibrary(Categories);
+
+    public CommandCategory AddCategory(string name)
+    {
+        var category = new CommandCategory(name.Trim());
+        Categories.Add(category);
+        SaveLibrary();
+        return category;
+    }
+
+    public ManagedCommand AddCommand(CommandCategory category, string label, string command, CommandTrustLevel trust)
+    {
+        var cmd = new ManagedCommand(label, command, trust);
+        category.Commands.Add(cmd);
+        SaveLibrary();
+        SelectedCategory = category;
+        SelectedCommand = cmd;
+        return cmd;
+    }
+
+    public void EditCommand(CommandCategory category, ManagedCommand command, string label, string text, CommandTrustLevel trust)
+    {
+        command.Label = label;
+        command.Command = text;
+        command.TrustLevel = trust;
+        command.TrustWasExplicit = true;
+        SaveLibrary();
+        var idx = category.Commands.IndexOf(command);
+        SelectedCategory = category;
+        SelectedCommand = null;
+        SelectedCommand = command;
+    }
+
+    public void DeleteCommand(CommandCategory category, ManagedCommand command)
+    {
+        category.Commands.Remove(command);
+        if (SelectedCommand == command) SelectedCommand = null;
+        SaveLibrary();
+    }
+
+    /// <summary>The command that Run would send: the custom box wins when it has text.</summary>
+    public string ResolvedCommandString => CustomCommand.Trim().Length > 0 ? CustomCommand.Trim() : SelectedCommand?.Command ?? "";
+
+    public string ResolvedCommandLabel => CustomCommand.Trim().Length > 0 ? "Custom command" : SelectedCommand?.Label ?? "";
+
+    /// <summary>Trust for what Run would send: stated for library commands, inferred for custom text.</summary>
+    public CommandTrustLevel EffectiveTrust =>
+        CustomCommand.Trim().Length > 0 ? TrustInference.Infer(CustomCommand) : SelectedCommand?.TrustLevel ?? CommandTrustLevel.Safe;
+
+    public bool EffectiveTrustIsInferred => CustomCommand.Trim().Length > 0 || (SelectedCommand != null && !SelectedCommand.TrustWasExplicit);
+
+    partial void OnCustomCommandChanged(string value) => RaiseCommandDerived();
+    partial void OnSelectedCommandChanged(ManagedCommand? value) => RaiseCommandDerived();
+
+    private void RaiseCommandDerived()
+    {
+        OnPropertyChanged(nameof(ResolvedCommandString));
+        OnPropertyChanged(nameof(ResolvedCommandLabel));
+        OnPropertyChanged(nameof(EffectiveTrust));
+        OnPropertyChanged(nameof(EffectiveTrustIsInferred));
+    }
+
+    // ── Running ──────────────────────────────────────────────────────────
+
+    public int ResultSuccessCount => Results.Count(r => r.Status == CommandRunStatus.Success);
+    public int ResultFailedCount => Results.Count(r => r.Status is CommandRunStatus.Failed or CommandRunStatus.AuthFailed or CommandRunStatus.Timeout);
+    public int ResultOfflineCount => Results.Count(r => r.Status == CommandRunStatus.Offline);
+
+    /// <summary>
+    /// Run a command on the checked online machines (or the given rows).
+    /// Results replace the previous run's; each row streams as it arrives.
+    /// </summary>
+    public async Task RunCommandAsync(string command, string label, bool recordHistory = true, IReadOnlyList<MachineRowViewModel>? targets = null)
+    {
+        if (_commandRunner == null || string.IsNullOrWhiteSpace(command)) return;
+        var rows = (targets ?? OnlineSelectedRows.ToList()).Where(r => r.IsOnline).ToList();
+        if (rows.Count == 0) return;
+
+        KillRun();
+        var cts = new CancellationTokenSource();
+        _runCts = cts;
+
+        if (recordHistory) History = _store.AddHistory(History, label, command);
+        LastRunLabel = label;
+
+        Results.Clear();
+        var bySerial = new Dictionary<string, CommandResultViewModel>();
+        foreach (var row in rows)
+        {
+            var result = new CommandResultViewModel(row.Computer, row.Ip);
+            bySerial[row.Serial] = result;
+            Results.Add(result);
+            row.LastRunStatus = CommandRunStatus.Pending;
+        }
+        IsRunning = true;
+        RunStatus = $"Running on {rows.Count} machines...";
+
+        var observer = new RunObserver(this, bySerial);
+        try
+        {
+            await _commandRunner.RunAsync(rows.Select(r => new RunTarget(r.Computer, r.Ip)).ToList(), command, observer, cts.Token);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Fleet run failed");
+        }
+        finally
+        {
+            Post(() =>
+            {
+                if (_runCts == cts) { IsRunning = false; _runCts = null; }
+                foreach (var r in Results.Where(r => !r.IsTerminal))
+                {
+                    r.Status = CommandRunStatus.Cancelled;
+                    r.EndTime = DateTime.Now;
+                }
+                RaiseResultCounts();
+                RunStatus = $"{ResultSuccessCount} succeeded, {ResultFailedCount} failed, {ResultOfflineCount} offline";
+                RunCompleted?.Invoke(ResultSuccessCount, ResultFailedCount, ResultOfflineCount);
+            });
+        }
+    }
+
+    public void KillRun()
+    {
+        var cts = _runCts;
+        _runCts = null;
+        cts?.Cancel();
+        foreach (var r in Results.Where(r => !r.IsTerminal))
+        {
+            r.Status = CommandRunStatus.Cancelled;
+            r.EndTime = DateTime.Now;
+        }
+        IsRunning = false;
+    }
+
+    public void ClearResults()
+    {
+        Results.Clear();
+        RunStatus = "";
+        RaiseResultCounts();
+    }
+
+    private void RaiseResultCounts()
+    {
+        OnPropertyChanged(nameof(ResultSuccessCount));
+        OnPropertyChanged(nameof(ResultFailedCount));
+        OnPropertyChanged(nameof(ResultOfflineCount));
+    }
+
+    private sealed class RunObserver : IRunObserver
+    {
+        private readonly ManageViewModel _vm;
+        private readonly Dictionary<string, CommandResultViewModel> _results;
+
+        public RunObserver(ManageViewModel vm, Dictionary<string, CommandResultViewModel> results)
+        {
+            _vm = vm;
+            _results = results;
+        }
+
+        public void Started(string serial) => _vm.Post(() =>
+        {
+            if (!_results.TryGetValue(serial, out var r)) return;
+            r.Status = CommandRunStatus.Running;
+            Row(serial)?.Let(row => row.LastRunStatus = CommandRunStatus.Running);
+        });
+
+        public void Output(string serial, string chunk) => _vm.Post(() =>
+        {
+            if (_results.TryGetValue(serial, out var r) && r.Status != CommandRunStatus.Cancelled) r.AppendOutput(chunk);
+        });
+
+        public void Finished(string serial, CommandRunStatus status, int? exitCode, string stderr, string? error) => _vm.Post(() =>
+        {
+            if (!_results.TryGetValue(serial, out var r)) return;
+            if (r.Status == CommandRunStatus.Cancelled && status != CommandRunStatus.Cancelled) return;
+            r.ExitCode = exitCode;
+            r.ErrorOutput = string.IsNullOrWhiteSpace(stderr) ? (error ?? "") : (error == null ? stderr : stderr + Environment.NewLine + error);
+            r.EndTime = DateTime.Now;
+            r.Status = status;
+            Row(serial)?.Let(row => row.LastRunStatus = status);
+            _vm.RaiseResultCounts();
+            _vm.RunStatus = $"{_vm.Results.Count(x => x.IsTerminal)}/{_vm.Results.Count} done";
+        });
+
+        private MachineRowViewModel? Row(string serial) => _vm.Rows.FirstOrDefault(x => x.Serial == serial);
+    }
+
+    // ── History ──────────────────────────────────────────────────────────
+
+    public void ClearHistory()
+    {
+        History = new List<CommandHistoryEntry>();
+        _store.ClearHistory();
+    }
+
     // ── Roster ───────────────────────────────────────────────────────────
 
     public void LoadRoster()
     {
+        LoadCommandLibrary();
         var loader = new RosterLoader { IncludeRetired = _config.IncludeRetired, IncludeProvisioning = _config.IncludeProvisioning };
         var path = ManageConfig.ExpandHome(_config.RosterPath);
         Roster = loader.Load(path);
@@ -158,6 +417,9 @@ public partial class ManageViewModel : ObservableObject
     {
         CancelScan();
         CancelProbe();
+        KillRun();
+        Results.Clear();
+        RunStatus = "";
         Rows.Clear();
         foreach (var c in computers)
         {
@@ -475,6 +737,10 @@ public partial class ManageViewModel : ObservableObject
     }
 
     partial void OnScanModeChanged(ScanMode value) => OnPropertyChanged(nameof(ScanModeLabel));
+    partial void OnSelectedCategoryChanged(CommandCategory? value)
+    {
+        if (value != null && SelectedCommand != null && !value.Commands.Contains(SelectedCommand)) SelectedCommand = null;
+    }
     partial void OnSelectedRoomChanged(RosterRoom? value) => OnPropertyChanged(nameof(HasSelection));
     partial void OnSelectedGroupChanged(CustomGroup? value) => OnPropertyChanged(nameof(HasSelection));
 }

@@ -1,0 +1,38 @@
+<Window x:Class="FleetMate.GUI.Views.Manage.HistoryDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        ui:WindowHelper.UseModernWindowStyle="True"
+        Title="Command history" Width="640" Height="480" MinWidth="480" MinHeight="320"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <Grid Margin="18" TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <ListBox x:Name="HistoryList" Background="Transparent" Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                 MouseDoubleClick="OnDoubleClick">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Margin="0,3">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding Date, StringFormat='{}{0:MMM d, HH:mm}'}" FontSize="10"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            <TextBlock Text="{Binding Label}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        </DockPanel>
+                        <TextBlock Text="{Binding Command}" FontFamily="Consolas" FontSize="11" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+        <DockPanel Grid.Row="1" Margin="0,14,0,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Content="Close" Margin="0,0,8,0" Padding="16,5" IsCancel="True" />
+                <Button Content="Load into runner" Margin="0,0,8,0" Padding="16,5" Click="OnLoad" />
+                <Button x:Name="RerunButton" Content="Rerun" Padding="16,5" Style="{StaticResource AccentButtonStyle}" Click="OnRerun" />
+            </StackPanel>
+            <Button Content="Clear history" Padding="12,5" HorizontalAlignment="Left" Click="OnClear" />
+        </DockPanel>
+    </Grid>
+</Window>

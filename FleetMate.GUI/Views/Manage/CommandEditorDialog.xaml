@@ -1,0 +1,60 @@
+<Window x:Class="FleetMate.GUI.Views.Manage.CommandEditorDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        ui:WindowHelper.UseModernWindowStyle="True"
+        Title="Command" Width="640" Height="460" MinWidth="520" MinHeight="380"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <Grid Margin="18" TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                <TextBlock Text="Category" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <ComboBox x:Name="CategoryCombo" Margin="0,4,0,0" HorizontalAlignment="Stretch" SelectionChanged="OnCategoryChanged" />
+                <TextBox x:Name="NewCategoryBox" Margin="0,4,0,0" ui:ControlHelper.PlaceholderText="New category name" Visibility="Collapsed" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                <TextBlock Text="Trust level" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <ComboBox x:Name="TrustCombo" Margin="0,4,0,0" HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="Safe: reads state only" Tag="safe" />
+                    <ComboBoxItem Content="Caution: changes state or affects a user" Tag="caution" />
+                    <ComboBoxItem Content="Destructive: deletes, restarts, resets" Tag="destructive" />
+                </ComboBox>
+            </StackPanel>
+        </Grid>
+
+        <StackPanel Grid.Row="1" Margin="0,0,0,10">
+            <TextBlock Text="Label" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            <TextBox x:Name="LabelBox" Margin="0,4,0,0" ui:ControlHelper.PlaceholderText="Shown in the command picker" />
+        </StackPanel>
+
+        <DockPanel Grid.Row="2">
+            <TextBlock DockPanel.Dock="Top" Text="PowerShell command" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            <TextBox x:Name="CommandBox" Margin="0,4,0,0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                     FontFamily="Consolas" FontSize="12" TextChanged="OnCommandChanged" />
+        </DockPanel>
+
+        <TextBlock Grid.Row="3" x:Name="HintText" Margin="0,8,0,0" FontSize="11" TextWrapping="Wrap"
+                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                   Text="Placeholders like &lt;USERNAME&gt; are prompted for at run time; &lt;PASSWORD&gt; is masked." />
+
+        <DockPanel Grid.Row="4" Margin="0,14,0,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Content="Cancel" Margin="0,0,8,0" Padding="16,5" IsCancel="True" />
+                <Button x:Name="SaveButton" Content="Save" Padding="16,5" Style="{StaticResource AccentButtonStyle}" Click="OnSave" />
+            </StackPanel>
+            <Button x:Name="DeleteButton" Content="Delete" Padding="12,5" HorizontalAlignment="Left" Click="OnDelete" Visibility="Collapsed" />
+        </DockPanel>
+    </Grid>
+</Window>
