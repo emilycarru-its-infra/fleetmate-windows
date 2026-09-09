@@ -23,9 +23,17 @@ public class SecureShellConfig
     public string? KeyVaultName { get; set; }
 
     /// <summary>
-    /// Default username for SecureShell connections (ithelp for devices without user login)
+    /// Local administrator account that the managed sshd configuration
+    /// authorises for the shared admin key. Connecting as any other name fails
+    /// as "Permission denied (publickey)" even with the right key, which reads
+    /// like a key problem and is not.
     /// </summary>
-    public string DefaultUsername { get; set; } = "ithelp";
+    public const string FleetAdminUsername = "winadmins";
+
+    /// <summary>
+    /// Default username for SecureShell connections.
+    /// </summary>
+    public string DefaultUsername { get; set; } = FleetAdminUsername;
 
     /// <summary>
     /// Connection timeout in seconds
