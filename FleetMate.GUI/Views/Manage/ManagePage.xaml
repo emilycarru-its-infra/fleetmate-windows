@@ -192,11 +192,14 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" MinHeight="120" />
+                <RowDefinition x:Name="ResultsSplitterRow" Height="0" />
+                <RowDefinition x:Name="ResultsRow" Height="0" />
             </Grid.RowDefinitions>
 
             <!-- Empty state -->
-            <StackPanel x:Name="EmptyState" Grid.RowSpan="3" VerticalAlignment="Center" HorizontalAlignment="Center"
+            <StackPanel x:Name="EmptyState" Grid.RowSpan="6" VerticalAlignment="Center" HorizontalAlignment="Center"
                         Visibility="{Binding HasSelection, Converter={StaticResource InverseBoolToVis}}">
                 <ui:FontIcon Glyph="&#xE7F4;" FontSize="44" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" HorizontalAlignment="Center" />
                 <TextBlock Text="Select a room or group" FontSize="18" Margin="0,12,0,4" HorizontalAlignment="Center"
@@ -245,6 +248,11 @@
                             <ContextMenu x:Name="ActionsMenu">
                                 <MenuItem Header="Open SSH tabs..." Click="OnOpenSshTabs" />
                                 <Separator />
+                                <MenuItem Header="Restart selected..." Click="OnQuickRestart" />
+                                <MenuItem Header="Log out user on selected..." Click="OnQuickLogOut" />
+                                <MenuItem Header="Sleep selected..." Click="OnQuickSleep" />
+                                <MenuItem Header="Lock screen on selected..." Click="OnQuickLock" />
+                                <Separator />
                                 <MenuItem Header="Copy selected hostnames" Click="OnCopySelectedHostnames" />
                                 <MenuItem Header="Copy selected asset tags" Click="OnCopySelectedAssets" />
                                 <MenuItem Header="Copy selected inventory lines" Click="OnCopySelectedInventory" />
@@ -270,8 +278,50 @@
                 <Rectangle />
             </DockPanel>
 
+            <!-- Command runner toolbar -->
+            <Border Grid.Row="2" Style="{StaticResource CardStyle}" Padding="10,8" Margin="0,0,0,8"
+                    Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal">
+                        <ComboBox x:Name="CategoryCombo" Width="170" ItemsSource="{Binding Categories}" DisplayMemberPath="Name"
+                                  SelectedItem="{Binding SelectedCategory, Mode=TwoWay}" ui:ControlHelper.PlaceholderText="Category" />
+                        <ComboBox x:Name="CommandCombo" Width="260" Margin="6,0,0,0" ItemsSource="{Binding SelectedCategory.Commands}" DisplayMemberPath="Label"
+                                  SelectedItem="{Binding SelectedCommand, Mode=TwoWay}" ui:ControlHelper.PlaceholderText="Command" />
+                        <Button Content="+" Style="{StaticResource SmallButtonStyle}" Margin="4,0,0,0" MinWidth="26" Click="OnAddCommand" ToolTip="Add a command to the library" />
+                        <Button Content="Edit" Style="{StaticResource SmallButtonStyle}" Click="OnEditCommand" ToolTip="Edit the selected library command" />
+                    </StackPanel>
+                    <TextBox Grid.Row="0" Grid.Column="1" x:Name="CustomCommandBox" Margin="6,0,6,0" Text="{Binding CustomCommand, UpdateSourceTrigger=PropertyChanged}"
+                             ui:ControlHelper.PlaceholderText="Custom PowerShell command (overrides the picker)" FontFamily="Consolas" KeyDown="OnCustomCommandKeyDown" />
+                    <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal">
+                        <Border x:Name="TrustBadge" CornerRadius="9" Padding="8,2" Margin="0,0,8,0" VerticalAlignment="Center" Background="{DynamicResource SubtleFillBrush}">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse x:Name="TrustDot" Width="7" Height="7" Margin="0,0,5,0" Fill="Gray" />
+                                <TextBlock x:Name="TrustText" FontSize="10" Text="Safe" />
+                            </StackPanel>
+                        </Border>
+                        <Button x:Name="HistoryButton" Content="History" Style="{StaticResource SmallButtonStyle}" Click="OnHistory" />
+                        <Button x:Name="KillButton" Content="Kill" Style="{StaticResource SmallButtonStyle}" Click="OnKillRun"
+                                Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
+                        <Button x:Name="RunButton" Content="▶ Run" Padding="12,3" FontSize="11" MinHeight="24" Margin="0"
+                                Style="{StaticResource AccentButtonStyle}" Click="OnRun" />
+                    </StackPanel>
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="3" x:Name="CommandPreview" Margin="0,6,0,0" FontFamily="Consolas" FontSize="11"
+                               TextTrimming="CharacterEllipsis" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                               Text="{Binding ResolvedCommandString}" ToolTip="{Binding ResolvedCommandString}" />
+                </Grid>
+            </Border>
+
             <!-- Machine list -->
-            <Border Grid.Row="2" Style="{StaticResource CardStyle}" Padding="0" Margin="0"
+            <Border Grid.Row="3" Style="{StaticResource CardStyle}" Padding="0" Margin="0"
                     Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
                 <DataGrid x:Name="MachinesGrid"
                           Style="{StaticResource FleetDataGridStyle}"
@@ -384,6 +434,91 @@
                         </DataGridTemplateColumn>
                     </DataGrid.Columns>
                 </DataGrid>
+            </Border>
+
+            <!-- ── Results ─────────────────────────────────────────────── -->
+            <GridSplitter Grid.Row="4" x:Name="ResultsSplitter" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                          Background="Transparent" Margin="0" Visibility="Collapsed" />
+            <Border Grid.Row="5" x:Name="ResultsPanel" Style="{StaticResource CardStyle}" Padding="0" Margin="0" Visibility="Collapsed">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="10,8,10,6">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                            <Button Content="Copy visible" Style="{StaticResource SmallButtonStyle}" Click="OnCopyVisibleResults" />
+                            <Button Content="Select failed" Style="{StaticResource SmallButtonStyle}" Click="OnSelectFailedTargets" ToolTip="Check the machines whose run failed, to run again" />
+                            <Button Content="Clear" Style="{StaticResource SmallButtonStyle}" Margin="0" Click="OnClearResults" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="ResultsTitle" Text="Results" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0" />
+                            <TextBlock x:Name="ResultsCounts" FontSize="11" VerticalAlignment="Center" Margin="0,0,12,0"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            <RadioButton x:Name="FilterAll" Content="All" GroupName="ResultFilter" IsChecked="True" Checked="OnResultFilterChanged" Margin="0,0,10,0" FontSize="11" />
+                            <RadioButton x:Name="FilterSuccess" Content="Success" GroupName="ResultFilter" Checked="OnResultFilterChanged" Margin="0,0,10,0" FontSize="11" />
+                            <RadioButton x:Name="FilterFailed" Content="Failed" GroupName="ResultFilter" Checked="OnResultFilterChanged" Margin="0,0,10,0" FontSize="11" />
+                            <RadioButton x:Name="FilterOffline" Content="Offline" GroupName="ResultFilter" Checked="OnResultFilterChanged" Margin="0,0,10,0" FontSize="11" />
+                            <ui:ProgressRing IsActive="{Binding IsRunning}" Width="14" Height="14" Margin="4,0,0,0"
+                                             Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}" />
+                            <TextBlock Text="{Binding RunStatus}" FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        </StackPanel>
+                    </DockPanel>
+                    <ListBox x:Name="ResultsList" Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
+                             Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="8,2" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Open SSH" Click="OnResultOpenSsh" />
+                                <MenuItem Header="Open Remote Desktop" Click="OnResultOpenRdp" />
+                                <Separator />
+                                <MenuItem Header="Copy hostname" Click="OnResultCopyHostname" />
+                                <MenuItem Header="Copy IP" Click="OnResultCopyIp" />
+                                <MenuItem Header="Copy output" Click="OnResultCopyOutput" />
+                                <MenuItem Header="Copy error" Click="OnResultCopyError" />
+                                <MenuItem Header="Copy full result" Click="OnResultCopyFull" />
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Expander IsExpanded="{Binding IsExpanded, Mode=TwoWay}" Margin="0,1"
+                                          Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
+                                    <Expander.Header>
+                                        <Grid Margin="0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="18" />
+                                                <ColumnDefinition Width="200" />
+                                                <ColumnDefinition Width="120" />
+                                                <ColumnDefinition Width="110" />
+                                                <ColumnDefinition Width="60" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Ellipse Grid.Column="0" Width="8" Height="8" Fill="{Binding StatusKey, Converter={StaticResource StatusBrush}}" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="2" Text="{Binding Ip}" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                            <TextBlock Grid.Column="3" Text="{Binding StatusLabel}" FontSize="11" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="4" Text="{Binding DurationLabel}" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                            <TextBlock Grid.Column="5" Text="{Binding Preview}" FontFamily="Consolas" FontSize="11" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                        </Grid>
+                                    </Expander.Header>
+                                    <StackPanel Margin="22,4,8,8">
+                                        <TextBox Text="{Binding Output, Mode=OneWay}" IsReadOnly="True" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap"
+                                                 MaxHeight="260" VerticalScrollBarVisibility="Auto" Visibility="{Binding HasOutput, Converter={StaticResource BoolToVis}}" />
+                                        <TextBlock Text="stderr" FontSize="10" Margin="0,6,0,2" Foreground="DarkOrange" Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
+                                        <TextBox Text="{Binding ErrorOutput, Mode=OneWay}" IsReadOnly="True" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap"
+                                                 MaxHeight="160" VerticalScrollBarVisibility="Auto" Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
+                                        <TextBlock Text="(no output)" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                                   Visibility="{Binding HasOutput, Converter={StaticResource InverseBoolToVis}}" />
+                                    </StackPanel>
+                                </Expander>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
             </Border>
         </Grid>
 

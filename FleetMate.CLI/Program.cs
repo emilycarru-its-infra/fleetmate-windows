@@ -156,6 +156,9 @@ class Program
             // SecureShell remote execution
             rootCommand.AddCommand(SshCommand.Create(secureShellService, reportMate));
 
+            // Lab operations: rooms, scans and fleet command runs from the roster
+            rootCommand.AddCommand(ManageCommand.Create(config, reportMate));
+
             // Deadline render farm auditing
             rootCommand.AddCommand(DeadlineCommand.Create(secureShellService));
 
