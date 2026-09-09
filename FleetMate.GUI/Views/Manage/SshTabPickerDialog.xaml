@@ -1,0 +1,41 @@
+<Window x:Class="FleetMate.GUI.Views.Manage.SshTabPickerDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        ui:WindowHelper.UseModernWindowStyle="True"
+        Title="Open SSH tabs" Width="520" Height="520" MinWidth="420" MinHeight="360"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <Grid Margin="18" TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <DockPanel Grid.Row="0" Margin="0,0,0,8">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Content="All" Padding="8,3" FontSize="11" Margin="0,0,6,0" Click="OnAll" />
+                <Button Content="None" Padding="8,3" FontSize="11" Click="OnNone" />
+            </StackPanel>
+            <TextBlock x:Name="HintText" Text="One Windows Terminal window, one tab per machine." VerticalAlignment="Center"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" TextWrapping="Wrap" />
+        </DockPanel>
+        <ListBox x:Name="HostList" Grid.Row="1" Background="Transparent" Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <CheckBox IsChecked="{Binding Checked, Mode=TwoWay}" Margin="0,2">
+                        <TextBlock>
+                            <Run Text="{Binding Label, Mode=OneWay}" /><Run Text="   " /><Run Text="{Binding Ip, Mode=OneWay}" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        </TextBlock>
+                    </CheckBox>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+        <DockPanel Grid.Row="2" Margin="0,14,0,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Content="Cancel" Margin="0,0,8,0" Padding="16,5" IsCancel="True" />
+                <Button x:Name="OpenButton" Content="Open" Padding="16,5" Style="{StaticResource AccentButtonStyle}" Click="OnOpen" />
+            </StackPanel>
+            <TextBlock x:Name="CountText" VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+        </DockPanel>
+    </Grid>
+</Window>

@@ -22,6 +22,7 @@ public partial class ManageViewModel : ObservableObject
     private readonly ManageStateStore _store;
     private readonly HostScanner _scanner;
     private readonly MachineProbeService? _prober;
+    private readonly RemoteSessionLauncher? _launcher;
     private readonly SynchronizationContext? _ui;
 
     private CancellationTokenSource? _scanCts;
@@ -50,16 +51,19 @@ public partial class ManageViewModel : ObservableObject
         ManageStateStore store,
         IDeviceDirectory? directory,
         IReachabilityProbe? probe,
-        IRemoteRunner? runner)
+        IRemoteRunner? runner,
+        RemoteSessionLauncher? launcher = null)
     {
         _config = config;
         _store = store;
+        _launcher = launcher;
         _scanner = new HostScanner(directory, probe);
         _prober = runner == null ? null : new MachineProbeService(runner) { Concurrency = Math.Max(1, config.ProbeConcurrency) };
         _ui = SynchronizationContext.Current;
     }
 
     public bool CanProbe => _prober != null;
+    public bool CanLaunch => _launcher != null;
     public string ScanModeLabel => ScanMode.Label();
     public bool HasSelection => SelectedRoom != null || SelectedGroup != null;
     public IEnumerable<MachineRowViewModel> SelectedRows => Rows.Where(r => r.IsSelected);
@@ -319,6 +323,38 @@ public partial class ManageViewModel : ObservableObject
         _probeCts?.Cancel();
         _probeCts = null;
         IsProbing = false;
+    }
+
+    // ── Sessions ─────────────────────────────────────────────────────────
+
+    /// <summary>Tab title: friendly name, with the hostname when it differs.</summary>
+    public static string SessionTitle(MachineRowViewModel row) =>
+        row.Computer.HasHostname && row.Computer.Hostname != row.FriendlyName
+            ? $"{row.FriendlyName} ({row.Computer.Hostname})"
+            : row.FriendlyName;
+
+    public void OpenSsh(MachineRowViewModel row)
+    {
+        if (_launcher == null || !row.HasAddress) return;
+        _launcher.OpenSsh(row.Ip, SessionTitle(row));
+    }
+
+    public void OpenRdp(MachineRowViewModel row)
+    {
+        if (_launcher == null || !row.HasAddress) return;
+        _launcher.OpenRdp(row.Ip);
+    }
+
+    public void OpenSshAndRdp(MachineRowViewModel row)
+    {
+        if (_launcher == null || !row.HasAddress) return;
+        _launcher.OpenSshAndRdp(row.Ip, SessionTitle(row));
+    }
+
+    public void OpenSshTabs(IReadOnlyList<SshSession> sessions)
+    {
+        if (_launcher == null) return;
+        _launcher.OpenSshTabs(sessions);
     }
 
     // ── Custom groups ────────────────────────────────────────────────────
