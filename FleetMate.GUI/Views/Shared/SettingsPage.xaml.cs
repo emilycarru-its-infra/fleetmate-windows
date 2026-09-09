@@ -53,6 +53,21 @@ public partial class SettingsPage : Page
 
         ReportMateUrlTextBox.Text = config.ReportMateUrl ?? "";
 
+        // Manage tab
+        var manage = config.Manage ?? new ManageConfig();
+        ManageRosterPathTextBox.Text = manage.RosterPath;
+        ManageCommandsPathTextBox.Text = manage.CommandsPath;
+        SecureShellKeyPathTextBox.Text = manage.SshKeyPath;
+        SecureShellUserTextBox.Text = manage.SshUser;
+        ManageTerminalProfileTextBox.Text = manage.TerminalProfile;
+        ManageRdpUserTextBox.Text = manage.RdpUser;
+        ManageIncludeRetiredCheckBox.IsChecked = manage.IncludeRetired;
+        ManageIncludeProvisioningCheckBox.IsChecked = manage.IncludeProvisioning;
+        RefreshRdpCredentialStatus();
+        SshKeyStatusText.Text = manage.HasSshKey
+            ? $"Key found at {manage.ResolvedSshKeyPath}. Sessions connect as {manage.ResolvedSshUser}."
+            : $"No key at {manage.ResolvedSshKeyPath}. Machine details and command runs need the fleet admin key; sessions and scanning still work without it.";
+
         // About
         var version = Assembly.GetExecutingAssembly().GetName().Version;
         VersionText.Text = version != null ? $"{version.Major}.{version.Minor}.{version.Build}" : "1.0.0";
@@ -111,6 +126,16 @@ public partial class SettingsPage : Page
 
             SetReg(key, "ReportMateUrl", ReportMateUrlTextBox.Text);
             key.DeleteValue("ReportMatePassphrase", throwOnMissingValue: false);
+
+            // Manage tab. Empty values are removed so the defaults apply again.
+            SetOrDeleteReg(key, "ManageRosterPath", ManageRosterPathTextBox.Text);
+            SetOrDeleteReg(key, "ManageCommandsPath", ManageCommandsPathTextBox.Text);
+            SetOrDeleteReg(key, "SecureShellKeyPath", SecureShellKeyPathTextBox.Text);
+            SetOrDeleteReg(key, "SecureShellUser", SecureShellUserTextBox.Text);
+            SetOrDeleteReg(key, "ManageTerminalProfile", ManageTerminalProfileTextBox.Text);
+            SetOrDeleteReg(key, "ManageRdpUser", ManageRdpUserTextBox.Text);
+            key.SetValue("ManageIncludeRetired", ManageIncludeRetiredCheckBox.IsChecked == true ? "1" : "0");
+            key.SetValue("ManageIncludeProvisioning", ManageIncludeProvisioningCheckBox.IsChecked == true ? "1" : "0");
             key.DeleteValue("SnipeApiKey", throwOnMissingValue: false);
 
             // TDX
@@ -147,6 +172,62 @@ public partial class SettingsPage : Page
     {
         if (!string.IsNullOrWhiteSpace(value))
             key.SetValue(name, value);
+    }
+
+    private static void SetOrDeleteReg(RegistryKey key, string name, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) key.DeleteValue(name, throwOnMissingValue: false);
+        else key.SetValue(name, value.Trim());
+    }
+
+    // ── Remote Desktop credential (DPAPI, never in the registry) ────────────
+
+    private void RefreshRdpCredentialStatus()
+    {
+        var store = new FleetMate.Core.Services.Manage.RdpCredentialStore();
+        RdpCredentialStatusText.Text = store.HasCredential
+            ? "A password is stored, encrypted for your Windows account. Remote Desktop opens without a prompt."
+            : "No password stored. Remote Desktop will prompt for the account password each time.";
+        ClearRdpPasswordButton.IsEnabled = store.HasCredential;
+    }
+
+    private void OnSaveRdpPassword(object sender, RoutedEventArgs e)
+    {
+        var password = RdpPasswordBox.Password;
+        if (string.IsNullOrEmpty(password)) return;
+        new FleetMate.Core.Services.Manage.RdpCredentialStore().Save(password);
+        RdpPasswordBox.Clear();
+        RefreshRdpCredentialStatus();
+    }
+
+    private void OnClearRdpPassword(object sender, RoutedEventArgs e)
+    {
+        new FleetMate.Core.Services.Manage.RdpCredentialStore().Delete();
+        RdpPasswordBox.Clear();
+        RefreshRdpCredentialStatus();
+    }
+
+    // ── Manage tab file pickers ─────────────────────────────────────────────
+
+    private void OnBrowseRoster(object sender, RoutedEventArgs e) =>
+        PickFile(ManageRosterPathTextBox, "Roster CSV|*.csv|All files|*.*", "Choose the enrollment roster");
+
+    private void OnBrowseCommands(object sender, RoutedEventArgs e) =>
+        PickFile(ManageCommandsPathTextBox, "YAML|*.yaml;*.yml|All files|*.*", "Choose the command library");
+
+    private void OnBrowseSshKey(object sender, RoutedEventArgs e) =>
+        PickFile(SecureShellKeyPathTextBox, "All files|*.*", "Choose the SSH private key");
+
+    private static void PickFile(TextBox target, string filter, string title)
+    {
+        var dialog = new OpenFileDialog { Filter = filter, Title = title, CheckFileExists = true };
+        var current = ManageConfig.ExpandHome(target.Text);
+        if (!string.IsNullOrWhiteSpace(current))
+        {
+            var dir = System.IO.Path.GetDirectoryName(current);
+            if (!string.IsNullOrEmpty(dir) && System.IO.Directory.Exists(dir)) dialog.InitialDirectory = dir;
+        }
+        if (dialog.ShowDialog() == true) target.Text = dialog.FileName;
     }
 
     // ── Auth Status Cards ───────────────────────────────────────────────────

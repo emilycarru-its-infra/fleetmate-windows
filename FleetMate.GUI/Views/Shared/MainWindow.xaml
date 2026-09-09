@@ -58,6 +58,13 @@
                                 <TextBlock Text="Devices" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
+                        <RadioButton x:Name="TabManage" Tag="Manage" GroupName="MainTabs"
+                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon Glyph="&#xE8B7;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Manage" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
                         <RadioButton x:Name="TabInventory" Tag="Inventory" GroupName="MainTabs"
                                      Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">

@@ -192,6 +192,9 @@ public class FleetMateConfig
     // SecureShell Configuration
     public SecureShellConfig? SecureShell { get; set; }
 
+    // Manage tab (roster, command library, SSH and RDP session settings)
+    public ManageConfig Manage { get; set; } = new();
+
     // Azure DevOps Configuration
     public AzureDevOpsConfig? AzureDevOps { get; set; }
 
@@ -525,6 +528,39 @@ public class FleetMateConfig
                     config.Elevation.DefaultTtlHours = ttl;
             }
 
+            // Manage tab settings. The SSH key path and user also feed the
+            // shared SecureShell configuration so the CLI connects the same way.
+            config.Manage ??= new ManageConfig();
+            if (key.GetValue("ManageRosterPath") is string rosterPath && !string.IsNullOrWhiteSpace(rosterPath))
+                config.Manage.RosterPath = rosterPath;
+            if (key.GetValue("ManageCommandsPath") is string commandsPath && !string.IsNullOrWhiteSpace(commandsPath))
+                config.Manage.CommandsPath = commandsPath;
+            if (key.GetValue("ManageTerminalProfile") is string terminalProfile && !string.IsNullOrWhiteSpace(terminalProfile))
+                config.Manage.TerminalProfile = terminalProfile;
+            if (key.GetValue("ManageRdpUser") is string rdpUser && !string.IsNullOrWhiteSpace(rdpUser))
+                config.Manage.RdpUser = rdpUser;
+            if (key.GetValue("ManageIncludeRetired") is string includeRetired)
+                config.Manage.IncludeRetired = includeRetired is "1" || includeRetired.Equals("true", StringComparison.OrdinalIgnoreCase);
+            if (key.GetValue("ManageIncludeProvisioning") is string includeProvisioning)
+                config.Manage.IncludeProvisioning = includeProvisioning is "1" || includeProvisioning.Equals("true", StringComparison.OrdinalIgnoreCase);
+
+            var sshKeyPath = key.GetValue("SecureShellKeyPath") as string;
+            var sshUser = key.GetValue("SecureShellUser") as string;
+            if (!string.IsNullOrWhiteSpace(sshKeyPath) || !string.IsNullOrWhiteSpace(sshUser))
+            {
+                config.SecureShell ??= new SecureShellConfig();
+                if (!string.IsNullOrWhiteSpace(sshKeyPath))
+                {
+                    config.Manage.SshKeyPath = sshKeyPath;
+                    config.SecureShell.PrivateKeyPath = sshKeyPath;
+                }
+                if (!string.IsNullOrWhiteSpace(sshUser))
+                {
+                    config.Manage.SshUser = sshUser;
+                    config.SecureShell.DefaultUsername = sshUser;
+                }
+            }
+
             Log.Debug("Loaded credentials from registry: HKCU\\{Path}", RegistryPath);
         }
         catch (Exception ex)
@@ -548,7 +584,9 @@ public class FleetMateConfig
         {
             "GraphTenantId", "GraphClientId", "SnipeUrl", "SnipeOidcAudience",
             "TdxBaseUrl", "TdxTicketingAppId", "DevOpsBaseUrl", "DevOpsOrganization", "DevOpsProject",
-            "ReportMateUrl"
+            "ReportMateUrl",
+            "ManageRosterPath", "ManageCommandsPath", "ManageTerminalProfile", "ManageRdpUser",
+            "ManageIncludeRetired", "ManageIncludeProvisioning", "SecureShellKeyPath", "SecureShellUser"
         };
 
         using var key = Registry.CurrentUser.CreateSubKey(RegistryPath)

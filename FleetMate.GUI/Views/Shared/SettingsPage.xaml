@@ -157,6 +157,80 @@
                 </ScrollViewer>
             </TabItem>
 
+            <TabItem Header="Manage">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
+                    <StackPanel Margin="2" MaxWidth="860">
+                        <TextBlock Text="Manage" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" />
+                        <TextBlock Text="Where the Manage tab finds the fleet, and how it opens sessions to machines."
+                                   Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,14" />
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Fleet data" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <TextBlock Text="Roster (computers.csv)" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <DockPanel Margin="0,4,0,10">
+                                    <Button DockPanel.Dock="Right" Content="Browse..." Margin="8,0,0,0" Click="OnBrowseRoster" />
+                                    <TextBox x:Name="ManageRosterPathTextBox" ui:ControlHelper.PlaceholderText="Path to the enrollment roster CSV" />
+                                </DockPanel>
+                                <TextBlock Text="Command library (commands.yaml)" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <DockPanel Margin="0,4,0,10">
+                                    <Button DockPanel.Dock="Right" Content="Browse..." Margin="8,0,0,0" Click="OnBrowseCommands" />
+                                    <TextBox x:Name="ManageCommandsPathTextBox" ui:ControlHelper.PlaceholderText="Leave empty for the per-user library" />
+                                </DockPanel>
+                                <CheckBox x:Name="ManageIncludeRetiredCheckBox" Content="Show machines that have left service (returned, donated, recycled)" Margin="0,2,0,2" />
+                                <CheckBox x:Name="ManageIncludeProvisioningCheckBox" Content="Show the Provisioning catalog as a lab section" Margin="0,2,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="SSH" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <TextBlock Text="Private key" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <DockPanel Margin="0,4,0,10">
+                                    <Button DockPanel.Dock="Right" Content="Browse..." Margin="8,0,0,0" Click="OnBrowseSshKey" />
+                                    <TextBox x:Name="SecureShellKeyPathTextBox" ui:ControlHelper.PlaceholderText="~\.ssh\id_rsa.winadmins" />
+                                </DockPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                                        <TextBlock Text="SSH user" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                        <TextBox x:Name="SecureShellUserTextBox" Margin="0,4,0,0" ui:ControlHelper.PlaceholderText="winadmins" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                                        <TextBlock Text="Windows Terminal profile" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                        <TextBox x:Name="ManageTerminalProfileTextBox" Margin="0,4,0,0" ui:ControlHelper.PlaceholderText="Default profile" />
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock x:Name="SshKeyStatusText" TextWrapping="Wrap" Margin="0,8,0,0" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Remote Desktop" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <TextBlock Text="Username" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <TextBox x:Name="ManageRdpUserTextBox" Margin="0,4,0,0" ui:ControlHelper.PlaceholderText="Leave empty to use the SSH user" />
+                                <TextBlock Text="Stored password" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,10,0,0" />
+                                <DockPanel Margin="0,4,0,0">
+                                    <Button DockPanel.Dock="Right" Content="Clear" Margin="8,0,0,0" Click="OnClearRdpPassword" x:Name="ClearRdpPasswordButton" />
+                                    <Button DockPanel.Dock="Right" Content="Save password" Margin="8,0,0,0" Click="OnSaveRdpPassword" />
+                                    <PasswordBox x:Name="RdpPasswordBox" ui:ControlHelper.PlaceholderText="Password for the Remote Desktop account" />
+                                </DockPanel>
+                                <TextBlock x:Name="RdpCredentialStatusText" TextWrapping="Wrap" Margin="0,8,0,0" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Button Content="Save Settings" HorizontalAlignment="Right" Margin="0,2,0,18"
+                                Style="{StaticResource AccentButtonStyle}" Padding="22,7" Click="OnSaveClicked" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
             <TabItem Header="Appearance">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
                     <StackPanel Margin="2" MaxWidth="860">
