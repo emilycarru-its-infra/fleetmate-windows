@@ -243,6 +243,8 @@
                     <Button x:Name="ActionsButton" Content="Actions ▾" Style="{StaticResource SmallButtonStyle}" Margin="0" Click="OnActionsClicked">
                         <Button.ContextMenu>
                             <ContextMenu x:Name="ActionsMenu">
+                                <MenuItem Header="Open SSH tabs..." Click="OnOpenSshTabs" />
+                                <Separator />
                                 <MenuItem Header="Copy selected hostnames" Click="OnCopySelectedHostnames" />
                                 <MenuItem Header="Copy selected asset tags" Click="OnCopySelectedAssets" />
                                 <MenuItem Header="Copy selected inventory lines" Click="OnCopySelectedInventory" />
@@ -294,6 +296,10 @@
                     </DataGrid.RowStyle>
                     <DataGrid.ContextMenu>
                         <ContextMenu>
+                            <MenuItem Header="Open SSH" Click="OnOpenSshRow" />
+                            <MenuItem Header="Open Remote Desktop" Click="OnOpenRdpRow" />
+                            <MenuItem Header="Open SSH + Remote Desktop" Click="OnOpenBothRow" />
+                            <Separator />
                             <MenuItem Header="Rescan" Click="OnRescanRow" />
                             <MenuItem Header="Fetch details" Click="OnProbeRow" />
                             <MenuItem Header="Show details panel" Click="OnShowDetailRow" />
@@ -364,6 +370,12 @@
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" x:Name="RowActions">
+                                        <Button Content="SSH" Style="{StaticResource SmallButtonStyle}" Click="OnOpenSshRowButton" IsEnabled="{Binding HasAddress}"
+                                                ToolTip="Open an SSH session in Windows Terminal" />
+                                        <Button Content="RDP" Style="{StaticResource SmallButtonStyle}" Click="OnOpenRdpRowButton" IsEnabled="{Binding HasAddress}"
+                                                ToolTip="Open Remote Desktop" />
+                                        <Button Content="Both" Style="{StaticResource SmallButtonStyle}" Click="OnOpenBothRowButton" IsEnabled="{Binding HasAddress}"
+                                                ToolTip="Open SSH and Remote Desktop together" />
                                         <Button Content="Rescan" Style="{StaticResource SmallButtonStyle}" Click="OnRescanRowButton" ToolTip="Resolve and probe this machine again" />
                                         <Button Content="Info" Style="{StaticResource SmallButtonStyle}" Margin="0" Click="OnShowDetailRowButton" ToolTip="Show everything known about this machine" />
                                     </StackPanel>
@@ -384,6 +396,8 @@
                     <TextBlock x:Name="DetailTitle" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                 </DockPanel>
                 <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,10,0,0">
+                    <Button Content="SSH" Style="{StaticResource SmallButtonStyle}" Click="OnDetailSsh" />
+                    <Button Content="RDP" Style="{StaticResource SmallButtonStyle}" Click="OnDetailRdp" />
                     <Button Content="Copy all" Style="{StaticResource SmallButtonStyle}" Click="OnDetailCopyAll" />
                     <Button Content="Rescan" Style="{StaticResource SmallButtonStyle}" Click="OnDetailRescan" />
                     <Button Content="Fetch details" Style="{StaticResource SmallButtonStyle}" Margin="0" Click="OnDetailProbe" />

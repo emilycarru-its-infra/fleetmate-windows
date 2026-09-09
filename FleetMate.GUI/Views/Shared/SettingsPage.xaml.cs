@@ -63,6 +63,7 @@ public partial class SettingsPage : Page
         ManageRdpUserTextBox.Text = manage.RdpUser;
         ManageIncludeRetiredCheckBox.IsChecked = manage.IncludeRetired;
         ManageIncludeProvisioningCheckBox.IsChecked = manage.IncludeProvisioning;
+        RefreshRdpCredentialStatus();
         SshKeyStatusText.Text = manage.HasSshKey
             ? $"Key found at {manage.ResolvedSshKeyPath}. Sessions connect as {manage.ResolvedSshUser}."
             : $"No key at {manage.ResolvedSshKeyPath}. Machine details and command runs need the fleet admin key; sessions and scanning still work without it.";
@@ -177,6 +178,33 @@ public partial class SettingsPage : Page
     {
         if (string.IsNullOrWhiteSpace(value)) key.DeleteValue(name, throwOnMissingValue: false);
         else key.SetValue(name, value.Trim());
+    }
+
+    // ── Remote Desktop credential (DPAPI, never in the registry) ────────────
+
+    private void RefreshRdpCredentialStatus()
+    {
+        var store = new FleetMate.Core.Services.Manage.RdpCredentialStore();
+        RdpCredentialStatusText.Text = store.HasCredential
+            ? "A password is stored, encrypted for your Windows account. Remote Desktop opens without a prompt."
+            : "No password stored. Remote Desktop will prompt for the account password each time.";
+        ClearRdpPasswordButton.IsEnabled = store.HasCredential;
+    }
+
+    private void OnSaveRdpPassword(object sender, RoutedEventArgs e)
+    {
+        var password = RdpPasswordBox.Password;
+        if (string.IsNullOrEmpty(password)) return;
+        new FleetMate.Core.Services.Manage.RdpCredentialStore().Save(password);
+        RdpPasswordBox.Clear();
+        RefreshRdpCredentialStatus();
+    }
+
+    private void OnClearRdpPassword(object sender, RoutedEventArgs e)
+    {
+        new FleetMate.Core.Services.Manage.RdpCredentialStore().Delete();
+        RdpPasswordBox.Clear();
+        RefreshRdpCredentialStatus();
     }
 
     // ── Manage tab file pickers ─────────────────────────────────────────────

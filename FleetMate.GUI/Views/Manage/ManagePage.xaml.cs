@@ -58,7 +58,8 @@ public partial class ManagePage : Page
         var store = app?.ManageState ?? new ManageStateStore();
         IDeviceDirectory? directory = app?.ReportMateService != null ? new ReportMateDeviceDirectory(app.ReportMateService) : null;
         IRemoteRunner? runner = app?.SecureShellService != null ? new SecureShellRemoteRunner(app.SecureShellService) : null;
-        return new ManageViewModel(config, store, directory, new NetworkReachabilityProbe(), runner);
+        var launcher = new RemoteSessionLauncher(config, new RdpCredentialStore());
+        return new ManageViewModel(config, store, directory, new NetworkReachabilityProbe(), runner, launcher);
     }
 
     public void ReloadRoster()
@@ -249,6 +250,29 @@ public partial class ManagePage : Page
     private async void OnProbeRow(object sender, RoutedEventArgs e) { if (ContextRow() is { } row && row.HasAddress) await _vm.ProbeAsync(new[] { row }); }
     private async void OnDetailRescan(object sender, RoutedEventArgs e) { if (_detailRow != null) { await _vm.RescanHostAsync(_detailRow); RefreshDetail(); } }
     private async void OnDetailProbe(object sender, RoutedEventArgs e) { if (_detailRow != null && _detailRow.HasAddress) { await _vm.ProbeAsync(new[] { _detailRow }); RefreshDetail(); } }
+
+    // ── Sessions ────────────────────────────────────────────────────────
+
+    private void OnOpenSshRow(object sender, RoutedEventArgs e) { if (ContextRow() is { } r) _vm.OpenSsh(r); }
+    private void OnOpenRdpRow(object sender, RoutedEventArgs e) { if (ContextRow() is { } r) _vm.OpenRdp(r); }
+    private void OnOpenBothRow(object sender, RoutedEventArgs e) { if (ContextRow() is { } r) _vm.OpenSshAndRdp(r); }
+    private void OnOpenSshRowButton(object sender, RoutedEventArgs e) { if (RowOf(sender) is { } r) _vm.OpenSsh(r); }
+    private void OnOpenRdpRowButton(object sender, RoutedEventArgs e) { if (RowOf(sender) is { } r) _vm.OpenRdp(r); }
+    private void OnOpenBothRowButton(object sender, RoutedEventArgs e) { if (RowOf(sender) is { } r) _vm.OpenSshAndRdp(r); }
+    private void OnDetailSsh(object sender, RoutedEventArgs e) { if (_detailRow != null) _vm.OpenSsh(_detailRow); }
+    private void OnDetailRdp(object sender, RoutedEventArgs e) { if (_detailRow != null) _vm.OpenRdp(_detailRow); }
+
+    private void OnOpenSshTabs(object sender, RoutedEventArgs e)
+    {
+        var candidates = _vm.Rows.Where(r => r.IsOnline).ToList();
+        if (candidates.Count == 0)
+        {
+            MessageBox.Show(Window.GetWindow(this), "No machine in this room is online.", "Open SSH tabs", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var dialog = new SshTabPickerDialog(candidates, RemoteSessionLauncher.WindowsTerminalAvailable) { Owner = Window.GetWindow(this) };
+        if (dialog.ShowDialog() == true) _vm.OpenSshTabs(dialog.Chosen);
+    }
 
     // ── Selection ───────────────────────────────────────────────────────
 
