@@ -62,9 +62,9 @@ public static class TrustInference
 {
     internal static readonly string[] DestructivePatterns =
     {
-        "remove-item -recurse", "remove-item -r ", "-recurse -force", "rm -r", "rd /s", "rmdir /s", "del /s", "del /q",
+        "remove-item -recurse", "remove-item -r ", "| remove-item", "rm -r", "rd /s", "rmdir /s", "del /s", "del /q",
         "format-volume", "clear-disk", "remove-partition", "diskpart", "cipher /w",
-        "shutdown /r", "shutdown /s", "shutdown -r", "shutdown -s", "restart-computer", "stop-computer",
+        "shutdown /r", "shutdown /s", "shutdown -r", "shutdown -s", "shutdown.exe /r", "shutdown.exe /s", "restart-computer", "stop-computer",
         "remove-localuser", "net user", "/delete",
         "manage-bde -off", "disable-bitlocker", "bcdedit",
         "reg delete", "remove-itemproperty",
@@ -84,13 +84,13 @@ public static class TrustInference
         "usoclient", "wuauclt", "install-windowsupdate", "get-windowsupdate -install",
         "gpupdate", "logoff", "tsdiscon", "rundll32 user32.dll,lockworkstation",
         "setsuspendstate", "powercfg /h", "powercfg -h",
-        "set-itemproperty", "reg add", "new-itemproperty",
+        "set-itemproperty", "reg add", "new-itemproperty", "remove-item", "clear-content", "set-content",
         "new-localuser", "add-localgroupmember", "remove-localgroupmember",
-        "netsh", "set-dnsclientserveraddress", "restart-netadapter", "disable-netadapter", "enable-netadapter",
+        "netsh wlan delete", "netsh winsock", "netsh int ip reset", "netsh interface set", "netsh advfirewall set",
+        "set-dnsclientserveraddress", "restart-netadapter", "disable-netadapter", "enable-netadapter",
         "set-timezone", "w32tm /resync",
         "add-printer", "set-printconfiguration",
-        "rum.exe", "remoteupdatemanager", "--action=install",
-        "startset", "outset",
+        "--action=install",
         "schtasks /run", "start-scheduledtask", "start-process"
     };
 

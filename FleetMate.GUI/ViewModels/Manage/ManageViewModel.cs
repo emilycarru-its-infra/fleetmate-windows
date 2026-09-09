@@ -106,15 +106,16 @@ public partial class ManageViewModel : ObservableObject
     {
         var path = CommandsPath;
         List<CommandCategory> categories;
+        var bundled = CommandLibrary.LoadBundled();
         if (File.Exists(path))
         {
             categories = CommandLibrary.Load(path);
-            if (CommandLibrary.MergeMissing(categories, CommandLibrary.DefaultCategories()))
+            if (CommandLibrary.MergeMissing(categories, bundled))
                 TrySaveLibrary(categories);
         }
         else
         {
-            categories = CommandLibrary.DefaultCategories();
+            categories = bundled;
             TrySaveLibrary(categories);
         }
 
