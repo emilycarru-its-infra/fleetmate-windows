@@ -400,6 +400,7 @@ public class SecureShellService : IDisposable
         catch (Exception ex)
         {
             result.Error = ex;
+            result.Outcome = ClassifyException(ex);
             Log.Warning(ex, "SecureShell command failed on {Host}", result.Host);
         }
         finally
@@ -409,6 +410,158 @@ public class SecureShellService : IDisposable
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Run a command on an already-resolved address, delivering stdout as it
+    /// arrives and honouring cancellation. This is the fleet runner's path:
+    /// the scan already produced the IP, so no ReportMate lookup happens here.
+    /// Stderr is collected and returned whole. A host-key mismatch is cleaned
+    /// and retried once, like <see cref="ExecuteAsync"/>.
+    /// </summary>
+    /// <param name="ip">Address or resolvable hostname.</param>
+    /// <param name="command">Remote command line.</param>
+    /// <param name="onChunk">Called on a thread-pool thread with each stdout fragment; may be null.</param>
+    /// <param name="cancellationToken">Stops the run; the result reports <see cref="SecureShellOutcome.Cancelled"/>.</param>
+    /// <param name="username">Overrides the configured default username.</param>
+    /// <param name="deviceName">Display name recorded on the result.</param>
+    public async Task<SecureShellResult> ExecuteStreamingAsync(
+        string ip,
+        string command,
+        Action<string>? onChunk,
+        CancellationToken cancellationToken,
+        string? username = null,
+        string? deviceName = null)
+    {
+        var result = new SecureShellResult
+        {
+            Host = ip,
+            DeviceName = deviceName,
+            Command = command,
+            Username = username ?? _config.DefaultUsername,
+            StartedAt = DateTime.UtcNow
+        };
+        var sw = Stopwatch.StartNew();
+
+        try
+        {
+            try
+            {
+                await ExecuteStreamingOnClientAsync(result, ip, command, onChunk, cancellationToken);
+            }
+            catch (Exception ex) when (_config.AutoCleanStaleHostKeys && IsHostKeyVerificationError(ex) && !cancellationToken.IsCancellationRequested)
+            {
+                Log.Information("Host key verification failed for {Host}, cleaning stale key and retrying...", ip);
+                if (!CleanStaleHostKey(ip)) throw;
+                result.Error = null;
+                result.Connected = false;
+                await ExecuteStreamingOnClientAsync(result, ip, command, onChunk, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            result.Outcome = SecureShellOutcome.Cancelled;
+        }
+        catch (Exception ex)
+        {
+            result.Error = ex;
+            result.Outcome = cancellationToken.IsCancellationRequested ? SecureShellOutcome.Cancelled : ClassifyException(ex);
+            Log.Warning(ex, "SecureShell streaming command failed on {Host}", ip);
+        }
+        finally
+        {
+            sw.Stop();
+            result.Duration = sw.Elapsed;
+        }
+
+        return result;
+    }
+
+    private async Task ExecuteStreamingOnClientAsync(
+        SecureShellResult result,
+        string ip,
+        string command,
+        Action<string>? onChunk,
+        CancellationToken cancellationToken)
+    {
+        using var client = new SshClient(ip, _config.Port, result.Username, _privateKey);
+        client.ConnectionInfo.Timeout = TimeSpan.FromSeconds(_config.ConnectionTimeoutSeconds);
+        if (_config.AcceptAllHostKeys)
+        {
+            client.HostKeyReceived += (_, e) => { e.CanTrust = true; };
+        }
+
+        await client.ConnectAsync(cancellationToken);
+        result.Connected = true;
+        Log.Debug("Connected to {Host} as {User} (streaming)", ip, result.Username);
+
+        using var cmd = client.CreateCommand(command);
+        cmd.CommandTimeout = TimeSpan.FromSeconds(_config.CommandTimeoutSeconds);
+
+        var stdout = new StringBuilder();
+        var execTask = cmd.ExecuteAsync(cancellationToken);
+
+        // Pump stdout while the command runs. The pipe stream blocks until data
+        // arrives and returns 0 once the channel closes, so this ends on its own.
+        var pump = Task.Run(() =>
+        {
+            var buffer = new byte[4096];
+            var decoder = Encoding.UTF8.GetDecoder();
+            var chars = new char[Encoding.UTF8.GetMaxCharCount(buffer.Length)];
+            int n;
+            while ((n = cmd.OutputStream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                var count = decoder.GetChars(buffer, 0, n, chars, 0);
+                if (count == 0) continue;
+                var text = new string(chars, 0, count);
+                stdout.Append(text);
+                onChunk?.Invoke(text);
+            }
+        }, CancellationToken.None);
+
+        try
+        {
+            await execTask;
+        }
+        finally
+        {
+            // Give the pump a moment to drain what the channel flushed at close.
+            await Task.WhenAny(pump, Task.Delay(TimeSpan.FromSeconds(2), CancellationToken.None));
+        }
+
+        result.ExitCode = cmd.ExitStatus ?? -1;
+        result.Stdout = stdout.ToString();
+        result.Stderr = cmd.Error ?? string.Empty;
+        result.Outcome = result.ExitCode == 0 ? SecureShellOutcome.Success : SecureShellOutcome.CommandFailed;
+        Log.Debug("Streaming command on {Host} completed with exit code {ExitCode}", ip, result.ExitCode);
+    }
+
+    /// <summary>
+    /// Map an exception from SSH.NET or the socket layer to an outcome an
+    /// operator can act on. Auth failures and unreachable hosts look alike in
+    /// a raw message, and are the two cases most often confused in the field.
+    /// </summary>
+    internal static SecureShellOutcome ClassifyException(Exception ex)
+    {
+        if (ex is OperationCanceledException) return SecureShellOutcome.Cancelled;
+        if (ex is SshAuthenticationException) return SecureShellOutcome.AuthFailed;
+        if (ex is SshOperationTimeoutException) return SecureShellOutcome.Timeout;
+        if (ex is System.Net.Sockets.SocketException) return SecureShellOutcome.Unreachable;
+
+        var message = ex.Message.ToLowerInvariant();
+        if (message.Contains("permission denied") || message.Contains("publickey") || message.Contains("no suitable authentication")
+            || message.Contains("authentication failed") || message.Contains("too many authentication failures"))
+            return SecureShellOutcome.AuthFailed;
+        if (IsHostKeyVerificationError(ex))
+            return SecureShellOutcome.HostKeyRejected;
+        if (message.Contains("timed out") || message.Contains("timeout"))
+            return message.Contains("connect") || message.Contains("connection") ? SecureShellOutcome.Unreachable : SecureShellOutcome.Timeout;
+        if (message.Contains("refused") || message.Contains("unreachable") || message.Contains("no such host")
+            || message.Contains("could not be resolved") || message.Contains("connection reset") || message.Contains("network is"))
+            return SecureShellOutcome.Unreachable;
+        if (ex is SshConnectionException) return SecureShellOutcome.Unreachable;
+
+        return SecureShellOutcome.Error;
     }
 
     /// <summary>
@@ -444,6 +597,7 @@ public class SecureShellService : IDisposable
         result.ExitCode = cmd.ExitStatus ?? -1;
         result.Stdout = output ?? string.Empty;
         result.Stderr = cmd.Error ?? string.Empty;
+        result.Outcome = result.ExitCode == 0 ? SecureShellOutcome.Success : SecureShellOutcome.CommandFailed;
 
         Log.Debug("Command on {Host} completed with exit code {ExitCode}", ip, result.ExitCode);
     }

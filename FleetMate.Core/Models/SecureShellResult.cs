@@ -3,10 +3,40 @@ using System.Text.Json.Serialization;
 namespace FleetMate.Core.Models;
 
 /// <summary>
+/// Why a SecureShell call ended the way it did. Distinguishes the cases an
+/// operator treats differently: a host that is off, a host that refused the
+/// key, a command that ran but failed, and a run that was stopped.
+/// </summary>
+public enum SecureShellOutcome
+{
+    /// <summary>Connected, command ran, exit code 0.</summary>
+    Success,
+    /// <summary>Connected, command ran, non-zero exit code.</summary>
+    CommandFailed,
+    /// <summary>No TCP connection: host down, port closed, DNS failure, or connect timeout.</summary>
+    Unreachable,
+    /// <summary>Connected, but the command exceeded its timeout.</summary>
+    Timeout,
+    /// <summary>Connected, but the server rejected the key or username.</summary>
+    AuthFailed,
+    /// <summary>Connected, but the host key did not match and could not be cleaned.</summary>
+    HostKeyRejected,
+    /// <summary>The caller cancelled the run.</summary>
+    Cancelled,
+    /// <summary>Anything else.</summary>
+    Error
+}
+
+/// <summary>
 /// Result of a SecureShell command execution
 /// </summary>
 public class SecureShellResult
 {
+    /// <summary>
+    /// Classified outcome; set by the service from the exit code and any exception.
+    /// </summary>
+    public SecureShellOutcome Outcome { get; set; } = SecureShellOutcome.Error;
+
     /// <summary>
     /// Target host (IP address or hostname)
     /// </summary>

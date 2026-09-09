@@ -452,7 +452,7 @@ public static class SshCommand
         AnsiConsole.MarkupLine("Add SecureShell configuration to your config file (~/.fleetmate/config.yaml):");
         AnsiConsole.MarkupLine("  [cyan]secureShell:[/]");
         AnsiConsole.MarkupLine("    [cyan]privateKeyPath:[/] ~/.ssh/id_rsa");
-        AnsiConsole.MarkupLine("    [cyan]defaultUsername:[/] ithelp");
+        AnsiConsole.MarkupLine("    [cyan]defaultUsername:[/] winadmins");
         return false;
     }
 
