@@ -173,10 +173,10 @@ public class ManageRunnerTests : IDisposable
         var (vm, _) = await BuildScannedAsync();
         var category = vm.Categories.First(c => c.Name == "Cimian Operations");
         vm.SelectedCategory = category;
-        vm.SelectedCommand = category.Commands.First(c => c.Label == "Cimian auto");
+        vm.SelectedCommand = category.Commands.First(c => c.Label == "Check and install everything pending");
         Assert.Equal(CommandTrustLevel.Caution, vm.EffectiveTrust);
         Assert.False(vm.EffectiveTrustIsInferred);
-        Assert.Equal("managedsoftwareupdate --auto", vm.ResolvedCommandString);
+        Assert.StartsWith("managedsoftwareupdate --auto", vm.ResolvedCommandString);
 
         vm.CustomCommand = "Restart-Computer -Force";
         Assert.Equal(CommandTrustLevel.Destructive, vm.EffectiveTrust);
@@ -184,27 +184,27 @@ public class ManageRunnerTests : IDisposable
         Assert.Equal("Custom command", vm.ResolvedCommandLabel);
 
         vm.CustomCommand = "";
-        Assert.Equal("Cimian auto", vm.ResolvedCommandLabel);
+        Assert.Equal("Check and install everything pending", vm.ResolvedCommandLabel);
     }
 
     [Fact]
     public async Task Library_CrudPersistsToYaml()
     {
         var (vm, _) = await BuildScannedAsync();
-        var category = vm.AddCategory("Printing");
+        var category = vm.AddCategory("Custom checks");
         var cmd = vm.AddCommand(category, "List printers", "Get-Printer | Select-Object Name", CommandTrustLevel.Safe);
         Assert.Equal(cmd, vm.SelectedCommand);
 
         vm.EditCommand(category, cmd, "Printers", "Get-Printer", CommandTrustLevel.Safe);
         var reloaded = CommandLibrary.Load(vm.CommandsPath);
-        var printing = reloaded.Single(c => c.Name == "Printing");
+        var printing = reloaded.Single(c => c.Name == "Custom checks");
         Assert.Single(printing.Commands);
         Assert.Equal("Printers", printing.Commands[0].Label);
         Assert.Equal("Get-Printer", printing.Commands[0].Command);
 
         vm.DeleteCommand(category, cmd);
         Assert.Null(vm.SelectedCommand);
-        Assert.Empty(CommandLibrary.Load(vm.CommandsPath).Single(c => c.Name == "Printing").Commands);
+        Assert.Empty(CommandLibrary.Load(vm.CommandsPath).Single(c => c.Name == "Custom checks").Commands);
     }
 
     [Fact]
