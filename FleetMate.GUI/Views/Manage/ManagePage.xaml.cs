@@ -4,6 +4,8 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Runtime.InteropServices;
+using System.Windows.Interop;
 using FleetMate.Core.Models.Manage;
 using FleetMate.Core.Services.Manage;
 using FleetMate.GUI.ViewModels.Manage;
@@ -35,7 +37,13 @@ public partial class ManagePage : Page
             if (e.PropertyName is nameof(ManageViewModel.SelectedCount) or nameof(ManageViewModel.OnlineCount))
                 UpdateSelectionCount();
             if (e.PropertyName == nameof(ManageViewModel.ScanMode)) UpdateScanBadge();
+            if (e.PropertyName is nameof(ManageViewModel.EffectiveTrust) or nameof(ManageViewModel.EffectiveTrustIsInferred))
+                UpdateTrustBadge();
+            if (e.PropertyName is nameof(ManageViewModel.ResultSuccessCount) or nameof(ManageViewModel.ResultFailedCount) or nameof(ManageViewModel.ResultOfflineCount))
+                UpdateResultCounts();
         };
+        _vm.Results.CollectionChanged += (_, _) => { UpdateResultsVisibility(); ApplyResultFilter(); };
+        _vm.RunCompleted += OnRunCompleted;
         _vm.CustomGroups.CollectionChanged += (_, _) => NoGroupsText.Visibility = _vm.CustomGroups.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
         Loaded += (_, _) =>
@@ -46,6 +54,8 @@ public partial class ManagePage : Page
                 ReloadRoster();
             }
             Focus();
+            UpdateTrustBadge();
+            UpdateResultsVisibility();
         };
 
         PreviewKeyDown += OnPreviewKeyDown;
@@ -251,6 +261,227 @@ public partial class ManagePage : Page
     private async void OnDetailRescan(object sender, RoutedEventArgs e) { if (_detailRow != null) { await _vm.RescanHostAsync(_detailRow); RefreshDetail(); } }
     private async void OnDetailProbe(object sender, RoutedEventArgs e) { if (_detailRow != null && _detailRow.HasAddress) { await _vm.ProbeAsync(new[] { _detailRow }); RefreshDetail(); } }
 
+    // ── Command runner ──────────────────────────────────────────────────
+
+    private async void OnRun(object sender, RoutedEventArgs e) => await RunResolvedCommandAsync();
+
+    private async void OnCustomCommandKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control) { e.Handled = true; await RunResolvedCommandAsync(); }
+    }
+
+    private async Task RunResolvedCommandAsync()
+    {
+        if (!_vm.CanRun)
+        {
+            MessageBox.Show(Window.GetWindow(this), "Running commands needs the fleet SSH key. Set the key path in Settings, Manage tab.",
+                "SSH not configured", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var command = _vm.ResolvedCommandString;
+        if (command.Length == 0) return;
+        var label = _vm.ResolvedCommandLabel;
+        var targets = _vm.OnlineSelectedRows.ToList();
+        if (targets.Count == 0)
+        {
+            MessageBox.Show(Window.GetWindow(this), "Check at least one online machine first (Select › Online checks every machine that answered).",
+                "No targets", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (PlaceholderTemplate.Detect(label, command) is { } template)
+        {
+            var prompt = new PlaceholderDialog(template) { Owner = Window.GetWindow(this) };
+            if (prompt.ShowDialog() != true || prompt.ResolvedCommand == null) return;
+            command = prompt.ResolvedCommand;
+        }
+
+        var trust = _vm.EffectiveTrust;
+        if (!ConfirmTrust(trust, label, targets.Count)) return;
+        await _vm.RunCommandAsync(command, label, recordHistory: true, targets);
+    }
+
+    private bool ConfirmTrust(CommandTrustLevel trust, string label, int count)
+    {
+        if (trust == CommandTrustLevel.Safe) return true;
+        var answer = MessageBox.Show(Window.GetWindow(this),
+            $"{trust.WarningMessage()}\n\n{label}\nTargets: {count} machine{(count == 1 ? "" : "s")}",
+            trust.WarningTitle(), MessageBoxButton.OKCancel, trust == CommandTrustLevel.Destructive ? MessageBoxImage.Warning : MessageBoxImage.Question);
+        return answer == MessageBoxResult.OK;
+    }
+
+    private void OnKillRun(object sender, RoutedEventArgs e) => _vm.KillRun();
+
+    private void UpdateTrustBadge()
+    {
+        var trust = _vm.EffectiveTrust;
+        TrustText.Text = trust.Label() + (_vm.EffectiveTrustIsInferred ? " (inferred)" : "");
+        TrustDot.Fill = trust switch
+        {
+            CommandTrustLevel.Destructive => Brushes.IndianRed,
+            CommandTrustLevel.Caution => Brushes.Goldenrod,
+            _ => Brushes.MediumSeaGreen
+        };
+        TrustBadge.ToolTip = trust.WarningMessage();
+    }
+
+    private void OnHistory(object sender, RoutedEventArgs e)
+    {
+        var dialog = new HistoryDialog(_vm.History) { Owner = Window.GetWindow(this) };
+        if (dialog.ShowDialog() != true) return;
+        switch (dialog.Result)
+        {
+            case HistoryDialog.Outcome.Cleared:
+                _vm.ClearHistory();
+                break;
+            case HistoryDialog.Outcome.Load when dialog.Chosen != null:
+                _vm.CustomCommand = dialog.Chosen.Command;
+                break;
+            case HistoryDialog.Outcome.Rerun when dialog.Chosen != null:
+                _vm.CustomCommand = dialog.Chosen.Command;
+                _ = RunResolvedCommandAsync();
+                break;
+        }
+    }
+
+    private void OnAddCommand(object sender, RoutedEventArgs e)
+    {
+        var dialog = new CommandEditorDialog(_vm.Categories.ToList(), _vm.SelectedCategory, null, _vm.CustomCommand) { Owner = Window.GetWindow(this) };
+        if (dialog.ShowDialog() != true || dialog.Result != CommandEditorDialog.Outcome.Saved) return;
+        var category = dialog.ResultCategory ?? _vm.AddCategory(dialog.ResultNewCategoryName);
+        _vm.AddCommand(category, dialog.ResultLabel, dialog.ResultCommand, dialog.ResultTrust);
+        _vm.CustomCommand = "";
+    }
+
+    private void OnEditCommand(object sender, RoutedEventArgs e)
+    {
+        if (_vm.SelectedCategory == null || _vm.SelectedCommand == null) return;
+        var category = _vm.SelectedCategory;
+        var command = _vm.SelectedCommand;
+        var dialog = new CommandEditorDialog(_vm.Categories.ToList(), category, command) { Owner = Window.GetWindow(this) };
+        if (dialog.ShowDialog() != true) return;
+        if (dialog.Result == CommandEditorDialog.Outcome.Deleted)
+        {
+            _vm.DeleteCommand(category, command);
+            return;
+        }
+        if (dialog.Result != CommandEditorDialog.Outcome.Saved) return;
+        var target = dialog.ResultCategory ?? _vm.AddCategory(dialog.ResultNewCategoryName);
+        if (target != category)
+        {
+            _vm.DeleteCommand(category, command);
+            _vm.AddCommand(target, dialog.ResultLabel, dialog.ResultCommand, dialog.ResultTrust);
+        }
+        else
+        {
+            _vm.EditCommand(category, command, dialog.ResultLabel, dialog.ResultCommand, dialog.ResultTrust);
+        }
+    }
+
+    // Quick actions: confirmation-gated, run on the checked online machines.
+    private void OnQuickRestart(object sender, RoutedEventArgs e) => _ = RunQuickActionAsync(QuickActions.Restart);
+    private void OnQuickLogOut(object sender, RoutedEventArgs e) => _ = RunQuickActionAsync(QuickActions.LogOutUser);
+    private void OnQuickSleep(object sender, RoutedEventArgs e) => _ = RunQuickActionAsync(QuickActions.Sleep);
+    private void OnQuickLock(object sender, RoutedEventArgs e) => _ = RunQuickActionAsync(QuickActions.LockScreen);
+
+    private async Task RunQuickActionAsync(QuickActions.QuickAction action)
+    {
+        var targets = _vm.OnlineSelectedRows.ToList();
+        if (targets.Count == 0)
+        {
+            MessageBox.Show(Window.GetWindow(this), "Check at least one online machine first.", action.Label, MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var what = targets.Count == 1 ? targets[0].FriendlyName : $"{targets.Count} machines";
+        var answer = MessageBox.Show(Window.GetWindow(this), action.ConfirmMessage, string.Format(action.ConfirmTitle, what),
+            MessageBoxButton.OKCancel, action.Trust == CommandTrustLevel.Destructive ? MessageBoxImage.Warning : MessageBoxImage.Question);
+        if (answer != MessageBoxResult.OK) return;
+        await _vm.RunCommandAsync(action.Command, action.Label, recordHistory: true, targets);
+    }
+
+    // ── Results pane ────────────────────────────────────────────────────
+
+    private void UpdateResultsVisibility()
+    {
+        var show = _vm.Results.Count > 0;
+        ResultsPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        ResultsSplitter.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        ResultsSplitterRow.Height = show ? new GridLength(6) : new GridLength(0);
+        if (show && ResultsRow.Height.Value == 0) ResultsRow.Height = new GridLength(1.1, GridUnitType.Star);
+        if (!show) ResultsRow.Height = new GridLength(0);
+        ResultsTitle.Text = _vm.LastRunLabel.Length > 0 ? $"Results: {_vm.LastRunLabel}" : "Results";
+    }
+
+    private void UpdateResultCounts()
+    {
+        ResultsCounts.Text = _vm.Results.Count == 0 ? "" : $"{_vm.ResultSuccessCount} ok · {_vm.ResultFailedCount} failed · {_vm.ResultOfflineCount} offline";
+        ResultsTitle.Text = _vm.LastRunLabel.Length > 0 ? $"Results: {_vm.LastRunLabel}" : "Results";
+    }
+
+    private void OnResultFilterChanged(object sender, RoutedEventArgs e) => ApplyResultFilter();
+
+    private IEnumerable<CommandResultViewModel> FilteredResults()
+    {
+        IEnumerable<CommandResultViewModel> all = _vm.Results;
+        if (FilterSuccess?.IsChecked == true) return all.Where(r => r.Status == CommandRunStatus.Success);
+        if (FilterFailed?.IsChecked == true) return all.Where(r => r.Status is CommandRunStatus.Failed or CommandRunStatus.AuthFailed or CommandRunStatus.Timeout);
+        if (FilterOffline?.IsChecked == true) return all.Where(r => r.Status == CommandRunStatus.Offline);
+        return all;
+    }
+
+    private void ApplyResultFilter()
+    {
+        if (ResultsList == null) return;
+        if (FilterAll?.IsChecked == true) { ResultsList.ItemsSource = _vm.Results; return; }
+        ResultsList.ItemsSource = FilteredResults().ToList();
+    }
+
+    private void OnClearResults(object sender, RoutedEventArgs e) { _vm.KillRun(); _vm.ClearResults(); }
+
+    private void OnCopyVisibleResults(object sender, RoutedEventArgs e) =>
+        CopyLines(FilteredResults().Select(r => r.Formatted()));
+
+    private void OnSelectFailedTargets(object sender, RoutedEventArgs e)
+    {
+        var failed = _vm.Results.Where(r => r.Status is CommandRunStatus.Failed or CommandRunStatus.AuthFailed or CommandRunStatus.Timeout or CommandRunStatus.Offline)
+            .Select(r => r.Serial).ToHashSet();
+        foreach (var row in _vm.Rows) row.IsSelected = failed.Contains(row.Serial);
+    }
+
+    private CommandResultViewModel? ContextResult() => ResultsList.SelectedItem as CommandResultViewModel;
+    private MachineRowViewModel? RowForResult(CommandResultViewModel r) => _vm.Rows.FirstOrDefault(x => x.Serial == r.Serial);
+
+    private void OnResultOpenSsh(object sender, RoutedEventArgs e) { if (ContextResult() is { } r && RowForResult(r) is { } row) _vm.OpenSsh(row); }
+    private void OnResultOpenRdp(object sender, RoutedEventArgs e) { if (ContextResult() is { } r && RowForResult(r) is { } row) _vm.OpenRdp(row); }
+    private void OnResultCopyHostname(object sender, RoutedEventArgs e) { if (ContextResult() is { } r) CopyText(r.Hostname.Length > 0 ? r.Hostname : r.Name); }
+    private void OnResultCopyIp(object sender, RoutedEventArgs e) { if (ContextResult() is { } r) CopyText(r.Ip); }
+    private void OnResultCopyOutput(object sender, RoutedEventArgs e) { if (ContextResult() is { } r) CopyText(r.Output); }
+    private void OnResultCopyError(object sender, RoutedEventArgs e) { if (ContextResult() is { } r) CopyText(r.ErrorOutput); }
+    private void OnResultCopyFull(object sender, RoutedEventArgs e) { if (ContextResult() is { } r) CopyText(r.Formatted()); }
+
+    /// <summary>When the window is not in front, flash it so the operator notices the batch finished.</summary>
+    private void OnRunCompleted(int success, int failed, int offline)
+    {
+        var window = Window.GetWindow(this);
+        if (window == null || window.IsActive) return;
+        try
+        {
+            var handle = new WindowInteropHelper(window).Handle;
+            var info = new FLASHWINFO { cbSize = (uint)Marshal.SizeOf<FLASHWINFO>(), hwnd = handle, dwFlags = 0x0E, uCount = 3, dwTimeout = 0 };
+            FlashWindowEx(ref info);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Debug(ex, "FlashWindowEx failed");
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FLASHWINFO { public uint cbSize; public IntPtr hwnd; public uint dwFlags; public uint uCount; public uint dwTimeout; }
+
+    [DllImport("user32.dll")]
+    private static extern bool FlashWindowEx(ref FLASHWINFO pwfi);
+
     // ── Sessions ────────────────────────────────────────────────────────
 
     private void OnOpenSshRow(object sender, RoutedEventArgs e) { if (ContextRow() is { } r) _vm.OpenSsh(r); }
@@ -415,9 +646,10 @@ public class StatusKeyToBrushConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture) => value?.ToString() switch
     {
-        "online" => Brushes.MediumSeaGreen,
-        "unreachable" => Brushes.Goldenrod,
-        "scanning" => Brushes.DodgerBlue,
+        "online" or "success" => Brushes.MediumSeaGreen,
+        "unreachable" or "timeout" => Brushes.Goldenrod,
+        "scanning" or "running" => Brushes.DodgerBlue,
+        "failed" => Brushes.IndianRed,
         _ => Brushes.Gray
     };
 
