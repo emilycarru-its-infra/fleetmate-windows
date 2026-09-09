@@ -83,3 +83,6 @@ logs/
 
 # IntuneWin packages (build output)
 *.intunewin
+
+# Task worktrees live inside the repo
+/.worktrees/
