@@ -195,7 +195,7 @@ public class RosterLoader
     private static bool Eq(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>RFC-4180-ish line split: commas inside double quotes are kept, doubled quotes unescape.</summary>
-    internal static List<string> ParseLine(string line)
+    public static List<string> ParseLine(string line)
     {
         var fields = new List<string>();
         var current = new System.Text.StringBuilder();

@@ -64,7 +64,9 @@ public class MachineProbe
         $aad=$d -match 'AzureAdJoined\s*:\s*YES'; $dom=$d -match 'DomainJoined\s*:\s*YES'
         "join=$(if($aad -and $dom){'hybrid'}elseif($aad){'entra'}elseif($dom){'domain'}else{'none'})"
         $ts=Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'
-        "rdp=$(if($ts.fDenyTSConnections -eq 0){'enabled'}else{'disabled'})"
+        $pol=Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services'
+        $deny=if($null -ne $pol.fDenyTSConnections){$pol.fDenyTSConnections}else{$ts.fDenyTSConnections}
+        "rdp=$(if($deny -eq 0){'enabled'}else{'disabled'})"
         $nla=(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp').UserAuthentication
         "nla=$(if($nla -eq 1){'yes'}else{'no'})"
         $l=Get-NetTCPConnection -State Listen | Select-Object -ExpandProperty LocalPort

@@ -22,6 +22,7 @@ using FleetMate.Core.Services.Inventory;
 using FleetMate.Core.Services.Tickets;
 using FleetMate.Core.Services.Projects;
 using FleetMate.Core.Services.Reporting;
+using FleetMate.Core.Services.Manage;
 using Serilog;
 using Microsoft.Win32;
 using ModernWpf;
@@ -38,6 +39,8 @@ public partial class App : Application
     public AzureDevOpsService? DevOpsService { get; private set; }
     public DevOpsSsoService? DevOpsSsoService { get; private set; }
     public ReportMateService? ReportMateService { get; private set; }
+    public SecureShellService? SecureShellService { get; private set; }
+    public ManageStateStore ManageState { get; private set; } = new();
 
     /// <summary>
     /// The loaded pull request queue, cached here rather than in the view.
@@ -752,6 +755,24 @@ public partial class App : Application
                 Log.Information("ReportMateService initialized ({Auth})",
                     ReportMateService.UsesOidc ? "Entra SSO" : "legacy passphrase");
             }
+
+            // SSH for the Manage tab: only when the fleet admin key is on disk.
+            // Without it the tab still loads rooms and scans; it cannot fetch
+            // machine details or run commands, and says so.
+            var manage = Config.Manage ?? new ManageConfig();
+            if (manage.HasSshKey)
+            {
+                try
+                {
+                    SecureShellService = new SecureShellService(manage.ToSecureShellConfig());
+                    Log.Information("SecureShellService initialized for Manage (user {User})", manage.ResolvedSshUser);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "SecureShellService could not load the key at {Path}", manage.ResolvedSshKeyPath);
+                }
+            }
+            ManageState = new ManageStateStore();
         }
         catch (Exception ex)
         {
@@ -778,6 +799,8 @@ public partial class App : Application
         DevOpsService = null;
         DevOpsSsoService = null;
         ReportMateService = null;
+        SecureShellService?.Dispose();
+        SecureShellService = null;
         DevOpsProjectReady = false;
         PullRequestQueue = null;
         InvalidateAllCaches();
@@ -867,6 +890,7 @@ public partial class App : Application
         TdxService?.Dispose();
         DevOpsService?.Dispose();
         ReportMateService?.Dispose();
+        SecureShellService?.Dispose();
         Log.CloseAndFlush();
         base.OnExit(e);
     }
