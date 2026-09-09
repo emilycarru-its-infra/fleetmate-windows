@@ -525,9 +525,20 @@ try {
     if ($buildCLI -and -not $PkgOnly -and -not $MsiOnly) {
         Write-BuildLog "Building FleetMate CLI..."
         if ($Publish) {
+            # Publish for the host architecture unless asked otherwise: the
+            # single-file CLI only runs on the architecture it was published
+            # for, and the fleet package is x64.
+            $cliRid = if ($GuiRuntime) {
+                $GuiRuntime
+            } elseif ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') {
+                'win-arm64'
+            } else {
+                'win-x64'
+            }
+            Write-BuildLog "  runtime: $cliRid" "INFO"
             & dotnet publish "$RootDir\FleetMate.CLI\FleetMate.CLI.csproj" `
                 --configuration Release `
-                --runtime win-arm64 `
+                --runtime $cliRid `
                 --self-contained true `
                 -p:PublishSingleFile=true `
                 -p:EnableCompressionInSingleFile=true `
