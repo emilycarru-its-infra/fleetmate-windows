@@ -1,0 +1,404 @@
+<Page x:Class="FleetMate.GUI.Views.Manage.ManagePage"
+      Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:local="clr-namespace:FleetMate.GUI.Views.Manage"
+      xmlns:vm="clr-namespace:FleetMate.GUI.ViewModels.Manage"
+      xmlns:ui="http://schemas.modernwpf.com/2019">
+    <Page.Resources>
+        <local:StatusKeyToBrushConverter x:Key="StatusBrush" />
+        <local:BoolToVisibilityConverter x:Key="BoolToVis" />
+        <local:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis" />
+        <local:NonEmptyToVisibilityConverter x:Key="NonEmptyToVis" />
+
+        <Style x:Key="SidebarHeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            <Setter Property="Margin" Value="8,10,8,4" />
+        </Style>
+
+        <Style x:Key="SidebarListStyle" TargetType="ListBox">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Padding" Value="8,4" />
+                        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ListBoxItem">
+                                    <Border x:Name="Bd" CornerRadius="5" Padding="{TemplateBinding Padding}" Background="Transparent" Margin="4,0">
+                                        <ContentPresenter />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SubtleFillBrush}" />
+                                        </Trigger>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SystemControlHighlightListAccentLowBrush}" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <DataTemplate x:Key="RoomTemplate">
+            <DockPanel LastChildFill="True">
+                <Border DockPanel.Dock="Right" Background="{DynamicResource SubtleFillBrush}" CornerRadius="8" Padding="6,1" Margin="6,0,0,0">
+                    <TextBlock Text="{Binding Count}" FontSize="10" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                </Border>
+                <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+            </DockPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="GroupTemplate">
+            <DockPanel LastChildFill="True">
+                <Border DockPanel.Dock="Right" Background="{DynamicResource SubtleFillBrush}" CornerRadius="8" Padding="6,1" Margin="6,0,0,0">
+                    <TextBlock Text="{Binding Devices.Count}" FontSize="10" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                </Border>
+                <ui:FontIcon DockPanel.Dock="Left" Glyph="&#xE902;" FontSize="11" Margin="0,0,6,0" VerticalAlignment="Center"
+                             Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+            </DockPanel>
+        </DataTemplate>
+
+        <Style x:Key="CellTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+        <Style x:Key="DimCellTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CellTextStyle}">
+            <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+        </Style>
+        <Style x:Key="SmallButtonStyle" TargetType="Button">
+            <Setter Property="Padding" Value="8,3" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="MinHeight" Value="24" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+        </Style>
+    </Page.Resources>
+
+    <Grid Margin="0">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="250" MinWidth="200" MaxWidth="360" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition x:Name="DetailColumn" Width="0" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ── Sidebar ─────────────────────────────────────────────── -->
+        <Border Grid.Column="0" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,0,1,0"
+                Background="{DynamicResource CardBackgroundBrush}">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Margin="10,12,10,4">
+                    <TextBox x:Name="SearchBox" ui:ControlHelper.PlaceholderText="Search machines, rooms, people..."
+                             TextChanged="OnSearchChanged" />
+                </StackPanel>
+
+                <TextBlock DockPanel.Dock="Bottom" x:Name="RosterStatusText" Text="{Binding RosterStatus}"
+                           FontSize="10" Margin="12,6,12,8" TextWrapping="Wrap"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+                <!-- Search results replace the sections while a query is typed. -->
+                <Grid>
+                    <ScrollViewer x:Name="SectionsScroll" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Left" Text="LABS" Style="{StaticResource SidebarHeaderStyle}" />
+                                <Button DockPanel.Dock="Right" x:Name="LabsToggle" Content="–" Margin="0,8,8,0" Padding="6,0" FontSize="10" Click="OnToggleSection" Tag="Labs" Style="{StaticResource ChromeIconButtonStyle}" />
+                                <Rectangle />
+                            </DockPanel>
+                            <ListBox x:Name="LabsList" Style="{StaticResource SidebarListStyle}" ItemTemplate="{StaticResource RoomTemplate}" SelectionChanged="OnRoomSelected" />
+
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Left" Text="KIOSKS" Style="{StaticResource SidebarHeaderStyle}" />
+                                <Button DockPanel.Dock="Right" x:Name="KiosksToggle" Content="–" Margin="0,8,8,0" Padding="6,0" FontSize="10" Click="OnToggleSection" Tag="Kiosks" Style="{StaticResource ChromeIconButtonStyle}" />
+                                <Rectangle />
+                            </DockPanel>
+                            <ListBox x:Name="KiosksList" Style="{StaticResource SidebarListStyle}" ItemTemplate="{StaticResource RoomTemplate}" SelectionChanged="OnRoomSelected" />
+
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Left" Text="STAFF" Style="{StaticResource SidebarHeaderStyle}" />
+                                <Button DockPanel.Dock="Right" x:Name="StaffToggle" Content="–" Margin="0,8,8,0" Padding="6,0" FontSize="10" Click="OnToggleSection" Tag="Staff" Style="{StaticResource ChromeIconButtonStyle}" />
+                                <Rectangle />
+                            </DockPanel>
+                            <ListBox x:Name="StaffList" Style="{StaticResource SidebarListStyle}" ItemTemplate="{StaticResource RoomTemplate}" SelectionChanged="OnRoomSelected" />
+
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Left" Text="FACULTY" Style="{StaticResource SidebarHeaderStyle}" />
+                                <Button DockPanel.Dock="Right" x:Name="FacultyToggle" Content="–" Margin="0,8,8,0" Padding="6,0" FontSize="10" Click="OnToggleSection" Tag="Faculty" Style="{StaticResource ChromeIconButtonStyle}" />
+                                <Rectangle />
+                            </DockPanel>
+                            <ListBox x:Name="FacultyList" Style="{StaticResource SidebarListStyle}" ItemTemplate="{StaticResource RoomTemplate}" SelectionChanged="OnRoomSelected" />
+
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Left" Text="CUSTOM GROUPS" Style="{StaticResource SidebarHeaderStyle}" />
+                                <Button DockPanel.Dock="Right" Content="+" Margin="0,8,8,0" Padding="6,0" FontSize="11" Click="OnCreateGroup"
+                                        ToolTip="New custom group" Style="{StaticResource ChromeIconButtonStyle}" />
+                                <Rectangle />
+                            </DockPanel>
+                            <ListBox x:Name="GroupsList" Style="{StaticResource SidebarListStyle}" ItemTemplate="{StaticResource GroupTemplate}"
+                                     ItemsSource="{Binding CustomGroups}" SelectionChanged="OnGroupSelected">
+                                <ListBox.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Add devices..." Click="OnAddDevicesToGroupMenu" />
+                                        <MenuItem Header="Rename..." Click="OnRenameGroup" />
+                                        <Separator />
+                                        <MenuItem Header="Delete group" Click="OnDeleteGroup" />
+                                    </ContextMenu>
+                                </ListBox.ContextMenu>
+                            </ListBox>
+                            <TextBlock x:Name="NoGroupsText" Text="No custom groups yet. Use + to create one." FontSize="11" Margin="12,2,12,8"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <DockPanel x:Name="SearchPanel" Visibility="Collapsed">
+                        <DockPanel DockPanel.Dock="Top" Margin="10,6,10,4">
+                            <Button DockPanel.Dock="Right" Content="Use selected" Style="{StaticResource SmallButtonStyle}" Margin="6,0,0,0" Click="OnUseSearchSelection" />
+                            <Button DockPanel.Dock="Right" Content="All" Style="{StaticResource SmallButtonStyle}" Click="OnSearchSelectAll" />
+                            <TextBlock x:Name="SearchCountText" FontSize="11" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        </DockPanel>
+                        <ListBox x:Name="SearchList" Style="{StaticResource SidebarListStyle}" SelectionMode="Extended">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding FriendlyName}" FontSize="12" />
+                                        <TextBlock FontSize="10" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}">
+                                            <Run Text="{Binding Hostname, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding Location, Mode=OneWay}" /><Run Text="  " /><Run Text="{Binding Serial, Mode=OneWay}" />
+                                        </TextBlock>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+                </Grid>
+            </DockPanel>
+        </Border>
+
+        <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch" Background="Transparent" />
+
+        <!-- ── Main ────────────────────────────────────────────────── -->
+        <Grid Grid.Column="2" Margin="14,12,14,12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Empty state -->
+            <StackPanel x:Name="EmptyState" Grid.RowSpan="3" VerticalAlignment="Center" HorizontalAlignment="Center"
+                        Visibility="{Binding HasSelection, Converter={StaticResource InverseBoolToVis}}">
+                <ui:FontIcon Glyph="&#xE7F4;" FontSize="44" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" HorizontalAlignment="Center" />
+                <TextBlock Text="Select a room or group" FontSize="18" Margin="0,12,0,4" HorizontalAlignment="Center"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <TextBlock x:Name="EmptyHint" Text="Rooms come from the roster configured in Settings." FontSize="12" HorizontalAlignment="Center"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="420" />
+            </StackPanel>
+
+            <!-- Header -->
+            <Grid Grid.Row="0" Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="{Binding SelectionTitle}" Style="{StaticResource TitleTextStyle}" FontSize="22" />
+                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                        <TextBlock Text="{Binding SelectionSubtitle}" Style="{StaticResource SubtitleTextStyle}" FontSize="12" />
+                        <Border x:Name="ScanBadge" CornerRadius="9" Padding="8,2" Margin="10,0,0,0" VerticalAlignment="Center"
+                                Background="{DynamicResource SubtleFillBrush}" ToolTip="Where addresses came from on the last scan">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse x:Name="ScanBadgeDot" Width="7" Height="7" Margin="0,0,5,0" Fill="Gray" />
+                                <TextBlock Text="{Binding ScanModeLabel}" FontSize="10" />
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Text="{Binding ScanStatus}" FontSize="11" Margin="10,0,0,0" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <ui:ProgressRing IsActive="{Binding IsScanning}" Width="14" Height="14" Margin="8,0,0,0"
+                                         Visibility="{Binding IsScanning, Converter={StaticResource BoolToVis}}" />
+                        <TextBlock Text="fetching details..." FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                   Visibility="{Binding IsProbing, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                    <Button x:Name="ScanButton" Content="Scan" Style="{StaticResource SmallButtonStyle}" Click="OnScanClicked" ToolTip="Scan the room again (Ctrl+Shift+S)" />
+                    <Button x:Name="CancelScanButton" Content="Stop" Style="{StaticResource SmallButtonStyle}" Click="OnCancelScanClicked"
+                            Visibility="{Binding IsScanning, Converter={StaticResource BoolToVis}}" />
+                    <Button x:Name="InfoButton" Content="Fetch details" Style="{StaticResource SmallButtonStyle}" Click="OnFetchInfoClicked"
+                            ToolTip="Ask every online machine who is signed in, its OS, uptime and remote-access state" />
+                    <Button Content="Add device..." Style="{StaticResource SmallButtonStyle}" Click="OnAddDeviceClicked" />
+                    <ToggleButton x:Name="DensityToggle" Content="Extended" Padding="8,3" FontSize="11" MinHeight="24" Margin="0,0,6,0"
+                                  Checked="OnDensityChanged" Unchecked="OnDensityChanged" ToolTip="Show OS, uptime, join state and client identifier columns" />
+                    <Button x:Name="ActionsButton" Content="Actions ▾" Style="{StaticResource SmallButtonStyle}" Margin="0" Click="OnActionsClicked">
+                        <Button.ContextMenu>
+                            <ContextMenu x:Name="ActionsMenu">
+                                <MenuItem Header="Copy selected hostnames" Click="OnCopySelectedHostnames" />
+                                <MenuItem Header="Copy selected asset tags" Click="OnCopySelectedAssets" />
+                                <MenuItem Header="Copy selected inventory lines" Click="OnCopySelectedInventory" />
+                                <Separator />
+                                <MenuItem Header="Add selected to custom group..." Click="OnAddSelectedToGroup" />
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- Selection bar -->
+            <DockPanel Grid.Row="1" Margin="0,10,0,6" Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                    <TextBlock Text="Select:" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    <Button Content="All" Style="{StaticResource SmallButtonStyle}" Click="OnSelectAll" />
+                    <Button Content="Online" Style="{StaticResource SmallButtonStyle}" Click="OnSelectOnline" ToolTip="Select every machine that answered (Ctrl+Shift+A)" />
+                    <Button Content="None" Style="{StaticResource SmallButtonStyle}" Click="OnSelectNone" />
+                </StackPanel>
+                <TextBlock DockPanel.Dock="Right" x:Name="SelectionCountText" FontSize="11" VerticalAlignment="Center"
+                           Foreground="{DynamicResource SystemControlForegroundAccentBrush}" />
+                <Rectangle />
+            </DockPanel>
+
+            <!-- Machine list -->
+            <Border Grid.Row="2" Style="{StaticResource CardStyle}" Padding="0" Margin="0"
+                    Visibility="{Binding HasSelection, Converter={StaticResource BoolToVis}}">
+                <DataGrid x:Name="MachinesGrid"
+                          Style="{StaticResource FleetDataGridStyle}"
+                          ItemsSource="{Binding Rows}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="False"
+                          SelectionMode="Extended"
+                          SelectionUnit="FullRow"
+                          CanUserSortColumns="True"
+                          RowHeight="30"
+                          SelectionChanged="OnGridSelectionChanged"
+                          MouseDoubleClick="OnGridDoubleClick">
+                    <DataGrid.RowStyle>
+                        <Style TargetType="DataGridRow" BasedOn="{StaticResource FleetDataGridRowStyle}">
+                            <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasAddress}" Value="False">
+                                    <Setter Property="Opacity" Value="0.55" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.RowStyle>
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Rescan" Click="OnRescanRow" />
+                            <MenuItem Header="Fetch details" Click="OnProbeRow" />
+                            <MenuItem Header="Show details panel" Click="OnShowDetailRow" />
+                            <Separator />
+                            <MenuItem Header="Copy hostname" Click="OnCopyHostname" />
+                            <MenuItem Header="Copy IP address" Click="OnCopyIp" />
+                            <MenuItem Header="Copy serial number" Click="OnCopySerial" />
+                            <MenuItem Header="Copy asset tag" Click="OnCopyAsset" />
+                            <MenuItem Header="Copy OS version" Click="OnCopyOs" />
+                            <MenuItem Header="Copy all info" Click="OnCopyAllInfo" />
+                            <Separator />
+                            <MenuItem Header="Copy selected hostnames" Click="OnCopySelectedHostnames" />
+                            <MenuItem Header="Copy selected asset tags" Click="OnCopySelectedAssets" />
+                            <MenuItem Header="Copy selected inventory lines" Click="OnCopySelectedInventory" />
+                            <Separator />
+                            <MenuItem Header="Add to custom group..." Click="OnAddSelectedToGroup" />
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Width="44" MinWidth="44" CanUserResize="False" CanUserSort="False">
+                            <DataGridTemplateColumn.Header>
+                                <CheckBox x:Name="HeaderCheckBox" Click="OnHeaderCheckBoxClicked" MinWidth="0" Padding="0" Margin="0" HorizontalAlignment="Center" />
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" MinWidth="0" Padding="0" Margin="0"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Width="24" CanUserResize="False" SortMemberPath="StatusKey">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Ellipse Width="9" Height="9" Fill="{Binding StatusKey, Converter={StaticResource StatusBrush}}"
+                                             ToolTip="{Binding StatusLabel}" VerticalAlignment="Center" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="Machine" Width="1.4*" SortMemberPath="FriendlyName">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding FriendlyName}" Style="{StaticResource CellTextStyle}" FontWeight="SemiBold" />
+                                        <ui:FontIcon Glyph="&#xE192;" FontSize="11" Margin="6,0,0,0" Foreground="DarkOrange" VerticalAlignment="Center"
+                                                     ToolTip="sshd rejected the shared admin key on this machine"
+                                                     Visibility="{Binding SshAuthFailed, Converter={StaticResource BoolToVis}}" />
+                                        <ui:ProgressRing IsActive="True" Width="12" Height="12" Margin="6,0,0,0"
+                                                         Visibility="{Binding IsProbing, Converter={StaticResource BoolToVis}}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="Hostname" Width="1*" Binding="{Binding Hostname}" ElementStyle="{StaticResource DimCellTextStyle}" />
+                        <DataGridTextColumn Header="Address" Width="1.1*" Binding="{Binding AddressLabel}" ElementStyle="{StaticResource DimCellTextStyle}" SortMemberPath="Ip" />
+                        <DataGridTextColumn Header="User" Width="1*" Binding="{Binding UserLabel}" ElementStyle="{StaticResource CellTextStyle}" />
+                        <DataGridTextColumn x:Name="OsColumn" Header="OS" Width="1.2*" Binding="{Binding OsLabel}" ElementStyle="{StaticResource DimCellTextStyle}" Visibility="Collapsed" />
+                        <DataGridTextColumn x:Name="UptimeColumn" Header="Uptime" Width="0.7*" Binding="{Binding UptimeLabel}" ElementStyle="{StaticResource DimCellTextStyle}" Visibility="Collapsed" />
+                        <DataGridTextColumn x:Name="JoinColumn" Header="Join" Width="0.8*" Binding="{Binding JoinLabel}" ElementStyle="{StaticResource DimCellTextStyle}" Visibility="Collapsed" />
+                        <DataGridTextColumn x:Name="ClientIdColumn" Header="Client identifier" Width="1.4*" Binding="{Binding CimianLabel}" ElementStyle="{StaticResource DimCellTextStyle}" Visibility="Collapsed" />
+                        <DataGridTemplateColumn Header="Remote access" Width="1.5*" SortMemberPath="RemoteAccessLabel">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding RemoteAccessLabel}" Style="{StaticResource DimCellTextStyle}" ToolTip="{Binding RemoteAccessHelp}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Width="Auto" CanUserSort="False">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" x:Name="RowActions">
+                                        <Button Content="Rescan" Style="{StaticResource SmallButtonStyle}" Click="OnRescanRowButton" ToolTip="Resolve and probe this machine again" />
+                                        <Button Content="Info" Style="{StaticResource SmallButtonStyle}" Margin="0" Click="OnShowDetailRowButton" ToolTip="Show everything known about this machine" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Border>
+        </Grid>
+
+        <!-- ── Detail panel ────────────────────────────────────────── -->
+        <Border Grid.Column="3" x:Name="DetailPanel" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1,0,0,0"
+                Background="{DynamicResource CardBackgroundBrush}" Padding="14,12">
+            <DockPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <Button DockPanel.Dock="Right" Content="✕" Style="{StaticResource ChromeIconButtonStyle}" Click="OnCloseDetail" />
+                    <TextBlock x:Name="DetailTitle" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                </DockPanel>
+                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,10,0,0">
+                    <Button Content="Copy all" Style="{StaticResource SmallButtonStyle}" Click="OnDetailCopyAll" />
+                    <Button Content="Rescan" Style="{StaticResource SmallButtonStyle}" Click="OnDetailRescan" />
+                    <Button Content="Fetch details" Style="{StaticResource SmallButtonStyle}" Margin="0" Click="OnDetailProbe" />
+                </StackPanel>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock x:Name="DetailStatus" FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap" />
+                        <TextBlock x:Name="DetailBody" FontSize="12" FontFamily="Consolas" TextWrapping="Wrap" />
+                        <TextBlock Text="Remote access" FontSize="11" FontWeight="SemiBold" Margin="0,12,0,2"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBlock x:Name="DetailRemoteHelp" FontSize="12" TextWrapping="Wrap" />
+                        <TextBlock x:Name="DetailProbeError" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" Foreground="DarkOrange" />
+                    </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Page>
