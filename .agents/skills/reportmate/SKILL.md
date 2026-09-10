@@ -12,7 +12,7 @@ ReportMate is the fleet reporting platform FleetMate reads from: device agents p
 
 ## Setup
 
-Install the CLI from its GitHub release (a universal macOS binary and Windows x64/arm64 builds), or let the fleet management pipeline install it. Then export the target and a credential:
+On a managed Mac the CLI ships inside ReportMate.app (`Contents/MacOS/reportmate`, symlinked to `/usr/local/bin/reportmate`); on a managed PC it sits in `C:\Program Files\ReportMate`. Elsewhere, install it from its GitHub release (a universal macOS binary and Windows x64/arm64 builds). Then export the target and a credential:
 
 ```
 export REPORTMATE_API_URL=https://reportmate.example.edu
@@ -173,7 +173,7 @@ reportmate raw /api/v1/dashboard --param eventsLimit=10
 
 ## How FleetMate uses it
 
-- `ReportMateCli` (Swift: `Sources/FleetMateCore/Services/Reporting/ReportMateCli.swift`; C#: `FleetMate.Core/Services/Reporting/ReportMateCli.cs`) locates the binary and runs it with only the API URL and one credential in its environment.
+- `ReportMateCli` (Swift: `Sources/FleetMateCore/Services/Reporting/ReportMateCli.swift`; C#: `FleetMate.Core/Services/Reporting/ReportMateCli.cs`) locates the binary (`/usr/local/bin`, the ReportMate.app bundle, Homebrew, PATH on the Mac; `C:\Program Files\ReportMate`, `C:\Program Files\sbin`, PATH on Windows) and runs it with only the API URL and one credential in its environment.
 - `ReportMateService` pairs every read with the CLI arguments that produce the same JSON as the HTTP path (`devices --limit --offset`, `module installs`, `module network`, `device SERIAL module network`, `device SERIAL installs-log`, `device SERIAL`). A CLI that cannot launch falls back to HTTP; a CLI that ran and got an API refusal surfaces it, and a `-> 404` in its stderr is treated as "not found".
 - The host scanner and SSH/ARD resolvers take addresses from the fleet `network` report first and only then ask for one device's network module.
 
