@@ -47,49 +47,49 @@
                         <RadioButton x:Name="TabDashboard" Tag="Dashboard" GroupName="MainTabs"
                                      IsChecked="True" Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
-                                <ui:FontIcon Glyph="&#xE80F;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <ui:FontIcon Glyph="&#xE8A9;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Dashboard" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabDevices" Tag="Devices" GroupName="MainTabs"
                                      Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
-                                <ui:FontIcon Glyph="&#xE7F8;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <ui:FontIcon Glyph="&#xE7F8;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Devices" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabManage" Tag="Manage" GroupName="MainTabs"
                                      Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
-                                <ui:FontIcon Glyph="&#xE8B7;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <ui:FontIcon Glyph="&#xEC7A;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Manage" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabInventory" Tag="Inventory" GroupName="MainTabs"
                                      Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
-                                <ui:FontIcon Glyph="&#xE7B8;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <ui:FontIcon Glyph="&#xF158;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Inventory" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabTickets" Tag="Tickets" GroupName="MainTabs"
                                      Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
-                                <ui:FontIcon Glyph="&#xE8EA;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <ui:FontIcon Glyph="&#xE8EC;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Tickets" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabBoards" Tag="Projects" GroupName="MainTabs"
                                      Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
-                                <ui:FontIcon Glyph="&#xE762;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <ui:FontIcon Glyph="&#xF0E3;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Projects" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabIdentity" Tag="Identity" GroupName="MainTabs"
                                      Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
-                                <ui:FontIcon Glyph="&#xE716;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <ui:FontIcon Glyph="&#xE716;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Identity" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
@@ -103,13 +103,13 @@
                     <Button x:Name="AuthButton" ToolTip="Authentication status" Click="OnAuthClicked"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
                             Style="{StaticResource ChromeIconButtonStyle}">
-                        <ui:FontIcon Glyph="&#xE72E;" FontSize="14" />
+                        <ui:FontIcon Glyph="&#xE72E;" FontFamily="Segoe Fluent Icons" FontSize="14" />
                     </Button>
                     <RadioButton x:Name="TabSettings" ToolTip="Settings"
                                  shell:WindowChrome.IsHitTestVisibleInChrome="True"
                                  Tag="Settings" GroupName="MainTabs" Checked="OnTabChecked"
                                  Style="{StaticResource NavigationTabStyle}">
-                        <ui:FontIcon Glyph="&#xE713;" FontSize="14" />
+                        <ui:FontIcon Glyph="&#xE713;" FontFamily="Segoe Fluent Icons" FontSize="14" />
                     </RadioButton>
                     <Popup x:Name="AuthPopup" PlacementTarget="{Binding ElementName=AuthButton}"
                            Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
