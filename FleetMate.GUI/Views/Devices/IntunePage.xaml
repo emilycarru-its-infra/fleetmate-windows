@@ -202,7 +202,19 @@
                                 <StackPanel Margin="8">
                                     <TextBlock Text="Factory-reset the selected devices. This cannot be undone."
                                                TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
+                                    <CheckBox x:Name="WipeKeepEnrollmentCheckBox" Content="Leave the device enrolled" FontSize="12" Margin="0,0,0,4" />
+                                    <CheckBox x:Name="WipeKeepUserDataCheckBox" Content="Keep user data" FontSize="12" Margin="0,0,0,8" />
                                     <Button Content="Wipe Device" Click="OnWipeClicked" HorizontalAlignment="Stretch" Background="Red" Foreground="White" />
+                                </StackPanel>
+                            </Expander>
+
+                            <!-- Fresh Start Section (Windows) -->
+                            <Expander Header="Fresh Start">
+                                <StackPanel Margin="8">
+                                    <TextBlock Text="Reinstall Windows and remove preinstalled OEM apps. The device stays enrolled and Entra-joined."
+                                               TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
+                                    <CheckBox x:Name="FreshStartKeepUserDataCheckBox" Content="Keep user data and account" IsChecked="True" FontSize="12" Margin="0,0,0,8" />
+                                    <Button Content="Fresh Start" Click="OnFreshStartClicked" HorizontalAlignment="Stretch" Background="Orange" />
                                 </StackPanel>
                             </Expander>
 

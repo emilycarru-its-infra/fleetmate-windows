@@ -82,6 +82,42 @@ public class IntuneDevice
     [JsonPropertyName("ethernetMacAddress")]
     public string? EthernetMacAddress { get; set; }
 
+    [JsonPropertyName("managedDeviceName")]
+    public string? ManagedDeviceName { get; set; }
+
+    [JsonPropertyName("managedDeviceOwnerType")]
+    public string? ManagedDeviceOwnerType { get; set; }
+
+    [JsonPropertyName("enrollmentProfileName")]
+    public string? EnrollmentProfileName { get; set; }
+
+    [JsonPropertyName("deviceRegistrationState")]
+    public string? DeviceRegistrationState { get; set; }
+
+    [JsonPropertyName("joinType")]
+    public string? JoinType { get; set; }
+
+    [JsonPropertyName("skuFamily")]
+    public string? SkuFamily { get; set; }
+
+    [JsonPropertyName("physicalMemoryInBytes")]
+    public long? PhysicalMemoryInBytes { get; set; }
+
+    [JsonPropertyName("azureADRegistered")]
+    public bool? AzureAdRegistered { get; set; }
+
+    [JsonPropertyName("imei")]
+    public string? Imei { get; set; }
+
+    [JsonPropertyName("meid")]
+    public string? Meid { get; set; }
+
+    [JsonPropertyName("phoneNumber")]
+    public string? PhoneNumber { get; set; }
+
+    [JsonPropertyName("subscriberCarrier")]
+    public string? SubscriberCarrier { get; set; }
+
     /// <summary>
     /// Helper to check if device is compliant
     /// </summary>
@@ -140,6 +176,98 @@ public class DeviceCompliancePolicyState
 
     [JsonPropertyName("userPrincipalName")]
     public string? UserPrincipalName { get; set; }
+
+    [JsonPropertyName("lastReportedDateTime")]
+    public DateTime? LastReportedDateTime { get; set; }
+
+    [JsonPropertyName("version")]
+    public int? Version { get; set; }
+
+    [JsonPropertyName("platformType")]
+    public string? PlatformType { get; set; }
+}
+
+/// <summary>
+/// Per-setting compliance state for one policy on one device, from
+/// managedDevices/{id}/deviceCompliancePolicyStates/{policyId}/settingStates.
+/// </summary>
+public class ComplianceSettingState
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("setting")]
+    public string? Setting { get; set; }
+
+    [JsonPropertyName("settingName")]
+    public string? SettingName { get; set; }
+
+    [JsonPropertyName("instanceDisplayName")]
+    public string? InstanceDisplayName { get; set; }
+
+    [JsonPropertyName("state")]
+    public string? State { get; set; }
+
+    [JsonPropertyName("errorCode")]
+    public long? ErrorCode { get; set; }
+
+    [JsonPropertyName("errorDescription")]
+    public string? ErrorDescription { get; set; }
+
+    [JsonPropertyName("userPrincipalName")]
+    public string? UserPrincipalName { get; set; }
+
+    [JsonPropertyName("currentValue")]
+    public string? CurrentValue { get; set; }
+
+    [JsonPropertyName("sources")]
+    public List<ComplianceSettingSource>? Sources { get; set; }
+
+    [JsonIgnore]
+    public string DisplayName =>
+        InstanceDisplayName is { Length: > 0 } i ? i
+        : SettingName is { Length: > 0 } n ? n
+        : Setting ?? "Unknown setting";
+
+    [JsonIgnore]
+    public bool IsBad => State?.ToLowerInvariant() is "noncompliant" or "error" or "conflict";
+}
+
+public class ComplianceSettingSource
+{
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("displayName")]
+    public string? DisplayName { get; set; }
+}
+
+public class ComplianceSettingStatesResponse
+{
+    [JsonPropertyName("value")]
+    public List<ComplianceSettingState> Value { get; set; } = new();
+
+    [JsonPropertyName("@odata.nextLink")]
+    public string? NextLink { get; set; }
+}
+
+/// <summary>
+/// A compliance policy definition, flattened for display: the typed
+/// requirement properties as label/value pairs, the grace period and
+/// scheduled actions, and the assignment targets.
+/// </summary>
+public class CompliancePolicyDefinition
+{
+    public string? DisplayName { get; set; }
+    public string? Description { get; set; }
+    public string? PlatformType { get; set; }
+    public int? Version { get; set; }
+    public List<KeyValuePair<string, string>> Requirements { get; set; } = new();
+    public List<string> ScheduledActions { get; set; } = new();
+    public List<string> AssignedGroupIds { get; set; } = new();
+    /// <summary>True when Graph refused the read — the app registration lacks
+    /// DeviceManagementConfiguration.Read.All.</summary>
+    public bool AccessDenied { get; set; }
 }
 
 /// <summary>
