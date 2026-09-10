@@ -6,10 +6,6 @@
       xmlns:local="clr-namespace:FleetMate.GUI.Views.Inventory"
       Loaded="Page_Loaded">
 
-    <Page.Resources>
-        <local:CustomFieldValueConverter x:Key="CustomFieldConverter" />
-    </Page.Resources>
-
     <Grid Margin="16,14,16,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -152,13 +148,8 @@
                                 </DataTemplate>
                             </GridViewColumn.CellTemplate>
                         </GridViewColumn>
-                        <GridViewColumn Header="Platform" Width="100">
-                            <GridViewColumn.CellTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding CustomFields, Converter={StaticResource CustomFieldConverter}, ConverterParameter=Platform}" />
-                                </DataTemplate>
-                            </GridViewColumn.CellTemplate>
-                        </GridViewColumn>
+                        <GridViewColumn Header="Platform" Width="100"
+                                        DisplayMemberBinding="{Binding Platform}" />
                         <GridViewColumn Header="Manufacturer" Width="130">
                             <GridViewColumn.CellTemplate>
                                 <DataTemplate>
@@ -166,190 +157,40 @@
                                 </DataTemplate>
                             </GridViewColumn.CellTemplate>
                         </GridViewColumn>
-                        <GridViewColumn Header="Usage" Width="100">
-                            <GridViewColumn.CellTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding CustomFields, Converter={StaticResource CustomFieldConverter}, ConverterParameter=Usage}" />
-                                </DataTemplate>
-                            </GridViewColumn.CellTemplate>
-                        </GridViewColumn>
-                        <GridViewColumn Header="Catalog" Width="100">
-                            <GridViewColumn.CellTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding CustomFields, Converter={StaticResource CustomFieldConverter}, ConverterParameter=Catalog}" />
-                                </DataTemplate>
-                            </GridViewColumn.CellTemplate>
-                        </GridViewColumn>
-                        <GridViewColumn Header="Area" Width="100">
-                            <GridViewColumn.CellTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding CustomFields, Converter={StaticResource CustomFieldConverter}, ConverterParameter=Area}" />
-                                </DataTemplate>
-                            </GridViewColumn.CellTemplate>
-                        </GridViewColumn>
+                        <GridViewColumn Header="Usage" Width="100"
+                                        DisplayMemberBinding="{Binding Usage}" />
+                        <GridViewColumn Header="Catalog" Width="100"
+                                        DisplayMemberBinding="{Binding Catalog}" />
+                        <GridViewColumn Header="Area" Width="100"
+                                        DisplayMemberBinding="{Binding Area}" />
+                        <GridViewColumn Header="Location" Width="110"
+                                        DisplayMemberBinding="{Binding LocationName}" />
+                        <GridViewColumn Header="Last Activity" Width="140"
+                                        DisplayMemberBinding="{Binding LastActivityFormatted}" />
                     </GridView>
                 </ListView.View>
             </ListView>
 
             <!-- Detail Sidebar -->
-            <Border Grid.Column="1" 
-                    Style="{StaticResource CardStyle}" 
+            <Border Grid.Column="1"
+                    Style="{StaticResource CardStyle}"
                     Margin="16,0,0,0" Padding="16">
-                
+
                 <!-- No selection placeholder -->
-                <TextBlock x:Name="DetailPlaceholder" 
+                <TextBlock x:Name="DetailPlaceholder"
                            Text="Select an asset to view details"
                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                            VerticalAlignment="Center" HorizontalAlignment="Center" />
             </Border>
-            
+
             <!-- Detail content (overlays placeholder when visible) -->
-            <Border Grid.Column="1" 
-                    Style="{StaticResource CardStyle}" 
+            <Border Grid.Column="1"
+                    Style="{StaticResource CardStyle}"
                     Margin="16,0,0,0" Padding="0"
-                    x:Name="DetailPanel" Visibility="Collapsed">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12">
-                    <ui:SimpleStackPanel Spacing="10">
-                        <!-- Asset name + Re-Allocate + open in Snipe-IT -->
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock x:Name="DetailAssetName" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
-                            <Button x:Name="ReAllocateButton" Grid.Column="1" Content="Re-Allocate" 
-                                    Click="OnReAllocateClicked" Visibility="Collapsed" Margin="8,0,0,0" />
-                            <Button Grid.Column="2" Click="OnOpenInSnipeClicked" ToolTip="Open in Snipe-IT" Padding="6" Margin="4,0,0,0">
-                                <ui:FontIcon Glyph="&#xE774;" FontSize="13" />
-                            </Button>
-                        </Grid>
-
-                        <TextBlock x:Name="DetailAssetTag" FontSize="12" FontFamily="Cascadia Mono, Consolas" Opacity="0.7" />
-
-                        <!-- Status (editable dropdown) -->
-                        <StackPanel>
-                            <TextBlock Text="Status" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
-                            <ComboBox x:Name="DetailStatusComboBox" Margin="0,2,0,0" FontSize="12"
-                                      DisplayMemberPath="Name" SelectionChanged="OnDetailStatusChanged" />
-                        </StackPanel>
-
-                        <!-- Assignment -->
-                        <StackPanel x:Name="AssignmentSection">
-                            <TextBlock Text="Assignment" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
-                            <TextBlock x:Name="DetailAssignedName" FontSize="12" Margin="0,2,0,0" />
-                            <TextBlock x:Name="DetailAssignedEmployee" FontSize="11" Opacity="0.7" />
-                        </StackPanel>
-
-                        <!-- Save Changes -->
-                        <Button x:Name="SaveChangesButton" Content="Save Changes" Click="OnSaveChangesClicked" 
-                                HorizontalAlignment="Stretch" Visibility="Collapsed"
-                                Background="{DynamicResource SystemControlBackgroundAccentBrush}" Foreground="White" />
-
-                        <!-- Hardware -->
-                        <StackPanel>
-                            <TextBlock Text="Hardware" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
-                            <Grid Margin="0,4,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition />
-                                    <RowDefinition />
-                                    <RowDefinition />
-                                    <RowDefinition />
-                                </Grid.RowDefinitions>
-
-                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Serial:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailSerial" Grid.Row="0" Grid.Column="1" FontSize="12" />
-                                <Button Grid.Row="0" Grid.Column="2" Click="OnCopySerialClicked" ToolTip="Copy" Padding="2" Background="Transparent" BorderThickness="0">
-                                    <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8C8;" FontSize="13" VerticalAlignment="Center" />
-                                </Button>
-
-                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Model:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailModel" Grid.Row="1" Grid.Column="1" FontSize="12" />
-
-                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Category:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailCategory" Grid.Row="2" Grid.Column="1" FontSize="12" />
-
-                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Manufacturer:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailManufacturer" Grid.Row="3" Grid.Column="1" FontSize="12" />
-                            </Grid>
-                        </StackPanel>
-
-                        <!-- Location -->
-                        <StackPanel x:Name="LocationSection">
-                            <TextBlock Text="Location" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
-                            <TextBlock x:Name="DetailLocation" FontSize="12" Margin="0,2,0,0" />
-                        </StackPanel>
-
-                        <!-- Dates -->
-                        <StackPanel>
-                            <TextBlock Text="Dates" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
-                            <Grid Margin="0,4,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition />
-                                    <RowDefinition />
-                                    <RowDefinition />
-                                    <RowDefinition />
-                                    <RowDefinition />
-                                </Grid.RowDefinitions>
-
-                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Purchased:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailPurchaseDate" Grid.Row="0" Grid.Column="1" FontSize="12" />
-
-                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Last Checkout:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailLastCheckout" Grid.Row="1" Grid.Column="1" FontSize="12" />
-
-                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Last Audit:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailLastAudit" Grid.Row="2" Grid.Column="1" FontSize="12" />
-
-                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Created:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailCreated" Grid.Row="3" Grid.Column="1" FontSize="12" />
-
-                                <TextBlock Grid.Row="4" Grid.Column="0" Text="Updated:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
-                                <TextBlock x:Name="DetailUpdated" Grid.Row="4" Grid.Column="1" FontSize="12" />
-                            </Grid>
-                        </StackPanel>
-
-                        <!-- Notes -->
-                        <StackPanel x:Name="NotesSection">
-                            <TextBlock Text="Notes" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
-                            <TextBlock x:Name="DetailNotes" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0" />
-                        </StackPanel>
-
-                        <!-- Hardware Custom Fields (dynamically populated) -->
-                        <StackPanel x:Name="HardwareFieldsSection" Visibility="Collapsed">
-                            <TextBlock Text="Hardware Details" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
-                            <StackPanel x:Name="HardwareFieldsContainer" Margin="0,4,0,0" />
-                        </StackPanel>
-
-                        <!-- Management Custom Fields -->
-                        <StackPanel x:Name="ManagementFieldsSection" Visibility="Collapsed">
-                            <TextBlock Text="Management" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
-                            <StackPanel x:Name="ManagementFieldsContainer" Margin="0,4,0,0" />
-                        </StackPanel>
-
-                        <!-- Financials Custom Fields -->
-                        <StackPanel x:Name="FinancialFieldsSection" Visibility="Collapsed">
-                            <TextBlock Text="Financials" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
-                            <StackPanel x:Name="FinancialFieldsContainer" Margin="0,4,0,0" />
-                        </StackPanel>
-
-                        <!-- Other Custom Fields -->
-                        <StackPanel x:Name="OtherFieldsSection" Visibility="Collapsed">
-                            <TextBlock Text="Other Fields" FontWeight="SemiBold" FontSize="12" Opacity="0.6" />
-                            <StackPanel x:Name="OtherFieldsContainer" Margin="0,4,0,0" />
-                        </StackPanel>
-                    </ui:SimpleStackPanel>
-                </ScrollViewer>
+                    x:Name="DetailHost" Visibility="Collapsed">
+                <local:AssetDetailPanel x:Name="DetailPanel" />
             </Border>
+
         </Grid>
 
         <!-- Not Configured -->
