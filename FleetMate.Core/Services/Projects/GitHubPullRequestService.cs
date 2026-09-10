@@ -373,5 +373,49 @@ public sealed class GitHubPullRequestService : IDisposable
             ? count.GetInt32()
             : 0;
 
+    /// <summary>
+    /// Open issues involving the signed-in account, newest activity first —
+    /// the dashboard's issues card (macOS DashboardTasksModel parity).
+    /// </summary>
+    public async Task<List<GitHubIssueSummary>> GetMyIssuesAsync(CancellationToken ct = default)
+    {
+        var raw = await _client.ExecuteRestAsync(
+            "/search/issues?q=involves%3A%40me+is%3Aissue+is%3Aopen&sort=updated&order=desc&per_page=50", ct: ct);
+        using var doc = JsonDocument.Parse(raw);
+        var issues = new List<GitHubIssueSummary>();
+        if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+            return issues;
+        foreach (var item in items.EnumerateArray())
+        {
+            // The search endpoint returns PRs as issues too; drop them.
+            if (item.TryGetProperty("pull_request", out _)) continue;
+            var repoUrl = item.TryGetProperty("repository_url", out var r) ? r.GetString() ?? "" : "";
+            var repository = repoUrl.Contains("/repos/") ? repoUrl[(repoUrl.IndexOf("/repos/") + 7)..] : "";
+            issues.Add(new GitHubIssueSummary
+            {
+                Number = item.TryGetProperty("number", out var n) ? n.GetInt32() : 0,
+                Title = item.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "",
+                Repository = repository,
+                State = item.TryGetProperty("state", out var st) ? st.GetString() ?? "open" : "open",
+                WebUrl = item.TryGetProperty("html_url", out var u) ? u.GetString() ?? "" : "",
+                UpdatedAt = item.TryGetProperty("updated_at", out var up) && up.ValueKind == JsonValueKind.String
+                    && DateTime.TryParse(up.GetString(), null, System.Globalization.DateTimeStyles.AdjustToUniversal, out var dt)
+                    ? dt : DateTime.MinValue
+            });
+        }
+        return issues;
+    }
+
     public void Dispose() => _client.Dispose();
+}
+
+/// <summary>One open GitHub issue on the dashboard's issues card.</summary>
+public sealed class GitHubIssueSummary
+{
+    public int Number { get; init; }
+    public string Title { get; init; } = "";
+    public string Repository { get; init; } = "";
+    public string State { get; init; } = "open";
+    public string WebUrl { get; init; } = "";
+    public DateTime UpdatedAt { get; init; }
 }

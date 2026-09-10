@@ -20,8 +20,11 @@ namespace FleetMate.GUI.Views.Shared;
 /// </summary>
 public partial class PullRequestQueueView : UserControl
 {
-    private string _sourceFilter = "all";
+    private string _sourceFilter = "devops";
     private bool _isLoading;
+
+    /// <summary>Raised when a source chip changes; the dashboard's work item table follows it.</summary>
+    public event EventHandler<string>? SourceFilterChanged;
 
     public PullRequestQueueView()
     {
@@ -180,6 +183,7 @@ public partial class PullRequestQueueView : UserControl
         GitHubChip.IsChecked = _sourceFilter == "github";
 
         if (App.Current is App { PullRequestQueue: { } queue }) Render(queue);
+        SourceFilterChanged?.Invoke(this, _sourceFilter);
     }
 
     private async void OnRefreshClicked(object sender, RoutedEventArgs e) => await LoadAsync(forceRefresh: true);
