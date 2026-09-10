@@ -332,11 +332,18 @@ public partial class ManageViewModel : ObservableObject
 
     // ── Roster ───────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// When set, the roster loads from here instead of the configured path —
+    /// the page points this at the cached repository fetch, keeping the
+    /// configured RosterPath as the explicit local override/fallback.
+    /// </summary>
+    public string? RosterPathOverride { get; set; }
+
     public void LoadRoster()
     {
         LoadCommandLibrary();
         var loader = new RosterLoader { IncludeRetired = _config.IncludeRetired, IncludeProvisioning = _config.IncludeProvisioning };
-        var path = ManageConfig.ExpandHome(_config.RosterPath);
+        var path = RosterPathOverride ?? ManageConfig.ExpandHome(_config.RosterPath);
         Roster = loader.Load(path);
         RosterLoaded = Roster.Source.Count > 0;
         RosterStatus = !RosterLoaded
