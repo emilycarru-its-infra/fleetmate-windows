@@ -57,6 +57,14 @@ public class ManageStateStore
 
     public void SaveCustomGroups(IEnumerable<CustomGroup> groups) => Save(CustomGroupsPath, groups.ToList());
 
+    public string SidebarStatePath => Path.Combine(Root, "sidebar.json");
+
+    /// <summary>Per-section expanded flags for the sidebar, persisted across runs.</summary>
+    public Dictionary<string, bool> LoadSidebarState() =>
+        Load<Dictionary<string, bool>>(SidebarStatePath) ?? new();
+
+    public void SaveSidebarState(Dictionary<string, bool> expanded) => Save(SidebarStatePath, expanded);
+
     private T? Load<T>(string path) where T : class
     {
         try
