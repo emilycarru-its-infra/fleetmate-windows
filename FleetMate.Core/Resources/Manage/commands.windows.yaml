@@ -9,6 +9,7 @@
 # containing PASSWORD is masked. Copied to the per-user library on first use
 # and merged into it afterwards; edit the per-user copy, not this file.
 categories:
+
   - name: System
     commands:
       - label: Hostname
@@ -69,6 +70,18 @@ categories:
       - label: Rename computer (template)
         command: Rename-Computer -NewName '<NEW_NAME>' -Force; 'Renamed; restart required'
         trust: destructive
+      - label: Device UUID
+        command: |-
+          (Get-CimInstance Win32_ComputerSystemProduct).UUID
+        trust: safe
+      - label: Last signed-in user
+        command: |-
+          $l=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI' -ErrorAction SilentlyContinue; "Last user: $($l.LastLoggedOnUser)  ($($l.LastLoggedOnDisplayName))"
+        trust: safe
+      - label: BIOS version and date
+        command: |-
+          Get-CimInstance Win32_BIOS | Select-Object Manufacturer, SMBIOSBIOSVersion, ReleaseDate | Format-List
+        trust: safe
 
   - name: Storage
     commands:
@@ -102,6 +115,10 @@ categories:
       - label: Disk health (SMART)
         command: Get-PhysicalDisk | Select-Object FriendlyName, MediaType, HealthStatus, OperationalStatus, @{n='SizeGB';e={[math]::Round($_.Size/1GB)}} | Format-Table -AutoSize
         trust: safe
+      - label: Startup programs (Run keys and Startup folders)
+        command: |-
+          foreach($k in 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run'){ if(Test-Path $k){ (Get-ItemProperty $k).PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' } | ForEach-Object { "$($_.Name) = $($_.Value)" } } }; Get-ChildItem "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp",'C:\Users\*\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup' -File -ErrorAction SilentlyContinue | ForEach-Object { "Startup folder: $($_.FullName)" }
+        trust: safe
 
   - name: Cimian Config
     commands:
@@ -131,6 +148,10 @@ categories:
           |-
           $f='C:\ProgramData\ManagedInstalls\Config.yaml'; $c=Get-Content $f -Raw; $c=[regex]::Replace($c,'(?m)^\s*ClientIdentifier\s*:.*$','ClientIdentifier: <CLIENT_IDENTIFIER>'); Set-Content $f $c -Encoding UTF8; "ClientIdentifier set to <CLIENT_IDENTIFIER>"
         trust: caution
+      - label: Self-serve manifest
+        command: |-
+          Get-ChildItem 'C:\ProgramData\ManagedInstalls\manifests' -Filter 'SelfServe*' -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.Name)"; Get-Content $_.FullName }; if(-not (Get-ChildItem 'C:\ProgramData\ManagedInstalls\manifests' -Filter 'SelfServe*' -ErrorAction SilentlyContinue)){ 'No self-serve manifest' }
+        trust: safe
 
   - name: Cimian Operations
     commands:
@@ -176,6 +197,14 @@ categories:
         trust: caution
       - label: Today's install log
         command: Get-Content 'C:\ProgramData\ManagedInstalls\Logs\ManagedSoftwareUpdate.log' -ErrorAction SilentlyContinue | Select-String -Pattern ("^" + (Get-Date).ToString('yyyy-MM-dd')) | ForEach-Object { $_.Line } | Select-Object -Last 200
+        trust: safe
+      - label: Check only (verbose)
+        command: |-
+          managedsoftwareupdate --checkonly -vv 2>&1
+        trust: safe
+      - label: Managed items from the last report
+        command: |-
+          $r=Get-ChildItem 'C:\ProgramData\ManagedInstalls\*Report*' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if($r){ Get-Content $r.FullName | Select-String -Pattern 'ManagedInstalls|InstalledItems|RemovedItems|^\s*-\s' | ForEach-Object { $_.Line } | Select-Object -First 120 } else { 'No report found' }
         trust: safe
 
   - name: Windows Update
@@ -231,6 +260,14 @@ categories:
       - label: Leave Entra join (re-enrol afterwards)
         command: dsregcmd /leave; 'Left Entra join; the device must be re-enrolled'
         trust: destructive
+      - label: BitLocker recovery key escrowed to Entra?
+        command: |-
+          $e=Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-BitLocker/BitLocker Management'; Id=845,846} -MaxEvents 5 -ErrorAction SilentlyContinue | Select-Object -First 1; if($e){ "Last escrow event $($e.Id) at $($e.TimeCreated): $($e.Message.Split("`n")[0])" } else { 'No escrow event found (845 = backed up to Entra, 846 = failed)' }; (Get-BitLockerVolume -MountPoint C:).KeyProtector | Select-Object KeyProtectorType, KeyProtectorId | Format-Table -AutoSize
+        trust: safe
+      - label: Applied MDM policy areas
+        command: |-
+          Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\PolicyManager\providers' -ErrorAction SilentlyContinue | ForEach-Object { $p=$_.PSChildName; Get-ChildItem "$($_.PSPath)\default" -ErrorAction SilentlyContinue | ForEach-Object { "$p  $($_.PSChildName)" } } | Sort-Object -Unique | Select-Object -First 80
+        trust: safe
 
   - name: Security & Profiles
     commands:
@@ -294,6 +331,22 @@ categories:
       - label: Disable BitLocker (decrypt)
         command: Disable-BitLocker -MountPoint C:; 'Decryption started'
         trust: destructive
+      - label: SmartScreen status
+        command: |-
+          $s=Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' -ErrorAction SilentlyContinue; $e=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer' -ErrorAction SilentlyContinue; "Policy EnableSmartScreen: $($s.EnableSmartScreen)  Explorer SmartScreenEnabled: $($e.SmartScreenEnabled)"
+        trust: safe
+      - label: Built-in Administrator account state
+        command: |-
+          Get-LocalUser | Where-Object { $_.SID -like 'S-1-5-21-*-500' } | Select-Object Name, Enabled, LastLogon, PasswordLastSet | Format-List
+        trust: safe
+      - label: Enable the SSH server
+        command: |-
+          Set-Service sshd -StartupType Automatic; Start-Service sshd; (Get-Service sshd).Status
+        trust: caution
+      - label: Run Defender full scan
+        command: |-
+          Start-MpScan -ScanType FullScan -AsJob | Out-Null; 'Full scan started in the background'
+        trust: caution
 
   - name: Users & Sessions
     commands:
@@ -333,6 +386,10 @@ categories:
       - label: Message the console user (template)
         command: msg * /time:60 '<MESSAGE>'; 'Message sent'
         trust: caution
+      - label: Sign-in and sign-out events (last hour)
+        command: |-
+          Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4624,4634,4647,4800,4801; StartTime=(Get-Date).AddHours(-1)} -ErrorAction SilentlyContinue | Where-Object { $_.Id -notin 4624,4634 -or $_.Properties[8].Value -in 2,10,11 } | Select-Object -First 40 TimeCreated, Id, @{n='User';e={$_.Properties[5].Value}} | Format-Table -AutoSize
+        trust: safe
 
   - name: Network
     commands:
@@ -402,6 +459,14 @@ categories:
       - label: Set default printer (template)
         command: (Get-CimInstance Win32_Printer -Filter "Name='<PRINTER_NAME>'").SetDefaultPrinter() | Out-Null; "Default printer set to <PRINTER_NAME>"
         trust: caution
+      - label: Remove all printers
+        command: |-
+          Get-Printer | Where-Object { $_.Name -notmatch 'Microsoft|OneNote|Fax' } | Remove-Printer; 'Printers removed'
+        trust: destructive
+      - label: Remove printers matching a pattern (template)
+        command: |-
+          Get-Printer | Where-Object { $_.Name -like '<PATTERN>' } | ForEach-Object { Remove-Printer -Name $_.Name; "Removed $($_.Name)" }
+        trust: destructive
 
   - name: Diagnostics
     commands:
@@ -474,6 +539,14 @@ categories:
       - label: Clear the managed software log
         command: Clear-Content 'C:\ProgramData\ManagedInstalls\Logs\ManagedSoftwareUpdate.log' -ErrorAction SilentlyContinue; 'Log cleared'
         trust: destructive
+      - label: Manifest chain from the last run
+        command: |-
+          Get-Content 'C:\ProgramData\ManagedInstalls\Logs\ManagedSoftwareUpdate.log' -Tail 800 -ErrorAction SilentlyContinue | Select-String -Pattern 'manifest' | Select-Object -Last 30 | ForEach-Object { $_.Line }
+        trust: safe
+      - label: StartSet log search (template)
+        command: |-
+          Get-ChildItem 'C:\ProgramData\ManagedStartSet\Logs\*.log' -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName | Select-String -Pattern '<PATTERN>' | Select-Object -Last 40 | ForEach-Object { $_.Line } }
+        trust: safe
 
   - name: Power
     commands:
@@ -513,6 +586,10 @@ categories:
       - label: Restore default power settings
         command: powercfg /restoredefaultschemes; 'Default power schemes restored'
         trust: destructive
+      - label: Scheduled restarts and shutdowns (tasks)
+        command: |-
+          Get-ScheduledTask | Where-Object { ($_.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -match 'shutdown\.exe|Restart-Comp|Stop-Comp' } | Select-Object TaskPath, TaskName, State | Format-Table -AutoSize
+        trust: safe
 
   - name: Adobe
     commands:
@@ -573,3 +650,15 @@ categories:
       - label: Clear login-once state so scripts run again
         command: Remove-Item 'C:\ProgramData\ManagedStartSet\State\login-once*' -Recurse -Force -ErrorAction SilentlyContinue; 'Login-once state cleared'
         trust: destructive
+      - label: List on-demand scripts
+        command: |-
+          Get-ChildItem 'C:\ProgramData\ManagedStartSet\on-demand' -File -ErrorAction SilentlyContinue | Select-Object Name, Length, LastWriteTime | Format-Table -AutoSize
+        trust: safe
+      - label: Run login scripts now
+        command: |-
+          $t=Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskName -like '*StartSet*login*' } | Select-Object -First 1; if($t){ Start-ScheduledTask -InputObject $t; "Started $($t.TaskName)" } else { 'No StartSet login task found' }
+        trust: caution
+      - label: Fix StartSet folder permissions
+        command: |-
+          icacls 'C:\ProgramData\ManagedStartSet' /reset /T /C | Out-Null; icacls 'C:\ProgramData\ManagedStartSet' /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' 'Users:(OI)(CI)RX' | Out-Null; 'Permissions reset'
+        trust: caution
