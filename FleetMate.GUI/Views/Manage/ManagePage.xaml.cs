@@ -20,6 +20,8 @@ namespace FleetMate.GUI.Views.Manage;
 public partial class ManagePage : Page
 {
     private readonly ManageViewModel _vm;
+    private readonly ManageStateStore _store;
+    private Dictionary<string, bool> _sidebarExpanded = new();
     private bool _rosterLoaded;
     private bool _suppressSidebarSelection;
     private MachineRowViewModel? _detailRow;
@@ -42,9 +44,16 @@ public partial class ManagePage : Page
             if (e.PropertyName is nameof(ManageViewModel.ResultSuccessCount) or nameof(ManageViewModel.ResultFailedCount) or nameof(ManageViewModel.ResultOfflineCount))
                 UpdateResultCounts();
         };
+        _store = (Application.Current as App)?.ManageState ?? new ManageStateStore();
+        _sidebarExpanded = _store.LoadSidebarState();
+
         _vm.Results.CollectionChanged += (_, _) => { UpdateResultsVisibility(); ApplyResultFilter(); };
         _vm.RunCompleted += OnRunCompleted;
-        _vm.CustomGroups.CollectionChanged += (_, _) => NoGroupsText.Visibility = _vm.CustomGroups.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _vm.CustomGroups.CollectionChanged += (_, _) =>
+        {
+            NoGroupsText.Visibility = _vm.CustomGroups.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            GroupsCountText.Text = _vm.CustomGroups.Sum(g => g.Devices.Count).ToString();
+        };
 
         Loaded += (_, _) =>
         {
@@ -76,12 +85,25 @@ public partial class ManagePage : Page
     {
         _vm.LoadRoster();
         _suppressSidebarSelection = true;
-        LabsList.ItemsSource = _vm.Roster.Labs;
-        KiosksList.ItemsSource = _vm.Roster.Kiosks;
-        StaffList.ItemsSource = _vm.Roster.Staff;
-        FacultyList.ItemsSource = _vm.Roster.Faculty;
+        LabsList.ItemsSource = _vm.Roster.Labs.Select(r => SidebarRoomVm.From(r, RosterSection.Labs)).ToList();
+        KiosksList.ItemsSource = _vm.Roster.Kiosks.Select(r => SidebarRoomVm.From(r, RosterSection.Kiosks)).ToList();
+        StaffList.ItemsSource = _vm.Roster.Staff.Select(r => SidebarRoomVm.From(r, RosterSection.Staff)).ToList();
+        FacultyList.ItemsSource = _vm.Roster.Faculty.Select(r => SidebarRoomVm.From(r, RosterSection.Faculty)).ToList();
         _suppressSidebarSelection = false;
         NoGroupsText.Visibility = _vm.CustomGroups.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        // Section badges count machines, not rooms — the Mac sidebar's numbers.
+        LabsCountText.Text = _vm.Roster.Labs.Sum(r => r.Count).ToString();
+        KiosksCountText.Text = _vm.Roster.Kiosks.Sum(r => r.Count).ToString();
+        StaffCountText.Text = _vm.Roster.Staff.Sum(r => r.Count).ToString();
+        FacultyCountText.Text = _vm.Roster.Faculty.Sum(r => r.Count).ToString();
+        GroupsCountText.Text = _vm.CustomGroups.Sum(g => g.Devices.Count).ToString();
+
+        RosterFooterText.Text = _vm.RosterLoaded
+            ? $"{_vm.Roster.Labs.Count} labs · {_vm.Roster.Source.Count} machines"
+            : (_vm.RosterStatus is { Length: > 0 } status ? status : "Check the roster path in Settings › Manage");
+
+        ApplySidebarExpandedState();
 
         var app = Application.Current as App;
         if (!_vm.RosterLoaded)
@@ -92,6 +114,8 @@ public partial class ManagePage : Page
             EmptyHint.Text = "Rooms come from the roster configured in Settings.";
         UpdateScanBadge();
     }
+
+    private void OnReloadRosterClicked(object sender, RoutedEventArgs e) => ReloadRoster();
 
     // ── Keyboard ────────────────────────────────────────────────────────
 
@@ -110,10 +134,10 @@ public partial class ManagePage : Page
 
     private async void OnRoomSelected(object sender, SelectionChangedEventArgs e)
     {
-        if (_suppressSidebarSelection || sender is not ListBox list || list.SelectedItem is not RosterRoom room) return;
+        if (_suppressSidebarSelection || sender is not ListBox list || list.SelectedItem is not SidebarRoomVm room) return;
         ClearOtherSidebarSelections(list);
         HideDetail();
-        await _vm.SelectRoomAsync(room);
+        await _vm.SelectRoomAsync(room.Room);
     }
 
     private async void OnGroupSelected(object sender, SelectionChangedEventArgs e)
@@ -134,19 +158,54 @@ public partial class ManagePage : Page
 
     private void OnToggleSection(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button button) return;
-        var (list, toggle) = button.Tag?.ToString() switch
+        if (sender is not Button button || button.Tag?.ToString() is not { } key) return;
+        var expanded = !(_sidebarExpanded.TryGetValue(key, out var current) ? current : true);
+        _sidebarExpanded[key] = expanded;
+        _store.SaveSidebarState(_sidebarExpanded);
+        ApplySidebarExpandedState();
+    }
+
+    private (ListBox List, Button Toggle)? SectionControls(string key) => key switch
+    {
+        "Labs" => (LabsList, LabsToggle),
+        "Kiosks" => (KiosksList, KiosksToggle),
+        "Staff" => (StaffList, StaffToggle),
+        "Faculty" => (FacultyList, FacultyToggle),
+        _ => null
+    };
+
+    private void ApplySidebarExpandedState()
+    {
+        foreach (var key in new[] { "Labs", "Kiosks", "Staff", "Faculty" })
         {
-            "Labs" => (LabsList, LabsToggle),
-            "Kiosks" => (KiosksList, KiosksToggle),
-            "Staff" => (StaffList, StaffToggle),
-            "Faculty" => (FacultyList, FacultyToggle),
-            _ => (null, null)
-        };
-        if (list == null || toggle == null) return;
-        var collapsed = list.Visibility == Visibility.Collapsed;
-        list.Visibility = collapsed ? Visibility.Visible : Visibility.Collapsed;
-        toggle.Content = collapsed ? "–" : "+";
+            if (SectionControls(key) is not { } controls) continue;
+            var expanded = !_sidebarExpanded.TryGetValue(key, out var value) || value;
+            controls.List.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+            controls.Toggle.Content = expanded ? "–" : "+";
+        }
+    }
+
+    /// <summary>
+    /// The Curriculum header's picker: choose several labs (grouped by area)
+    /// and work on their machines as one selection.
+    /// </summary>
+    private async void OnOpenLabPicker(object sender, RoutedEventArgs e)
+    {
+        if (_vm.Roster.Labs.Count == 0) return;
+        var dialog = new LabPickerDialog(_vm.Roster.Labs) { Owner = Window.GetWindow(this) };
+        if (dialog.ShowDialog() != true || dialog.SelectedRooms.Count == 0) return;
+
+        var computers = dialog.SelectedRooms
+            .SelectMany(r => r.Computers)
+            .GroupBy(c => c.Serial)
+            .Select(g => g.First())
+            .ToList();
+        ClearOtherSidebarSelections(SearchList);
+        HideDetail();
+        var label = dialog.SelectedRooms.Count == 1
+            ? dialog.SelectedRooms[0].Name
+            : $"{dialog.SelectedRooms.Count} labs";
+        await _vm.SelectSearchResultsAsync(computers, label);
     }
 
     private void OnSearchChanged(object sender, TextChangedEventArgs e)
@@ -677,4 +736,161 @@ public class NonEmptyToVisibilityConverter : IValueConverter
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
         string.IsNullOrEmpty(value?.ToString()) ? Visibility.Collapsed : Visibility.Visible;
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>"30 machines", "1 machine" — the sidebar caption's count part.</summary>
+public class MachinesCountConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
+        value is int count ? (count == 1 ? "1 machine" : $"{count} machines") : "";
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>
+/// A sidebar room row, macOS density: section icon, title, and an
+/// "area · room · N machines" caption. For Curriculum the title is the
+/// roster's fleet value (the room number when the row has no fleet); the
+/// caption's area is the most common lease area among members and its room
+/// the most common location, omitted when it equals the title.
+/// </summary>
+public class SidebarRoomVm
+{
+    public RosterRoom Room { get; init; } = new();
+    public string Title { get; init; } = "";
+    public string Subtitle { get; init; } = "";
+    public string Glyph { get; init; } = "";
+
+    public static SidebarRoomVm From(RosterRoom room, RosterSection section)
+    {
+        // Lab rooms carry the fleet in DisplayName and the dominant location
+        // in Number; every other section titles by its grouping key.
+        var title = section == RosterSection.Labs && room.DisplayName is { Length: > 0 } fleet
+            ? fleet
+            : room.Number;
+
+        var area = Dominant(room.Computers.Select(c => c.Area));
+        var location = Dominant(room.Computers.Select(c => c.Location));
+
+        var parts = new List<string>();
+        if (area is { Length: > 0 } && !string.Equals(area, title, StringComparison.OrdinalIgnoreCase))
+            parts.Add(area);
+        if (location is { Length: > 0 } && !string.Equals(location, title, StringComparison.OrdinalIgnoreCase))
+            parts.Add(location);
+        parts.Add(room.Count == 1 ? "1 machine" : $"{room.Count} machines");
+
+        var glyph = section switch
+        {
+            RosterSection.Labs => "",
+            RosterSection.Kiosks => "",
+            RosterSection.Staff => "",
+            RosterSection.Faculty => "",
+            _ => ""
+        };
+
+        return new SidebarRoomVm
+        {
+            Room = room,
+            Title = title,
+            Subtitle = string.Join(" · ", parts),
+            Glyph = glyph
+        };
+    }
+
+    private static string? Dominant(IEnumerable<string> values) =>
+        values.Where(v => !string.IsNullOrWhiteSpace(v))
+              .GroupBy(v => v)
+              .OrderByDescending(g => g.Count())
+              .FirstOrDefault()?.Key;
+}
+
+/// <summary>
+/// The Curriculum header's lab picker: labs grouped by area, each with a
+/// checkbox, and an area-level checkbox that toggles the whole group — the
+/// macOS picker's multi-select, with checkboxes standing in for its drag
+/// and drop.
+/// </summary>
+public class LabPickerDialog : Window
+{
+    private readonly List<(CheckBox Box, RosterRoom Room)> _labBoxes = new();
+
+    public List<RosterRoom> SelectedRooms { get; } = new();
+
+    public LabPickerDialog(IReadOnlyList<RosterRoom> labs)
+    {
+        Title = "Select labs";
+        Width = 420;
+        Height = 560;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+
+        var root = new DockPanel { Margin = new Thickness(16) };
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 12, 0, 0)
+        };
+        var cancel = new Button { Content = "Cancel", Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(14, 4, 14, 4) };
+        cancel.Click += (_, _) => { DialogResult = false; Close(); };
+        var ok = new Button { Content = "Use selected", Padding = new Thickness(14, 4, 14, 4) };
+        ok.Click += (_, _) =>
+        {
+            SelectedRooms.AddRange(_labBoxes.Where(e => e.Box.IsChecked == true).Select(e => e.Room));
+            DialogResult = true;
+            Close();
+        };
+        buttons.Children.Add(cancel);
+        buttons.Children.Add(ok);
+        DockPanel.SetDock(buttons, Dock.Bottom);
+        root.Children.Add(buttons);
+
+        var host = new StackPanel();
+        foreach (var areaGroup in labs
+            .GroupBy(r => DominantArea(r) ?? "Other")
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var members = new List<CheckBox>();
+            var areaBox = new CheckBox
+            {
+                Content = areaGroup.Key,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 10, 0, 2)
+            };
+            areaBox.Click += (_, _) =>
+            {
+                foreach (var member in members) member.IsChecked = areaBox.IsChecked == true;
+            };
+            host.Children.Add(areaBox);
+
+            foreach (var room in areaGroup.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                var label = room.DisplayName is { Length: > 0 } fleet ? fleet : room.Number;
+                var box = new CheckBox
+                {
+                    Content = $"{label}  ({room.Count})",
+                    Margin = new Thickness(20, 2, 0, 2)
+                };
+                box.Click += (_, _) =>
+                {
+                    areaBox.IsChecked = members.All(m => m.IsChecked == true)
+                        ? true
+                        : members.Any(m => m.IsChecked == true) ? null : false;
+                };
+                members.Add(box);
+                _labBoxes.Add((box, room));
+                host.Children.Add(box);
+            }
+        }
+
+        root.Children.Add(new ScrollViewer { Content = host, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        Content = root;
+    }
+
+    private static string? DominantArea(RosterRoom room) =>
+        room.Computers
+            .Select(c => c.Area)
+            .Where(a => !string.IsNullOrWhiteSpace(a))
+            .GroupBy(a => a)
+            .OrderByDescending(g => g.Count())
+            .FirstOrDefault()?.Key;
 }
