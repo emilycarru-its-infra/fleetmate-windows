@@ -46,6 +46,8 @@ public partial class DashboardPage : Page
         if (Application.Current is App app)
             _app = app;
 
+        PullRequestQueue.SourceFilterChanged += (_, filter) => DashboardTasks.SetSourceFilter(filter);
+
         BuildActivityFilterChips();
 
         Loaded += async (_, _) =>
@@ -209,6 +211,10 @@ public partial class DashboardPage : Page
             }));
         }
 
+        if (_app.CachedWorkItems.Count > 0)
+        {
+            DashboardTasks.ShowWorkItems(_app.CachedWorkItems);
+        }
         if (_app.DevOpsService != null && _app.CachedWorkItems.Count == 0)
         {
             tasks.Add(Task.Run(async () =>
@@ -216,7 +222,7 @@ public partial class DashboardPage : Page
                 try
                 {
                     var items = await _app.DevOpsService.GetWorkItemsAsync(limit: 200);
-                    Dispatcher.Invoke(() => _app.CachedWorkItems = items);
+                    Dispatcher.Invoke(() => { _app.CachedWorkItems = items; DashboardTasks.ShowWorkItems(items); });
                 }
                 catch (Exception ex) { Log.Warning(ex, "Dashboard: failed to load work items"); }
             }));
