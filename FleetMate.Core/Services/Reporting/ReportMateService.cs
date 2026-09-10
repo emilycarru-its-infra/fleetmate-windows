@@ -10,7 +10,7 @@ namespace FleetMate.Core.Services.Reporting;
 /// <summary>
 /// Client for ReportMate API - fleet monitoring and device inventory.
 ///
-/// Every read goes through the <c>reportmate</c> CLI when it is installed (see
+/// Every read goes through the <c>reportmateutil</c> CLI when it is installed (see
 /// <see cref="ReportMateCli"/>) and through this class's own HTTP client
 /// otherwise. Both paths return the API's JSON unchanged, so the decoding is
 /// shared.
@@ -39,7 +39,7 @@ public class ReportMateService : IDisposable
     /// </summary>
     public bool UsesOidc { get; }
 
-    /// <summary>True when reads are routed through the installed <c>reportmate</c> CLI.</summary>
+    /// <summary>True when reads are routed through the installed <c>reportmateutil</c> CLI.</summary>
     public bool UsesCli => _cli != null;
 
     /// <summary>Where the CLI lives, for status output.</summary>
@@ -140,7 +140,7 @@ public class ReportMateService : IDisposable
             {
                 throw new ReportMateCli.CliException(output.ExitCode, output.Stderr);
             }
-            Log.Warning("reportmate CLI at {Path} did not launch ({Reason}); using HTTP", _cli.Path, output.Stderr);
+            Log.Warning("reportmateutil at {Path} did not launch ({Reason}); using HTTP", _cli.Path, output.Stderr);
         }
 
         var response = await _client.GetAsync(httpPath);

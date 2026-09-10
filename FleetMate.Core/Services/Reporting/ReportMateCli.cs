@@ -4,7 +4,7 @@ using Serilog;
 namespace FleetMate.Core.Services.Reporting;
 
 /// <summary>
-/// The <c>reportmate</c> admin CLI, when it is installed on this machine.
+/// The <c>reportmateutil</c> admin CLI, when it is installed on this machine.
 ///
 /// The CLI is the reference client for the ReportMate API: it tracks every
 /// route the API has and prints the API's JSON unchanged. When it is present
@@ -44,7 +44,7 @@ public sealed class ReportMateCli
     }
 
     /// <summary>
-    /// The installed CLI, or null when no <c>reportmate.exe</c> exists.
+    /// The installed CLI, or null when no <c>reportmateutil.exe</c> exists.
     ///
     /// <c>REPORTMATE_CLI</c> in the environment pins a specific binary, which
     /// is how a test points the service at a stub and how an operator tries a
@@ -61,13 +61,13 @@ public sealed class ReportMateCli
         }
         foreach (var directory in CandidateDirectories)
         {
-            var candidate = System.IO.Path.Combine(directory, "reportmate.exe");
+            var candidate = System.IO.Path.Combine(directory, "reportmateutil.exe");
             if (File.Exists(candidate)) return new ReportMateCli(candidate);
         }
         var path = environment("PATH") ?? string.Empty;
         foreach (var directory in path.Split(System.IO.Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
         {
-            foreach (var name in new[] { "reportmate.exe", "reportmate" })
+            foreach (var name in new[] { "reportmateutil.exe", "reportmateutil" })
             {
                 string candidate;
                 try { candidate = System.IO.Path.Combine(directory.Trim('"'), name); }
@@ -90,11 +90,11 @@ public sealed class ReportMateCli
     public sealed class CliException : Exception
     {
         public int ExitCode { get; }
-        public CliException(int exitCode, string stderr) : base($"reportmate exited {exitCode}: {stderr}") => ExitCode = exitCode;
+        public CliException(int exitCode, string stderr) : base($"reportmateutil exited {exitCode}: {stderr}") => ExitCode = exitCode;
     }
 
     /// <summary>
-    /// Runs <c>reportmate &lt;arguments&gt; --output json</c>.
+    /// Runs <c>reportmateutil &lt;arguments&gt; --output json</c>.
     ///
     /// <paramref name="credentials"/> carries <c>REPORTMATE_API_URL</c> and one
     /// credential variable; nothing else from FleetMate's environment is
