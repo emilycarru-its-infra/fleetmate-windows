@@ -19,7 +19,7 @@
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                 </StackPanel>
             </DockPanel>
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="320">
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                 <StackPanel x:Name="RowsPanel" Margin="0,0,0,6" />
             </ScrollViewer>
         </Grid>

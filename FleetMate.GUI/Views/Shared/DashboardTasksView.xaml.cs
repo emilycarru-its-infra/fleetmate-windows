@@ -179,7 +179,7 @@ public partial class DashboardTasksView : UserControl
         border.MouseLeftButtonUp += (_, _) => OpenLightbox(row.Task);
 
         var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(230) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });

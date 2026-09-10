@@ -89,8 +89,15 @@
             <!-- Main operational canvas -->
             <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Margin="0,0,12,0">
-                    <local:PullRequestQueueView x:Name="PullRequestQueue" Height="300" Margin="0,0,0,14" />
-                    <local:DashboardTasksView x:Name="DashboardTasks" Margin="0,0,0,14" />
+                    <!-- Pull requests and work items sit side by side, like the macOS dashboard. -->
+                    <Grid Margin="0,0,0,14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <local:PullRequestQueueView x:Name="PullRequestQueue" Grid.Column="0" Height="420" Margin="0,0,7,0" />
+                        <local:DashboardTasksView x:Name="DashboardTasks" Grid.Column="1" Height="420" Margin="7,0,0,0" />
+                    </Grid>
                     <WrapPanel x:Name="KpiStrip" Margin="0,0,0,4" />
                     <WrapPanel x:Name="ChartGrid" />
                 </StackPanel>
