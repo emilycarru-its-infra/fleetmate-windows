@@ -19,12 +19,14 @@ namespace FleetMate.Core.Services.Reporting;
 /// </summary>
 public sealed class ReportMateCli
 {
-    /// <summary>Where a fleet install puts the binary, checked before <c>PATH</c>.</summary>
+    /// <summary>
+    /// Where the binary lives on a managed PC, checked before <c>PATH</c>: the
+    /// CLI ships in the ReportMate client's own directory.
+    /// </summary>
     private static readonly string[] CandidateDirectories =
     {
-        @"C:\Program Files\ReportMateCLI",
-        @"C:\Program Files\sbin",
         @"C:\Program Files\ReportMate",
+        @"C:\Program Files\sbin",
     };
 
     public string Path { get; }
