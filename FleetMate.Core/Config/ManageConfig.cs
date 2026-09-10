@@ -11,8 +11,18 @@ namespace FleetMate.Core.Config;
 /// </summary>
 public class ManageConfig
 {
-    /// <summary>Path to the enrollment roster CSV (computers.csv).</summary>
+    /// <summary>Path to the enrollment roster CSV (computers.csv) — the explicit
+    /// local override, and the fallback when the repository fetch fails.</summary>
     public string RosterPath { get; set; } = "";
+
+    /// <summary>Azure DevOps project holding the roster repository.</summary>
+    public string RosterRepoProject { get; set; } = "Devices";
+
+    /// <summary>Repository holding the roster (the Windows deployment repo).</summary>
+    public string RosterRepo { get; set; } = "Cimian";
+
+    /// <summary>Path of the roster file inside the repository.</summary>
+    public string RosterRepoPath { get; set; } = "/deployment/enroll/computers.csv";
 
     /// <summary>Path to the YAML command library; empty means the per-user default.</summary>
     public string CommandsPath { get; set; } = "";

@@ -22,6 +22,12 @@ public partial class ManagePage : Page
     private readonly ManageViewModel _vm;
     private readonly ManageStateStore _store;
     private Dictionary<string, bool> _sidebarExpanded = new();
+    private Dictionary<string, List<string>> _sidebarOrder = new();
+
+    // Row drag state for sidebar reordering.
+    private System.Windows.Point _dragStart;
+    private SidebarRoomVm? _dragCandidate;
+    private ListBox? _dragSourceList;
     private bool _rosterLoaded;
     private bool _suppressSidebarSelection;
     private MachineRowViewModel? _detailRow;
@@ -46,6 +52,7 @@ public partial class ManagePage : Page
         };
         _store = (Application.Current as App)?.ManageState ?? new ManageStateStore();
         _sidebarExpanded = _store.LoadSidebarState();
+        _sidebarOrder = _store.LoadSidebarOrder();
 
         _vm.Results.CollectionChanged += (_, _) => { UpdateResultsVisibility(); ApplyResultFilter(); };
         _vm.RunCompleted += OnRunCompleted;
@@ -81,14 +88,91 @@ public partial class ManagePage : Page
         return new ManageViewModel(config, store, directory, new NetworkReachabilityProbe(), runner, launcher);
     }
 
+    // ── Remote roster ───────────────────────────────────────────────────
+    // The roster is fetched from the source repository through the Azure
+    // DevOps REST API on load and on Reload, cached per user; the local file
+    // is only the fallback. Removes the dependency on a checkout being pulled.
+
+    private static string RosterCachePath => System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "FleetMate", "cache", "computers.csv");
+
+    private string _rosterProvenance = "local file";
+    private bool _rosterFetchRunning;
+
+    /// <summary>Show what we have on disk immediately, then refresh from the repo.</summary>
     public void ReloadRoster()
+    {
+        if (_vm.RosterPathOverride == null && System.IO.File.Exists(RosterCachePath))
+        {
+            _vm.RosterPathOverride = RosterCachePath;
+            _rosterProvenance = $"cached {System.IO.File.GetLastWriteTime(RosterCachePath):HH:mm}";
+        }
+        ReloadRosterFromDisk();
+        _ = FetchRemoteRosterAsync();
+    }
+
+    private async Task FetchRemoteRosterAsync()
+    {
+        if (_rosterFetchRunning) return;
+        _rosterFetchRunning = true;
+        try
+        {
+            var app = Application.Current as App;
+            var manage = app?.Config.Manage ?? new Core.Config.ManageConfig();
+            var adoConfig = app?.Config.AzureDevOps;
+            if (adoConfig == null || string.IsNullOrWhiteSpace(adoConfig.Organization))
+            {
+                _rosterProvenance = "local file (DevOps not configured)";
+                Dispatcher.Invoke(UpdateRosterFooter);
+                return;
+            }
+
+            using var devops = new Core.Services.Projects.AzureDevOpsService(adoConfig);
+            var content = await devops.GetRepositoryItemContentAsync(
+                manage.RosterRepoProject, manage.RosterRepo, manage.RosterRepoPath);
+
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                _rosterProvenance = System.IO.File.Exists(RosterCachePath)
+                    ? $"cached {System.IO.File.GetLastWriteTime(RosterCachePath):HH:mm} (fetch failed)"
+                    : "local file (fetch failed)";
+                Dispatcher.Invoke(UpdateRosterFooter);
+                return;
+            }
+
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(RosterCachePath)!);
+            System.IO.File.WriteAllText(RosterCachePath, content);
+            _rosterProvenance = $"{manage.RosterRepoProject}/{manage.RosterRepo} · fetched {DateTime.Now:HH:mm}";
+
+            Dispatcher.Invoke(() =>
+            {
+                _vm.RosterPathOverride = RosterCachePath;
+                ReloadRosterFromDisk();
+            });
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Roster fetch failed");
+            _rosterProvenance = System.IO.File.Exists(RosterCachePath)
+                ? $"cached {System.IO.File.GetLastWriteTime(RosterCachePath):HH:mm} (fetch failed)"
+                : "local file (fetch failed)";
+            Dispatcher.Invoke(UpdateRosterFooter);
+        }
+        finally
+        {
+            _rosterFetchRunning = false;
+        }
+    }
+
+    private void ReloadRosterFromDisk()
     {
         _vm.LoadRoster();
         _suppressSidebarSelection = true;
-        LabsList.ItemsSource = _vm.Roster.Labs.Select(r => SidebarRoomVm.From(r, RosterSection.Labs)).ToList();
-        KiosksList.ItemsSource = _vm.Roster.Kiosks.Select(r => SidebarRoomVm.From(r, RosterSection.Kiosks)).ToList();
-        StaffList.ItemsSource = _vm.Roster.Staff.Select(r => SidebarRoomVm.From(r, RosterSection.Staff)).ToList();
-        FacultyList.ItemsSource = _vm.Roster.Faculty.Select(r => SidebarRoomVm.From(r, RosterSection.Faculty)).ToList();
+        LabsList.ItemsSource = ApplySavedOrder("Labs", _vm.Roster.Labs.Select(r => SidebarRoomVm.From(r, RosterSection.Labs)).ToList());
+        KiosksList.ItemsSource = ApplySavedOrder("Kiosks", _vm.Roster.Kiosks.Select(r => SidebarRoomVm.From(r, RosterSection.Kiosks)).ToList());
+        StaffList.ItemsSource = ApplySavedOrder("Staff", _vm.Roster.Staff.Select(r => SidebarRoomVm.From(r, RosterSection.Staff)).ToList());
+        FacultyList.ItemsSource = ApplySavedOrder("Faculty", _vm.Roster.Faculty.Select(r => SidebarRoomVm.From(r, RosterSection.Faculty)).ToList());
         _suppressSidebarSelection = false;
         NoGroupsText.Visibility = _vm.CustomGroups.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
@@ -99,9 +183,7 @@ public partial class ManagePage : Page
         FacultyCountText.Text = _vm.Roster.Faculty.Sum(r => r.Count).ToString();
         GroupsCountText.Text = _vm.CustomGroups.Sum(g => g.Devices.Count).ToString();
 
-        RosterFooterText.Text = _vm.RosterLoaded
-            ? $"{_vm.Roster.Labs.Count} labs · {_vm.Roster.Source.Count} machines"
-            : (_vm.RosterStatus is { Length: > 0 } status ? status : "Check the roster path in Settings › Manage");
+        UpdateRosterFooter();
 
         ApplySidebarExpandedState();
 
@@ -116,6 +198,14 @@ public partial class ManagePage : Page
     }
 
     private void OnReloadRosterClicked(object sender, RoutedEventArgs e) => ReloadRoster();
+
+    /// <summary>"22 labs · 445 machines · Devices/Cimian · fetched 14:32".</summary>
+    private void UpdateRosterFooter()
+    {
+        RosterFooterText.Text = _vm.RosterLoaded
+            ? $"{_vm.Roster.Labs.Count} labs · {_vm.Roster.Source.Count} machines · {_rosterProvenance}"
+            : (_vm.RosterStatus is { Length: > 0 } status ? status : "Check the roster path in Settings › Manage");
+    }
 
     // ── Keyboard ────────────────────────────────────────────────────────
 
@@ -182,6 +272,118 @@ public partial class ManagePage : Page
             var expanded = !_sidebarExpanded.TryGetValue(key, out var value) || value;
             controls.List.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
             controls.Toggle.Content = expanded ? "–" : "+";
+        }
+    }
+
+    // ── Sidebar row reordering ──────────────────────────────────────────
+    // Rows drag onto another row in the same section and take its slot; the
+    // order persists per section as ordered row ids (the room's group key).
+    // Rows missing from the saved list keep the roster's default order after
+    // the arranged ones, so new labs append rather than disappear.
+
+    /// <summary>Saved order first (matching by row id), then the rest in roster order.</summary>
+    private List<SidebarRoomVm> ApplySavedOrder(string section, List<SidebarRoomVm> rows)
+    {
+        if (!_sidebarOrder.TryGetValue(section, out var saved) || saved.Count == 0) return rows;
+        var ordered = new List<SidebarRoomVm>();
+        foreach (var id in saved)
+        {
+            var hit = rows.FirstOrDefault(r => r.Title == id && !ordered.Contains(r));
+            if (hit != null) ordered.Add(hit);
+        }
+        ordered.AddRange(rows.Where(r => !ordered.Contains(r)));
+        return ordered;
+    }
+
+    private static SidebarRoomVm? RowUnderMouse(ListBox list, object originalSource)
+    {
+        var element = originalSource as DependencyObject;
+        while (element != null && element is not ListBoxItem)
+            element = System.Windows.Media.VisualTreeHelper.GetParent(element);
+        return (element as ListBoxItem)?.DataContext as SidebarRoomVm;
+    }
+
+    private void OnRoomListMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not ListBox list) return;
+        _dragStart = e.GetPosition(list);
+        _dragCandidate = RowUnderMouse(list, e.OriginalSource);
+        _dragSourceList = list;
+    }
+
+    private void OnRoomListMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_dragCandidate == null || _dragSourceList == null || sender != _dragSourceList) return;
+        if (e.LeftButton != MouseButtonState.Pressed) return;
+        var moved = e.GetPosition(_dragSourceList) - _dragStart;
+        if (Math.Abs(moved.X) < SystemParameters.MinimumHorizontalDragDistance
+            && Math.Abs(moved.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+
+        var dragged = _dragCandidate;
+        _dragCandidate = null;
+        DragDrop.DoDragDrop(_dragSourceList, new DataObject("FleetMateSidebarRoom", dragged), DragDropEffects.Move);
+        ClearDropIndicators();
+    }
+
+    private void OnRoomListDragOver(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is not ListBox list || !e.Data.GetDataPresent("FleetMateSidebarRoom")
+            || list != _dragSourceList)
+        {
+            // Drops across sections are ignored.
+            e.Effects = DragDropEffects.None;
+            return;
+        }
+        e.Effects = DragDropEffects.Move;
+
+        var target = RowUnderMouse(list, e.OriginalSource);
+        foreach (var row in list.ItemsSource.Cast<SidebarRoomVm>())
+            row.IsDropTarget = row == target && row != e.Data.GetData("FleetMateSidebarRoom");
+    }
+
+    private void OnRoomListDragLeave(object sender, DragEventArgs e) => ClearDropIndicators();
+
+    private void OnRoomListDrop(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        ClearDropIndicators();
+        if (sender is not ListBox list || list != _dragSourceList) return;
+        if (e.Data.GetData("FleetMateSidebarRoom") is not SidebarRoomVm dragged) return;
+        var target = RowUnderMouse(list, e.OriginalSource);
+        if (target == null || target == dragged) return;
+
+        var rows = list.ItemsSource.Cast<SidebarRoomVm>().ToList();
+        var targetIndex = rows.IndexOf(target);
+        if (targetIndex < 0 || !rows.Remove(dragged)) return;
+        // Insert at the target's pre-removal slot: the target moves down when
+        // the drag came from below it, up when it came from above.
+        rows.Insert(Math.Min(targetIndex, rows.Count), dragged);
+        list.ItemsSource = rows;
+
+        var section = list.Tag?.ToString() ?? "";
+        _sidebarOrder[section] = rows.Select(r => r.Title).ToList();
+        _store.SaveSidebarOrder(_sidebarOrder);
+    }
+
+    private void ClearDropIndicators()
+    {
+        foreach (var list in new[] { LabsList, KiosksList, StaffList, FacultyList })
+        {
+            if (list.ItemsSource == null) continue;
+            foreach (var row in list.ItemsSource.Cast<SidebarRoomVm>())
+                row.IsDropTarget = false;
+        }
+    }
+
+    private void OnResetSectionOrder(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Parent: ContextMenu { PlacementTarget: ListBox list } }) return;
+        var section = list.Tag?.ToString() ?? "";
+        if (_sidebarOrder.Remove(section))
+        {
+            _store.SaveSidebarOrder(_sidebarOrder);
+            ReloadRoster();
         }
     }
 
@@ -753,18 +955,37 @@ public class MachinesCountConverter : IValueConverter
 /// caption's area is the most common lease area among members and its room
 /// the most common location, omitted when it equals the title.
 /// </summary>
-public class SidebarRoomVm
+public class SidebarRoomVm : System.ComponentModel.INotifyPropertyChanged
 {
     public RosterRoom Room { get; init; } = new();
     public string Title { get; init; } = "";
     public string Subtitle { get; init; } = "";
     public string Glyph { get; init; } = "";
 
+    private bool _isDropTarget;
+
+    /// <summary>True while a sidebar row drag hovers this row; the template
+    /// paints the 2px accent line on the top edge.</summary>
+    public bool IsDropTarget
+    {
+        get => _isDropTarget;
+        set
+        {
+            if (_isDropTarget == value) return;
+            _isDropTarget = value;
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IsDropTarget)));
+        }
+    }
+
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+
     public static SidebarRoomVm From(RosterRoom room, RosterSection section)
     {
-        // Lab rooms carry the fleet in DisplayName and the dominant location
-        // in Number; every other section titles by its grouping key.
-        var title = section == RosterSection.Labs && room.DisplayName is { Length: > 0 } fleet
+        // Curriculum titles by the roster's fleet value, falling back to the
+        // room number when the row has no fleet — read from the members, since
+        // a fleet-less room's DisplayName carries its area, not a fleet.
+        var fleet = Dominant(room.Computers.Select(c => c.Fleet));
+        var title = section == RosterSection.Labs && fleet is { Length: > 0 }
             ? fleet
             : room.Number;
 
