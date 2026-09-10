@@ -13,6 +13,13 @@ public interface IDeviceDirectory
 {
     Task<List<Device>> GetDevicesAsync(CancellationToken cancellationToken);
     Task<(string? ip, DateTime? collectedAt)> GetAddressAsync(string serial, CancellationToken cancellationToken);
+    /// <summary>
+    /// Every address the inventory knows in one call, keyed by upper-cased
+    /// serial. The default is empty so a directory that has no bulk report
+    /// falls through to <see cref="GetAddressAsync"/> per machine.
+    /// </summary>
+    Task<Dictionary<string, (string ip, DateTime? collectedAt)>> GetAddressesAsync(CancellationToken cancellationToken)
+        => Task.FromResult(new Dictionary<string, (string ip, DateTime? collectedAt)>());
 }
 
 /// <summary>Network checks the scanner needs; real sockets in production, a fake in tests.</summary>
@@ -34,6 +41,17 @@ public class ReportMateDeviceDirectory : IDeviceDirectory
     {
         var info = await _reportMate.GetDeviceNetworkAsync(serial);
         return (info?.PrimaryIpv4, info?.CollectedAt);
+    }
+
+    public async Task<Dictionary<string, (string ip, DateTime? collectedAt)>> GetAddressesAsync(CancellationToken cancellationToken)
+    {
+        var map = new Dictionary<string, (string ip, DateTime? collectedAt)>();
+        foreach (var (serial, row) in await _reportMate.GetFleetAddressesAsync())
+        {
+            if (row.PrimaryIp is { Length: > 0 } ip)
+                map[serial] = (ip, row.NetworkInfo?.CollectedAt);
+        }
+        return map;
     }
 }
 
@@ -158,6 +176,21 @@ public class HostScanner
                     .GroupBy(d => (d.Hostname is { Length: > 0 } h ? h : d.DeviceName).ToUpperInvariant())
                     .ToDictionary(g => g.Key, g => g.First());
 
+                // The fleet network report is one request for every address the
+                // inventory knows; the per-device module is the fallback for the
+                // machines it does not cover.
+                Dictionary<string, (string ip, DateTime? collectedAt)> fleetAddresses;
+                try
+                {
+                    progress?.Report("ReportMate: fetching fleet addresses...");
+                    fleetAddresses = await _directory.GetAddressesAsync(cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    Log.Debug(ex, "Fleet network report unavailable; falling back to per-device lookups");
+                    fleetAddresses = new Dictionary<string, (string ip, DateTime? collectedAt)>();
+                }
+
                 var pending = new List<(RosterComputer computer, Device device)>();
                 foreach (var c in computers.Where(c => !candidates.ContainsKey(c.Serial) && !c.IsAdhoc))
                 {
@@ -171,6 +204,8 @@ public class HostScanner
 
                     if (!string.IsNullOrWhiteSpace(device.IpAddress) && IPAddress.TryParse(device.IpAddress, out _))
                         candidates[c.Serial] = (device.IpAddress, AddressSource.ReportMate, device.CollectedAt);
+                    else if (fleetAddresses.TryGetValue(device.SerialNumber.ToUpperInvariant(), out var known) && IPAddress.TryParse(known.ip, out _))
+                        candidates[c.Serial] = (known.ip, AddressSource.ReportMate, known.collectedAt ?? device.CollectedAt);
                     else
                         pending.Add((c, device));
                 }
