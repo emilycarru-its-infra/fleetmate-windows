@@ -1,17 +1,9 @@
-using System.Diagnostics;
-using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
 using System.Windows.Input;
 using FleetMate.Core.Config;
 using FleetMate.Core.Models.Inventory;
-using FleetMate.Core.Services;
-using FleetMate.Core.Services.Devices;
 using FleetMate.Core.Services.Inventory;
-using FleetMate.Core.Services.Tickets;
-using FleetMate.Core.Services.Projects;
-using FleetMate.Core.Services.Reporting;
 
 namespace FleetMate.GUI.Views.Inventory;
 
@@ -27,31 +19,6 @@ public partial class AssetsPage : Page
     // column header click re-sorts by that column, clicking again flips it.
     private string _sortField = "Recent";
     private bool _sortDescending = true;
-    private List<SnipeStatusLabelFull> _statusLabels = new();
-    private bool _hasEdits;
-    private bool _isLoadingDetail;
-    private int? _editStatusId;
-
-    private static readonly HashSet<string> HardwareFieldNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Platform", "Chip", "CPU", "GPU", "NPU", "Memory", "Storage", "Display"
-    };
-
-    private static readonly HashSet<string> ManagementFieldNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Micro ID", "Intune ID", "Object ID"
-    };
-
-    private static readonly HashSet<string> FinancialFieldNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Invoice Number", "PO Number", "Lease Contract ID", "Lease Contract Name",
-        "Lease End Date", "Ownership Type", "Purchase Cost", "Purchase Date"
-    };
-
-    private static readonly HashSet<string> HiddenFieldNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Username"
-    };
 
     public AssetsPage()
     {
@@ -64,6 +31,15 @@ public partial class AssetsPage : Page
         {
             _snipeService = app.SnipeService;
         }
+
+        DetailPanel.CloseRequested += (_, _) =>
+        {
+            AssetListView.SelectedItem = null;
+            _selectedAsset = null;
+            DetailHost.Visibility = Visibility.Collapsed;
+        };
+        DetailPanel.ReAllocateRequested += async (_, _) => await ReAllocateSelectedAsync();
+        DetailPanel.Changed += async (_, _) => await LoadAssetsAsync();
     }
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
@@ -90,6 +66,17 @@ public partial class AssetsPage : Page
             _allAssets = await _snipeService.GetAssetsAsync(forceRefresh: true);
             UpdateFilterOptions();
             UpdateDisplay();
+
+            // Keep the open detail in sync with the fresh row.
+            if (_selectedAsset != null)
+            {
+                var fresh = _allAssets.FirstOrDefault(a => a.Id == _selectedAsset.Id);
+                if (fresh != null)
+                {
+                    _selectedAsset = fresh;
+                    DetailPanel.Show(fresh);
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -127,7 +114,7 @@ public partial class AssetsPage : Page
 
         var platformFilter = PlatformFilterComboBox.SelectedItem?.ToString();
         if (!string.IsNullOrEmpty(platformFilter) && platformFilter != "All")
-            filtered = filtered.Where(a => GetCustomFieldValue(a, "Platform") == platformFilter);
+            filtered = filtered.Where(a => a.Platform == platformFilter);
 
         var manufacturerFilter = ManufacturerFilterComboBox.SelectedItem?.ToString();
         if (!string.IsNullOrEmpty(manufacturerFilter) && manufacturerFilter != "All")
@@ -139,15 +126,15 @@ public partial class AssetsPage : Page
 
         var usageFilter = UsageFilterComboBox.SelectedItem?.ToString();
         if (!string.IsNullOrEmpty(usageFilter) && usageFilter != "All")
-            filtered = filtered.Where(a => GetCustomFieldValue(a, "Usage") == usageFilter);
+            filtered = filtered.Where(a => a.Usage == usageFilter);
 
         var catalogFilter = CatalogFilterComboBox.SelectedItem?.ToString();
         if (!string.IsNullOrEmpty(catalogFilter) && catalogFilter != "All")
-            filtered = filtered.Where(a => GetCustomFieldValue(a, "Catalog") == catalogFilter);
+            filtered = filtered.Where(a => a.Catalog == catalogFilter);
 
         var areaFilter = AreaFilterComboBox.SelectedItem?.ToString();
         if (!string.IsNullOrEmpty(areaFilter) && areaFilter != "All")
-            filtered = filtered.Where(a => GetCustomFieldValue(a, "Area") == areaFilter);
+            filtered = filtered.Where(a => a.Area == areaFilter);
 
         var list = ApplySort(filtered).ToList();
         AssetListView.ItemsSource = list;
@@ -156,6 +143,8 @@ public partial class AssetsPage : Page
 
     private IEnumerable<SnipeAsset> ApplySort(IEnumerable<SnipeAsset> assets)
     {
+        // Snipe timestamps are "yyyy-MM-dd HH:mm:ss", which sorts correctly
+        // as text — both date-backed sorts compare the raw string.
         Func<SnipeAsset, string> key = _sortField switch
         {
             "Asset Tag" => a => a.AssetTag ?? "",
@@ -166,13 +155,13 @@ public partial class AssetsPage : Page
             "Assigned To" => a => a.AssignedTo?.Name ?? "",
             "Category" => a => a.Category?.Name ?? "",
             "Manufacturer" => a => a.Manufacturer?.Name ?? "",
-            "Platform" => a => GetCustomFieldValue(a, "Platform") ?? "",
-            "Usage" => a => GetCustomFieldValue(a, "Usage") ?? "",
-            "Catalog" => a => GetCustomFieldValue(a, "Catalog") ?? "",
-            "Area" => a => GetCustomFieldValue(a, "Area") ?? "",
-            // "Recent": Snipe timestamps are "yyyy-MM-dd HH:mm:ss", which sorts
-            // correctly as text.
-            _ => a => a.UpdatedAt?.DateTime ?? ""
+            "Platform" => a => a.Platform ?? "",
+            "Usage" => a => a.Usage ?? "",
+            "Catalog" => a => a.Catalog ?? "",
+            "Area" => a => a.Area ?? "",
+            "Location" => a => a.LocationName ?? "",
+            "Last Activity" => a => a.LastActivity?.DateTime ?? "",
+            _ => a => a.LastActivity?.DateTime ?? ""
         };
         return _sortDescending
             ? assets.OrderByDescending(key, StringComparer.OrdinalIgnoreCase)
@@ -192,20 +181,15 @@ public partial class AssetsPage : Page
         else
         {
             _sortField = field;
-            _sortDescending = false;
+            // Date columns sort newest-first on first click.
+            _sortDescending = field == "Last Activity";
         }
         UpdateDisplay();
     }
 
-    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        UpdateDisplay();
-    }
+    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e) => UpdateDisplay();
 
-    private void OnFilterChanged(object sender, SelectionChangedEventArgs e)
-    {
-        UpdateDisplay();
-    }
+    private void OnFilterChanged(object sender, SelectionChangedEventArgs e) => UpdateDisplay();
 
     private void OnClearFiltersClicked(object sender, RoutedEventArgs e)
     {
@@ -237,15 +221,10 @@ public partial class AssetsPage : Page
             if (!string.IsNullOrEmpty(asset.Category?.Name)) categories.Add(asset.Category.Name);
             if (!string.IsNullOrEmpty(asset.Manufacturer?.Name)) manufacturers.Add(asset.Manufacturer.Name);
             if (!string.IsNullOrEmpty(asset.Model?.Name)) models.Add(asset.Model.Name);
-
-            var platform = GetCustomFieldValue(asset, "Platform");
-            if (!string.IsNullOrEmpty(platform)) platforms.Add(platform);
-            var usage = GetCustomFieldValue(asset, "Usage");
-            if (!string.IsNullOrEmpty(usage)) usages.Add(usage);
-            var catalog = GetCustomFieldValue(asset, "Catalog");
-            if (!string.IsNullOrEmpty(catalog)) catalogs.Add(catalog);
-            var area = GetCustomFieldValue(asset, "Area");
-            if (!string.IsNullOrEmpty(area)) areas.Add(area);
+            if (!string.IsNullOrEmpty(asset.Platform)) platforms.Add(asset.Platform!);
+            if (!string.IsNullOrEmpty(asset.Usage)) usages.Add(asset.Usage!);
+            if (!string.IsNullOrEmpty(asset.Catalog)) catalogs.Add(asset.Catalog!);
+            if (!string.IsNullOrEmpty(asset.Area)) areas.Add(asset.Area!);
         }
 
         SetFilterItems(StatusFilterComboBox, statuses);
@@ -276,287 +255,15 @@ public partial class AssetsPage : Page
         if (AssetListView.SelectedItem is SnipeAsset asset)
         {
             _selectedAsset = asset;
-            ShowAssetDetail(asset);
-        }
-    }
-
-    private async void ShowAssetDetail(SnipeAsset asset)
-    {
-        _isLoadingDetail = true;
-        _hasEdits = false;
-        _editStatusId = null;
-        SaveChangesButton.Visibility = Visibility.Collapsed;
-
-        DetailPanel.Visibility = Visibility.Visible;
-        DetailPlaceholder.Visibility = Visibility.Collapsed;
-
-        DetailAssetName.Text = asset.DisplayName;
-        DetailAssetTag.Text = $"Tag: {asset.AssetTag}";
-
-        // Status dropdown
-        if (_statusLabels.Count == 0 && _snipeService != null)
-        {
-            _statusLabels = await _snipeService.GetStatusLabelsAsync();
-        }
-        DetailStatusComboBox.ItemsSource = _statusLabels;
-        var currentStatus = _statusLabels.FirstOrDefault(s => s.Id == asset.StatusLabel?.Id);
-        DetailStatusComboBox.SelectedItem = currentStatus;
-
-        // Assignment (no username)
-        if (asset.AssignedTo != null)
-        {
-            AssignmentSection.Visibility = Visibility.Visible;
-            DetailAssignedName.Text = asset.AssignedTo.Name;
-            DetailAssignedEmployee.Text = !string.IsNullOrEmpty(asset.AssignedTo.EmployeeNumber)
-                ? $"Employee #{asset.AssignedTo.EmployeeNumber}" : "";
-            ReAllocateButton.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            AssignmentSection.Visibility = Visibility.Collapsed;
-            ReAllocateButton.Visibility = Visibility.Collapsed;
-        }
-
-        // Hardware
-        DetailSerial.Text = asset.Serial ?? "—";
-        DetailModel.Text = asset.Model?.Name ?? "—";
-        DetailCategory.Text = asset.Category?.Name ?? "—";
-        DetailManufacturer.Text = asset.Manufacturer?.Name ?? "—";
-
-        // Location
-        if (asset.Location != null)
-        {
-            LocationSection.Visibility = Visibility.Visible;
-            DetailLocation.Text = asset.Location.Name;
-        }
-        else
-        {
-            LocationSection.Visibility = Visibility.Collapsed;
-        }
-
-        // Dates
-        DetailPurchaseDate.Text = asset.PurchaseDate?.Formatted ?? "—";
-        DetailLastCheckout.Text = asset.LastCheckout?.Formatted ?? "—";
-        DetailLastAudit.Text = asset.LastAuditDate ?? "—";
-        DetailCreated.Text = asset.CreatedAt?.Formatted ?? "—";
-        DetailUpdated.Text = asset.UpdatedAt?.Formatted ?? "—";
-
-        // Notes
-        if (!string.IsNullOrEmpty(asset.Notes))
-        {
-            NotesSection.Visibility = Visibility.Visible;
-            DetailNotes.Text = asset.Notes;
-        }
-        else
-        {
-            NotesSection.Visibility = Visibility.Collapsed;
-        }
-
-        // Custom Fields (sectioned)
-        PopulateCustomFields(asset);
-        _isLoadingDetail = false;
-    }
-
-    private void PopulateCustomFields(SnipeAsset asset)
-    {
-        HardwareFieldsContainer.Children.Clear();
-        ManagementFieldsContainer.Children.Clear();
-        FinancialFieldsContainer.Children.Clear();
-        OtherFieldsContainer.Children.Clear();
-
-        HardwareFieldsSection.Visibility = Visibility.Collapsed;
-        ManagementFieldsSection.Visibility = Visibility.Collapsed;
-        FinancialFieldsSection.Visibility = Visibility.Collapsed;
-        OtherFieldsSection.Visibility = Visibility.Collapsed;
-
-        if (asset.CustomFields == null || asset.CustomFields.Count == 0)
-            return;
-
-        foreach (var kvp in asset.CustomFields.OrderBy(f => f.Value.Field))
-        {
-            var fieldName = kvp.Value.Field ?? "";
-            var fieldValue = kvp.Value.Value ?? "";
-            if (string.IsNullOrWhiteSpace(fieldValue)) continue;
-            if (HiddenFieldNames.Contains(fieldName)) continue;
-
-            StackPanel targetContainer;
-            StackPanel targetSection;
-
-            if (HardwareFieldNames.Contains(fieldName))
-            {
-                targetContainer = HardwareFieldsContainer;
-                targetSection = HardwareFieldsSection;
-            }
-            else if (ManagementFieldNames.Contains(fieldName))
-            {
-                targetContainer = ManagementFieldsContainer;
-                targetSection = ManagementFieldsSection;
-            }
-            else if (FinancialFieldNames.Contains(fieldName))
-            {
-                targetContainer = FinancialFieldsContainer;
-                targetSection = FinancialFieldsSection;
-            }
-            else
-            {
-                targetContainer = OtherFieldsContainer;
-                targetSection = OtherFieldsSection;
-            }
-
-            targetSection.Visibility = Visibility.Visible;
-
-            var row = new Grid();
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.Margin = new Thickness(0, 0, 0, 2);
-
-            var label = new TextBlock
-            {
-                Text = $"{fieldName}:",
-                FontSize = 12,
-                Opacity = 0.7,
-                Margin = new Thickness(0, 0, 8, 0)
-            };
-            Grid.SetColumn(label, 0);
-
-            var value = new TextBlock
-            {
-                Text = fieldValue,
-                FontSize = 12,
-                TextWrapping = TextWrapping.Wrap
-            };
-            Grid.SetColumn(value, 1);
-
-            var copyBtn = new Button
-            {
-                Content = new TextBlock { Text = "📋", FontSize = 14 },
-                Padding = new Thickness(2),
-                Background = System.Windows.Media.Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                ToolTip = "Copy",
-                Tag = fieldValue
-            };
-            copyBtn.Click += OnCopyCustomFieldClicked;
-            Grid.SetColumn(copyBtn, 2);
-
-            row.Children.Add(label);
-            row.Children.Add(value);
-            row.Children.Add(copyBtn);
-
-            targetContainer.Children.Add(row);
-        }
-    }
-
-    // MARK: - Status Edit & Save
-
-    private void OnDetailStatusChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_isLoadingDetail || _selectedAsset == null) return;
-
-        if (DetailStatusComboBox.SelectedItem is SnipeStatusLabelFull selected)
-        {
-            if (selected.Id != _selectedAsset.StatusLabel?.Id)
-            {
-                _editStatusId = selected.Id;
-                _hasEdits = true;
-                SaveChangesButton.Visibility = Visibility.Visible;
-            }
-            else
-            {
-                _editStatusId = null;
-                _hasEdits = false;
-                SaveChangesButton.Visibility = Visibility.Collapsed;
-            }
-        }
-    }
-
-    private async void OnSaveChangesClicked(object sender, RoutedEventArgs e)
-    {
-        if (_selectedAsset == null || _snipeService == null || !_hasEdits) return;
-
-        try
-        {
-            SaveChangesButton.IsEnabled = false;
-            SaveChangesButton.Content = "Saving...";
-
-            var request = new SnipeAssetRequest
-            {
-                AssetTag = _selectedAsset.AssetTag,
-                StatusId = _editStatusId ?? _selectedAsset.StatusLabel?.Id ?? 0,
-                ModelId = _selectedAsset.Model?.Id ?? 0
-            };
-
-            var result = await _snipeService.UpdateAssetAsync(_selectedAsset.Id, request);
-
-            if (result != null && result.IsSuccess)
-            {
-                _hasEdits = false;
-                _editStatusId = null;
-                SaveChangesButton.Visibility = Visibility.Collapsed;
-                await LoadAssetsAsync();
-            }
-            else
-            {
-                MessageBox.Show($"Update failed: {result?.Messages ?? "Unknown error"}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"Save failed: {ex.Message}", "Error",
-                MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally
-        {
-            SaveChangesButton.IsEnabled = true;
-            SaveChangesButton.Content = "Save Changes";
-        }
-    }
-
-    // MARK: - Helpers
-
-    private static string GetCustomFieldValue(SnipeAsset asset, string displayName)
-    {
-        if (asset.CustomFields == null) return "";
-        var field = asset.CustomFields.Values.FirstOrDefault(f =>
-            string.Equals(f.Field, displayName, StringComparison.OrdinalIgnoreCase));
-        return field?.Value ?? "";
-    }
-
-    // MARK: - Actions
-
-    private void OnOpenInSnipeClicked(object sender, RoutedEventArgs e)
-    {
-        if (_selectedAsset == null || _snipeService == null) return;
-
-        var url = $"{_snipeService.BaseUrl}/hardware/{_selectedAsset.Id}";
-        try
-        {
-            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
-        }
-        catch { }
-    }
-
-    private void OnCopySerialClicked(object sender, RoutedEventArgs e)
-    {
-        if (_selectedAsset?.Serial != null)
-        {
-            Clipboard.SetText(_selectedAsset.Serial);
-        }
-    }
-
-    private void OnCopyCustomFieldClicked(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button btn && btn.Tag is string value)
-        {
-            Clipboard.SetText(value);
+            DetailHost.Visibility = Visibility.Visible;
+            DetailPlaceholder.Visibility = Visibility.Collapsed;
+            DetailPanel.Show(asset);
         }
     }
 
     // MARK: - Re-Allocate
 
-    private async void OnReAllocateClicked(object sender, RoutedEventArgs e)
+    private async Task ReAllocateSelectedAsync()
     {
         if (_selectedAsset == null || _snipeService == null) return;
 
@@ -569,18 +276,21 @@ public partial class AssetsPage : Page
             {
                 LoadingOverlay.Visibility = Visibility.Visible;
 
-                // Step 1: Checkin
-                var checkinResult = await _snipeService.CheckinAssetAsync(_selectedAsset.Id,
-                    new SnipeCheckinRequest { Note = "Re-allocated via FleetMate" });
-
-                if (checkinResult == null || !checkinResult.IsSuccess)
+                // Step 1: check in only when the asset is currently assigned.
+                if (_selectedAsset.AssignedTo != null)
                 {
-                    MessageBox.Show($"Check-in failed: {checkinResult?.Messages ?? "Unknown error"}", 
-                        "Re-Allocate", MessageBoxButton.OK, MessageBoxImage.Error);
-                    return;
+                    var checkinResult = await _snipeService.CheckinAssetAsync(_selectedAsset.Id,
+                        new SnipeCheckinRequest { Note = "Re-allocated via FleetMate" });
+
+                    if (checkinResult == null || !checkinResult.IsSuccess)
+                    {
+                        MessageBox.Show($"Check-in failed: {checkinResult?.Messages ?? "Unknown error"}",
+                            "Re-Allocate", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return;
+                    }
                 }
 
-                // Step 2: Checkout to new user
+                // Step 2: check out to the new user.
                 var checkoutResult = await _snipeService.CheckoutAssetAsync(_selectedAsset.Id,
                     new SnipeCheckoutRequest
                     {
@@ -591,10 +301,6 @@ public partial class AssetsPage : Page
 
                 if (checkoutResult != null && checkoutResult.IsSuccess)
                 {
-                    MessageBox.Show("Asset re-allocated successfully.", "Re-Allocate",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
-
-                    // Refresh
                     await LoadAssetsAsync();
                 }
                 else
@@ -729,28 +435,5 @@ public class ReAllocateDialog : Window
             MessageBox.Show($"User search failed: {ex.Message}", "Error",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
-    }
-}
-
-/// <summary>
-/// Converts a CustomFields dictionary to a display value by looking up the field display name.
-/// Usage: Converter={StaticResource CustomFieldConverter}, ConverterParameter=Platform
-/// </summary>
-public class CustomFieldValueConverter : IValueConverter
-{
-    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        if (value is Dictionary<string, SnipeCustomField> fields && parameter is string fieldName)
-        {
-            var match = fields.Values.FirstOrDefault(f =>
-                string.Equals(f.Field, fieldName, StringComparison.OrdinalIgnoreCase));
-            return match?.Value ?? "";
-        }
-        return "";
-    }
-
-    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        throw new NotImplementedException();
     }
 }
