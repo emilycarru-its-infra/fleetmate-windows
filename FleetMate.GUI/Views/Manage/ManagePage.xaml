@@ -474,9 +474,11 @@
                             <ContextMenu>
                                 <MenuItem Header="Open SSH" Click="OnResultOpenSsh" />
                                 <MenuItem Header="Open Remote Desktop" Click="OnResultOpenRdp" />
+                                <MenuItem Header="Open SSH + Remote Desktop" Click="OnResultOpenBoth" />
                                 <Separator />
                                 <MenuItem Header="Copy hostname" Click="OnResultCopyHostname" />
                                 <MenuItem Header="Copy IP" Click="OnResultCopyIp" />
+                                <MenuItem Header="Copy hostname + IP" Click="OnResultCopyHostnameIp" />
                                 <MenuItem Header="Copy output" Click="OnResultCopyOutput" />
                                 <MenuItem Header="Copy error" Click="OnResultCopyError" />
                                 <MenuItem Header="Copy full result" Click="OnResultCopyFull" />
