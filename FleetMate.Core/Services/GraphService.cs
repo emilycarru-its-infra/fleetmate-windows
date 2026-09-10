@@ -433,6 +433,281 @@ public class GraphService : IDisposable
     }
 
     /// <summary>
+    /// Fresh Start (cleanWindowsDevice): reinstall Windows and remove
+    /// preinstalled OEM apps; the device stays enrolled and Entra-joined.
+    /// Windows-only — Graph rejects it for other platforms.
+    /// </summary>
+    public async Task<DeviceActionResult> FreshStartDeviceAsync(string deviceId, bool keepUserData = true, bool confirmed = false)
+    {
+        var guard = RequireConfirmation(confirmed, "cleanWindowsDevice", deviceId);
+        if (guard != null) return guard;
+
+        if (!await SetAuthorizationAsync())
+        {
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "cleanWindowsDevice", Message = "Not authenticated" };
+        }
+
+        try
+        {
+            var url = $"deviceManagement/managedDevices/{deviceId}/cleanWindowsDevice";
+            var body = new StringContent(
+                System.Text.Json.JsonSerializer.Serialize(new { keepUserData }),
+                System.Text.Encoding.UTF8, "application/json");
+            var response = await _client.PostAsync(url, body);
+
+            if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            {
+                Log.Information("Fresh Start triggered for device {DeviceId}", deviceId);
+                return new DeviceActionResult { Success = true, DeviceId = deviceId, Action = "cleanWindowsDevice" };
+            }
+
+            var error = await response.Content.ReadAsStringAsync();
+            Log.Warning("Failed Fresh Start for {DeviceId}: {Status} - {Error}", deviceId, response.StatusCode, error);
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "cleanWindowsDevice", Message = error };
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed Fresh Start for device {DeviceId}", deviceId);
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "cleanWindowsDevice", Message = ex.Message };
+        }
+    }
+
+    public async Task<List<DeviceActionResult>> FreshStartDevicesAsync(IEnumerable<string> deviceIds, bool keepUserData = true, bool confirmed = false)
+    {
+        var results = new List<DeviceActionResult>();
+        foreach (var id in deviceIds)
+            results.Add(await FreshStartDeviceAsync(id, keepUserData, confirmed));
+        return results;
+    }
+
+    /// <summary>
+    /// Per-setting compliance states for one policy on one device — the rows
+    /// of the compliance troubleshooting lightbox.
+    /// </summary>
+    public async Task<List<ComplianceSettingState>> GetPolicySettingStatesAsync(string deviceId, string policyId)
+    {
+        if (!await SetAuthorizationAsync()) return new List<ComplianceSettingState>();
+
+        var states = new List<ComplianceSettingState>();
+        try
+        {
+            var url = $"deviceManagement/managedDevices/{deviceId}/deviceCompliancePolicyStates/{policyId}/settingStates?$top=100";
+            while (!string.IsNullOrEmpty(url))
+            {
+                var response = await _client.GetAsync(url);
+                if (!response.IsSuccessStatusCode)
+                {
+                    Log.Warning("Failed to get setting states for {DeviceId}/{PolicyId}: {Status}", deviceId, policyId, response.StatusCode);
+                    break;
+                }
+                var result = await response.Content.ReadFromJsonAsync<ComplianceSettingStatesResponse>(_jsonOptions);
+                if (result?.Value != null) states.AddRange(result.Value);
+                url = result?.NextLink;
+                if (url != null && url.StartsWith(_client.BaseAddress!.ToString()))
+                    url = url.Substring(_client.BaseAddress.ToString().Length);
+            }
+            return states;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to get setting states for {DeviceId}/{PolicyId}", deviceId, policyId);
+            return states;
+        }
+    }
+
+    /// <summary>
+    /// The compliance policy definition with its scheduled actions and
+    /// assignments expanded, flattened for display. Policies are a family of
+    /// Graph types with different requirement properties, so the typed keys
+    /// are read generically. Needs DeviceManagementConfiguration.Read.All;
+    /// without it AccessDenied is set instead of failing.
+    /// </summary>
+    public async Task<CompliancePolicyDefinition?> GetCompliancePolicyDefinitionAsync(string policyId)
+    {
+        if (!await SetAuthorizationAsync()) return null;
+
+        try
+        {
+            var url = $"deviceManagement/deviceCompliancePolicies/{policyId}"
+                + "?$expand=scheduledActionsForRule($expand=scheduledActionConfigurations),assignments";
+            var response = await _client.GetAsync(url);
+            if (response.StatusCode is System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized)
+            {
+                return new CompliancePolicyDefinition { AccessDenied = true };
+            }
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Warning("Failed to get policy definition {PolicyId}: {Status}", policyId, response.StatusCode);
+                return null;
+            }
+
+            using var doc = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = doc.RootElement;
+            var definition = new CompliancePolicyDefinition();
+
+            var skip = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "id", "displayName", "description", "createdDateTime", "lastModifiedDateTime",
+                "version", "roleScopeTagIds", "scheduledActionsForRule", "assignments"
+            };
+
+            foreach (var prop in root.EnumerateObject())
+            {
+                // Skip odata annotations, both top-level ("@odata.type") and
+                // property-scoped ("assignments@odata.context").
+                if (prop.Name.Contains("@odata"))
+                {
+                    if (prop.Name == "@odata.type")
+                        definition.PlatformType = PolicyTypeToPlatform(prop.Value.GetString());
+                    continue;
+                }
+                if (prop.Name == "displayName") { definition.DisplayName = prop.Value.GetString(); continue; }
+                if (prop.Name == "description") { definition.Description = prop.Value.GetString(); continue; }
+                if (prop.Name == "version" && prop.Value.ValueKind == System.Text.Json.JsonValueKind.Number)
+                {
+                    definition.Version = prop.Value.GetInt32();
+                    continue;
+                }
+                if (skip.Contains(prop.Name)) continue;
+
+                // Requirement properties: primitives only, and only ones that say
+                // something (null and false mean "not required" on these types).
+                var value = prop.Value.ValueKind switch
+                {
+                    System.Text.Json.JsonValueKind.String => prop.Value.GetString(),
+                    System.Text.Json.JsonValueKind.Number => prop.Value.GetRawText(),
+                    System.Text.Json.JsonValueKind.True => "Yes",
+                    _ => null
+                };
+                if (!string.IsNullOrEmpty(value))
+                    definition.Requirements.Add(new KeyValuePair<string, string>(HumanizeKey(prop.Name), value!));
+            }
+
+            if (root.TryGetProperty("scheduledActionsForRule", out var rules))
+            {
+                foreach (var rule in rules.EnumerateArray())
+                {
+                    if (!rule.TryGetProperty("scheduledActionConfigurations", out var configs)) continue;
+                    foreach (var config in configs.EnumerateArray())
+                    {
+                        var action = config.TryGetProperty("actionType", out var a) ? a.GetString() : null;
+                        var hours = config.TryGetProperty("gracePeriodHours", out var g) && g.ValueKind == System.Text.Json.JsonValueKind.Number
+                            ? g.GetInt32() : 0;
+                        if (action == null) continue;
+                        var label = HumanizeKey(action);
+                        definition.ScheduledActions.Add(hours == 0
+                            ? $"{label} — immediately"
+                            : $"{label} — after {(hours % 24 == 0 ? $"{hours / 24} day{(hours / 24 == 1 ? "" : "s")}" : $"{hours} hours")}");
+                    }
+                }
+            }
+
+            if (root.TryGetProperty("assignments", out var assignments))
+            {
+                foreach (var assignment in assignments.EnumerateArray())
+                {
+                    if (assignment.TryGetProperty("target", out var target)
+                        && target.TryGetProperty("groupId", out var groupId)
+                        && groupId.GetString() is { Length: > 0 } id)
+                    {
+                        definition.AssignedGroupIds.Add(id);
+                    }
+                }
+            }
+
+            return definition;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to get policy definition {PolicyId}", policyId);
+            return null;
+        }
+    }
+
+    private static string? PolicyTypeToPlatform(string? odataType) => odataType switch
+    {
+        null => null,
+        var t when t.Contains("windows10", StringComparison.OrdinalIgnoreCase) => "Windows",
+        var t when t.Contains("macOS", StringComparison.OrdinalIgnoreCase) => "macOS",
+        var t when t.Contains("ios", StringComparison.OrdinalIgnoreCase) => "iOS",
+        var t when t.Contains("android", StringComparison.OrdinalIgnoreCase) => "Android",
+        _ => odataType.Replace("#microsoft.graph.", "")
+    };
+
+    private static string HumanizeKey(string key)
+    {
+        var spaced = System.Text.RegularExpressions.Regex.Replace(key, "([a-z0-9])([A-Z])", "$1 $2");
+        return char.ToUpperInvariant(spaced[0]) + spaced[1..];
+    }
+
+    /// <summary>
+    /// Group memberships of a DEVICE object: resolve the directory object by
+    /// its Entra device id, then read its memberOf. The macOS detail panel's
+    /// Group Membership section reads the same way.
+    /// </summary>
+    public async Task<List<EntraGroup>> GetDeviceGroupMembershipsAsync(string azureAdDeviceId)
+    {
+        if (!await SetAuthorizationAsync())
+        {
+            return new List<EntraGroup>();
+        }
+
+        try
+        {
+            var lookupUrl = $"devices?$filter=deviceId eq '{Uri.EscapeDataString(azureAdDeviceId)}'&$select=id";
+            var lookupResponse = await _client.GetAsync(lookupUrl);
+            if (!lookupResponse.IsSuccessStatusCode)
+            {
+                Log.Warning("Failed to resolve device object for {DeviceId}: {Status}", azureAdDeviceId, lookupResponse.StatusCode);
+                return new List<EntraGroup>();
+            }
+
+            var lookup = await lookupResponse.Content.ReadFromJsonAsync<UserMemberOfResponse>(_jsonOptions);
+            var objectId = lookup?.Value?.FirstOrDefault()?.Id;
+            if (string.IsNullOrEmpty(objectId)) return new List<EntraGroup>();
+
+            var groups = new List<EntraGroup>();
+            var url = $"devices/{objectId}/memberOf";
+            while (!string.IsNullOrEmpty(url))
+            {
+                var response = await _client.GetAsync(url);
+                if (!response.IsSuccessStatusCode)
+                {
+                    Log.Warning("Failed to get device groups for {DeviceId}: {Status}", azureAdDeviceId, response.StatusCode);
+                    break;
+                }
+
+                var result = await response.Content.ReadFromJsonAsync<UserMemberOfResponse>(_jsonOptions);
+                if (result?.Value != null)
+                {
+                    foreach (var obj in result.Value.Where(o => o.IsGroup))
+                    {
+                        groups.Add(new EntraGroup
+                        {
+                            Id = obj.Id,
+                            DisplayName = obj.DisplayName ?? string.Empty,
+                            Description = obj.Description
+                        });
+                    }
+                }
+
+                url = result?.NextLink;
+                if (url != null && url.StartsWith(_client.BaseAddress!.ToString()))
+                {
+                    url = url.Substring(_client.BaseAddress.ToString().Length);
+                }
+            }
+
+            return groups;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to get device group memberships for {DeviceId}", azureAdDeviceId);
+            return new List<EntraGroup>();
+        }
+    }
+
+    /// <summary>
     /// Remote lock a device with optional PIN
     /// </summary>
     // Defense-in-depth: destructive fleet actions (remoteLock/wipe/retire/remediation)
