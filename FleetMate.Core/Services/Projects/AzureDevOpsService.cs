@@ -17,7 +17,7 @@ namespace FleetMate.Core.Services.Projects;
 /// one minted silently by the Windows account broker. No PAT, no service
 /// account — every call is attributed to the operator who made it.
 /// </summary>
-public class AzureDevOpsService : IDisposable
+public partial class AzureDevOpsService : IDisposable
 {
     private readonly HttpClient _client;
     private readonly AzureDevOpsConfig _config;

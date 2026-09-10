@@ -95,9 +95,9 @@
 
         <!-- Source chips. Real filters, not decoration. -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,6">
-            <ToggleButton x:Name="AllChip" Content="All" IsChecked="True" Padding="10,2" FontSize="11"
+            <ToggleButton x:Name="AllChip" Content="All" Padding="10,2" FontSize="11"
                           Margin="0,0,4,0" Click="OnSourceChipClicked" Tag="all" />
-            <ToggleButton x:Name="DevOpsChip" Content="DevOps" Padding="10,2" FontSize="11"
+            <ToggleButton x:Name="DevOpsChip" Content="DevOps" IsChecked="True" Padding="10,2" FontSize="11"
                           Margin="0,0,4,0" Click="OnSourceChipClicked" Tag="devops" />
             <ToggleButton x:Name="GitHubChip" Content="GitHub" Padding="10,2" FontSize="11"
                           Click="OnSourceChipClicked" Tag="github" />

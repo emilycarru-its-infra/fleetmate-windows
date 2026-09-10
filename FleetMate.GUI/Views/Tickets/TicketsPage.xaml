@@ -274,7 +274,8 @@
                                     </Border>
                                     
                                     <!-- Cards -->
-                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="600">
+                                    <!-- No fixed cap: the column fills the board's height and scrolls internally. -->
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                                         <ItemsControl ItemsSource="{Binding Rows}" Margin="8">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
