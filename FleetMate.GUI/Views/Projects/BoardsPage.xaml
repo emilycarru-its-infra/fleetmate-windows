@@ -49,7 +49,7 @@
                 <Button x:Name="SsoButton" Click="OnSsoButtonClicked" ToolTip="Azure DevOps SSO"
                         Visibility="Collapsed" Margin="8,0,0,0">
                     <ui:SimpleStackPanel Orientation="Horizontal" Spacing="4">
-                        <TextBlock x:Name="SsoIcon" Text="🔒" />
+                        <TextBlock x:Name="SsoIcon" Text="&#xE72E;" FontFamily="Segoe Fluent Icons" />
                         <TextBlock x:Name="SsoLabel" Text="Sign In" />
                     </ui:SimpleStackPanel>
                 </Button>
