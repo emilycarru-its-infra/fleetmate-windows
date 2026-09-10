@@ -73,6 +73,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -103,7 +104,14 @@
                           Click="OnSourceChipClicked" Tag="github" />
         </StackPanel>
 
-        <Border Grid.Row="2" Style="{StaticResource CardStyle}" Padding="0">
+        <!-- Secondary filter: one chip per repository in the current source
+             scope, busiest first. Only rendered when there's a real choice. -->
+        <ScrollViewer Grid.Row="2" x:Name="RepoChipsScroller" HorizontalScrollBarVisibility="Hidden"
+                      VerticalScrollBarVisibility="Disabled" Visibility="Collapsed" Margin="0,0,0,6">
+            <StackPanel x:Name="RepoChipsPanel" Orientation="Horizontal" />
+        </ScrollViewer>
+
+        <Border Grid.Row="3" Style="{StaticResource CardStyle}" Padding="0">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel>
 

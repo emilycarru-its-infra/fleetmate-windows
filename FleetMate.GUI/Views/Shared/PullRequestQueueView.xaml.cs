@@ -20,7 +20,10 @@ namespace FleetMate.GUI.Views.Shared;
 /// </summary>
 public partial class PullRequestQueueView : UserControl
 {
+    private const int RepoChipLimit = 14;
+
     private string _sourceFilter = "devops";
+    private string? _repoFilter;
     private bool _isLoading;
 
     /// <summary>Raised when a source chip changes; the dashboard's work item table follows it.</summary>
@@ -102,6 +105,8 @@ public partial class PullRequestQueueView : UserControl
 
     private void Render(PullRequestQueue queue)
     {
+        RenderRepoChips(queue);
+
         var created = Filter(queue.Section(PullRequestRelation.CreatedByMe));
         var assigned = Filter(queue.Section(PullRequestRelation.AssignedToMe));
 
@@ -128,7 +133,9 @@ public partial class PullRequestQueueView : UserControl
             // so a chip left on doesn't read as an empty queue.
             EmptyState.Text = queue.IsEmpty
                 ? "No open pull requests."
-                : $"No pull requests from {_sourceFilter}.";
+                : _repoFilter != null
+                    ? $"No pull requests in {_repoFilter}."
+                    : $"No pull requests from {_sourceFilter}.";
         }
         else
         {
@@ -161,12 +168,88 @@ public partial class PullRequestQueueView : UserControl
            .Select(pr => new PullRequestRowViewModel { PullRequest = pr })
            .ToList();
 
-    private bool Matches(UnifiedPullRequest pr) => _sourceFilter switch
+    private bool MatchesSource(UnifiedPullRequest pr) => _sourceFilter switch
     {
         "devops" => pr.Source == PullRequestSource.AzureDevOps,
         "github" => pr.Source == PullRequestSource.GitHub,
         _ => true,
     };
+
+    private bool Matches(UnifiedPullRequest pr) =>
+        MatchesSource(pr) && (_repoFilter == null || pr.Repository == _repoFilter);
+
+    /// <summary>
+    /// One chip per repository in the current source scope with its PR count,
+    /// busiest first (ties alphabetical) — the macOS secondary filter row.
+    /// Hidden unless there is more than one repository to choose between.
+    /// </summary>
+    private void RenderRepoChips(PullRequestQueue queue)
+    {
+        var sourcePrs = queue.Section(PullRequestRelation.CreatedByMe)
+            .Concat(queue.Section(PullRequestRelation.AssignedToMe))
+            .Where(MatchesSource)
+            .ToList();
+
+        var counts = sourcePrs
+            .GroupBy(pr => pr.Repository)
+            .Select(g => (Repo: g.Key, Count: g.Count()))
+            .OrderByDescending(e => e.Count)
+            .ThenBy(e => e.Repo, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // A vanished repo (source switch, refresh) must not keep filtering.
+        if (_repoFilter != null && counts.All(e => e.Repo != _repoFilter))
+            _repoFilter = null;
+
+        RepoChipsPanel.Children.Clear();
+        if (counts.Count < 2)
+        {
+            RepoChipsScroller.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        RepoChipsScroller.Visibility = Visibility.Visible;
+        foreach (var (repo, count) in counts.Take(RepoChipLimit))
+        {
+            var content = new StackPanel { Orientation = Orientation.Horizontal };
+            content.Children.Add(new ModernWpf.Controls.FontIcon
+            {
+                FontFamily = new System.Windows.Media.FontFamily("Segoe Fluent Icons"),
+                Glyph = "",
+                FontSize = 10,
+                Margin = new Thickness(0, 0, 5, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            content.Children.Add(new TextBlock
+            {
+                Text = $"{repo} {count}",
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+
+            var chip = new ToggleButton
+            {
+                Content = content,
+                Padding = new Thickness(8, 2, 8, 2),
+                Margin = new Thickness(0, 0, 4, 0),
+                IsChecked = repo == _repoFilter,
+                Tag = repo,
+                ToolTip = repo == _repoFilter ? $"Clear the {repo} filter" : $"Show only {repo}"
+            };
+            chip.Click += OnRepoChipClicked;
+            RepoChipsPanel.Children.Add(chip);
+        }
+    }
+
+    private void OnRepoChipClicked(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ToggleButton { Tag: string repo }) return;
+
+        // Re-clicking the active chip clears the filter, like the macOS pills.
+        _repoFilter = _repoFilter == repo ? null : repo;
+
+        if (App.Current is App { PullRequestQueue: { } queue }) Render(queue);
+    }
 
     // MARK: - Events
 
@@ -175,6 +258,8 @@ public partial class PullRequestQueueView : UserControl
         if (sender is not ToggleButton clicked) return;
 
         _sourceFilter = clicked.Tag as string ?? "all";
+        // A repo picked under the old source scope no longer means anything.
+        _repoFilter = null;
 
         // Chips are mutually exclusive, so re-clicking the active one must not
         // leave every chip off and the list silently unfiltered.
