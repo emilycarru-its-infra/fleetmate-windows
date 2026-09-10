@@ -58,9 +58,11 @@
 
         <!-- Board / List / Projects toggle (separate row, left-aligned) -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
-            <RadioButton x:Name="BoardModeRadio" Content="Board" IsChecked="True" 
+            <RadioButton x:Name="BoardModeRadio" Content="Board"
                          GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
-            <RadioButton x:Name="ListModeRadio" Content="List" 
+            <!-- List first: the List mode renders every Shared Query expanded — that,
+                 not the kanban board, is the view Projects opens into (macOS parity). -->
+            <RadioButton x:Name="ListModeRadio" Content="List" IsChecked="True"
                          GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
             <RadioButton x:Name="ProjectsModeRadio" Content="Projects" 
                          GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
@@ -269,7 +271,10 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </ScrollViewer>
-        <!-- Work Items List (List mode) -->
+        <!-- Stored queries (List mode, DevOps configured): every Shared Query
+             expanded like the Azure DevOps results grid. -->
+        <local:QueriesListControl x:Name="QueriesList" Margin="0,16,0,0" Visibility="Collapsed" />
+        <!-- Work Items List (List mode legacy fallback when DevOps is not configured) -->
         <Border x:Name="WorkItemsList" Margin="0,16,0,0" Visibility="Collapsed">
             <ListView x:Name="WorkItemsListView" 
                       BorderThickness="0"

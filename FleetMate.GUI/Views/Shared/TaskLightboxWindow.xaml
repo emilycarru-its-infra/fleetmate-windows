@@ -1,0 +1,74 @@
+<Window x:Class="FleetMate.GUI.Views.Shared.TaskLightboxWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        Title="Work Item"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        ResizeMode="NoResize"
+        WindowStartupLocation="Manual"
+        Background="Transparent"
+        TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
+        ShowInTaskbar="False">
+    <!-- Scrim + centred card: clicking the scrim (or ESC) dismisses, like the macOS lightbox. -->
+    <Grid Background="#99000000" MouseLeftButtonDown="OnScrimMouseDown">
+        <Border x:Name="CardBorder" HorizontalAlignment="Center" VerticalAlignment="Center"
+                Background="{DynamicResource AppBackgroundBrush}"
+                BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1"
+                CornerRadius="10" Padding="20">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header: id + title on the left, actions on the right. -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,14">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                <Button x:Name="OpenInProjectsButton" Click="OnOpenInProjects" Margin="0,0,8,0"
+                        ToolTip="Open in the Projects tab">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xF0E3;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                        <TextBlock Text="Open in Projects" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button Content="&#xE774;" FontFamily="Segoe Fluent Icons" Width="30" Height="30"
+                        Click="OnOpenInBrowser" ToolTip="Open in Web Browser" Margin="0,0,8,0" />
+                <Button Content="&#xE711;" FontFamily="Segoe Fluent Icons" Width="30" Height="30"
+                        Click="OnCloseClicked" ToolTip="Close" />
+            </StackPanel>
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock x:Name="TaskIdText" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{DynamicResource SystemControlForegroundAccentBrush}" />
+                    <Border x:Name="ProviderBadge" Background="{DynamicResource SubtleFillBrush}" CornerRadius="4"
+                            Padding="6,1" Margin="10,0,0,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="ProviderText" FontSize="10" FontWeight="SemiBold" />
+                    </Border>
+                </StackPanel>
+                <TextBlock x:Name="TitleText" FontSize="19" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,0" />
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Body left, fixed-width metadata column right (macOS lightbox layout). -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="360" />
+            </Grid.ColumnDefinitions>
+
+            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Margin="0,0,16,0">
+                <StackPanel x:Name="BodyPanel" />
+            </ScrollViewer>
+
+            <Border Grid.Column="1" Background="{DynamicResource CardBackgroundBrush}"
+                    BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="8">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="MetaPanel" Margin="14" />
+                </ScrollViewer>
+            </Border>
+        </Grid>
+    </Grid>
+        </Border>
+    </Grid>
+</Window>

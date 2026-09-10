@@ -34,6 +34,13 @@ public partial class BoardsPage : Page
     private string _listSearchText = "";
     private string? _listStateFilter;
 
+    // Stored queries (the List mode's primary content, macOS parity). Cached
+    // statically so tab switches don't refetch every Shared Query.
+    private static List<QueriesListControl.QueryRunDisplay> _queryRuns = new();
+    private static DateTime _queriesLoadedAt = DateTime.MinValue;
+    private static readonly TimeSpan QueriesFreshness = TimeSpan.FromMinutes(5);
+    private bool _isLoadingQueries;
+
     // Projects mode (GitHub Projects v2 dynamic board)
     private GitHubProjectsService? _projectsService;
     private List<GitHubProjectItem> _projectItems = new();
@@ -55,6 +62,22 @@ public partial class BoardsPage : Page
         Shared.HorizontalWheel.Attach(KanbanBoard);
         Shared.HorizontalWheel.Attach(ProjectsBoard);
         DetailPanel.TaskUpdated += async (_, _) => await LoadTasksAsync();
+
+        // Query rows select into the inline detail sidebar, exactly like a
+        // board card; the query header's globe opens the results page.
+        QueriesList.TaskSelected += (_, task) =>
+        {
+            var provider = _registry?.GetProvider(task.Provider);
+            DetailPanel.ShowTask(task, provider);
+            DetailPanel.Visibility = Visibility.Visible;
+            DetailColumn.Width = new GridLength(2, GridUnitType.Star);
+        };
+        QueriesList.OpenQueryRequested += (_, query) =>
+        {
+            if (_devOpsService == null) return;
+            try { Process.Start(new ProcessStartInfo { FileName = _devOpsService.StoredQueryWebUrl(query.Id), UseShellExecute = true }); }
+            catch { }
+        };
     }
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
@@ -78,8 +101,35 @@ public partial class BoardsPage : Page
         UpdateSsoButtonState();
 
         await InitializeRegistryAsync();
+
+        // ListModeRadio carries IsChecked="True", which fires OnViewModeChanged
+        // mid-parse where the guard swallows it — apply the initial mode now.
+        OnViewModeChanged(this, new RoutedEventArgs());
+
         await LoadBucketsAsync();
         await LoadTasksAsync();
+
+        // A lightbox's "Open in Projects" handed us a work item to show.
+        if (_app?.PendingNavigateWorkItemId is { } pendingId)
+        {
+            _app.PendingNavigateWorkItemId = null;
+            var stub = new UnifiedTask
+            {
+                Id = pendingId.ToString(),
+                Provider = "azdevops",
+                Title = $"#{pendingId}",
+                ExternalUrl = _config.AzureDevOps != null
+                    ? $"{_config.AzureDevOps.BaseUrl}/{_config.AzureDevOps.Project}/_workitems/edit/{pendingId}"
+                    : null
+            };
+            var provider = _registry?.GetProvider("azdevops");
+            if (_devOpsService != null && await _devOpsService.GetWorkItemAsync(pendingId) is { } item)
+                DetailPanel.ShowTask(item.AsUnifiedTask(), provider);
+            else
+                DetailPanel.ShowTask(stub, provider);
+            DetailPanel.Visibility = Visibility.Visible;
+            DetailColumn.Width = new GridLength(2, GridUnitType.Star);
+        }
     }
 
     private async Task InitializeRegistryAsync()
@@ -267,6 +317,8 @@ public partial class BoardsPage : Page
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
+        if (QueriesList.Visibility == Visibility.Visible)
+            await LoadQueriesAsync(force: true);
         await LoadTasksAsync();
     }
 
@@ -499,15 +551,24 @@ public partial class BoardsPage : Page
         var isListMode = ListModeRadio.IsChecked == true;
         var isProjectsMode = ProjectsModeRadio.IsChecked == true;
 
+        // The stored-queries view carries the List mode whenever Azure DevOps
+        // is configured; without it the legacy flat list remains.
+        var useQueries = _config.AzureDevOps != null && !string.IsNullOrEmpty(_config.AzureDevOps.Organization);
+
         // Toggle visibility
         BoardFilters.Visibility = isBoardMode ? Visibility.Visible : Visibility.Collapsed;
         ListFilters.Visibility = isListMode ? Visibility.Visible : Visibility.Collapsed;
         ProjectsFilters.Visibility = isProjectsMode ? Visibility.Visible : Visibility.Collapsed;
         KanbanBoard.Visibility = isBoardMode ? Visibility.Visible : Visibility.Collapsed;
-        WorkItemsList.Visibility = isListMode ? Visibility.Visible : Visibility.Collapsed;
+        QueriesList.Visibility = isListMode && useQueries ? Visibility.Visible : Visibility.Collapsed;
+        WorkItemsList.Visibility = isListMode && !useQueries ? Visibility.Visible : Visibility.Collapsed;
         ProjectsBoard.Visibility = isProjectsMode ? Visibility.Visible : Visibility.Collapsed;
 
-        if (isListMode && _allWorkItems.Count == 0)
+        if (isListMode && useQueries)
+        {
+            await LoadQueriesAsync();
+        }
+        else if (isListMode && _allWorkItems.Count == 0)
         {
             await LoadWorkItemsAsync();
         }
@@ -516,6 +577,73 @@ public partial class BoardsPage : Page
         {
             await LoadProjectsBoardAsync();
         }
+    }
+
+    // MARK: - Stored Queries (List mode, macOS parity)
+
+    /// <summary>
+    /// Enumerate every Shared Query and run each one, materializing the rows
+    /// the queries list renders. Results are cached across tab switches and
+    /// refreshed after five minutes or an explicit refresh.
+    /// </summary>
+    private async Task LoadQueriesAsync(bool force = false)
+    {
+        if (_devOpsService == null || _isLoadingQueries) return;
+        if (!force && _queryRuns.Count > 0 && DateTime.UtcNow - _queriesLoadedAt < QueriesFreshness)
+        {
+            RefreshQueriesDisplay();
+            return;
+        }
+
+        _isLoadingQueries = true;
+        try
+        {
+            if (_queryRuns.Count == 0) QueriesList.ShowMessage("Loading shared queries...");
+            var queries = await _devOpsService.GetSharedQueriesAsync();
+            if (queries.Count == 0)
+            {
+                QueriesList.ShowMessage("No shared queries found. Sign in to Azure DevOps and refresh.");
+                return;
+            }
+
+            // Run queries a few at a time; each run already batches its work
+            // item fetches.
+            var runs = new List<QueriesListControl.QueryRunDisplay>();
+            using var gate = new SemaphoreSlim(4);
+            var tasks = queries.Select(async query =>
+            {
+                await gate.WaitAsync();
+                try
+                {
+                    var run = await _devOpsService.RunStoredQueryAsync(query.Id);
+                    if (run == null) return;
+                    var rows = run.Rows
+                        .Select(r => new QueriesListControl.QueryRowDisplay(r.Item.AsUnifiedTask(), r.Depth, r.HasChildren))
+                        .ToList();
+                    lock (runs)
+                    {
+                        runs.Add(new QueriesListControl.QueryRunDisplay(
+                            query, rows, run.Truncated,
+                            QueriesListControl.AreaBucket(rows, query.Name)));
+                    }
+                }
+                finally { gate.Release(); }
+            });
+            await Task.WhenAll(tasks);
+
+            _queryRuns = runs;
+            _queriesLoadedAt = DateTime.UtcNow;
+            RefreshQueriesDisplay();
+        }
+        finally
+        {
+            _isLoadingQueries = false;
+        }
+    }
+
+    private void RefreshQueriesDisplay()
+    {
+        QueriesList.ShowRuns(_queryRuns, _listSearchText, _showClosed);
     }
 
     // MARK: - List Mode (AzDO Work Items)
@@ -573,6 +701,7 @@ public partial class BoardsPage : Page
     {
         _listSearchText = ListSearchBox.Text;
         UpdateListDisplay();
+        if (QueriesList.Visibility == Visibility.Visible) RefreshQueriesDisplay();
     }
 
     private void ListStateFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -587,15 +716,10 @@ public partial class BoardsPage : Page
 
     private void WorkItemsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (WorkItemsListView.SelectedItem is WorkItem wi && _config.AzureDevOps != null)
+        if (WorkItemsListView.SelectedItem is WorkItem wi)
         {
-            var url = $"{_config.AzureDevOps.BaseUrl}/{_config.AzureDevOps.Project}/_workitems/edit/{wi.Id}";
-            try
-            {
-                Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
-            }
-            catch { }
-
+            // In-app lightbox, not the browser (macOS parity).
+            new Shared.TaskLightboxWindow(wi.AsUnifiedTask(), Window.GetWindow(this)).ShowDialog();
             WorkItemsListView.SelectedItem = null;
         }
     }

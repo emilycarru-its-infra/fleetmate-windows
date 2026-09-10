@@ -106,6 +106,19 @@ public class WorkItemQueryResult
     public string QueryType { get; set; } = string.Empty;
     public List<WorkItemReference> WorkItems { get; set; } = new();
     public List<ColumnReference>? Columns { get; set; }
+    /// <summary>Tree and one-hop queries return edges here instead of WorkItems.</summary>
+    public List<WorkItemLink>? WorkItemRelations { get; set; }
+}
+
+/// <summary>
+/// One edge of a tree/one-hop query result: a nil source marks a root, any
+/// other edge hangs Target under Source.
+/// </summary>
+public class WorkItemLink
+{
+    public WorkItemReference? Source { get; set; }
+    public WorkItemReference? Target { get; set; }
+    public string? Rel { get; set; }
 }
 
 /// <summary>
