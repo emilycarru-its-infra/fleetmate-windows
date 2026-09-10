@@ -249,7 +249,9 @@ public partial class IntunePage : Page
                 SelectedDeviceNamesText.Text = $"{first2} and {selectedCount - 2} more...";
             }
 
-            // Show device detail panel for single selection
+            // Mac parity: any selection opens the actions panel; a single
+            // selection also opens the detail panel beside it.
+            ShowActionsPanel();
             if (selectedCount == 1)
             {
                 _ = ShowDeviceDetailAsync(selectedDevices[0]);
@@ -262,14 +264,27 @@ public partial class IntunePage : Page
         else
         {
             HideDeviceDetail();
+            HideActionsPanel();
         }
     }
 
     private async Task ShowDeviceDetailAsync(IntuneDevice device)
     {
         DeviceDetail.Visibility = Visibility.Visible;
-        DetailPanelColumn.Width = new GridLength(400);
+        DetailPanelColumn.Width = new GridLength(520);
         await DeviceDetail.ShowDeviceAsync(device, _graphService);
+    }
+
+    private void ShowActionsPanel()
+    {
+        ActionsPanel.Visibility = Visibility.Visible;
+        ActionsPanelColumn.Width = new GridLength(316);
+    }
+
+    private void HideActionsPanel()
+    {
+        ActionsPanel.Visibility = Visibility.Collapsed;
+        ActionsPanelColumn.Width = new GridLength(0);
     }
 
     private void HideDeviceDetail()
@@ -278,17 +293,9 @@ public partial class IntunePage : Page
         DetailPanelColumn.Width = new GridLength(0);
     }
 
-    private void OnActionsClicked(object sender, RoutedEventArgs e)
-    {
-        ActionsPanel.Visibility = Visibility.Visible;
-        ActionsPanelColumn.Width = new GridLength(316);
-    }
+    private void OnActionsClicked(object sender, RoutedEventArgs e) => ShowActionsPanel();
 
-    private void OnCloseActionsPanel(object sender, RoutedEventArgs e)
-    {
-        ActionsPanel.Visibility = Visibility.Collapsed;
-        ActionsPanelColumn.Width = new GridLength(0);
-    }
+    private void OnCloseActionsPanel(object sender, RoutedEventArgs e) => HideActionsPanel();
 
     private IEnumerable<string> GetSelectedDeviceIds()
     {
@@ -390,6 +397,46 @@ public partial class IntunePage : Page
         }
     }
 
+    private async void OnFreshStartClicked(object sender, RoutedEventArgs e)
+    {
+        if (_graphService == null) return;
+
+        // Fresh Start is Windows-only; run against the Windows subset rather
+        // than refusing a mixed selection outright.
+        var targets = DevicesDataGrid.SelectedItems.Cast<IntuneDevice>()
+            .Where(d => (d.OperatingSystem ?? "").Contains("Windows", StringComparison.OrdinalIgnoreCase))
+            .Select(d => d.Id)
+            .ToList();
+        if (targets.Count == 0)
+        {
+            ShowActionMessage("Fresh Start applies to Windows devices only — none selected", isError: true);
+            return;
+        }
+
+        var keepUserData = FreshStartKeepUserDataCheckBox.IsChecked == true;
+        var result = MessageBox.Show(
+            $"This will reinstall Windows on {targets.Count} device(s){(keepUserData ? ", preserving user data" : ", removing user data")}. Preinstalled OEM apps are removed and the device stays enrolled.",
+            "Confirm Fresh Start",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (result != MessageBoxResult.Yes) return;
+
+        ShowActionMessage($"Starting Fresh Start on {targets.Count} device(s)...", isLoading: true);
+        try
+        {
+            var results = await _graphService.FreshStartDevicesAsync(targets, keepUserData, confirmed: true);
+            var successful = results.Count(r => r.Success);
+            var failed = results.Count - successful;
+            ShowActionMessage(failed == 0
+                ? $"Fresh Start sent to {successful} device(s)"
+                : $"Fresh Start sent to {successful}, {failed} failed");
+        }
+        catch (Exception ex)
+        {
+            ShowActionMessage($"Error: {ex.Message}", isError: true);
+        }
+    }
+
     private async void OnAutopilotResetClicked(object sender, RoutedEventArgs e)
     {
         if (_graphService == null) return;
@@ -459,8 +506,10 @@ public partial class IntunePage : Page
         if (_graphService == null) return;
 
         var deviceIds = GetSelectedDeviceIds().ToList();
+        var keepEnrollment = WipeKeepEnrollmentCheckBox.IsChecked == true;
+        var keepUserData = WipeKeepUserDataCheckBox.IsChecked == true;
         var result = MessageBox.Show(
-            $"This will factory-reset {deviceIds.Count} device(s). This cannot be undone.",
+            $"This will factory-reset {deviceIds.Count} device(s){(keepUserData ? ", keeping user data where the platform allows" : ", erasing all data")}. This cannot be undone.",
             "Confirm Wipe",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
@@ -471,7 +520,8 @@ public partial class IntunePage : Page
 
         try
         {
-            var results = await _graphService.WipeDevicesAsync(deviceIds, confirmed: true);
+            var results = await _graphService.WipeDevicesAsync(deviceIds,
+                keepEnrollmentData: keepEnrollment, keepUserData: keepUserData, confirmed: true);
             var successful = results.Count(r => r.Success);
             var failed = results.Count - successful;
 
