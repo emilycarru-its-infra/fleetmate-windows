@@ -453,6 +453,8 @@ public partial class ManagePage : Page
 
     private void OnResultOpenSsh(object sender, RoutedEventArgs e) { if (ContextResult() is { } r && RowForResult(r) is { } row) _vm.OpenSsh(row); }
     private void OnResultOpenRdp(object sender, RoutedEventArgs e) { if (ContextResult() is { } r && RowForResult(r) is { } row) _vm.OpenRdp(row); }
+    private void OnResultOpenBoth(object sender, RoutedEventArgs e) { if (ContextResult() is { } r && RowForResult(r) is { } row) _vm.OpenSshAndRdp(row); }
+    private void OnResultCopyHostnameIp(object sender, RoutedEventArgs e) { if (ContextResult() is { } r) CopyText($"{(r.Hostname.Length > 0 ? r.Hostname : r.Name)}	{r.Ip}"); }
     private void OnResultCopyHostname(object sender, RoutedEventArgs e) { if (ContextResult() is { } r) CopyText(r.Hostname.Length > 0 ? r.Hostname : r.Name); }
     private void OnResultCopyIp(object sender, RoutedEventArgs e) { if (ContextResult() is { } r) CopyText(r.Ip); }
     private void OnResultCopyOutput(object sender, RoutedEventArgs e) { if (ContextResult() is { } r) CopyText(r.Output); }
