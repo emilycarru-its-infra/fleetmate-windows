@@ -265,7 +265,7 @@
                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="Serial:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />
                                 <TextBlock x:Name="DetailSerial" Grid.Row="0" Grid.Column="1" FontSize="12" />
                                 <Button Grid.Row="0" Grid.Column="2" Click="OnCopySerialClicked" ToolTip="Copy" Padding="2" Background="Transparent" BorderThickness="0">
-                                    <TextBlock Text="📋" FontSize="14" />
+                                    <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8C8;" FontSize="13" VerticalAlignment="Center" />
                                 </Button>
 
                                 <TextBlock Grid.Row="1" Grid.Column="0" Text="Model:" FontSize="12" Opacity="0.7" Margin="0,0,8,2" />

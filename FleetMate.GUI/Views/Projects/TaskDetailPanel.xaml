@@ -26,7 +26,7 @@
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                 </StackPanel>
 
-                <Button Grid.Column="1" Content="✕" Click="OnClose" VerticalAlignment="Top"
+                <Button Grid.Column="1" Content="" FontFamily="Segoe Fluent Icons" Click="OnClose" VerticalAlignment="Top"
                         FontSize="14" Background="Transparent" Padding="8,4" />
             </Grid>
 
