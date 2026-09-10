@@ -112,7 +112,8 @@
                     <ScrollViewer x:Name="SectionsScroll" VerticalScrollBarVisibility="Auto">
                         <StackPanel>
                             <DockPanel>
-                                <TextBlock DockPanel.Dock="Left" Text="LABS" Style="{StaticResource SidebarHeaderStyle}" />
+                                <!-- "Curriculum" like the Mac sidebar; rows and counts still speak of labs. -->
+                                <TextBlock DockPanel.Dock="Left" Text="CURRICULUM" Style="{StaticResource SidebarHeaderStyle}" />
                                 <Button DockPanel.Dock="Right" x:Name="LabsToggle" Content="–" Margin="0,8,8,0" Padding="6,0" FontSize="10" Click="OnToggleSection" Tag="Labs" Style="{StaticResource ChromeIconButtonStyle}" />
                                 <Rectangle />
                             </DockPanel>
