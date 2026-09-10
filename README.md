@@ -7,7 +7,7 @@ FleetMate is a unified command-line interface for managing IT assets across mult
 ## Features
 
 - **Fleet Monitoring** - Real-time device status and error tracking via ReportMate
-- **CLI-first ReportMate** - Every ReportMate read goes through the [`reportmate` CLI](https://github.com/reportmate/reportmate-cli) when it is installed, falling back to FleetMate's own HTTP client when it is not (see [ReportMate integration](#reportmate-integration))
+- **CLI-first ReportMate** - Every ReportMate read goes through the [`reportmateutil` CLI](https://github.com/reportmate/reportmate-cli) when it is installed, falling back to FleetMate's own HTTP client when it is not (see [ReportMate integration](#reportmate-integration))
 - **Asset Management** - Complete Snipe-IT integration (assets, users, locations, checkout/checkin)
 - **Ticketing** - TeamDynamix ticket and asset management
 - **Identity & Device** - Microsoft Entra ID and Intune integration
@@ -467,9 +467,9 @@ dotnet run --project FleetMate.CLI -- tdx assets --search ASSET-000
 
 ## ReportMate integration
 
-FleetMate treats the [`reportmate` CLI](https://github.com/reportmate/reportmate-cli) as the reference client for the ReportMate API. `ReportMateService` pairs every read with the CLI arguments that return the same JSON as the HTTP path (`devices --limit --offset`, `module installs`, `module network`, `device SERIAL module network`, `device SERIAL installs-log`, `device SERIAL`). When a `reportmate.exe` is installed (`C:\Program Files\ReportMate`, alongside the ReportMate client, `C:\Program Files\sbin`, or on `PATH`), the service runs it with `--output json`, passing only `REPORTMATE_API_URL` and one credential (`REPORTMATE_TOKEN` when Entra SSO is configured, otherwise `REPORTMATE_PASSPHRASE`) in the child environment. A binary that cannot launch falls back to HTTP; a binary that ran and got an API refusal surfaces it.
+FleetMate treats the [`reportmateutil` CLI](https://github.com/reportmate/reportmate-cli) as the reference client for the ReportMate API. `ReportMateService` pairs every read with the CLI arguments that return the same JSON as the HTTP path (`devices --limit --offset`, `module installs`, `module network`, `device SERIAL module network`, `device SERIAL installs-log`, `device SERIAL`). When a `reportmateutil.exe` is installed (`C:\Program Files\ReportMate`, alongside the ReportMate client, `C:\Program Files\sbin`, or on `PATH`), the service runs it with `--output json`, passing only `REPORTMATE_API_URL` and one credential (`REPORTMATE_TOKEN` when Entra SSO is configured, otherwise `REPORTMATE_PASSPHRASE`) in the child environment. A binary that cannot launch falls back to HTTP; a binary that ran and got an API refusal surfaces it.
 
-`REPORTMATE_CLI=C:\path\to\reportmate.exe` pins a specific binary; an empty `REPORTMATE_CLI` forces the HTTP path.
+`REPORTMATE_CLI=C:\path\to\reportmateutil.exe` pins a specific binary; an empty `REPORTMATE_CLI` forces the HTTP path.
 
 Addresses for the Manage host scanner and SSH come from the fleet-wide `network` report (one call for every device) before any per-device lookup. The `reportmate` skill in `.agents/skills/reportmate/` documents the full CLI surface.
 

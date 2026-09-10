@@ -5,7 +5,7 @@ using Xunit;
 namespace FleetMate.Tests;
 
 /// <summary>
-/// The CLI-first path: when <c>reportmate</c> is installed, every read goes
+/// The CLI-first path: when <c>reportmateutil</c> is installed, every read goes
 /// through it with the same credential the HTTP path would send, and the
 /// API's JSON decodes identically. When the binary cannot launch, HTTP takes
 /// over.
@@ -19,7 +19,7 @@ public class ReportMateCliTests
         public Dictionary<string, string> Credentials { get; } = new();
         public ReportMateCli.CliOutput Output { get; set; } = new(true, 0, "{}", "");
 
-        public ReportMateCli Build(string path = @"C:\Program Files\ReportMateCLI\reportmate.exe") =>
+        public ReportMateCli Build(string path = @"C:\Program Files\ReportMate\reportmateutil.exe") =>
             new(path, (_, args, creds, _) =>
             {
                 Arguments.Clear();
@@ -51,7 +51,7 @@ public class ReportMateCliTests
     {
         var existing = typeof(ReportMateCliTests).Assembly.Location;
         Assert.Equal(existing, ReportMateCli.Locate(name => name == "REPORTMATE_CLI" ? existing : null)?.Path);
-        Assert.Null(ReportMateCli.Locate(name => name == "REPORTMATE_CLI" ? @"C:\nonexistent\reportmate.exe" : null));
+        Assert.Null(ReportMateCli.Locate(name => name == "REPORTMATE_CLI" ? @"C:\nonexistent\reportmateutil.exe" : null));
         Assert.Null(ReportMateCli.Locate(name => name == "REPORTMATE_CLI" ? "" : null));
     }
 
