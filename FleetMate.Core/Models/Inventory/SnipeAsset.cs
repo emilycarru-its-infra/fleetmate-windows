@@ -77,22 +77,23 @@ public class SnipeAsset
     public SnipeAssignee? AssignedTo { get; set; }
     
     [JsonPropertyName("warranty_months")]
-    public int? WarrantyMonths { get; set; }
-    
+    [JsonConverter(typeof(FlexibleStringConverter))]
+    public string? WarrantyMonths { get; set; }
+
     [JsonPropertyName("warranty_expires")]
     public SnipeDate? WarrantyExpires { get; set; }
-    
+
     [JsonPropertyName("created_at")]
     public SnipeDateTime? CreatedAt { get; set; }
-    
+
     [JsonPropertyName("updated_at")]
     public SnipeDateTime? UpdatedAt { get; set; }
-    
+
     [JsonPropertyName("last_audit_date")]
-    public string? LastAuditDate { get; set; }
-    
+    public SnipeDateTime? LastAuditDate { get; set; }
+
     [JsonPropertyName("next_audit_date")]
-    public string? NextAuditDate { get; set; }
+    public SnipeDateTime? NextAuditDate { get; set; }
     
     [JsonPropertyName("deleted_at")]
     public SnipeDateTime? DeletedAt { get; set; }
@@ -129,12 +130,124 @@ public class SnipeAsset
     
     [JsonPropertyName("available_actions")]
     public SnipeActions? AvailableActions { get; set; }
-    
+
+    [JsonPropertyName("book_value")]
+    public string? BookValue { get; set; }
+
+    [JsonPropertyName("byod")]
+    public bool? Byod { get; set; }
+
+    [JsonPropertyName("requestable")]
+    public bool? Requestable { get; set; }
+
+    [JsonPropertyName("decommission_date")]
+    public SnipeDate? DecommissionDate { get; set; }
+
+    // Native lease / purchasing columns. The ECU fork's F2 migration promoted
+    // this cluster out of _snipeit_* custom fields into typed assets columns
+    // and then dropped the custom fields, so these no longer arrive in
+    // custom_fields — they are first-class keys on the asset payload.
+
+    [JsonPropertyName("lease_contract_id")]
+    public string? LeaseContractId { get; set; }
+
+    [JsonPropertyName("lease_contract_name")]
+    public string? LeaseContractName { get; set; }
+
+    [JsonPropertyName("ownership_type")]
+    public string? OwnershipType { get; set; }
+
+    [JsonPropertyName("lease_end_date")]
+    public SnipeDate? LeaseEndDate { get; set; }
+
+    [JsonPropertyName("lease_rent")]
+    public SnipeMoney? LeaseRent { get; set; }
+
+    [JsonPropertyName("buyout_cost")]
+    public SnipeMoney? BuyoutCost { get; set; }
+
+    [JsonPropertyName("warranty_soft_cost")]
+    public SnipeMoney? WarrantySoftCost { get; set; }
+
+    [JsonPropertyName("lease_book_value")]
+    public SnipeMoney? LeaseBookValue { get; set; }
+
+    [JsonPropertyName("po_number")]
+    public string? PoNumber { get; set; }
+
+    [JsonPropertyName("invoice_number")]
+    public string? InvoiceNumber { get; set; }
+
+    [JsonPropertyName("lease_usage")]
+    public string? LeaseUsage { get; set; }
+
+    [JsonPropertyName("lease_area")]
+    public string? LeaseArea { get; set; }
+
     /// <summary>
-    /// Display name for the asset
+    /// Display name for the asset, HTML entities decoded (Snipe stores
+    /// "24&amp;quot; UltraSharp" style names).
     /// </summary>
     [JsonIgnore]
-    public string DisplayName => !string.IsNullOrEmpty(Name) ? Name : AssetTag;
+    public string DisplayName =>
+        System.Net.WebUtility.HtmlDecode(!string.IsNullOrEmpty(Name) ? Name : AssetTag);
+
+    /// <summary>Location name with HTML entities decoded.</summary>
+    [JsonIgnore]
+    public string? LocationName =>
+        Location?.Name is { Length: > 0 } n ? System.Net.WebUtility.HtmlDecode(n) : null;
+
+    /// <summary>
+    /// Custom field value by display name — the dictionary KEY is the display
+    /// name ("Platform"); the entry's Field property is the DB column
+    /// ("_snipeit_platform_11").
+    /// </summary>
+    public string? CustomFieldByName(string displayName) =>
+        CustomFields != null && CustomFields.TryGetValue(displayName, out var field)
+            ? field.Value
+            : null;
+
+    /// <summary>
+    /// Usage and Area read native first, falling back to the legacy custom
+    /// fields for any instance that predates the fork's F2 migration.
+    /// </summary>
+    [JsonIgnore]
+    public string? Usage =>
+        !string.IsNullOrEmpty(LeaseUsage) ? LeaseUsage : CustomFieldByName("Usage");
+
+    [JsonIgnore]
+    public string? Area =>
+        !string.IsNullOrEmpty(LeaseArea) ? LeaseArea : CustomFieldByName("Area");
+
+    [JsonIgnore]
+    public string? Platform => CustomFieldByName("Platform");
+
+    [JsonIgnore]
+    public string? Catalog => CustomFieldByName("Catalog");
+
+    /// <summary>
+    /// The most recent thing that happened to this asset — whichever of the
+    /// edit, checkout and audit timestamps is latest. Snipe-IT writes them all
+    /// as "yyyy-MM-dd HH:mm:ss", so the raw strings compare chronologically.
+    /// </summary>
+    [JsonIgnore]
+    public SnipeDateTime? LastActivity
+    {
+        get
+        {
+            SnipeDateTime? latest = null;
+            foreach (var candidate in new[] { UpdatedAt, LastCheckout, LastAuditDate })
+            {
+                if (string.IsNullOrEmpty(candidate?.DateTime)) continue;
+                if (latest == null || string.CompareOrdinal(candidate!.DateTime, latest.DateTime) > 0)
+                    latest = candidate;
+            }
+            return latest;
+        }
+    }
+
+    [JsonIgnore]
+    public string LastActivityFormatted => LastActivity?.Formatted ?? "";
 }
 
 /// <summary>

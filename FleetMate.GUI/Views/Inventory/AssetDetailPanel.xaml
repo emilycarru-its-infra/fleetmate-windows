@@ -1,0 +1,81 @@
+<UserControl x:Class="FleetMate.GUI.Views.Inventory.AssetDetailPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.modernwpf.com/2019"
+             Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Hero header: what the asset IS at a glance — icon, name, the two
+             identifiers everyone copies, where it stands, and its lifecycle. -->
+        <StackPanel Grid.Row="0" Margin="16,14,16,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Width="52" Height="52" CornerRadius="12" Margin="0,0,12,0"
+                        Background="{DynamicResource SystemControlBackgroundAccentBrush}" Opacity="0.9"
+                        VerticalAlignment="Top">
+                    <ui:FontIcon x:Name="CategoryIcon" FontFamily="Segoe Fluent Icons" Glyph="&#xF158;"
+                                 FontSize="24" Foreground="White"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock x:Name="NameText" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock x:Name="ModelText" FontSize="12" Margin="0,2,0,0"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top">
+                    <Button x:Name="ReAllocateButton" Click="OnReAllocateClicked" Margin="0,0,6,0"
+                            Background="{DynamicResource SystemControlBackgroundAccentBrush}" Foreground="White">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE748;" FontSize="12"
+                                         Margin="0,0,6,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Re-Allocate" VerticalAlignment="Center" FontSize="12" />
+                        </StackPanel>
+                    </Button>
+                    <Button Click="OnOpenInSnipeClicked" ToolTip="Open in Snipe-IT" Width="30" Height="30"
+                            Padding="0" Margin="0,0,6,0">
+                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE774;" FontSize="13" />
+                    </Button>
+                    <Button Click="OnCloseClicked" ToolTip="Close" Width="30" Height="30" Padding="0">
+                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE711;" FontSize="13" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <Grid Margin="0,10,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
+                    <!-- Identity chips: tag and serial as copyable chips, status pill. -->
+                    <StackPanel x:Name="ChipsRow" Orientation="Horizontal" />
+                    <StackPanel x:Name="WhoWhereRow" Orientation="Horizontal" Margin="0,8,0,0" />
+                    <StackPanel x:Name="LifecycleHost" Margin="0,8,0,0" MaxWidth="360" HorizontalAlignment="Left" />
+                </StackPanel>
+
+                <!-- The photo lives in what was dead space — as the manufacturer
+                     ships it: no frame, no rounding, no border. -->
+                <Image x:Name="AssetPhoto" Grid.Column="1" MaxHeight="112" MaxWidth="150"
+                       Stretch="Uniform" VerticalAlignment="Top" Margin="12,0,0,0" />
+            </Grid>
+        </StackPanel>
+
+        <!-- Scrollable cards, in priority order: state and people first, the
+             machine itself and money second, identifiers and metadata after. -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="CardsHost" Margin="16,0,16,16" />
+        </ScrollViewer>
+    </Grid>
+</UserControl>
