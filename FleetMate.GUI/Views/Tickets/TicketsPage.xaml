@@ -29,12 +29,12 @@
                 <StackPanel Orientation="Horizontal">
                     <ui:FontIcon Glyph="&#xE77B;" FontSize="14" Foreground="White" Margin="0,0,6,0"/>
                     <TextBlock x:Name="SsoUserNameText" Text="" Foreground="White" VerticalAlignment="Center" FontSize="12"/>
-                    <Button x:Name="SsoSignOutButton" Content="⎋" FontSize="10" Padding="4,2" Margin="8,0,0,0" 
+                    <Button x:Name="SsoSignOutButton" Content="" FontFamily="Segoe Fluent Icons" FontSize="10" Padding="4,2" Margin="8,0,0,0" 
                             ToolTip="Sign out of TDX SSO" Click="OnSsoSignOutClicked" 
                             Background="Transparent" Foreground="White"/>
                 </StackPanel>
             </Border>
-            <Button x:Name="SsoLoginButton" Content="🔑 Sign In" Margin="0,0,16,0" 
+            <Button x:Name="SsoLoginButton" Content="Sign In" Margin="0,0,16,0" 
                     ToolTip="Sign in with SSO for user context" Click="OnSsoLoginClicked" Visibility="Collapsed"/>
             
             <!-- View Mode Toggle -->
@@ -75,8 +75,8 @@
                 <ComboBoxItem Content="Responsible" />
             </ComboBox>
             <Button x:Name="SortDirectionButton" Content="↓" Width="32" Margin="0,0,8,0" Click="OnSortDirectionClicked" ToolTip="Toggle sort direction" />
-            <Button x:Name="DetailPanelButton" Content="📋 Details" Margin="0,0,8,0" Click="OnToggleDetailPanel" />
-            <Button x:Name="RefreshButton" Content="🔄 Refresh" Click="OnRefreshClicked" />
+            <Button x:Name="DetailPanelButton" Margin="0,0,8,0" Click="OnToggleDetailPanel"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE89F;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="Details" VerticalAlignment="Center" /></StackPanel></Button>
+            <Button x:Name="RefreshButton" Click="OnRefreshClicked"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="Refresh" VerticalAlignment="Center" /></StackPanel></Button>
         </StackPanel>
 
         <!-- Filters and Search -->
@@ -222,9 +222,9 @@
 
                                     <!-- Secondary Info -->
                                     <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,4,0,0">
-                                        <TextBlock Text="👤" FontSize="11" Margin="0,0,2,0" />
+                                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE77B;" FontSize="10" Margin="0,0,3,0" VerticalAlignment="Center" />
                                         <TextBlock Text="{Binding RequestorName}" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,12,0" />
-                                        <TextBlock Text="👥" FontSize="11" Margin="0,0,2,0" />
+                                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE716;" FontSize="10" Margin="0,0,3,0" VerticalAlignment="Center" />
                                         <TextBlock Text="{Binding ResponsibleGroupName}" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,12,0" />
                                         <TextBlock Text="→" FontSize="11" Margin="0,0,2,0" />
                                         <TextBlock Text="{Binding ResponsibleFullName}" FontSize="11" Foreground="{DynamicResource SystemControlForegroundAccentBrush}" Margin="0,0,12,0" />
@@ -310,7 +310,7 @@
                                                             
                                                             <!-- Requestor and Group -->
                                                             <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                                                <TextBlock Text="👤" FontSize="10" Margin="0,0,2,0" />
+                                                                <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE77B;" FontSize="9" Margin="0,0,3,0" VerticalAlignment="Center" />
                                                                 <TextBlock Text="{Binding RequestorName}" FontSize="10" 
                                                                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" 
                                                                            TextTrimming="CharacterEllipsis" MaxWidth="120" />
@@ -350,15 +350,15 @@
                             <TextBlock x:Name="DetailTicketIdText" FontWeight="Bold" FontSize="16" 
                                        Foreground="{DynamicResource SystemControlForegroundAccentBrush}" 
                                        VerticalAlignment="Center" />
-                            <Button x:Name="CopyTicketIdButton" Content="📋" Width="28" Height="28" Margin="4,0,0,0"
+                            <Button x:Name="CopyTicketIdButton" Width="28" Height="28" Content="" FontFamily="Segoe Fluent Icons" Margin="4,0,0,0"
                                     ToolTip="Copy ticket number" Click="OnCopyTicketIdClicked" />
-                            <Button x:Name="CopyTicketLinkButton" Content="🔗" Width="28" Height="28" Margin="4,0,0,0"
+                            <Button x:Name="CopyTicketLinkButton" Width="28" Height="28" Content="" FontFamily="Segoe Fluent Icons" Margin="4,0,0,0"
                                     ToolTip="Copy ticket link" Click="OnCopyTicketLinkClicked" />
                         </StackPanel>
                         <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
-                            <Button x:Name="OpenInWebButton" Content="🌐" Width="28" Height="28" Click="OnOpenInWebClicked" ToolTip="Open in Web Browser" />
-                            <Button Content="🔄" Width="28" Height="28" Click="OnRefreshDetailClicked" ToolTip="Refresh" Margin="4,0,0,0" />
-                            <Button Content="✕" Width="28" Height="28" Click="OnCloseDetailPanel" Margin="4,0,0,0" />
+                            <Button x:Name="OpenInWebButton" Width="28" Height="28" Content="" FontFamily="Segoe Fluent Icons" Click="OnOpenInWebClicked" ToolTip="Open in Web Browser" />
+                            <Button Content="" FontFamily="Segoe Fluent Icons" Width="28" Height="28" Click="OnRefreshDetailClicked" ToolTip="Refresh" Margin="4,0,0,0" />
+                            <Button Content="" FontFamily="Segoe Fluent Icons" Width="28" Height="28" Click="OnCloseDetailPanel" Margin="4,0,0,0" />
                         </StackPanel>
                     </Grid>
 
@@ -490,7 +490,7 @@
 
                         <!-- No Selection -->
                         <StackPanel x:Name="NoSelectionPanel" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <TextBlock Text="🎫" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,8" />
+                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8EC;" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,8" />
                             <TextBlock Text="Select a Ticket" FontWeight="SemiBold" HorizontalAlignment="Center" />
                             <TextBlock Text="Select a ticket from the list to view details" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" HorizontalAlignment="Center" />
                         </StackPanel>

@@ -529,7 +529,7 @@
                 Background="{DynamicResource CardBackgroundBrush}" Padding="14,12">
             <DockPanel>
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                    <Button DockPanel.Dock="Right" Content="✕" Style="{StaticResource ChromeIconButtonStyle}" Click="OnCloseDetail" />
+                    <Button DockPanel.Dock="Right" Content="" FontFamily="Segoe Fluent Icons" Style="{StaticResource ChromeIconButtonStyle}" Click="OnCloseDetail" />
                     <TextBlock x:Name="DetailTitle" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                 </DockPanel>
                 <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,10,0,0">

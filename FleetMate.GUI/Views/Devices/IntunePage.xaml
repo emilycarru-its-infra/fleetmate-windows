@@ -20,7 +20,7 @@
         <StackPanel Grid.Row="0" Grid.Column="0">
             <TextBlock Text="Devices" Style="{StaticResource TitleTextStyle}" />
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="MDM devices (Intune, Jamf, etc.)" Style="{StaticResource SubtitleTextStyle}" />
+                <TextBlock Text="Device Management Service" Style="{StaticResource SubtitleTextStyle}" />
                 <TextBlock x:Name="SelectionCountText" Margin="8,0,0,0" Foreground="{DynamicResource SystemControlForegroundAccentBrush}" FontWeight="SemiBold" />
             </StackPanel>
         </StackPanel>
@@ -41,8 +41,8 @@
                 <ComboBoxItem Content="Last Sync" />
             </ComboBox>
             <Button x:Name="SortDirectionButton" Content="↑" Width="32" Margin="0,0,8,0" Click="OnSortDirectionClicked" ToolTip="Toggle sort direction" />
-            <Button x:Name="ActionsButton" Content="⚡ Actions" Margin="0,0,8,0" Click="OnActionsClicked" IsEnabled="False" />
-            <Button x:Name="RefreshButton" Content="🔄 Refresh" Click="OnRefreshClicked" />
+            <Button x:Name="ActionsButton" Content="Actions" Margin="0,0,8,0" Click="OnActionsClicked" IsEnabled="False" />
+            <Button x:Name="RefreshButton" Click="OnRefreshClicked"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="Refresh" VerticalAlignment="Center" /></StackPanel></Button>
         </StackPanel>
 
         <!-- Search and Select -->
@@ -140,7 +140,7 @@
                     <!-- Panel Header -->
                     <Grid Grid.Row="0" Margin="0,0,0,8">
                         <TextBlock Text="Device Actions" FontWeight="Bold" FontSize="16" />
-                        <Button Content="✕" HorizontalAlignment="Right" Width="28" Height="28" Click="OnCloseActionsPanel" />
+                        <Button Content="" FontFamily="Segoe Fluent Icons" HorizontalAlignment="Right" Width="28" Height="28" Click="OnCloseActionsPanel" />
                     </Grid>
 
                     <!-- Selection Summary -->
@@ -161,7 +161,7 @@
                     <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
                         <StackPanel>
                             <!-- Sync Section -->
-                            <Expander Header="🔄 Sync Device" IsExpanded="True">
+                            <Expander Header="Sync Device" IsExpanded="True">
                                 <StackPanel Margin="8">
                                     <TextBlock Text="Force devices to check in with Intune and re-evaluate policies and app assignments." 
                                                TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
@@ -170,7 +170,7 @@
                             </Expander>
 
                             <!-- Restart Section -->
-                            <Expander Header="🔌 Restart Device">
+                            <Expander Header="Restart Device">
                                 <StackPanel Margin="8">
                                     <TextBlock Text="Immediately restart the selected devices. Active user sessions will be terminated." 
                                                TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
@@ -179,7 +179,7 @@
                             </Expander>
 
                             <!-- Lock Section -->
-                            <Expander Header="🔒 Lock Device">
+                            <Expander Header="Lock Device">
                                 <StackPanel Margin="8">
                                     <TextBlock Text="Remotely lock devices. Enter a PIN for supported devices." 
                                                TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
@@ -189,7 +189,7 @@
                             </Expander>
 
                             <!-- Retire Section -->
-                            <Expander Header="➖ Retire Device">
+                            <Expander Header="Retire Device">
                                 <StackPanel Margin="8">
                                     <TextBlock Text="Remove company data and unenroll the selected devices. Personal data is left intact."
                                                TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
@@ -198,7 +198,7 @@
                             </Expander>
 
                             <!-- Wipe Section -->
-                            <Expander Header="🗑 Wipe Device">
+                            <Expander Header="Wipe Device">
                                 <StackPanel Margin="8">
                                     <TextBlock Text="Factory-reset the selected devices. This cannot be undone."
                                                TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
@@ -207,7 +207,7 @@
                             </Expander>
 
                             <!-- Autopilot Reset Section -->
-                            <Expander Header="♻ Autopilot Reset">
+                            <Expander Header="Autopilot Reset">
                                 <StackPanel Margin="8">
                                     <TextBlock Text="Reimage the selected devices through Windows Autopilot: removes apps and settings, keeps enrollment, and re-provisions."
                                                TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
@@ -216,7 +216,7 @@
                             </Expander>
 
                             <!-- Delete Record Section -->
-                            <Expander Header="🧹 Delete Intune Record">
+                            <Expander Header="Delete Intune Record">
                                 <StackPanel Margin="8">
                                     <TextBlock Text="Delete the Intune device record server-side only. Nothing is sent to the device; use for stale or duplicate records."
                                                TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
@@ -225,7 +225,7 @@
                             </Expander>
 
                             <!-- App Reinstall Section -->
-                            <Expander Header="📦 Reinstall App">
+                            <Expander Header="Reinstall App">
                                 <StackPanel Margin="8">
                                     <TextBlock Text="Trigger app reinstallation by initiating a device sync." 
                                                TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
@@ -235,7 +235,7 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <TextBox x:Name="AppSearchBox" ui:ControlHelper.PlaceholderText="Search apps..." />
-                                        <Button Grid.Column="1" Content="🔍" Width="32" Margin="4,0,0,0" Click="OnSearchAppsClicked" />
+                                        <Button Grid.Column="1" Content="" FontFamily="Segoe Fluent Icons" Width="32" Margin="4,0,0,0" Click="OnSearchAppsClicked" />
                                     </Grid>
                                     <ComboBox x:Name="AppComboBox" ui:ControlHelper.PlaceholderText="Select an app..." HorizontalAlignment="Stretch" Margin="0,0,0,8" />
                                     <Button Content="Trigger Reinstall" Click="OnReinstallAppClicked" HorizontalAlignment="Stretch" />
@@ -243,7 +243,7 @@
                             </Expander>
 
                             <!-- OS Update Section -->
-                            <Expander Header="⬆️ OS Update">
+                            <Expander Header="OS Update">
                                 <StackPanel Margin="8">
                                     <TextBlock Text="Trigger OS update check. Updates are installed based on update policies." 
                                                TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
@@ -252,7 +252,7 @@
                             </Expander>
 
                             <!-- Cimian Push Section -->
-                            <Expander Header="⚡ Push Cimian Run">
+                            <Expander Header="Push Cimian Run">
                                 <StackPanel Margin="8">
                                     <TextBlock Text="Trigger an immediate Cimian managed software update on selected devices. Creates a .cimian.headless trigger file via Intune remediation. CimianWatcher picks it up within 10 seconds." 
                                                TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
