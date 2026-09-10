@@ -323,6 +323,47 @@ public class SnipeService : IDisposable
     }
     
     /// <summary>
+    /// Patch a single field on an asset. The apiField is the payload key —
+    /// a native column ("serial", "lease_usage") or a custom field's
+    /// _snipeit_* db column name.
+    /// </summary>
+    public async Task<SnipeResponse?> PatchAssetFieldAsync(int assetId, string apiField, string value)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(new Dictionary<string, string> { [apiField] = value });
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var response = await _client.PatchAsync($"/api/v1/hardware/{assetId}", content);
+            _assetCache = null;
+            return await response.Content.ReadFromJsonAsync<SnipeResponse>(_jsonOptions);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to patch asset {Id} field {Field}", assetId, apiField);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Custom field definitions — the element types and listbox options the
+    /// asset payload doesn't carry.
+    /// </summary>
+    public async Task<List<SnipeFieldDef>> GetFieldDefinitionsAsync()
+    {
+        try
+        {
+            var response = await _client.GetFromJsonAsync<SnipeListResponse<SnipeFieldDef>>(
+                "/api/v1/fields?limit=200", _jsonOptions);
+            return response?.Rows ?? new List<SnipeFieldDef>();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to fetch field definitions");
+            return new List<SnipeFieldDef>();
+        }
+    }
+
+    /// <summary>
     /// Delete an asset
     /// </summary>
     public async Task<SnipeResponse?> DeleteAssetAsync(int id)

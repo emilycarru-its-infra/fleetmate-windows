@@ -188,6 +188,9 @@ public class SnipeAssignee
     
     [JsonPropertyName("employee_number")]
     public string? EmployeeNumber { get; set; }
+
+    [JsonPropertyName("email")]
+    public string? Email { get; set; }
 }
 
 /// <summary>
@@ -197,15 +200,113 @@ public class SnipeCustomField
 {
     [JsonPropertyName("field")]
     public string Field { get; set; } = string.Empty;
-    
+
     [JsonPropertyName("value")]
     public string? Value { get; set; }
-    
+
     [JsonPropertyName("field_format")]
     public string? FieldFormat { get; set; }
-    
+
     [JsonPropertyName("element")]
     public string? Element { get; set; }
+
+    /// <summary>
+    /// Slug of the fork's field group ("inventory", "specs", "networking",
+    /// "procurement", "identity", "management"). Sent by the ECU Snipe-IT fork;
+    /// null from stock Snipe-IT, in which case the client falls back to its
+    /// mirrored copy of the seeded taxonomy.
+    /// </summary>
+    [JsonPropertyName("field_group")]
+    public string? FieldGroup { get; set; }
+}
+
+/// <summary>
+/// A Snipe-IT decimal column. Laravel's decimal cast serialises as a JSON
+/// string ("2711.00"), but an uncast column comes back as a number — accept
+/// either, and render as currency.
+/// </summary>
+[JsonConverter(typeof(SnipeMoneyConverter))]
+public class SnipeMoney
+{
+    public string? Raw { get; set; }
+
+    /// <summary>"$2,711.00" when the value parses, the raw string otherwise.</summary>
+    [JsonIgnore]
+    public string? Formatted
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(Raw)) return null;
+            return double.TryParse(Raw, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var value)
+                ? value.ToString("C2", System.Globalization.CultureInfo.CurrentCulture)
+                : Raw;
+        }
+    }
+}
+
+public class SnipeMoneyConverter : JsonConverter<SnipeMoney?>
+{
+    public override SnipeMoney? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        reader.TokenType switch
+        {
+            JsonTokenType.Null => null,
+            JsonTokenType.String => new SnipeMoney { Raw = reader.GetString() },
+            JsonTokenType.Number => new SnipeMoney { Raw = reader.GetDouble().ToString(System.Globalization.CultureInfo.InvariantCulture) },
+            _ => throw new JsonException("Unsupported SnipeMoney JSON token.")
+        };
+
+    public override void Write(Utf8JsonWriter writer, SnipeMoney? value, JsonSerializerOptions options)
+    {
+        if (value?.Raw == null) writer.WriteNullValue();
+        else writer.WriteStringValue(value.Raw);
+    }
+}
+
+/// <summary>
+/// A field that Snipe-IT sends as either a number or a string (e.g.
+/// warranty_months arrives as "36 months" once the transformer bakes in the
+/// unit). Decodes both into the string form.
+/// </summary>
+public class FlexibleStringConverter : JsonConverter<string?>
+{
+    public override string? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+        reader.TokenType switch
+        {
+            JsonTokenType.Null => null,
+            JsonTokenType.String => reader.GetString(),
+            JsonTokenType.Number => reader.GetDouble().ToString(System.Globalization.CultureInfo.InvariantCulture),
+            _ => throw new JsonException("Unsupported token for flexible string.")
+        };
+
+    public override void Write(Utf8JsonWriter writer, string? value, JsonSerializerOptions options)
+    {
+        if (value == null) writer.WriteNullValue();
+        else writer.WriteStringValue(value);
+    }
+}
+
+/// <summary>
+/// A custom field definition from GET /api/v1/fields — carries what the asset
+/// payload doesn't: the field's element type and, for listboxes, its options.
+/// </summary>
+public class SnipeFieldDef
+{
+    [JsonPropertyName("id")]
+    public int Id { get; set; }
+
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("db_column_name")]
+    public string? DbColumnName { get; set; }
+
+    /// <summary>Element type — "listbox" is the one that changes the editor.</summary>
+    [JsonPropertyName("type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("field_values_array")]
+    public List<string>? FieldValuesArray { get; set; }
 }
 
 /// <summary>

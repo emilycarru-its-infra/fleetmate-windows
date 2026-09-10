@@ -226,8 +226,8 @@ public static class SnipeCommand
             table.AddRow("Purchase Date", asset.PurchaseDate.Formatted ?? "-");
         if (!string.IsNullOrEmpty(asset.PurchaseCost))
             table.AddRow("Purchase Cost", asset.PurchaseCost);
-        if (asset.WarrantyMonths.HasValue)
-            table.AddRow("Warranty (months)", asset.WarrantyMonths.Value.ToString());
+        if (!string.IsNullOrEmpty(asset.WarrantyMonths))
+            table.AddRow("Warranty", asset.WarrantyMonths);
         if (!string.IsNullOrEmpty(asset.Eol))
             table.AddRow("EOL", asset.Eol);
         
