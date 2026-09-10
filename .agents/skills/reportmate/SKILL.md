@@ -1,18 +1,18 @@
 ---
 name: reportmate
-description: Query and administer a ReportMate fleet through the reportmate CLI — device inventory, per-device module documents, events and logs, fleet-wide module and application reports, certificate search, fleet log sweeps, ingest failures, usage-history maintenance, API keys and settings. Use when a task in this repository needs fleet or device data, when changing how FleetMate talks to ReportMate, or when reproducing what FleetMate's ReportMate integration does by hand. Triggers include which machines have X installed, device hardware/network/security/installs info, install errors across the fleet, failed check-ins, last seen, IP address of a device, app usage, expiring certificates, ReportMate API.
-compatibility: Needs the reportmate CLI on PATH (github.com/reportmate/reportmate-cli releases) and REPORTMATE_API_URL plus one credential in the environment. Raw REST fallback needs only curl.
+description: Query and administer a ReportMate fleet through the reportmateutil CLI — device inventory, per-device module documents, events and logs, fleet-wide module and application reports, certificate search, fleet log sweeps, ingest failures, usage-history maintenance, API keys and settings. Use when a task in this repository needs fleet or device data, when changing how FleetMate talks to ReportMate, or when reproducing what FleetMate's ReportMate integration does by hand. Triggers include which machines have X installed, device hardware/network/security/installs info, install errors across the fleet, failed check-ins, last seen, IP address of a device, app usage, expiring certificates, ReportMate API.
+compatibility: Needs the reportmateutil CLI on PATH (github.com/reportmate/reportmate-cli releases) and REPORTMATE_API_URL plus one credential in the environment. Raw REST fallback needs only curl.
 metadata:
   version: "2026.09.09.1928"
 ---
 
-# ReportMate through the reportmate CLI
+# ReportMate through the reportmateutil CLI
 
-ReportMate is the fleet reporting platform FleetMate reads from: device agents post module data to a REST API, and everything the fleet knows is readable under `/api/v1`. The `reportmate` CLI is the reference client for that API. It has a command for every route and prints the API's JSON unchanged, which is why FleetMate prefers it: `ReportMateService` (both platforms) routes every read through the installed CLI and falls back to its own HTTP client only when no CLI can be launched. Keeping the two in step is a matter of updating the CLI, not FleetMate.
+ReportMate is the fleet reporting platform FleetMate reads from: device agents post module data to a REST API, and everything the fleet knows is readable under `/api/v1`. The `reportmateutil` CLI is the reference client for that API. It has a command for every route and prints the API's JSON unchanged, which is why FleetMate prefers it: `ReportMateService` (both platforms) routes every read through the installed CLI and falls back to its own HTTP client only when no CLI can be launched. Keeping the two in step is a matter of updating the CLI, not FleetMate.
 
 ## Setup
 
-On a managed Mac the CLI ships inside ReportMate.app (`Contents/MacOS/reportmate`, symlinked to `/usr/local/bin/reportmate`); on a managed PC it sits in `C:\Program Files\ReportMate`. Elsewhere, install it from its GitHub release (a universal macOS binary and Windows x64/arm64 builds). Then export the target and a credential:
+On a managed Mac the CLI ships inside ReportMate.app (`Contents/MacOS/reportmate`, symlinked to `/usr/local/bin/reportmateutil`); on a managed PC it sits in `C:\Program Files\ReportMate`. Elsewhere, install it from its GitHub release (a universal macOS binary and Windows x64/arm64 builds). Then export the target and a credential:
 
 ```
 export REPORTMATE_API_URL=https://reportmate.example.edu
@@ -21,48 +21,48 @@ export REPORTMATE_API_KEY=rm_client_secret
 
 An OIDC bearer token (`REPORTMATE_TOKEN`) or the shared client passphrase (`REPORTMATE_PASSPHRASE`) also work. `REPORTMATE_CLI=/path/to/reportmate` pins FleetMate to a specific binary; set it empty to force the HTTP path.
 
-Every command takes `--output json`. Errors go to stderr with the upstream status and body, non-zero exit on failure. `reportmate <command> --help` lists every flag.
+Every command takes `--output json`. Errors go to stderr with the upstream status and body, non-zero exit on failure. `reportmateutil <command> --help` lists every flag.
 
 ## Devices
 
 ```
-reportmate devices --limit 20 --output json
+reportmateutil devices --limit 20 --output json
 ```
 
 One device, everything or one module; the cheap summary; events; the managed-software install log; one tool's log tail; app usage history:
 
 ```
-reportmate device SERIAL
+reportmateutil device SERIAL
 ```
 
 ```
-reportmate device SERIAL --module installs
+reportmateutil device SERIAL --module installs
 ```
 
 ```
-reportmate device SERIAL info
+reportmateutil device SERIAL info
 ```
 
 ```
-reportmate device SERIAL events --limit 20 --type error
+reportmateutil device SERIAL events --limit 20 --type error
 ```
 
 ```
-reportmate device SERIAL installs-log
+reportmateutil device SERIAL installs-log
 ```
 
 ```
-reportmate device SERIAL log munki
+reportmateutil device SERIAL log munki
 ```
 
 ```
-reportmate device SERIAL usage --days 90 --app Photoshop
+reportmateutil device SERIAL usage --days 90 --app Photoshop
 ```
 
 Lifecycle needs an admin-scoped credential; `delete` refuses to run without `--confirm`:
 
 ```
-reportmate device SERIAL archive
+reportmateutil device SERIAL archive
 ```
 
 ## Fleet reports
@@ -70,51 +70,51 @@ reportmate device SERIAL archive
 Any module (`hardware`, `applications`, `installs`, `network`, `security`, `management`, `inventory`, `system`, `peripherals`, `identity`, `profiles`), with `--include-archived`, `--limit`, `--offset`, and `--param k=v` for anything else. The `network` report is what FleetMate's host scanner uses to turn serial numbers into addresses in one call:
 
 ```
-reportmate module network --limit 1000
+reportmateutil module network --limit 1000
 ```
 
 ```
-reportmate module installs/full --limit 500
+reportmateutil module installs/full --limit 500
 ```
 
 Dashboard rollup, certificate search, and a fleet-wide sweep of one tool's log tails (`--summary` folds the same fault on many devices into one pattern):
 
 ```
-reportmate dashboard
+reportmateutil dashboard
 ```
 
 ```
-reportmate certificates --status expiring
+reportmateutil certificates --status expiring
 ```
 
 ```
-reportmate logs munki --summary
+reportmateutil logs munki --summary
 ```
 
 ## Applications
 
 ```
-reportmate apps list --names "Zoom,Slack" --platforms macos
+reportmateutil apps list --names "Zoom,Slack" --platforms macos
 ```
 
 ```
-reportmate apps usage --days 30 --min-hours 1
+reportmateutil apps usage --days 30 --min-hours 1
 ```
 
 ```
-reportmate apps by-device Photoshop --days 90
+reportmateutil apps by-device Photoshop --days 90
 ```
 
 ```
-reportmate apps distribution "Zoom,Slack"
+reportmateutil apps distribution "Zoom,Slack"
 ```
 
 ```
-reportmate apps filters
+reportmateutil apps filters
 ```
 
 ```
-reportmate apps collection-health
+reportmateutil apps collection-health
 ```
 
 ## Events and ingest
@@ -122,53 +122,53 @@ reportmate apps collection-health
 Recent events with filters; check-ins the API turned away (`--outcome rejected|retried|accepted|all`), which is the first stop when a device "stopped reporting"; the full payload of one event:
 
 ```
-reportmate events --limit 20 --type error --since 2026-09-01
+reportmateutil events --limit 20 --type error --since 2026-09-01
 ```
 
 ```
-reportmate events failures --hours 24
+reportmateutil events failures --hours 24
 ```
 
 ```
-reportmate events payload EVENT_ID
+reportmateutil events payload EVENT_ID
 ```
 
 ## Health, admin, settings
 
 ```
-reportmate health --ready
+reportmateutil health --ready
 ```
 
 ```
-reportmate metrics
+reportmateutil metrics
 ```
 
 API keys, usage-history maintenance (`date-anomalies`, `integrity`, `export --from --to`, `reset-baseline --before --confirm`, `cleanup`), installs maintenance (`clear-errors`, `reclassify`), database diagnostics, and org settings:
 
 ```
-reportmate api-keys create ci-reader --scope read
+reportmateutil api-keys create ci-reader --scope read
 ```
 
 ```
-reportmate admin usage-history integrity --days 7
+reportmateutil admin usage-history integrity --days 7
 ```
 
 ```
-reportmate admin installs clear-errors --days 10
+reportmateutil admin installs clear-errors --days 10
 ```
 
 ```
-reportmate admin debug-database
+reportmateutil admin debug-database
 ```
 
 ```
-reportmate settings get
+reportmateutil settings get
 ```
 
 Anything else, with any method:
 
 ```
-reportmate raw /api/v1/dashboard --param eventsLimit=10
+reportmateutil raw /api/v1/dashboard --param eventsLimit=10
 ```
 
 ## How FleetMate uses it
