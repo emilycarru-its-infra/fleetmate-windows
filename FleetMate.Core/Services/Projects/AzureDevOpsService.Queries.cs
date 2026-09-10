@@ -21,6 +21,39 @@ public partial class AzureDevOpsService
     public const int StoredQueryRowCap = 500;
 
     /// <summary>
+    /// One file's content from a git repository via the items API. The Manage
+    /// roster fetches computers.csv this way so it never depends on a local
+    /// checkout being current.
+    /// </summary>
+    public async Task<string?> GetRepositoryItemContentAsync(string project, string repository, string path)
+    {
+        if (!await SetAuthorizationAsync()) return null;
+
+        try
+        {
+            var url = $"{Uri.EscapeDataString(project)}/_apis/git/repositories/{Uri.EscapeDataString(repository)}/items"
+                + $"?path={Uri.EscapeDataString(path)}&includeContent=true&api-version=7.1";
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Accept.ParseAdd("application/json");
+            var response = await _client.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Warning("[azdo] Repository item {Project}/{Repo}{Path} → {Status}",
+                    project, repository, path, response.StatusCode);
+                return null;
+            }
+
+            using var doc = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            return doc.RootElement.TryGetProperty("content", out var content) ? content.GetString() : null;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[azdo] Failed to fetch {Project}/{Repo}{Path}", project, repository, path);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// All leaf queries under the project's "Shared Queries" folder, including
     /// those nested one folder deep, in display order.
     /// </summary>

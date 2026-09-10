@@ -533,6 +533,12 @@ public class FleetMateConfig
             config.Manage ??= new ManageConfig();
             if (key.GetValue("ManageRosterPath") is string rosterPath && !string.IsNullOrWhiteSpace(rosterPath))
                 config.Manage.RosterPath = rosterPath;
+            if (key.GetValue("ManageRosterRepoProject") is string rosterRepoProject && !string.IsNullOrWhiteSpace(rosterRepoProject))
+                config.Manage.RosterRepoProject = rosterRepoProject;
+            if (key.GetValue("ManageRosterRepo") is string rosterRepo && !string.IsNullOrWhiteSpace(rosterRepo))
+                config.Manage.RosterRepo = rosterRepo;
+            if (key.GetValue("ManageRosterRepoPath") is string rosterRepoPath && !string.IsNullOrWhiteSpace(rosterRepoPath))
+                config.Manage.RosterRepoPath = rosterRepoPath;
             if (key.GetValue("ManageCommandsPath") is string commandsPath && !string.IsNullOrWhiteSpace(commandsPath))
                 config.Manage.CommandsPath = commandsPath;
             if (key.GetValue("ManageTerminalProfile") is string terminalProfile && !string.IsNullOrWhiteSpace(terminalProfile))
@@ -585,7 +591,8 @@ public class FleetMateConfig
             "GraphTenantId", "GraphClientId", "SnipeUrl", "SnipeOidcAudience",
             "TdxBaseUrl", "TdxTicketingAppId", "DevOpsBaseUrl", "DevOpsOrganization", "DevOpsProject",
             "ReportMateUrl",
-            "ManageRosterPath", "ManageCommandsPath", "ManageTerminalProfile", "ManageRdpUser",
+            "ManageRosterPath", "ManageRosterRepoProject", "ManageRosterRepo", "ManageRosterRepoPath",
+            "ManageCommandsPath", "ManageTerminalProfile", "ManageRdpUser",
             "ManageIncludeRetired", "ManageIncludeProvisioning", "SecureShellKeyPath", "SecureShellUser"
         };
 

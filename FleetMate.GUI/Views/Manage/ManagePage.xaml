@@ -53,16 +53,27 @@
 <!-- Two-line room row, matching the macOS sidebar: section icon, title,
              and an "area · room · N machines" caption. -->
         <DataTemplate x:Key="RoomTemplate">
-            <DockPanel LastChildFill="True">
-                <ui:FontIcon DockPanel.Dock="Left" FontFamily="Segoe Fluent Icons" Glyph="{Binding Glyph}" FontSize="13"
-                             Margin="0,0,8,0" VerticalAlignment="Center"
-                             Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                <StackPanel>
-                    <TextBlock Text="{Binding Title}" FontSize="12" TextTrimming="CharacterEllipsis" />
-                    <TextBlock Text="{Binding Subtitle}" FontSize="10" TextTrimming="CharacterEllipsis"
-                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                </StackPanel>
-            </DockPanel>
+            <!-- The top border doubles as the drop indicator while a row drag
+                 hovers this row. -->
+            <Border x:Name="DropLine" BorderBrush="{DynamicResource SystemControlForegroundAccentBrush}"
+                    BorderThickness="0" Padding="0,2,0,0">
+                <DockPanel LastChildFill="True">
+                    <ui:FontIcon DockPanel.Dock="Left" FontFamily="Segoe Fluent Icons" Glyph="{Binding Glyph}" FontSize="13"
+                                 Margin="0,0,8,0" VerticalAlignment="Center"
+                                 Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    <StackPanel>
+                        <TextBlock Text="{Binding Title}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Subtitle}" FontSize="10" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
+                    <Setter TargetName="DropLine" Property="BorderThickness" Value="0,2,0,0" />
+                    <Setter TargetName="DropLine" Property="Padding" Value="0" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
         </DataTemplate>
 
         <local:MachinesCountConverter x:Key="MachinesCount" />
@@ -148,7 +159,15 @@
                                         Click="OnOpenLabPicker" ToolTip="Pick several labs to work on together" Style="{StaticResource ChromeIconButtonStyle}" />
                                 <Rectangle />
                             </DockPanel>
-                            <ListBox x:Name="LabsList" Style="{StaticResource SidebarListStyle}" ItemTemplate="{StaticResource RoomTemplate}" SelectionChanged="OnRoomSelected" />
+                            <ListBox x:Name="LabsList" Tag="Labs" Style="{StaticResource SidebarListStyle}" ItemTemplate="{StaticResource RoomTemplate}" SelectionChanged="OnRoomSelected"
+                                     AllowDrop="True" PreviewMouseLeftButtonDown="OnRoomListMouseDown" PreviewMouseMove="OnRoomListMouseMove"
+                                     DragOver="OnRoomListDragOver" DragLeave="OnRoomListDragLeave" Drop="OnRoomListDrop">
+                                <ListBox.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Reset order" Click="OnResetSectionOrder" />
+                                    </ContextMenu>
+                                </ListBox.ContextMenu>
+                            </ListBox>
 
                             <DockPanel>
                                 <TextBlock DockPanel.Dock="Left" Text="KIOSKS" Style="{StaticResource SidebarHeaderStyle}" Margin="8,10,0,4" />
@@ -158,7 +177,15 @@
                                 <Button DockPanel.Dock="Right" x:Name="KiosksToggle" Content="–" Margin="0,8,8,0" Padding="6,0" FontSize="10" Click="OnToggleSection" Tag="Kiosks" Style="{StaticResource ChromeIconButtonStyle}" />
                                 <Rectangle />
                             </DockPanel>
-                            <ListBox x:Name="KiosksList" Style="{StaticResource SidebarListStyle}" ItemTemplate="{StaticResource RoomTemplate}" SelectionChanged="OnRoomSelected" />
+                            <ListBox x:Name="KiosksList" Tag="Kiosks" Style="{StaticResource SidebarListStyle}" ItemTemplate="{StaticResource RoomTemplate}" SelectionChanged="OnRoomSelected"
+                                     AllowDrop="True" PreviewMouseLeftButtonDown="OnRoomListMouseDown" PreviewMouseMove="OnRoomListMouseMove"
+                                     DragOver="OnRoomListDragOver" DragLeave="OnRoomListDragLeave" Drop="OnRoomListDrop">
+                                <ListBox.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Reset order" Click="OnResetSectionOrder" />
+                                    </ContextMenu>
+                                </ListBox.ContextMenu>
+                            </ListBox>
 
                             <DockPanel>
                                 <TextBlock DockPanel.Dock="Left" Text="STAFF" Style="{StaticResource SidebarHeaderStyle}" Margin="8,10,0,4" />
@@ -168,7 +195,15 @@
                                 <Button DockPanel.Dock="Right" x:Name="StaffToggle" Content="–" Margin="0,8,8,0" Padding="6,0" FontSize="10" Click="OnToggleSection" Tag="Staff" Style="{StaticResource ChromeIconButtonStyle}" />
                                 <Rectangle />
                             </DockPanel>
-                            <ListBox x:Name="StaffList" Style="{StaticResource SidebarListStyle}" ItemTemplate="{StaticResource RoomTemplate}" SelectionChanged="OnRoomSelected" />
+                            <ListBox x:Name="StaffList" Tag="Staff" Style="{StaticResource SidebarListStyle}" ItemTemplate="{StaticResource RoomTemplate}" SelectionChanged="OnRoomSelected"
+                                     AllowDrop="True" PreviewMouseLeftButtonDown="OnRoomListMouseDown" PreviewMouseMove="OnRoomListMouseMove"
+                                     DragOver="OnRoomListDragOver" DragLeave="OnRoomListDragLeave" Drop="OnRoomListDrop">
+                                <ListBox.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Reset order" Click="OnResetSectionOrder" />
+                                    </ContextMenu>
+                                </ListBox.ContextMenu>
+                            </ListBox>
 
                             <DockPanel>
                                 <TextBlock DockPanel.Dock="Left" Text="FACULTY" Style="{StaticResource SidebarHeaderStyle}" Margin="8,10,0,4" />
@@ -178,7 +213,15 @@
                                 <Button DockPanel.Dock="Right" x:Name="FacultyToggle" Content="–" Margin="0,8,8,0" Padding="6,0" FontSize="10" Click="OnToggleSection" Tag="Faculty" Style="{StaticResource ChromeIconButtonStyle}" />
                                 <Rectangle />
                             </DockPanel>
-                            <ListBox x:Name="FacultyList" Style="{StaticResource SidebarListStyle}" ItemTemplate="{StaticResource RoomTemplate}" SelectionChanged="OnRoomSelected" />
+                            <ListBox x:Name="FacultyList" Tag="Faculty" Style="{StaticResource SidebarListStyle}" ItemTemplate="{StaticResource RoomTemplate}" SelectionChanged="OnRoomSelected"
+                                     AllowDrop="True" PreviewMouseLeftButtonDown="OnRoomListMouseDown" PreviewMouseMove="OnRoomListMouseMove"
+                                     DragOver="OnRoomListDragOver" DragLeave="OnRoomListDragLeave" Drop="OnRoomListDrop">
+                                <ListBox.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Reset order" Click="OnResetSectionOrder" />
+                                    </ContextMenu>
+                                </ListBox.ContextMenu>
+                            </ListBox>
 
                             <DockPanel>
                                 <TextBlock DockPanel.Dock="Left" Text="CUSTOM GROUPS" Style="{StaticResource SidebarHeaderStyle}" Margin="8,10,0,4" />

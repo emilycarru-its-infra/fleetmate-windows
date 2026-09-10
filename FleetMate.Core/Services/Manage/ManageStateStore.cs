@@ -65,6 +65,18 @@ public class ManageStateStore
 
     public void SaveSidebarState(Dictionary<string, bool> expanded) => Save(SidebarStatePath, expanded);
 
+    public string SidebarOrderPath => Path.Combine(Root, "sidebar-order.json");
+
+    /// <summary>
+    /// Manually arranged sidebar row order, per section, as ordered row ids
+    /// (the room's group key). Rows missing from a saved list keep the
+    /// roster's default order after the arranged ones.
+    /// </summary>
+    public Dictionary<string, List<string>> LoadSidebarOrder() =>
+        Load<Dictionary<string, List<string>>>(SidebarOrderPath) ?? new();
+
+    public void SaveSidebarOrder(Dictionary<string, List<string>> order) => Save(SidebarOrderPath, order);
+
     private T? Load<T>(string path) where T : class
     {
         try
