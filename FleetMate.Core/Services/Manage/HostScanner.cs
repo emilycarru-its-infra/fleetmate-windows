@@ -260,20 +260,30 @@ public class HostScanner
         var probed = new Dictionary<string, HostScanResult>();
         await RunThrottled(candidates.ToList(), async kv =>
         {
-            var sshTask = _probe.IsTcpOpenAsync(kv.Value.ip, SshPort, cancellationToken);
-            var rdpTask = _probe.IsTcpOpenAsync(kv.Value.ip, RdpPort, cancellationToken);
-            await Task.WhenAll(sshTask, rdpTask);
-            var result = new HostScanResult
-            {
-                Serial = kv.Key,
-                Ip = kv.Value.ip,
-                Source = kv.Value.source,
-                AddressCollectedAt = kv.Value.collectedAt,
-                SshOpen = sshTask.Result,
-                RdpOpen = rdpTask.Result
-            };
+            var result = await ProbeAddressAsync(kv.Key, kv.Value.ip, kv.Value.source, kv.Value.collectedAt, cancellationToken);
             lock (probed) probed[kv.Key] = result;
         }, cancellationToken);
+
+        // An inventory address can be a DHCP lease behind: when it answered on
+        // neither port, resolve the name again and probe the fresh address before
+        // calling the machine offline. The same address back keeps the inventory
+        // result; a different one replaces it.
+        var machineBySerial = computers.GroupBy(c => c.Serial).ToDictionary(g => g.Key, g => g.First());
+        var silent = probed.Values
+            .Where(r => r.Source == AddressSource.ReportMate && r.State == HostState.Unreachable
+                        && machineBySerial.TryGetValue(r.Serial, out var c) && c.HasHostname)
+            .ToList();
+        if (silent.Count > 0)
+        {
+            progress?.Report($"Re-resolving {silent.Count} silent addresses...");
+            await RunThrottled(silent, async stale =>
+            {
+                var fresh = await _probe.ResolveAsync(machineBySerial[stale.Serial].Hostname, cancellationToken);
+                if (fresh == null || fresh == stale.Ip) return;
+                var retried = await ProbeAddressAsync(stale.Serial, fresh, AddressSource.Dns, null, cancellationToken);
+                lock (probed) probed[stale.Serial] = retried;
+            }, cancellationToken);
+        }
 
         foreach (var c in computers)
             results[c.Serial] = probed.TryGetValue(c.Serial, out var r) ? r : HostScanResult.Unresolved(c.Serial);
@@ -314,6 +324,22 @@ public class HostScanner
         var rdp = _probe.IsTcpOpenAsync(ip, RdpPort, cancellationToken);
         await Task.WhenAll(ssh, rdp);
         return new HostScanResult { Serial = computer.Serial, Ip = ip, Source = source, SshOpen = ssh.Result, RdpOpen = rdp.Result };
+    }
+
+    private async Task<HostScanResult> ProbeAddressAsync(string serial, string ip, AddressSource source, DateTime? collectedAt, CancellationToken cancellationToken)
+    {
+        var ssh = _probe.IsTcpOpenAsync(ip, SshPort, cancellationToken);
+        var rdp = _probe.IsTcpOpenAsync(ip, RdpPort, cancellationToken);
+        await Task.WhenAll(ssh, rdp);
+        return new HostScanResult
+        {
+            Serial = serial,
+            Ip = ip,
+            Source = source,
+            AddressCollectedAt = collectedAt,
+            SshOpen = ssh.Result,
+            RdpOpen = rdp.Result
+        };
     }
 
     private async Task RunThrottled<T>(IReadOnlyList<T> items, Func<T, Task> body, CancellationToken cancellationToken)
