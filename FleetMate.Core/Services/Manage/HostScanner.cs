@@ -33,6 +33,13 @@ public class ReportMateDeviceDirectory : IDeviceDirectory
 {
     private readonly ReportMateService _reportMate;
 
+    /// <summary>
+    /// The fleet map answers within this or the scan moves on without it. The
+    /// shared HttpClient's own timeout is far longer; this stops the wait, not
+    /// the request, so a slow inventory cannot stall the whole scan.
+    /// </summary>
+    public static readonly TimeSpan FleetMapTimeout = TimeSpan.FromSeconds(45);
+
     public ReportMateDeviceDirectory(ReportMateService reportMate) => _reportMate = reportMate;
 
     public Task<List<Device>> GetDevicesAsync(CancellationToken cancellationToken) => _reportMate.GetDevicesAsync();
@@ -46,7 +53,7 @@ public class ReportMateDeviceDirectory : IDeviceDirectory
     public async Task<Dictionary<string, (string ip, DateTime? collectedAt)>> GetAddressesAsync(CancellationToken cancellationToken)
     {
         var map = new Dictionary<string, (string ip, DateTime? collectedAt)>();
-        foreach (var (serial, row) in await _reportMate.GetFleetAddressesAsync())
+        foreach (var (serial, row) in await _reportMate.GetFleetAddressesAsync().WaitAsync(FleetMapTimeout, cancellationToken))
         {
             if (row.PrimaryIp is { Length: > 0 } ip)
                 map[serial] = (ip, row.NetworkInfo?.CollectedAt);
