@@ -30,6 +30,11 @@ public partial class CommandResultViewModel : ObservableObject
     public string Name => Computer.FriendlyName;
     public string Hostname => Computer.Hostname;
     public string StatusLabel => Status.Label(ExitCode);
+
+    /// <summary>Why a row shows the state it does; queued needs the explanation most.</summary>
+    public string StatusTooltip => Status == CommandRunStatus.Pending
+        ? "Waiting for a free connection slot"
+        : StatusLabel;
     public bool IsTerminal => Status.IsTerminal();
     public bool HasOutput => Output.Length > 0;
     public bool HasError => ErrorOutput.Length > 0;
@@ -88,6 +93,7 @@ public partial class CommandResultViewModel : ObservableObject
     private void Raise()
     {
         OnPropertyChanged(nameof(StatusLabel));
+        OnPropertyChanged(nameof(StatusTooltip));
         OnPropertyChanged(nameof(StatusKey));
         OnPropertyChanged(nameof(IsTerminal));
         OnPropertyChanged(nameof(DurationLabel));

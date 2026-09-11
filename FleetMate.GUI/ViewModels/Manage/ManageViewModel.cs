@@ -228,7 +228,7 @@ public partial class ManageViewModel : ObservableObject
             row.LastRunStatus = CommandRunStatus.Pending;
         }
         IsRunning = true;
-        RunStatus = $"Running on {rows.Count} machines...";
+        UpdateRunProgress();
 
         var observer = new RunObserver(this, bySerial);
         try
@@ -244,16 +244,34 @@ public partial class ManageViewModel : ObservableObject
             Post(() =>
             {
                 if (_runCts == cts) { IsRunning = false; _runCts = null; }
+                // A row still open when the runner has returned will never get a
+                // result: fail it explicitly rather than leaving it queued. Only
+                // a cancelled run marks them cancelled.
+                var cancelled = cts.IsCancellationRequested;
                 foreach (var r in Results.Where(r => !r.IsTerminal))
                 {
-                    r.Status = CommandRunStatus.Cancelled;
+                    r.Status = cancelled ? CommandRunStatus.Cancelled : CommandRunStatus.Failed;
+                    if (!cancelled && r.ErrorOutput.Length == 0)
+                        r.ErrorOutput = "The run ended without a result for this machine.";
                     r.EndTime = DateTime.Now;
+                    Rows.FirstOrDefault(x => x.Serial == r.Serial)?.Let(row => row.LastRunStatus = r.Status);
                 }
                 RaiseResultCounts();
                 RunStatus = $"{ResultSuccessCount} succeeded, {ResultFailedCount} failed, {ResultOfflineCount} offline";
                 RunCompleted?.Invoke(ResultSuccessCount, ResultFailedCount, ResultOfflineCount);
             });
         }
+    }
+
+    /// <summary>Header line while a run is live: done, running, and queued counts.</summary>
+    private void UpdateRunProgress()
+    {
+        var done = Results.Count(r => r.IsTerminal);
+        var running = Results.Count(r => r.Status == CommandRunStatus.Running);
+        var queued = Results.Count(r => r.Status == CommandRunStatus.Pending);
+        RunStatus = queued > 0
+            ? $"{done}/{Results.Count} done · {running} running · {queued} queued"
+            : $"{done}/{Results.Count} done · {running} running";
     }
 
     public void KillRun()
@@ -299,6 +317,7 @@ public partial class ManageViewModel : ObservableObject
             if (!_results.TryGetValue(serial, out var r)) return;
             r.Status = CommandRunStatus.Running;
             Row(serial)?.Let(row => row.LastRunStatus = CommandRunStatus.Running);
+            _vm.UpdateRunProgress();
         });
 
         public void Output(string serial, string chunk) => _vm.Post(() =>
@@ -316,7 +335,7 @@ public partial class ManageViewModel : ObservableObject
             r.Status = status;
             Row(serial)?.Let(row => row.LastRunStatus = status);
             _vm.RaiseResultCounts();
-            _vm.RunStatus = $"{_vm.Results.Count(x => x.IsTerminal)}/{_vm.Results.Count} done";
+            _vm.UpdateRunProgress();
         });
 
         private MachineRowViewModel? Row(string serial) => _vm.Rows.FirstOrDefault(x => x.Serial == serial);
@@ -463,15 +482,20 @@ public partial class ManageViewModel : ObservableObject
 
         IsScanning = true;
         ScanStatus = "Scanning...";
-        var progress = new Progress<string>(s => Post(() => ScanStatus = s));
+        // Every completion path checks that this scan is still the current one
+        // (_scanCts is replaced or nulled when a scan is superseded or cancelled),
+        // so a scan the view has moved past cannot flip IsScanning or write
+        // results over the scan that replaced it.
+        var progress = new Progress<string>(s => Post(() => { if (_scanCts == cts) ScanStatus = s; }));
 
         try
         {
             var (results, summary) = await _scanner.ScanAsync(computers, storedAddresses, progress, cts.Token);
-            if (cts.IsCancellationRequested) return;
+            if (_scanCts != cts || cts.IsCancellationRequested) return;
 
             Post(() =>
             {
+                if (_scanCts != cts) return;
                 foreach (var row in Rows)
                 {
                     if (results.TryGetValue(row.Serial, out var r)) row.Scan = r;
@@ -485,16 +509,16 @@ public partial class ManageViewModel : ObservableObject
                 OnPropertyChanged(nameof(ScanModeLabel));
             });
 
-            if (CanProbe) await ProbeAllAsync();
+            if (_scanCts == cts && CanProbe) await ProbeAllAsync();
         }
         catch (OperationCanceledException)
         {
-            Post(() => { IsScanning = false; ScanStatus = ""; });
+            Post(() => { if (_scanCts != cts) return; IsScanning = false; ScanStatus = ""; });
         }
         catch (Exception ex)
         {
             Log.Warning(ex, "Scan failed");
-            Post(() => { IsScanning = false; ScanStatus = $"Scan failed: {ex.Message}"; ScanMode = ScanMode.Limited; });
+            Post(() => { if (_scanCts != cts) return; IsScanning = false; ScanStatus = $"Scan failed: {ex.Message}"; ScanMode = ScanMode.Limited; });
         }
     }
 
@@ -564,6 +588,7 @@ public partial class ManageViewModel : ObservableObject
                 rows.Select(r => (r.Computer, r.Ip)),
                 outcome => Post(() =>
                 {
+                    if (_probeCts != cts) return;
                     var row = Rows.FirstOrDefault(r => r.Serial == outcome.Serial);
                     if (row == null) return;
                     row.IsProbing = false;
@@ -580,8 +605,12 @@ public partial class ManageViewModel : ObservableObject
         }
         finally
         {
+            // Only the current probe may clear the flags: a superseded probe's
+            // cleanup would otherwise stomp the run that replaced it. CancelProbe
+            // has already cleared the rows the superseded probe was working on.
             Post(() =>
             {
+                if (_probeCts != cts) return;
                 foreach (var r in rows) r.IsProbing = false;
                 IsProbing = false;
             });
@@ -593,6 +622,7 @@ public partial class ManageViewModel : ObservableObject
         _probeCts?.Cancel();
         _probeCts = null;
         IsProbing = false;
+        foreach (var r in Rows) r.IsProbing = false;
     }
 
     // ── Sessions ─────────────────────────────────────────────────────────
