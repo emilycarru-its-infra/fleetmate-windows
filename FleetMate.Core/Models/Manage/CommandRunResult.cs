@@ -19,7 +19,7 @@ public static class CommandRunStatusExtensions
 
     public static string Label(this CommandRunStatus status, int? exitCode = null) => status switch
     {
-        CommandRunStatus.Pending => "Pending",
+        CommandRunStatus.Pending => "Queued",
         CommandRunStatus.Running => "Running",
         CommandRunStatus.Success => "Success",
         CommandRunStatus.Failed => exitCode.HasValue ? $"Exit {exitCode}" : "Failed",

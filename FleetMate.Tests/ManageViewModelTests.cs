@@ -39,7 +39,9 @@ public class ManageViewModelTests : IDisposable
     {
         public Dictionary<string, string> Dns { get; } = new(StringComparer.OrdinalIgnoreCase);
         public HashSet<string> Open { get; } = new();
-        public Task<string?> ResolveAsync(string hostname, CancellationToken ct) => Task.FromResult(Dns.TryGetValue(hostname, out var ip) ? ip : null);
+        public Func<string, Task<string?>>? ResolveOverride;
+        public Task<string?> ResolveAsync(string hostname, CancellationToken ct) =>
+            ResolveOverride?.Invoke(hostname) ?? Task.FromResult(Dns.TryGetValue(hostname, out var ip) ? ip : null);
         public Task<bool> IsTcpOpenAsync(string ip, int port, CancellationToken ct) => Task.FromResult(Open.Contains(ip));
     }
 
@@ -241,6 +243,43 @@ public class ManageViewModelTests : IDisposable
         Assert.Equal("10.0.0.1", group.Devices[0].Ip);
         var reloaded = new ManageStateStore(Path.Combine(_root, "state")).LoadCustomGroups();
         Assert.Equal("10.0.0.1", reloaded[0].Devices[0].Ip);
+    }
+
+    [Fact]
+    public async Task SupersededScan_CannotStompTheScanThatReplacedIt()
+    {
+        var (vm, probe, _) = Build(withSsh: false);
+        probe.Dns["LAB-01"] = "10.0.0.1";
+        probe.Dns["LAB-02"] = "10.0.0.2";
+        await vm.SelectRoomAsync(vm.Roster.Labs[0]);
+
+        var firstGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        probe.ResolveOverride = _ => firstGate.Task;
+        var first = vm.ScanAsync(null);
+
+        var secondGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        probe.ResolveOverride = _ => secondGate.Task;
+        var second = vm.ScanAsync(null);
+        Assert.True(vm.IsScanning);
+
+        firstGate.SetResult("10.0.0.1");
+        await first;
+        Assert.True(vm.IsScanning);
+
+        probe.ResolveOverride = null;
+        secondGate.SetResult("10.0.0.1");
+        await second;
+        Assert.False(vm.IsScanning);
+    }
+
+    [Fact]
+    public void WaitingRows_AreLabelledQueuedWithAnExplanation()
+    {
+        Assert.Equal("Queued", CommandRunStatus.Pending.Label());
+        var result = new CommandResultViewModel(new RosterComputer { Serial = "S1", Hostname = "LAB-01" }, "10.0.0.1");
+        Assert.Equal("Waiting for a free connection slot", result.StatusTooltip);
+        result.Status = CommandRunStatus.Success;
+        Assert.Equal("Success", result.StatusTooltip);
     }
 
     [Fact]
