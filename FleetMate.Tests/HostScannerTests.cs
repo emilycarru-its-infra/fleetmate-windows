@@ -18,11 +18,18 @@ public class HostScannerTests
         public Dictionary<string, (string? ip, DateTime? at)> Addresses { get; } = new();
         public int AddressCalls;
         public bool Throw;
+        public bool FleetMapTimesOut;
 
         public Task<List<Device>> GetDevicesAsync(CancellationToken cancellationToken)
         {
             if (Throw) throw new HttpRequestException("inventory down");
             return Task.FromResult(Devices);
+        }
+
+        public Task<Dictionary<string, (string ip, DateTime? collectedAt)>> GetAddressesAsync(CancellationToken cancellationToken)
+        {
+            if (FleetMapTimesOut) throw new TimeoutException("fleet map slow");
+            return Task.FromResult(new Dictionary<string, (string ip, DateTime? collectedAt)>());
         }
 
         public Task<(string? ip, DateTime? collectedAt)> GetAddressAsync(string serial, CancellationToken cancellationToken)
@@ -179,6 +186,23 @@ public class HostScannerTests
 
         Assert.Equal("10.0.0.1", results["S1"].Ip);
         Assert.Equal(AddressSource.ReportMate, results["S1"].Source);
+    }
+
+    [Fact]
+    public async Task FleetMapTimeout_FallsBackToPerDeviceLookups()
+    {
+        var dir = new FakeDirectory { FleetMapTimesOut = true };
+        dir.Devices.Add(new Device { SerialNumber = "S1", LastSeen = DateTime.UtcNow });
+        dir.Addresses["S1"] = ("10.0.0.1", DateTime.UtcNow);
+        var probe = new FakeProbe();
+        probe.OpenSsh.Add("10.0.0.1");
+
+        var (results, summary) = await new HostScanner(dir, probe).ScanAsync(new[] { Machine("S1", "HOST-1") }, null, null, CancellationToken.None);
+
+        Assert.Equal(HostState.Online, results["S1"].State);
+        Assert.Equal(AddressSource.ReportMate, results["S1"].Source);
+        Assert.Equal(1, dir.AddressCalls);
+        Assert.Equal(ScanMode.ReportMate, summary.Mode);
     }
 
     [Fact]
