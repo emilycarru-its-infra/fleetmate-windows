@@ -182,6 +182,37 @@ public class HostScannerTests
     }
 
     [Fact]
+    public async Task SilentInventoryAddress_IsReResolvedByName()
+    {
+        var dir = new FakeDirectory();
+        dir.Devices.Add(new Device { SerialNumber = "S1", IpAddress = "10.0.0.1", LastSeen = DateTime.UtcNow });
+        var probe = new FakeProbe();
+        probe.Dns["HOST-1"] = "10.0.0.50";
+        probe.OpenSsh.Add("10.0.0.50");
+
+        var (results, _) = await new HostScanner(dir, probe).ScanAsync(new[] { Machine("S1", "HOST-1") }, null, null, CancellationToken.None);
+
+        Assert.Equal("10.0.0.50", results["S1"].Ip);
+        Assert.Equal(AddressSource.Dns, results["S1"].Source);
+        Assert.Equal(HostState.Online, results["S1"].State);
+    }
+
+    [Fact]
+    public async Task SilentInventoryAddress_SameResolutionKeepsTheInventoryResult()
+    {
+        var dir = new FakeDirectory();
+        dir.Devices.Add(new Device { SerialNumber = "S1", IpAddress = "10.0.0.1", LastSeen = DateTime.UtcNow });
+        var probe = new FakeProbe();
+        probe.Dns["HOST-1"] = "10.0.0.1";
+
+        var (results, _) = await new HostScanner(dir, probe).ScanAsync(new[] { Machine("S1", "HOST-1") }, null, null, CancellationToken.None);
+
+        Assert.Equal("10.0.0.1", results["S1"].Ip);
+        Assert.Equal(AddressSource.ReportMate, results["S1"].Source);
+        Assert.Equal(HostState.Unreachable, results["S1"].State);
+    }
+
+    [Fact]
     public async Task Cancellation_StopsTheScan()
     {
         var dir = new FakeDirectory();
