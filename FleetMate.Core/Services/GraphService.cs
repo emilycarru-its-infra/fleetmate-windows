@@ -2093,6 +2093,18 @@ if ($svc -and $svc.Status -ne 'Running') {
         if (!string.IsNullOrWhiteSpace(name))
             foreach (var d in await GetEntraDevicesByNameAsync(name!)) Add(d);
 
+        // A machine that already lost its Intune record has no name to search by,
+        // yet that is exactly when a stale twin blocks the next OOBE. The objects
+        // found through the AutoPilot identity still carry the names the machine
+        // has gone by, so search those as well.
+        var knownNames = state.EntraDevices
+            .Select(d => d.DisplayName)
+            .Where(n => !string.IsNullOrWhiteSpace(n) && !string.Equals(n, name, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        foreach (var known in knownNames)
+            foreach (var d in await GetEntraDevicesByNameAsync(known!)) Add(d);
+
         if (Elevation.FailedSince(before))
         {
             state.LookupFailed = true;
@@ -2120,6 +2132,80 @@ if ($svc -and $svc.Status -ne 'Running') {
         /// is false — otherwise it just means we never got to look.
         /// </summary>
         public bool LookupFailed { get; set; }
+
+        /// <summary>
+        /// Deleted objects that were synced from on-prem Active Directory. Entra
+        /// Connect re-creates each of these on its next cycle for as long as the
+        /// computer object still exists in a synced OU, so the operator has to
+        /// retire that object too or the twin comes straight back.
+        /// </summary>
+        public List<string> ResyncRisk { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Entra device objects for a machine that are bound to neither its AutoPilot
+    /// identity nor its live Intune record: hybrid (ServerAd) and registered
+    /// (Workplace) leftovers from before the machine left the domain, and
+    /// duplicate AzureAd objects from earlier joins.
+    ///
+    /// These are never the enrollment the device returns to, so removing them is
+    /// safe in every reset mode, including AutoPilot Reset, which keeps the bound
+    /// records. Left in place they fail OOBE and wedge the Enrollment Status Page.
+    /// </summary>
+    public static List<EntraDevice> StaleEntraTwins(DeviceRecordState state)
+    {
+        var bound = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrEmpty(state.Autopilot?.AzureActiveDirectoryDeviceId))
+            bound.Add(state.Autopilot!.AzureActiveDirectoryDeviceId!);
+        if (!string.IsNullOrEmpty(state.Intune?.AzureAdDeviceId))
+            bound.Add(state.Intune!.AzureAdDeviceId!);
+
+        // With nothing bound there is no way to tell the live object from a stale
+        // one, so nothing counts as a twin; the full cleanup handles that case.
+        if (bound.Count == 0) return new List<EntraDevice>();
+
+        return state.EntraDevices
+            .Where(d => string.IsNullOrEmpty(d.DeviceId) || !bound.Contains(d.DeviceId!))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Delete only the stale Entra twins, keeping the AutoPilot identity, the
+    /// Intune record and the Entra object bound to them. Uses the state read
+    /// before any reset was sent, because a reset renames the bound object and
+    /// the old name is what finds the twins.
+    /// </summary>
+    public async Task<RecordCleanupResult> CleanStaleEntraTwinsAsync(DeviceRecordState state, bool confirmed = false)
+    {
+        var result = new RecordCleanupResult { Serial = state.Serial, RetainedAutopilotId = state.Autopilot?.Id };
+
+        if (!confirmed)
+        {
+            result.Errors.Add("Confirmation required: this destructive action must be invoked with confirmed: true.");
+            return result;
+        }
+        if (state.LookupFailed)
+        {
+            result.LookupFailed = true;
+            result.Errors.Add($"Could not read the current records for {state.Serial}, so nothing was changed.");
+            return result;
+        }
+
+        foreach (var twin in StaleEntraTwins(state))
+        {
+            var deleted = await DeleteEntraDeviceAsync(twin.Id, confirmed: true);
+            var label = $"stale Entra twin {twin.Id} ({twin.DisplayName}, {twin.TrustType ?? "unknown trust"})";
+            if (deleted.Success)
+            {
+                result.Deleted.Add(label);
+                if (string.Equals(twin.TrustType, "ServerAd", StringComparison.OrdinalIgnoreCase))
+                    result.ResyncRisk.Add(twin.DisplayName ?? twin.Id);
+            }
+            else result.Errors.Add($"{label}: {deleted.Message}");
+        }
+
+        result.Success = result.Errors.Count == 0;
+        return result;
     }
 
     /// <summary>
@@ -2174,7 +2260,12 @@ if ($svc -and $svc.Status -ne 'Running') {
         foreach (var entra in state.EntraDevices)
         {
             var deleted = await DeleteEntraDeviceAsync(entra.Id, confirmed: true);
-            if (deleted.Success) result.Deleted.Add($"Entra device {entra.Id} ({entra.DisplayName})");
+            if (deleted.Success)
+            {
+                result.Deleted.Add($"Entra device {entra.Id} ({entra.DisplayName}, {entra.TrustType ?? "unknown trust"})");
+                if (string.Equals(entra.TrustType, "ServerAd", StringComparison.OrdinalIgnoreCase))
+                    result.ResyncRisk.Add(entra.DisplayName ?? entra.Id);
+            }
             else result.Errors.Add($"Entra device {entra.Id}: {deleted.Message}");
         }
 
