@@ -40,7 +40,7 @@ public class WipeCommandTests
     public void PlanDoesNotAnnounceAResetNothingCanReceive()
     {
         var plan = WipeCommand.PlanSummary(
-            [Orphan("SERIAL0001")], "autopilot-reset", cleanup: false, recordsOnly: false);
+            [Orphan("SERIAL0001")], "autopilot-reset", twinsOnly: true, recordsOnly: false);
 
         Assert.Contains("no reset can be sent", plan);
         Assert.DoesNotContain("The AutoPilot identity is always kept", plan);
@@ -50,7 +50,7 @@ public class WipeCommandTests
     public void PlanSaysCleanupStillRunsForAnOrphanBatch()
     {
         var plan = WipeCommand.PlanSummary(
-            [Orphan("SERIAL0001")], "autopilot-reset", cleanup: true, recordsOnly: false);
+            [Orphan("SERIAL0001")], "autopilot-reset", twinsOnly: true, recordsOnly: false);
 
         Assert.Contains("no reset can be sent", plan);
         Assert.Contains("Stale Intune and Entra records will still be deleted", plan);
@@ -61,7 +61,7 @@ public class WipeCommandTests
     {
         var plan = WipeCommand.PlanSummary(
             [Enrolled("SERIAL0001"), Orphan("SERIAL0002"), Orphan("SERIAL0003")],
-            "autopilot-reset", cleanup: false, recordsOnly: false);
+            "autopilot-reset", twinsOnly: true, recordsOnly: false);
 
         Assert.Contains("for 1 of 3 device(s)", plan);
     }
@@ -70,9 +70,64 @@ public class WipeCommandTests
     public void RecordsOnlyPlanSendsNoReset()
     {
         var plan = WipeCommand.PlanSummary(
-            [Enrolled("SERIAL0001")], "autopilot-reset", cleanup: false, recordsOnly: true);
+            [Enrolled("SERIAL0001")], "autopilot-reset", twinsOnly: true, recordsOnly: true);
 
         Assert.Contains("no reset is sent", plan);
+    }
+
+    [Fact]
+    public void CleanupIsAlwaysPartOfTheResetPlan()
+    {
+        var reset = WipeCommand.PlanSummary([Enrolled("SERIAL0001")], "autopilot-reset", twinsOnly: true, recordsOnly: false);
+        var factory = WipeCommand.PlanSummary([Enrolled("SERIAL0001")], "factory", twinsOnly: false, recordsOnly: false);
+
+        Assert.Contains("delete stale Entra twins", reset);
+        Assert.Contains("enrollment it returns to is kept", reset);
+        Assert.Contains("delete stale Intune and Entra records", factory);
+    }
+
+    private const string AutopilotBound = "11111111-1111-1111-1111-111111111111";
+    private const string IntuneBound = "22222222-2222-2222-2222-222222222222";
+    private const string StaleHybrid = "33333333-3333-3333-3333-333333333333";
+
+    [Fact]
+    public void StaleTwinsExcludeEveryBoundObject()
+    {
+        var state = new GraphService.DeviceRecordState
+        {
+            Serial = "SERIAL0001",
+            Autopilot = new AutopilotDevice { AzureActiveDirectoryDeviceId = AutopilotBound },
+            Intune = new IntuneDevice { Id = "00000000-0000-0000-0000-000000000009", AzureAdDeviceId = IntuneBound },
+            EntraDevices =
+            {
+                new EntraDevice { Id = "obj-1", DeviceId = AutopilotBound, TrustType = "AzureAd" },
+                new EntraDevice { Id = "obj-2", DeviceId = IntuneBound, TrustType = "AzureAd" },
+                new EntraDevice { Id = "obj-3", DeviceId = StaleHybrid, TrustType = "ServerAd" },
+            },
+        };
+
+        var twins = GraphService.StaleEntraTwins(state);
+
+        Assert.Single(twins);
+        Assert.Equal("obj-3", twins[0].Id);
+    }
+
+    [Fact]
+    public void NoTwinsWhenNothingIsBound()
+    {
+        // Without an AutoPilot identity or an Intune binding there is no way to
+        // tell the live object from a stale one, so nothing may be treated as a twin.
+        var state = new GraphService.DeviceRecordState
+        {
+            Serial = "SERIAL0001",
+            EntraDevices =
+            {
+                new EntraDevice { Id = "obj-1", DeviceId = AutopilotBound, TrustType = "AzureAd" },
+                new EntraDevice { Id = "obj-2", DeviceId = StaleHybrid, TrustType = "ServerAd" },
+            },
+        };
+
+        Assert.Empty(GraphService.StaleEntraTwins(state));
     }
 
     [Fact]
