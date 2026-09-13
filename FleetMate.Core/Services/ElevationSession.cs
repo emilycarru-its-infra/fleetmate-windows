@@ -147,6 +147,36 @@ public sealed class ElevationSession
         }
     }
 
+    /// <summary>
+    /// The session container's state for <paramref name="domain"/> — "Running",
+    /// "Terminated", etc. — or null when no session exists. Read-only.
+    /// </summary>
+    public async Task<string?> GetSessionStateAsync(GraphDomain domain)
+    {
+        EnsureConfigured();
+        var show = await RunAzAsync("container", "show", "--resource-group", _config.ResourceGroup!, "--name", SessionName(domain), "--query", "instanceView.state", "-o", "tsv");
+        var state = show.Out.Trim();
+        return show.Code == 0 && state.Length > 0 ? state : null;
+    }
+
+    /// <summary>
+    /// Delete the session container for <paramref name="domain"/> before its TTL,
+    /// so the identity's access ends when the operator is done rather than hours
+    /// later. Returns false when there was no session to stop.
+    /// </summary>
+    public async Task<bool> StopSessionAsync(GraphDomain domain)
+    {
+        EnsureConfigured();
+        if (await GetSessionStateAsync(domain) is null) return false;
+        var delete = await RunAzAsync("container", "delete", "--resource-group", _config.ResourceGroup!, "--name", SessionName(domain), "--yes", "-o", "none");
+        if (delete.Code != 0)
+            throw new ElevationException($"Failed to stop elevation session: {(string.IsNullOrEmpty(delete.Err) ? delete.Out : delete.Err)}");
+        return true;
+    }
+
+    /// <summary>The managed identity a domain's session runs as, e.g. DevOps-Security.</summary>
+    public string IdentityNameFor(GraphDomain domain) => IdentityName(domain);
+
     // MARK: exec (handshake via az, raw websocket native)
 
     /// <summary>
@@ -244,7 +274,12 @@ public sealed class ElevationSession
         // injected newlines are stripped before decoding on our side.
         // gzip before base64: Graph JSON compresses ~10x, and every byte saved
         // is a byte the flaky PTY stream cannot drop.
-        await SendText($"printf '\\n<<<AZE_BEGIN>>>\\n'; ( {command} ) | gzip -c | base64 -w 400; printf '\\n<<<AZE_END:%d>>>\\n' \"${{PIPESTATUS[0]}}\"; exit\n");
+        // Mirrors the Mac client: on a non-zero exit the command's stderr is appended
+        // to the payload. Left on the PTY it lands between the markers as raw text,
+        // breaks the base64, and a plain Graph 403 is misreported as a corrupted
+        // stream and retried five times. On success stderr is dropped, so az
+        // warnings never pollute the JSON.
+        await SendText($"printf '\\n<<<AZE_BEGIN>>>\\n'; {{ ( {command} ) 2>/tmp/aze_err; c=$?; [ \"$c\" -ne 0 ] && cat /tmp/aze_err; exit $c; }} | gzip -c | base64 -w 400; printf '\\n<<<AZE_END:%d>>>\\n' \"${{PIPESTATUS[0]}}\"; exit\n");
 
         var sb = new StringBuilder();
         var buffer = new byte[8192];
