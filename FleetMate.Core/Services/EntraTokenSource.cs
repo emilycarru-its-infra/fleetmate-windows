@@ -189,9 +189,27 @@ public sealed class EntraTokenSource
     {
         var trimmed = audience.Trim();
 
-        // Already a scope — either .default or a named permission.
+        // Already a resource-wide scope.
         if (trimmed.EndsWith("/.default", StringComparison.OrdinalIgnoreCase))
             return trimmed;
+
+        // Already a *named* permission, e.g. "https://graph.microsoft.com/User.Read".
+        // This branch used to be missing despite the comment claiming otherwise, so a
+        // caller asking for one delegated permission silently got
+        // ".../User.Read/.default" — not a scope Entra recognises, which surfaces as a
+        // token-acquisition failure rather than anything pointing at the real cause.
+        // A named permission is the last path segment containing a dot with no
+        // trailing slash; a bare audience (a GUID, "api://…", "https://graph.microsoft.com")
+        // never looks like that.
+        var lastSlash = trimmed.LastIndexOf('/');
+        if (lastSlash > 0 && lastSlash < trimmed.Length - 1)
+        {
+            var lastSegment = trimmed[(lastSlash + 1)..];
+            // Exclude host-only audiences: "graph.microsoft.com" has dots but follows "//".
+            var isHostSegment = lastSlash >= 1 && trimmed[lastSlash - 1] == '/';
+            if (!isHostSegment && lastSegment.Contains('.') && !lastSegment.Contains(' '))
+                return trimmed;
+        }
 
         return $"{trimmed.TrimEnd('/')}/.default";
     }

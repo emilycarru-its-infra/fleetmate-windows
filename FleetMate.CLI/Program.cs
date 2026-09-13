@@ -176,6 +176,14 @@ class Program
             // Entra ID (Azure AD) user/group management
             rootCommand.AddCommand(EntraCommand.Create(graphService, reportMate));
 
+            // PIM — the security elevation domain. Runs as the signed-in operator
+            // rather than a managed identity: a role activation is a statement about
+            // a user, so a service principal cannot make it on their behalf.
+            var pimService = EntraTokenSource.Shared is { } tokenSource
+                ? new PimService(tokenSource)
+                : null;
+            rootCommand.AddCommand(PimCommand.Create(pimService));
+
             // TeamDynamix (Ticketing)
             rootCommand.AddCommand(TdxCommand.Create(tdxService, reportMate));
 

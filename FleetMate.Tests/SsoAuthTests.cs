@@ -150,6 +150,30 @@ public class EntraTokenSourceTests
         const string scope = "api://reportmate/.default";
         Assert.Equal(scope, EntraTokenSource.ToScope(scope));
     }
+
+    // A caller asking for ONE delegated permission must get exactly that. Appending
+    // "/.default" to it produces a scope Entra does not recognise, and the failure
+    // surfaces as "no cached credential" rather than anything naming the real cause.
+    // PIM needs this: RoleManagement.Read.Directory is not in the default consented
+    // set, so a .default token silently lacks it.
+    [Theory]
+    [InlineData("https://graph.microsoft.com/User.Read")]
+    [InlineData("https://graph.microsoft.com/RoleManagement.Read.Directory")]
+    [InlineData("https://graph.microsoft.com/RoleAssignmentSchedule.ReadWrite.Directory")]
+    public void ToScope_LeavesANamedPermissionAlone(string scope)
+    {
+        Assert.Equal(scope, EntraTokenSource.ToScope(scope));
+    }
+
+    // The named-permission branch must not swallow a bare host audience: it has dots
+    // too, and turning it into a scope is the whole point of the method.
+    [Theory]
+    [InlineData("https://graph.microsoft.com", "https://graph.microsoft.com/.default")]
+    [InlineData("https://management.azure.com", "https://management.azure.com/.default")]
+    public void ToScope_StillQualifiesABareHostAudience(string audience, string expected)
+    {
+        Assert.Equal(expected, EntraTokenSource.ToScope(audience));
+    }
 }
 
 public class SecretlessConfigTests
