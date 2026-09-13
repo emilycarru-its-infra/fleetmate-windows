@@ -184,6 +184,10 @@ class Program
                 : null;
             rootCommand.AddCommand(PimCommand.Create(pimService));
 
+            // Explicit-domain elevation: every domain, including security, runs as
+            // its DevOps-<Domain> managed identity inside an elevation session.
+            rootCommand.AddCommand(ElevateCommand.Create(config.Elevation));
+
             // TeamDynamix (Ticketing)
             rootCommand.AddCommand(TdxCommand.Create(tdxService, reportMate));
 
@@ -205,7 +209,10 @@ class Program
             graphService?.Dispose();
             tdxService?.Dispose();
 
-            return result;
+            // Handlers report failure through Environment.ExitCode; InvokeAsync
+            // returns 0 for a handler that completed, so without this every failed
+            // command exited successfully.
+            return result != 0 ? result : Environment.ExitCode;
         }
         catch (Exception ex)
         {
