@@ -8,7 +8,7 @@ using FleetMate.Core.Config;
 namespace FleetMate.Core.Services;
 
 /// <summary>Elevation domain → backing managed identity. Mirrors the aze tool.</summary>
-public enum GraphDomain { Terraform, Devices, Identity, Systems, Cloud }
+public enum GraphDomain { Terraform, Devices, Identity, Systems, Cloud, Security }
 
 public static class GraphDomainExtensions
 {
@@ -19,6 +19,7 @@ public static class GraphDomainExtensions
         GraphDomain.Identity => "identity",
         GraphDomain.Systems => "systems",
         GraphDomain.Cloud => "cloud",
+        GraphDomain.Security => "security",
         _ => "devices"
     };
 
@@ -31,6 +32,7 @@ public static class GraphDomainExtensions
         GraphDomain.Identity => "Identity",
         GraphDomain.Systems => "Systems",
         GraphDomain.Cloud => "Cloud",
+        GraphDomain.Security => "Security",
         _ => "Devices"
     };
 }
