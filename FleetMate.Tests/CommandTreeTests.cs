@@ -124,6 +124,16 @@ public class CommandTreeTests
     }
 
     [Fact]
+    public void IntuneUpdatesCommand_ParsesBuildCoverageOptions()
+    {
+        var root = BuildRoot();
+
+        var result = root.Parse("intune updates --since 2026-09-14 --build 26100.9457 26200.9457 --list --json");
+
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
     public void UnknownCommand_ProducesParseError()
     {
         var root = BuildRoot();

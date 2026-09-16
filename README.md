@@ -174,6 +174,22 @@ fleetmate entra groups
 fleetmate entra check-group jane.doe@example.com "IT Staff"
 ```
 
+Summarize recently synced Windows devices by the OS build Intune reports:
+
+```powershell
+fleetmate intune updates --since 2026-09-14
+```
+
+Measure coverage for one or more known builds and list the matching devices:
+
+```powershell
+fleetmate intune updates --since 2026-09-14 --build 26100.9457 26200.9457 --list
+```
+
+Add `--json` for automation. This command reports Intune's observed OS builds;
+it does not infer KB identities. Use the release's authoritative build mapping
+when choosing `--build` values.
+
 ### Azure DevOps
 
 Work item management:

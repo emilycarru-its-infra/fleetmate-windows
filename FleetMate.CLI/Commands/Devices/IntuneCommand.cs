@@ -31,6 +31,7 @@ public static class IntuneCommand
         command.AddCommand(CreateDevicesCommand(graphService));
         command.AddCommand(CreateDeviceCommand(graphService));
         command.AddCommand(CreateComplianceCommand(graphService));
+        command.AddCommand(CreateUpdatesCommand(graphService));
         command.AddCommand(CreateSyncCommand(graphService));
         command.AddCommand(CreateRebootCommand(graphService));
         command.AddCommand(CreateLockCommand(graphService));
@@ -468,6 +469,120 @@ public static class IntuneCommand
         }, filterOption, searchOption, nonCompliantOption, limitOption, jsonOption);
 
         return command;
+    }
+
+    private static Command CreateUpdatesCommand(GraphService? graphService)
+    {
+        var command = new Command("updates", "Summarize observed Windows OS builds across Intune devices");
+        var sinceOption = new Option<string>(
+            aliases: ["--since"],
+            getDefaultValue: () => DateTime.UtcNow.AddDays(-7).ToString("yyyy-MM-dd"),
+            description: "Only include devices synced on or after this UTC date/time (default: 7 days ago)");
+        var buildOption = new Option<string[]?>(
+            aliases: ["--build", "-b"],
+            description: "Builds to measure, such as 26100.9457 (repeatable)")
+        {
+            AllowMultipleArgumentsPerToken = true
+        };
+        var listOption = new Option<bool>(
+            aliases: ["--list"],
+            description: "List devices on the selected builds (all builds when --build is omitted)");
+        var limitOption = new Option<int>(
+            aliases: ["--limit", "-n"],
+            getDefaultValue: () => 5000,
+            description: "Maximum Intune devices to read (default: 5000)");
+        var jsonOption = new Option<bool>(aliases: ["--json"], description: "Output as JSON");
+
+        command.AddOption(sinceOption);
+        command.AddOption(buildOption);
+        command.AddOption(listOption);
+        command.AddOption(limitOption);
+        command.AddOption(jsonOption);
+
+        command.SetHandler(async (context) =>
+        {
+            if (!EnsureConfigured(graphService))
+            {
+                context.ExitCode = 1;
+                return;
+            }
+
+            var sinceRaw = context.ParseResult.GetValueForOption(sinceOption)!;
+            if (!DateTime.TryParse(sinceRaw, null,
+                    System.Globalization.DateTimeStyles.AssumeUniversal |
+                    System.Globalization.DateTimeStyles.AdjustToUniversal,
+                    out var since))
+            {
+                AnsiConsole.MarkupLine($"[red]Invalid --since value:[/] {Markup.Escape(sinceRaw)}");
+                context.ExitCode = 2;
+                return;
+            }
+
+            var builds = context.ParseResult.GetValueForOption(buildOption) ?? [];
+            var list = context.ParseResult.GetValueForOption(listOption);
+            var limit = context.ParseResult.GetValueForOption(limitOption);
+            var json = context.ParseResult.GetValueForOption(jsonOption);
+            List<IntuneDevice> devices = [];
+
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .StartAsync("Reading Windows build inventory from Intune...", async _ =>
+                {
+                    devices = await graphService!.GetManagedDevicesAsync(
+                        "operatingSystem eq 'Windows'", limit);
+                });
+
+            var inventory = WindowsUpdateInventoryBuilder.Build(devices, since, builds);
+            if (json)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(inventory, JsonOptions));
+                return;
+            }
+
+            DisplayWindowsUpdateInventory(inventory, list);
+        });
+
+        return command;
+    }
+
+    private static void DisplayWindowsUpdateInventory(WindowsUpdateInventory inventory, bool listDevices)
+    {
+        AnsiConsole.MarkupLine(
+            $"[bold]{inventory.TotalDevices}[/] Windows devices synced since " +
+            $"[cyan]{inventory.Since:yyyy-MM-dd HH:mm} UTC[/]");
+
+        if (inventory.SelectedBuilds.Count > 0)
+        {
+            AnsiConsole.MarkupLine(
+                $"[green]{inventory.MatchingDevices}[/] of [bold]{inventory.TotalDevices}[/] " +
+                $"([bold]{inventory.CoveragePercentage:0.#}%[/]) report " +
+                Markup.Escape(string.Join(", ", inventory.SelectedBuilds)));
+        }
+
+        var summary = new Table { Border = TableBorder.Rounded };
+        summary.AddColumn("Observed build");
+        summary.AddColumn(new TableColumn("Devices").RightAligned());
+        summary.AddColumn(new TableColumn("Fleet").RightAligned());
+        foreach (var build in inventory.Builds)
+            summary.AddRow(Markup.Escape(build.Build), build.Count.ToString(), $"{build.Percentage:0.#}%");
+        AnsiConsole.Write(summary);
+
+        if (!listDevices) return;
+
+        var deviceTable = new Table { Border = TableBorder.Rounded };
+        deviceTable.AddColumn("Device");
+        deviceTable.AddColumn("Serial");
+        deviceTable.AddColumn("Build");
+        deviceTable.AddColumn("Last sync (UTC)");
+        foreach (var device in inventory.Devices)
+        {
+            deviceTable.AddRow(
+                Markup.Escape(device.DeviceName),
+                Markup.Escape(device.SerialNumber ?? "-"),
+                Markup.Escape(device.Build),
+                device.LastSyncDateTime.ToString("yyyy-MM-dd HH:mm"));
+        }
+        AnsiConsole.Write(deviceTable);
     }
 
     private static Command CreateDeviceCommand(GraphService? graphService)
