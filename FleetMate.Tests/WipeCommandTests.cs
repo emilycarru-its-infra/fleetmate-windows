@@ -175,6 +175,15 @@ public class WipeCommandTests
     }
 
     [Fact]
+    public void ATransposedSingleDashFlagStillPointsAtTheRealOne()
+    {
+        var error = WipeCommand.FlagLikeSerialError(["-comfirm"]);
+
+        Assert.NotNull(error);
+        Assert.Contains("--confirm", error);
+    }
+
+    [Fact]
     public void PlainSerialsAreNotFlagged()
     {
         Assert.Null(WipeCommand.FlagLikeSerialError(["SERIAL0001", "SERIAL0002"]));

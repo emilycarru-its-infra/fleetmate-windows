@@ -328,12 +328,43 @@ public static class WipeCommand
 
         var name = bad.TrimStart('-');
         var known = new[] { "confirm", "cleanup", "records-only", "keep-user-data", "location", "model", "file", "mode", "max", "json" };
+        // Exact, then prefix, then a short edit distance. The prefix pass alone
+        // misses a dropped interior letter — "record-only" for "records-only" —
+        // which is the typo that actually happened, so the distance pass is not
+        // a nicety.
         var suggestion = known.FirstOrDefault(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase))
-            ?? known.FirstOrDefault(k => k.StartsWith(name, StringComparison.OrdinalIgnoreCase) || name.StartsWith(k, StringComparison.OrdinalIgnoreCase));
+            ?? known.FirstOrDefault(k => k.StartsWith(name, StringComparison.OrdinalIgnoreCase) || name.StartsWith(k, StringComparison.OrdinalIgnoreCase))
+            ?? known.Select(k => (k, d: EditDistance(k, name)))
+                    .Where(x => x.d <= 2)
+                    .OrderBy(x => x.d)
+                    .Select(x => x.k)
+                    .FirstOrDefault();
 
         return suggestion != null
             ? $"'{bad}' is not a serial. Flags take two dashes: --{suggestion}."
             : $"'{bad}' is not a serial. Flags take two dashes; run 'fleetmate wipe --help' for the list.";
+    }
+
+    /// <summary>Levenshtein distance, case-insensitive. The option list is ten
+    /// entries long, so the quadratic cost is irrelevant.</summary>
+    private static int EditDistance(string a, string b)
+    {
+        a = a.ToLowerInvariant();
+        b = b.ToLowerInvariant();
+        var prev = new int[b.Length + 1];
+        var cur = new int[b.Length + 1];
+        for (var j = 0; j <= b.Length; j++) prev[j] = j;
+        for (var i = 1; i <= a.Length; i++)
+        {
+            cur[0] = i;
+            for (var j = 1; j <= b.Length; j++)
+            {
+                var cost = a[i - 1] == b[j - 1] ? 0 : 1;
+                cur[j] = Math.Min(Math.Min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+            }
+            (prev, cur) = (cur, prev);
+        }
+        return prev[b.Length];
     }
 
     private static async Task<List<string>> ResolveTargetsAsync(
