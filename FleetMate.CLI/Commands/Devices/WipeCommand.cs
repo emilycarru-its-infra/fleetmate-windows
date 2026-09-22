@@ -42,6 +42,17 @@ public static class WipeCommand
         var serialsArg = new Argument<string[]>(name: "serials",
             description: "One or more device serial numbers")
         { Arity = ArgumentArity.ZeroOrMore };
+        // A mistyped flag must not become a target. Every option here takes two
+        // dashes, and a single-dash spelling such as `-confirm` falls through to
+        // this positional argument, where it reads as one more serial: the dry
+        // run then prints a row for "-confirm" with no directory records, and
+        // the operator reads that as the tool failing to act rather than as a
+        // typo that kept it a dry run.
+        serialsArg.AddValidator(result =>
+        {
+            var message = FlagLikeSerialError(result.Tokens.Select(t => t.Value));
+            if (message != null) result.ErrorMessage = message;
+        });
 
         var locationOption = new Option<string?>(aliases: ["--location", "-l"],
             description: "Target every Snipe-IT asset at this location (name or id)");
@@ -305,6 +316,26 @@ public static class WipeCommand
     /// deduplicated union. Inventory targeting resolves through Snipe-IT, which
     /// is where "the machines in that lab" is actually recorded.
     /// </summary>
+    /// <summary>
+    /// The error for a serial that is really a flag, or null when every serial
+    /// looks like a serial. Names the double-dash form so the fix is in the
+    /// message, not in the help text.
+    /// </summary>
+    public static string? FlagLikeSerialError(IEnumerable<string> serials)
+    {
+        var bad = serials.FirstOrDefault(s => s.StartsWith('-'));
+        if (bad == null) return null;
+
+        var name = bad.TrimStart('-');
+        var known = new[] { "confirm", "cleanup", "records-only", "keep-user-data", "location", "model", "file", "mode", "max", "json" };
+        var suggestion = known.FirstOrDefault(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase))
+            ?? known.FirstOrDefault(k => k.StartsWith(name, StringComparison.OrdinalIgnoreCase) || name.StartsWith(k, StringComparison.OrdinalIgnoreCase));
+
+        return suggestion != null
+            ? $"'{bad}' is not a serial. Flags take two dashes: --{suggestion}."
+            : $"'{bad}' is not a serial. Flags take two dashes; run 'fleetmate wipe --help' for the list.";
+    }
+
     private static async Task<List<string>> ResolveTargetsAsync(
         string[] serials, string? location, string? model, string? file, SnipeService? snipe)
     {

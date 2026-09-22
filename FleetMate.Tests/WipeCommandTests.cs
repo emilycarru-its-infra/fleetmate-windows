@@ -155,4 +155,29 @@ public class WipeCommandTests
 
         Assert.Contains("2 failure(s)", summary);
     }
+
+    [Fact]
+    public void ASingleDashFlagIsRejectedAsASerial()
+    {
+        var error = WipeCommand.FlagLikeSerialError(["SERIAL0001", "-confirm"]);
+
+        Assert.NotNull(error);
+        Assert.Contains("--confirm", error);
+    }
+
+    [Fact]
+    public void AMisspelledSingleDashFlagStillPointsAtTheRealOne()
+    {
+        var error = WipeCommand.FlagLikeSerialError(["SERIAL0001", "-record-only"]);
+
+        Assert.NotNull(error);
+        Assert.Contains("--records-only", error);
+    }
+
+    [Fact]
+    public void PlainSerialsAreNotFlagged()
+    {
+        Assert.Null(WipeCommand.FlagLikeSerialError(["SERIAL0001", "SERIAL0002"]));
+        Assert.Null(WipeCommand.FlagLikeSerialError([]));
+    }
 }
