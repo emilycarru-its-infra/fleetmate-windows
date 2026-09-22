@@ -354,8 +354,9 @@ public static class WipeCommand
             .Where(a => a.StartsWith("--", StringComparison.Ordinal))
             .Select(a => a[2..]);
 
-    /// <summary>Levenshtein distance, case-insensitive. The option list is ten
-    /// entries long, so the quadratic cost is irrelevant.</summary>
+    /// <summary>Levenshtein distance, case-insensitive. It runs once per
+    /// declared option against one short token, so the quadratic cost is
+    /// irrelevant.</summary>
     private static int EditDistance(string a, string b)
     {
         a = a.ToLowerInvariant();
