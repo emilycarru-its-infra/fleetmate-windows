@@ -50,7 +50,7 @@ public static class WipeCommand
         // typo that kept it a dry run.
         serialsArg.AddValidator(result =>
         {
-            var message = FlagLikeSerialError(result.Tokens.Select(t => t.Value));
+            var message = FlagLikeSerialError(result.Tokens.Select(t => t.Value), LongOptionNames(command));
             if (message != null) result.ErrorMessage = message;
         });
 
@@ -321,13 +321,15 @@ public static class WipeCommand
     /// looks like a serial. Names the double-dash form so the fix is in the
     /// message, not in the help text.
     /// </summary>
-    public static string? FlagLikeSerialError(IEnumerable<string> serials)
+    public static string? FlagLikeSerialError(IEnumerable<string> serials, IEnumerable<string> optionNames)
     {
         var bad = serials.FirstOrDefault(s => s.StartsWith('-'));
         if (bad == null) return null;
 
         var name = bad.TrimStart('-');
-        var known = new[] { "confirm", "cleanup", "records-only", "keep-user-data", "location", "model", "file", "mode", "max", "json" };
+        // The candidates come from the command itself, so adding an option can
+        // never leave the suggestion behind.
+        var known = optionNames.ToArray();
         // Exact, then prefix, then a short edit distance. The prefix pass alone
         // misses a dropped interior letter — "record-only" for "records-only" —
         // which is the typo that actually happened, so the distance pass is not
@@ -344,6 +346,13 @@ public static class WipeCommand
             ? $"'{bad}' is not a serial. Flags take two dashes: --{suggestion}."
             : $"'{bad}' is not a serial. Flags take two dashes; run 'fleetmate wipe --help' for the list.";
     }
+
+    /// <summary>The double-dash names a command declares, without the dashes.</summary>
+    public static IEnumerable<string> LongOptionNames(Command command) =>
+        command.Options
+            .SelectMany(o => o.Aliases)
+            .Where(a => a.StartsWith("--", StringComparison.Ordinal))
+            .Select(a => a[2..]);
 
     /// <summary>Levenshtein distance, case-insensitive. The option list is ten
     /// entries long, so the quadratic cost is irrelevant.</summary>
