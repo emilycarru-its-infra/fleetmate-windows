@@ -155,4 +155,50 @@ public class WipeCommandTests
 
         Assert.Contains("2 failure(s)", summary);
     }
+
+    /// <summary>The names as the real command declares them, so a renamed or
+    /// added option is exercised here rather than in a stale copy.</summary>
+    private static readonly string[] WipeOptions =
+        WipeCommand.LongOptionNames(WipeCommand.Create(null, null)).ToArray();
+
+    [Fact]
+    public void TheSuggestionListComesFromTheCommand()
+    {
+        Assert.Contains("confirm", WipeOptions);
+        Assert.Contains("records-only", WipeOptions);
+    }
+
+    [Fact]
+    public void ASingleDashFlagIsRejectedAsASerial()
+    {
+        var error = WipeCommand.FlagLikeSerialError(["SERIAL0001", "-confirm"], WipeOptions);
+
+        Assert.NotNull(error);
+        Assert.Contains("--confirm", error);
+    }
+
+    [Fact]
+    public void AMisspelledSingleDashFlagStillPointsAtTheRealOne()
+    {
+        var error = WipeCommand.FlagLikeSerialError(["SERIAL0001", "-record-only"], WipeOptions);
+
+        Assert.NotNull(error);
+        Assert.Contains("--records-only", error);
+    }
+
+    [Fact]
+    public void ATransposedSingleDashFlagStillPointsAtTheRealOne()
+    {
+        var error = WipeCommand.FlagLikeSerialError(["-comfirm"], WipeOptions);
+
+        Assert.NotNull(error);
+        Assert.Contains("--confirm", error);
+    }
+
+    [Fact]
+    public void PlainSerialsAreNotFlagged()
+    {
+        Assert.Null(WipeCommand.FlagLikeSerialError(["SERIAL0001", "SERIAL0002"], WipeOptions));
+        Assert.Null(WipeCommand.FlagLikeSerialError([], WipeOptions));
+    }
 }
