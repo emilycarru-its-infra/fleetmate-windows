@@ -42,6 +42,17 @@ public static class WipeCommand
         var serialsArg = new Argument<string[]>(name: "serials",
             description: "One or more device serial numbers")
         { Arity = ArgumentArity.ZeroOrMore };
+        // A mistyped flag must not become a target. Every option here takes two
+        // dashes, and a single-dash spelling such as `-confirm` falls through to
+        // this positional argument, where it reads as one more serial: the dry
+        // run then prints a row for "-confirm" with no directory records, and
+        // the operator reads that as the tool failing to act rather than as a
+        // typo that kept it a dry run.
+        serialsArg.AddValidator(result =>
+        {
+            var message = FlagLikeSerialError(result.Tokens.Select(t => t.Value), LongOptionNames(command));
+            if (message != null) result.ErrorMessage = message;
+        });
 
         var locationOption = new Option<string?>(aliases: ["--location", "-l"],
             description: "Target every Snipe-IT asset at this location (name or id)");
@@ -305,6 +316,67 @@ public static class WipeCommand
     /// deduplicated union. Inventory targeting resolves through Snipe-IT, which
     /// is where "the machines in that lab" is actually recorded.
     /// </summary>
+    /// <summary>
+    /// The error for a serial that is really a flag, or null when every serial
+    /// looks like a serial. Names the double-dash form so the fix is in the
+    /// message, not in the help text.
+    /// </summary>
+    public static string? FlagLikeSerialError(IEnumerable<string> serials, IEnumerable<string> optionNames)
+    {
+        var bad = serials.FirstOrDefault(s => s.StartsWith('-'));
+        if (bad == null) return null;
+
+        var name = bad.TrimStart('-');
+        // The candidates come from the command itself, so adding an option can
+        // never leave the suggestion behind.
+        var known = optionNames.ToArray();
+        // Exact, then prefix, then a short edit distance. The prefix pass alone
+        // misses a dropped interior letter — "record-only" for "records-only" —
+        // which is the typo that actually happened, so the distance pass is not
+        // a nicety.
+        var suggestion = known.FirstOrDefault(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase))
+            ?? known.FirstOrDefault(k => k.StartsWith(name, StringComparison.OrdinalIgnoreCase) || name.StartsWith(k, StringComparison.OrdinalIgnoreCase))
+            ?? known.Select(k => (k, d: EditDistance(k, name)))
+                    .Where(x => x.d <= 2)
+                    .OrderBy(x => x.d)
+                    .Select(x => x.k)
+                    .FirstOrDefault();
+
+        return suggestion != null
+            ? $"'{bad}' is not a serial. Flags take two dashes: --{suggestion}."
+            : $"'{bad}' is not a serial. Flags take two dashes; run 'fleetmate wipe --help' for the list.";
+    }
+
+    /// <summary>The double-dash names a command declares, without the dashes.</summary>
+    public static IEnumerable<string> LongOptionNames(Command command) =>
+        command.Options
+            .SelectMany(o => o.Aliases)
+            .Where(a => a.StartsWith("--", StringComparison.Ordinal))
+            .Select(a => a[2..]);
+
+    /// <summary>Levenshtein distance, case-insensitive. It runs once per
+    /// declared option against one short token, so the quadratic cost is
+    /// irrelevant.</summary>
+    private static int EditDistance(string a, string b)
+    {
+        a = a.ToLowerInvariant();
+        b = b.ToLowerInvariant();
+        var prev = new int[b.Length + 1];
+        var cur = new int[b.Length + 1];
+        for (var j = 0; j <= b.Length; j++) prev[j] = j;
+        for (var i = 1; i <= a.Length; i++)
+        {
+            cur[0] = i;
+            for (var j = 1; j <= b.Length; j++)
+            {
+                var cost = a[i - 1] == b[j - 1] ? 0 : 1;
+                cur[j] = Math.Min(Math.Min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+            }
+            (prev, cur) = (cur, prev);
+        }
+        return prev[b.Length];
+    }
+
     private static async Task<List<string>> ResolveTargetsAsync(
         string[] serials, string? location, string? model, string? file, SnipeService? snipe)
     {
