@@ -34,6 +34,8 @@ public partial class DevelopmentView : UserControl
         InitializeComponent();
         Loaded += OnLoaded;
         DetailView.StateChanged += async (_, _) => await RefreshAsync();
+        RunView.RunChanged += async (_, _) => await LoadRunsAsync();
+        StartTimers();
     }
 
     private static App? AppInstance => Application.Current as App;
@@ -61,14 +63,20 @@ public partial class DevelopmentView : UserControl
         }
     }
 
-    /// <summary>Refetch both lists — the header refresh button and post-action refresh.</summary>
+    /// <summary>
+    /// Refetch everything already loaded — the page toolbar's Refresh, the
+    /// 15-minute cycle, and after a PR action.
+    /// </summary>
     public async Task RefreshAsync()
     {
-        if (AppInstance is { } app) _ = app.Inbox.RefreshAsync();
-        await LoadPullRequestsAsync();
-    }
+        if (AppInstance is not { } app) return;
+        _ = app.Inbox.RefreshAsync();
 
-    private async void OnRefreshClicked(object sender, RoutedEventArgs e) => await RefreshAsync();
+        var work = new List<Task> { LoadPullRequestsAsync() };
+        if (app.DevelopmentCommits != null) work.Add(LoadCommitsAsync());
+        if (app.DevelopmentRuns != null) work.Add(LoadRunsAsync());
+        await Task.WhenAll(work);
+    }
 
     // MARK: - Pull requests
 
@@ -111,7 +119,7 @@ public partial class DevelopmentView : UserControl
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "[code] Failed to load pull requests");
+            Log.Error(ex, "[development] Failed to load pull requests");
             PullRequestCount.Text = $"Could not load pull requests — {ex.Message}";
         }
         finally
@@ -228,10 +236,15 @@ public partial class DevelopmentView : UserControl
 
     private async Task ShowPullRequestAsync(UnifiedPullRequest pr)
     {
-        DetailPlaceholder.Visibility = Visibility.Collapsed;
-        NonPullRequestPanel.Visibility = Visibility.Collapsed;
-        DetailView.Visibility = Visibility.Visible;
+        ShowDetail(DetailView);
         await DetailView.ShowAsync(pr);
+    }
+
+    /// <summary>One thing in the centre pane at a time.</summary>
+    private void ShowDetail(FrameworkElement visible)
+    {
+        foreach (var pane in new FrameworkElement[] { DetailPlaceholder, NonPullRequestPanel, DetailView, CommitView, RunView })
+            pane.Visibility = pane == visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // MARK: - Activity
@@ -283,18 +296,38 @@ public partial class DevelopmentView : UserControl
 
     // MARK: - Segments
 
-    private void OnSegmentChanged(object sender, RoutedEventArgs e)
+    private async void OnSegmentChanged(object sender, RoutedEventArgs e)
     {
         if (!IsInitialized) return;
-        var inbox = InboxSegment.IsChecked == true;
 
-        PullRequestFilters.Visibility = inbox ? Visibility.Collapsed : Visibility.Visible;
-        PullRequestList.Visibility = inbox ? Visibility.Collapsed : Visibility.Visible;
-        InboxHeader.Visibility = inbox ? Visibility.Visible : Visibility.Collapsed;
-        InboxList.Visibility = inbox ? Visibility.Visible : Visibility.Collapsed;
+        var pulls = PullRequestsSegment.IsChecked == true;
+        var inbox = InboxSegment.IsChecked == true;
+        var commits = CommitsSegment.IsChecked == true;
+        var pipelines = PipelinesSegment.IsChecked == true;
+
+        static Visibility Show(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
+        PullRequestFilters.Visibility = Show(pulls);
+        PullRequestList.Visibility = Show(pulls);
+        InboxHeader.Visibility = Show(inbox);
+        InboxList.Visibility = Show(inbox);
+        CommitsFilters.Visibility = Show(commits);
+        CommitsScroller.Visibility = Show(commits);
+        PipelinesFilters.Visibility = Show(pipelines);
+        PipelinesList.Visibility = Show(pipelines);
+        EmptyText.Visibility = Visibility.Collapsed;
 
         if (inbox) RenderInbox();
-        else Rerender();
+        else if (pulls) Rerender();
+        else if (commits)
+        {
+            if (AppInstance?.DevelopmentCommits is null) await LoadCommitsAsync();
+            else RenderCommits();
+        }
+        else if (pipelines)
+        {
+            if (AppInstance?.DevelopmentRuns is null) await LoadRunsAsync();
+            else RenderRuns();
+        }
     }
 
     // MARK: - Inbox
@@ -351,15 +384,13 @@ public partial class DevelopmentView : UserControl
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, "[code] Could not open {Repo}#{Number} in-app", notification.Repository, number);
+                Log.Warning(ex, "[development] Could not open {Repo}#{Number} in-app", notification.Repository, number);
             }
         }
 
         // Issues, releases, check suites and discussions have no in-app viewer
         // yet; say what it is and offer the browser.
-        DetailPlaceholder.Visibility = Visibility.Collapsed;
-        DetailView.Visibility = Visibility.Collapsed;
-        NonPullRequestPanel.Visibility = Visibility.Visible;
+        ShowDetail(NonPullRequestPanel);
         NonPullRequestTitle.Text = notification.SubjectTitle;
         NonPullRequestByline.Text = row.Byline;
     }
@@ -369,7 +400,7 @@ public partial class DevelopmentView : UserControl
         if (_selectedNotification is not { } notification) return;
 
         try { Process.Start(new ProcessStartInfo(notification.WebUrl) { UseShellExecute = true }); }
-        catch (Exception ex) { Log.Warning(ex, "[code] Could not open {Url}", notification.WebUrl); }
+        catch (Exception ex) { Log.Warning(ex, "[development] Could not open {Url}", notification.WebUrl); }
 
         if (notification.Unread && AppInstance is { } app) await app.Inbox.MarkReadAsync(notification);
     }

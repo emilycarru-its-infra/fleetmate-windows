@@ -64,7 +64,7 @@ public sealed partial class GitHubPullRequestService : IDisposable
           repository { name owner { login } }
           comments { totalCount }
           reviewThreads { totalCount }
-          reviewRequests(first: 10) {
+          reviewRequests(first: 5) {
             nodes {
               requestedReviewer {
                 ... on User { login name }
@@ -72,7 +72,7 @@ public sealed partial class GitHubPullRequestService : IDisposable
               }
             }
           }
-          latestReviews(first: 10) {
+          latestReviews(first: 5) {
             nodes { state author { login } }
           }
         }

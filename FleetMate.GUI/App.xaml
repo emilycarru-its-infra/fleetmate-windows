@@ -28,6 +28,7 @@
                     </ui:ThemeResources.ThemeDictionaries>
                 </ui:ThemeResources>
                 <ui:XamlControlsResources />
+                <ResourceDictionary Source="Views/Shared/DiffTemplates.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
             <!-- Converters -->
