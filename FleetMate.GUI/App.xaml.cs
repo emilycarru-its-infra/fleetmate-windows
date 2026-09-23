@@ -54,6 +54,12 @@ public partial class App : Application
     /// <summary>The Development tab's PR list (involves me + organization), cached like the queue.</summary>
     public FleetMate.Core.Models.Projects.PullRequestQueue? DevelopmentPullRequests { get; set; }
 
+    /// <summary>Development › Commits: repositories with recent commits, cached across tab switches.</summary>
+    public List<FleetMate.Core.Models.Projects.RepositoryCommits>? DevelopmentCommits { get; set; }
+
+    /// <summary>Development › Pipelines: recent runs, cached across tab switches.</summary>
+    public List<FleetMate.Core.Models.Projects.PipelineRun>? DevelopmentRuns { get; set; }
+
     /// <summary>GitHub notifications, polled from startup so the Development tab count is live.</summary>
     public FleetMate.GUI.Views.Development.DevelopmentInbox Inbox { get; }
 

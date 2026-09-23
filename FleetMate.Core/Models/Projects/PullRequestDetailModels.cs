@@ -38,6 +38,9 @@ public sealed class PullRequestCommit
     public string? AuthorName { get; init; }
     public DateTime? Date { get; init; }
 
+    /// <summary>Browser link to the commit, when the provider gives one.</summary>
+    public string? Url { get; init; }
+
     public string ShortSha => Id.Length > 8 ? Id[..8] : Id;
 
     /// <summary>First line of the message — the rest is body text.</summary>
