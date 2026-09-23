@@ -218,7 +218,7 @@ public partial class DevelopmentView
         if (selectedId != null) PipelinesList.SelectedItem = rows.FirstOrDefault(r => r.Run.Id == selectedId);
 
         var running = all.Count(r => r.Status.IsActive());
-        var failed = all.Count(r => r.Status is PipelineRunStatus.Failed or PipelineRunStatus.Partial);
+        var failed = CommitsAndPipelinesFilter.FailingCount(all);
         PipelinesCount.Text = $"{rows.Count} runs · {running} running · {failed} failed · last 7 days";
 
         if (PipelinesSegment.IsChecked == true)
