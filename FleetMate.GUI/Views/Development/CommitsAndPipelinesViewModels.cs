@@ -31,13 +31,20 @@ public static class CommitsAndPipelinesFilter
             .ToList();
     }
 
-    /// <summary>Runs by source, status chip and search over name, repo, branch, requester and run number.</summary>
+    /// <summary>
+    /// Runs by source, status chip and search over name, repo, branch, requester
+    /// and run number. Failed means the pipeline's LATEST run failed: an older
+    /// red run under a newer green one is history, not something to act on.
+    /// Running and Succeeded still match every run.
+    /// </summary>
     public static List<PipelineRun> Runs(
         IEnumerable<PipelineRun> runs, DevelopmentSourceFilter source, PipelineStatusFilter status, string? search)
     {
         var needle = search?.Trim() ?? "";
+        var all = runs.ToList();
+        var latest = LatestRunIds(all);
 
-        return runs
+        return all
             .Where(r => source switch
             {
                 DevelopmentSourceFilter.DevOps => r.Source == PullRequestSource.AzureDevOps,
@@ -47,7 +54,7 @@ public static class CommitsAndPipelinesFilter
             .Where(r => status switch
             {
                 PipelineStatusFilter.Running => r.Status.IsActive(),
-                PipelineStatusFilter.Failed => r.Status is PipelineRunStatus.Failed or PipelineRunStatus.Partial,
+                PipelineStatusFilter.Failed => IsFailing(r, latest),
                 PipelineStatusFilter.Succeeded => r.Status == PipelineRunStatus.Succeeded,
                 _ => true,
             })
@@ -56,6 +63,25 @@ public static class CommitsAndPipelinesFilter
                         || Has(r.Branch, needle) || Has(r.TriggeredBy, needle) || Has(r.RunNumber, needle))
             .OrderByDescending(r => r.SortDate)
             .ToList();
+    }
+
+    /// <summary>
+    /// One pipeline = source + container + pipeline id (name when there is no
+    /// id); its latest run is the one that started last.
+    /// </summary>
+    public static HashSet<string> LatestRunIds(IEnumerable<PipelineRun> runs) =>
+        runs.GroupBy(r => $"{r.Source}|{r.Container}|{(r.PipelineId?.ToString() ?? r.PipelineName)}")
+            .Select(g => g.OrderByDescending(r => r.SortDate).First().Id)
+            .ToHashSet();
+
+    public static bool IsFailing(PipelineRun run, HashSet<string> latestIds) =>
+        run.Status is PipelineRunStatus.Failed or PipelineRunStatus.Partial && latestIds.Contains(run.Id);
+
+    /// <summary>Pipelines whose latest run failed — the Failed chip's count.</summary>
+    public static int FailingCount(IReadOnlyCollection<PipelineRun> runs)
+    {
+        var latest = LatestRunIds(runs);
+        return runs.Count(r => IsFailing(r, latest));
     }
 
     private static bool Has(string? hay, string needle) =>

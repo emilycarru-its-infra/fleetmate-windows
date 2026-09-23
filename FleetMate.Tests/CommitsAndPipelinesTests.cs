@@ -243,6 +243,22 @@ public class CommitsAndPipelinesTests
     }
 
     [Fact]
+    public void Runs_FailedMeansLatestRunFailed()
+    {
+        var oldRed = Run(PullRequestSource.GitHub, PipelineRunStatus.Failed, "CI", 60);
+        var newGreen = Run(PullRequestSource.GitHub, PipelineRunStatus.Succeeded, "CI", 5);
+        var stillRed = Run(PullRequestSource.AzureDevOps, PipelineRunStatus.Failed, "Build", 10);
+        var runs = new[] { oldRed, newGreen, stillRed };
+
+        Assert.Equal(new[] { "Build" },
+            CommitsAndPipelinesFilter.Runs(runs, DevelopmentSourceFilter.All, PipelineStatusFilter.Failed, null).Select(r => r.PipelineName));
+        Assert.Equal(1, CommitsAndPipelinesFilter.FailingCount(runs));
+
+        // Succeeded still matches every green run, not just the latest.
+        Assert.Single(CommitsAndPipelinesFilter.Runs(runs, DevelopmentSourceFilter.All, PipelineStatusFilter.Succeeded, null));
+    }
+
+    [Fact]
     public void Commits_FilterMatchesRepoOrCommit()
     {
         var repos = new[]
