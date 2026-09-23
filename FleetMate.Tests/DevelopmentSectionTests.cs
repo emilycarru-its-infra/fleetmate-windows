@@ -101,12 +101,12 @@ public class DevelopmentSectionTests
     }
 
     [Fact]
-    public void Search_BatchesTwoPerQueryPersonalFirst()
+    public void Search_BatchesThreePerQueryPersonalFirst()
     {
-        var searches = GitHubPullRequestService.DevelopmentSearches(new[] { "a", "b", "c" });
+        var searches = GitHubPullRequestService.DevelopmentSearches(new[] { "a", "b", "c", "d" });
         var batches = GitHubPullRequestService.Batch(searches);
 
-        Assert.Equal(new[] { 2, 2, 2, 1 }, batches.Select(b => b.Count));
+        Assert.Equal(new[] { 3, 1, 3, 1 }, batches.Select(b => b.Count));
         Assert.All(batches.Take(2).SelectMany(b => b), s => Assert.NotEqual(PullRequestRelation.Organization, s.Relation));
         Assert.All(batches.Skip(2).SelectMany(b => b), s => Assert.Equal(PullRequestRelation.Organization, s.Relation));
         Assert.Equal(searches.Count, batches.Sum(b => b.Count));

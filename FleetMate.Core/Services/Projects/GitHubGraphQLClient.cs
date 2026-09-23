@@ -175,6 +175,46 @@ public class GitHubGraphQLClient : IDisposable
         return responseBytes;
     }
 
+    /// <summary>
+    /// GET a REST path that answers with a redirect to a signed download URL —
+    /// Actions job logs do — and return the downloaded text.
+    ///
+    /// The redirect is followed by hand so the signed URL is fetched WITHOUT
+    /// the Authorization header: the blob host rejects a request that carries
+    /// both a signature and a bearer token.
+    /// </summary>
+    public async Task<string> GetRestRedirectedTextAsync(string path, CancellationToken ct = default)
+    {
+        GitHubRateLimitGate.Check();
+        await EnsureTokenAsync(ct);
+
+        using var handler = new HttpClientHandler { AllowAutoRedirect = false };
+        using var authed = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(60) };
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"https://api.github.com{path}");
+        request.Headers.UserAgent.ParseAdd("FleetMate");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+        request.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
+        request.Headers.Authorization = _client.DefaultRequestHeaders.Authorization;
+
+        using var response = await authed.SendAsync(request, ct);
+
+        if ((int)response.StatusCode is >= 300 and < 400 && response.Headers.Location is { } location)
+        {
+            using var plain = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
+            plain.DefaultRequestHeaders.UserAgent.ParseAdd("FleetMate");
+            return await plain.GetStringAsync(location, ct);
+        }
+
+        var body = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            GitHubRateLimitGate.TripIfRateLimitStatus((int)response.StatusCode, body);
+            throw new HttpRequestException($"GitHub REST HTTP {(int)response.StatusCode}: {body}", null, response.StatusCode);
+        }
+
+        return body;
+    }
+
     private async Task EnsureTokenAsync(CancellationToken ct = default)
     {
         if (_client.DefaultRequestHeaders.Authorization != null)

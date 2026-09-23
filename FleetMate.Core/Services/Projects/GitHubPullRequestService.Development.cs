@@ -19,14 +19,14 @@ public sealed partial class GitHubPullRequestService
     /// </summary>
     private const string ActivityFragment = """
         fragment PullRequestActivity on PullRequest {
-          recentComments: comments(last: 5) {
+          recentComments: comments(last: 3) {
             nodes { author { login } body createdAt url }
           }
-          recentReviews: reviews(last: 5) {
+          recentReviews: reviews(last: 3) {
             nodes { author { login } body state submittedAt url }
           }
-          recentThreads: reviewThreads(last: 5) {
-            nodes { comments(last: 2) { nodes { author { login } body createdAt url } } }
+          recentThreads: reviewThreads(last: 3) {
+            nodes { comments(last: 1) { nodes { author { login } body createdAt url } } }
           }
         }
         """;
@@ -119,22 +119,24 @@ public sealed partial class GitHubPullRequestService
 
             // A single aliased query with a search per organization blows
             // GitHub's per-query resource limit once the activity fragment is
-            // attached, so the searches go out two to a query, three queries
-            // at a time. One failed batch is reported and the rest still render.
+            // attached, so the searches go out three to a query, three queries
+            // at a time, and a batch that still trips the limit is split in
+            // half and retried. One failed batch is reported; the rest render.
             using var gate = new SemaphoreSlim(3);
             var results = await Task.WhenAll(batches.Select(async batch =>
             {
                 await gate.WaitAsync(ct);
-                try { return (batch, data: (JsonElement?)await RunSearchBatchAsync(batch, limit, ownerLimit, ct), error: (string?)null); }
-                catch (Exception ex) { return (batch, data: (JsonElement?)null, error: (string?)ex.Message); }
+                try { return (batch, parts: await RunSplittingAsync(batch, limit, ownerLimit, ct), error: (string?)null); }
+                catch (Exception ex) { return (batch, parts: new List<(List<(string Alias, string Query, PullRequestRelation Relation)>, JsonElement)>(), error: (string?)ex.Message); }
                 finally { gate.Release(); }
             }));
 
-            foreach (var (batch, data, error) in results)
+            foreach (var (batch, parts, error) in results)
             {
-                if (data is { } d)
+                if (error == null)
                 {
-                    foreach (var s in batch) Absorb(d, s.Alias, s.Relation, queue);
+                    foreach (var (part, d) in parts)
+                    foreach (var s in part) Absorb(d, s.Alias, s.Relation, queue);
                 }
                 else
                 {
@@ -165,19 +167,45 @@ public sealed partial class GitHubPullRequestService
     }
 
     /// <summary>
-    /// Two searches per query, personal ones first. GitHub answered "resource
+    /// Three searches per query, personal ones first. GitHub answered "resource
     /// limits exceeded" both for one query covering a dozen organizations and
-    /// for the four personal searches together once the activity fragment was
-    /// attached; two per query stays well inside it.
+    /// for the four personal searches together at first:100 with the activity
+    /// fragment; three at first:50 with the trimmed fragment fits, and
+    /// <see cref="RunSplittingAsync"/> halves any batch that still does not.
     /// </summary>
     internal static List<List<(string Alias, string Query, PullRequestRelation Relation)>> Batch(
-        List<(string Alias, string Query, PullRequestRelation Relation)> searches, int perBatch = 2) =>
+        List<(string Alias, string Query, PullRequestRelation Relation)> searches, int perBatch = 3) =>
         searches
             .Where(s => s.Relation != PullRequestRelation.Organization)
             .Chunk(perBatch)
             .Concat(searches.Where(s => s.Relation == PullRequestRelation.Organization).Chunk(perBatch))
             .Select(c => c.ToList())
             .ToList();
+
+    /// <summary>
+    /// Run one batch; on "resource limits exceeded" split it in half and retry
+    /// each half, down to a single search, so the list degrades to fewer
+    /// searches per query rather than failing.
+    /// </summary>
+    private async Task<List<(List<(string Alias, string Query, PullRequestRelation Relation)> Batch, JsonElement Data)>> RunSplittingAsync(
+        List<(string Alias, string Query, PullRequestRelation Relation)> batch, int limit, int ownerLimit, CancellationToken ct)
+    {
+        try
+        {
+            return new() { (batch, await RunSearchBatchAsync(batch, limit, ownerLimit, ct)) };
+        }
+        catch (Exception ex) when (IsResourceLimit(ex) && batch.Count > 1)
+        {
+            var half = batch.Count / 2;
+            Log.Information("[github] resource limit on {Count} searches; splitting", batch.Count);
+            var first = await RunSplittingAsync(batch.Take(half).ToList(), limit, ownerLimit, ct);
+            var second = await RunSplittingAsync(batch.Skip(half).ToList(), limit, ownerLimit, ct);
+            return first.Concat(second).ToList();
+        }
+    }
+
+    internal static bool IsResourceLimit(Exception ex) =>
+        ex.Message.Contains("Resource limits", StringComparison.OrdinalIgnoreCase);
 
     private async Task<JsonElement> RunSearchBatchAsync(
         List<(string Alias, string Query, PullRequestRelation Relation)> batch, int limit, int ownerLimit, CancellationToken ct)
