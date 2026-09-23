@@ -1,0 +1,266 @@
+<UserControl x:Class="FleetMate.GUI.Views.Shared.PullRequestDetailView"
+             Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.modernwpf.com/2019">
+
+    <UserControl.Resources>
+        <!-- One diff row: gutter strip, both line numbers, marker, content. -->
+        <DataTemplate x:Key="DiffLineTemplate">
+            <Grid Background="{Binding RowBackground}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="3" />
+                    <ColumnDefinition Width="44" />
+                    <ColumnDefinition Width="44" />
+                    <ColumnDefinition Width="14" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Rectangle Grid.Column="0" Fill="{Binding GutterStrip}" />
+
+                <TextBlock Grid.Column="1" Text="{Binding OldLineLabel}" FontFamily="Consolas"
+                           FontSize="11" TextAlignment="Right" Padding="0,0,6,0"
+                           Foreground="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+                <TextBlock Grid.Column="2" Text="{Binding NewLineLabel}" FontFamily="Consolas"
+                           FontSize="11" TextAlignment="Right" Padding="0,0,6,0"
+                           Foreground="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+
+                <TextBlock Grid.Column="3" Text="{Binding Marker}" FontFamily="Consolas" FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+                <TextBlock Grid.Column="4" Text="{Binding Content}" FontFamily="Consolas" FontSize="11"
+                           Foreground="{Binding ContentBrush}" FontStyle="{Binding ContentStyle}"
+                           TextWrapping="NoWrap" />
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="DiffHunkTemplate">
+            <StackPanel>
+                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}" Padding="6,2">
+                    <TextBlock Text="{Binding Header}" FontFamily="Consolas" FontSize="10"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                </Border>
+                <ItemsControl ItemsSource="{Binding Lines}" ItemTemplate="{StaticResource DiffLineTemplate}" />
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- One file card in Changes. -->
+        <DataTemplate x:Key="DiffFileTemplate">
+            <Border BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                    BorderThickness="1" CornerRadius="6" Margin="0,0,0,12">
+                <StackPanel>
+                    <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                            CornerRadius="6,6,0,0" Padding="10,6">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding StatLabel}" FontSize="11"
+                                       FontFamily="Consolas" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding StatusLabel}" FontSize="10"
+                                       Visibility="{Binding StatusVisibility}" Margin="0,0,8,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            <TextBlock Text="{Binding Path}" FontFamily="Consolas" FontSize="12"
+                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}" />
+                        </DockPanel>
+                    </Border>
+
+                    <TextBlock Text="{Binding EmptyNotice}" Visibility="{Binding EmptyNoticeVisibility}"
+                               Padding="10,8" FontSize="11" TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+                    <!-- Wide lines scroll within their own card rather than
+                         forcing the whole sheet sideways. -->
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding Hunks}" ItemTemplate="{StaticResource DiffHunkTemplate}" />
+                    </ScrollViewer>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate x:Key="CommitTemplate">
+            <DockPanel Margin="0,0,0,6">
+                <TextBlock DockPanel.Dock="Left" Text="{Binding ShortSha}" FontFamily="Consolas"
+                           FontSize="11" Margin="0,0,10,0" VerticalAlignment="Top"
+                           Foreground="{DynamicResource SystemControlForegroundAccentBrush}" />
+                <StackPanel>
+                    <TextBlock Text="{Binding Subject}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding AuthorName}" FontSize="10"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                </StackPanel>
+            </DockPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="CommentTemplate">
+            <Border BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                    BorderThickness="0,0,0,0.5" Padding="0,6">
+                <StackPanel>
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding DateLabel}" FontSize="10"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+                        <TextBlock Text="{Binding AuthorName}" FontWeight="SemiBold" FontSize="11" />
+                    </DockPanel>
+                    <TextBlock Text="{Binding Body}" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"
+                               Foreground="{Binding BodyBrush}" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    
+        <DataTemplate x:Key="CheckChipTemplate">
+            <Border CornerRadius="10" Padding="8,2" Margin="0,0,6,6" Cursor="Hand"
+                    Background="{DynamicResource SubtleFillBrush}" ToolTip="{Binding ToolTip}"
+                    Tag="{Binding}" MouseLeftButtonUp="OnCheckClicked">
+                <StackPanel Orientation="Horizontal">
+                    <ui:FontIcon Glyph="{Binding Glyph}" FontSize="10" Foreground="{Binding Brush}"
+                                 Margin="0,0,5,0" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Name}" FontSize="11" VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header: identity of the PR, its checks, and everything you can do to it. -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                    <Button x:Name="CopyLinkButton" Padding="8,3" Margin="0,0,6,0" Click="OnCopyLinkClicked"
+                            ToolTip="Copy link">
+                        <ui:FontIcon Glyph="&#xE71B;" FontSize="13" />
+                    </Button>
+                    <Button Padding="8,3" Click="OnOpenInBrowserClicked" ToolTip="Open in browser">
+                        <ui:FontIcon Glyph="&#xE8A7;" FontSize="13" />
+                    </Button>
+                </StackPanel>
+
+                <StackPanel>
+                    <TextBlock x:Name="TitleText" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock x:Name="BylineText" FontSize="11" Margin="0,2,0,0"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    <TextBlock x:Name="BranchText" FontFamily="Consolas" FontSize="11" Margin="0,2,0,0"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                </StackPanel>
+            </DockPanel>
+
+            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                <TextBlock x:Name="StateText" FontSize="11" Margin="0,0,12,0" VerticalAlignment="Center" />
+                <TextBlock x:Name="ReviewerText" FontSize="11" Margin="0,0,12,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <TextBlock x:Name="CommentCountText" FontSize="11" VerticalAlignment="Center"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            </StackPanel>
+
+            <!-- Checks: GitHub status rollup or Azure DevOps policy evaluations. -->
+            <StackPanel x:Name="ChecksSection" Margin="0,10,0,0">
+                <TextBlock x:Name="ChecksSummary" FontSize="11" Margin="0,0,0,4"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <ItemsControl x:Name="ChecksList" ItemTemplate="{StaticResource CheckChipTemplate}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                </ItemsControl>
+            </StackPanel>
+
+            <!-- Review composer + action bar. The one text box feeds Comment,
+                 Request changes and Approve, the way a GitHub review box does,
+                 so no action needs a dialog to collect its text. -->
+            <Border x:Name="ActionPanel" Style="{StaticResource CardStyle}" Margin="0,10,0,0" Padding="10">
+                <StackPanel>
+                    <TextBox x:Name="ComposerBox" AcceptsReturn="True" TextWrapping="Wrap"
+                             MinHeight="54" MaxHeight="160" VerticalScrollBarVisibility="Auto"
+                             ui:ControlHelper.PlaceholderText="Leave a comment, or say what needs to change…" />
+                    <WrapPanel Margin="0,8,0,0">
+                        <Button x:Name="CommentButton" Content="Comment" Margin="0,0,6,4" Padding="10,3"
+                                Click="OnCommentClicked" />
+                        <Button x:Name="ApproveButton" Content="Approve" Margin="0,0,6,4" Padding="10,3"
+                                Click="OnApproveClicked" />
+                        <Button x:Name="RequestChangesButton" Content="Request changes" Margin="0,0,16,4"
+                                Padding="10,3" Click="OnRequestChangesClicked" />
+
+                        <ComboBox x:Name="MergeMethodCombo" Width="130" Margin="0,0,6,4" SelectedIndex="1"
+                                  ToolTip="How GitHub merges this pull request">
+                            <ComboBoxItem Content="Merge commit" Tag="Merge" />
+                            <ComboBoxItem Content="Squash" Tag="Squash" />
+                            <ComboBoxItem Content="Rebase" Tag="Rebase" />
+                        </ComboBox>
+                        <Button x:Name="MergeButton" Content="Merge" Margin="0,0,6,4" Padding="10,3"
+                                Style="{DynamicResource AccentButtonStyle}" Click="OnMergeClicked" />
+                        <Button x:Name="DraftButton" Content="Mark ready" Margin="0,0,6,4" Padding="10,3"
+                                Click="OnDraftClicked" />
+                        <Button x:Name="CloseButton" Content="Close" Margin="0,0,6,4" Padding="10,3"
+                                Click="OnCloseClicked" />
+                    </WrapPanel>
+                    <TextBlock x:Name="ActionStatus" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                               Visibility="Collapsed" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+
+        <!-- One scroll: description and conversation, then commits, then diffs.
+             Tabs made you hunt for which one held the thing you wanted. -->
+        <Grid Grid.Row="1">
+            <StackPanel x:Name="LoadingPanel" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <ui:ProgressRing IsActive="True" Width="32" Height="32" />
+                <TextBlock Text="Loading pull request…" Margin="0,8,0,0"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            </StackPanel>
+
+            <TextBlock x:Name="ErrorText" Visibility="Collapsed" TextWrapping="Wrap"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="460"
+                       TextAlignment="Center"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+            <ScrollViewer x:Name="ContentScroller" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                <StackPanel>
+
+                    <!-- Description -->
+                    <StackPanel x:Name="DescriptionSection" Margin="0,0,0,16">
+                        <TextBlock Text="Description" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,4"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <Border Style="{StaticResource CardStyle}">
+                            <TextBlock x:Name="DescriptionText" TextWrapping="Wrap" FontSize="12" />
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Conversation -->
+                    <StackPanel x:Name="ConversationSection" Margin="0,0,0,16">
+                        <TextBlock x:Name="ConversationHeader" FontWeight="SemiBold" FontSize="12"
+                                   Margin="0,0,0,4"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <Border Style="{StaticResource CardStyle}">
+                            <ItemsControl x:Name="CommentsList" ItemTemplate="{StaticResource CommentTemplate}" />
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Commits -->
+                    <StackPanel x:Name="CommitsSection" Margin="0,0,0,16">
+                        <TextBlock x:Name="CommitsHeader" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,4"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <Border Style="{StaticResource CardStyle}">
+                            <ItemsControl x:Name="CommitsList" ItemTemplate="{StaticResource CommitTemplate}" />
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Changes -->
+                    <StackPanel x:Name="ChangesSection">
+                        <DockPanel Margin="0,0,0,4">
+                            <TextBlock x:Name="TruncationNotice" DockPanel.Dock="Right" FontSize="10"
+                                       Visibility="Collapsed" VerticalAlignment="Center"
+                                       Foreground="#FFB800" />
+                            <TextBlock x:Name="ChangesHeader" FontWeight="SemiBold" FontSize="12"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        </DockPanel>
+                        <ItemsControl x:Name="FilesList" ItemTemplate="{StaticResource DiffFileTemplate}" />
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</UserControl>
