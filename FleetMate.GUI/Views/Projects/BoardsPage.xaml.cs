@@ -317,6 +317,12 @@ public partial class BoardsPage : Page
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
+        if (CodeModeRadio.IsChecked == true)
+        {
+            await CodeSection.RefreshAsync();
+            return;
+        }
+
         if (QueriesList.Visibility == Visibility.Visible)
             await LoadQueriesAsync(force: true);
         await LoadTasksAsync();
@@ -550,6 +556,10 @@ public partial class BoardsPage : Page
         var isBoardMode = BoardModeRadio.IsChecked == true;
         var isListMode = ListModeRadio.IsChecked == true;
         var isProjectsMode = ProjectsModeRadio.IsChecked == true;
+        var isCodeMode = CodeModeRadio.IsChecked == true;
+
+        ModeContent.Visibility = isCodeMode ? Visibility.Collapsed : Visibility.Visible;
+        CodeSection.Visibility = isCodeMode ? Visibility.Visible : Visibility.Collapsed;
 
         // The stored-queries view carries the List mode whenever Azure DevOps
         // is configured; without it the legacy flat list remains.

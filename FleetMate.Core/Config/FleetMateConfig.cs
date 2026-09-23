@@ -211,6 +211,15 @@ public class FleetMateConfig
     public TasksConfig? Tasks { get; set; }
 
     /// <summary>
+    /// The GitHub provider, or defaults when none is configured. Every GitHub
+    /// token source (gh CLI first) needs no config at all, so a missing
+    /// <c>github:</c> block must not hide the operator's own PRs and inbox;
+    /// only the owner-scoped searches need Owner/Organization.
+    /// </summary>
+    public GitHubProviderConfig GitHubProviderOrDefault() =>
+        Tasks?.Providers?.GitHub ?? new GitHubProviderConfig();
+
+    /// <summary>
     /// Get the repo root path (where .git folder is)
     /// </summary>
     public string? RepoRoot { get; set; }

@@ -77,14 +77,12 @@ public partial class PullRequestQueueView : UserControl
                 }));
             }
 
-            if (config.Tasks?.Providers?.GitHub is { } gh)
+            var gh = config.GitHubProviderOrDefault();
+            tasks.Add(Task.Run(async () =>
             {
-                tasks.Add(Task.Run(async () =>
-                {
-                    using var github = new GitHubPullRequestService(gh);
-                    return await github.GetMyPullRequestsAsync();
-                }));
-            }
+                using var github = new GitHubPullRequestService(gh);
+                return await github.GetMyPullRequestsAsync();
+            }));
 
             var queue = new PullRequestQueue();
             foreach (var result in await Task.WhenAll(tasks)) queue.Merge(result);

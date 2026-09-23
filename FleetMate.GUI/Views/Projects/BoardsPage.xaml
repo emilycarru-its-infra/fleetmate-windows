@@ -4,6 +4,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.modernwpf.com/2019"
       xmlns:local="clr-namespace:FleetMate.GUI.Views.Projects"
+      xmlns:code="clr-namespace:FleetMate.GUI.Views.Projects.Code"
       Loaded="Page_Loaded">
 
     <Grid Margin="16,14,16,16">
@@ -65,6 +66,10 @@
             <RadioButton x:Name="ListModeRadio" Content="List" IsChecked="True"
                          GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
             <RadioButton x:Name="ProjectsModeRadio" Content="Projects" 
+                         GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
+            <!-- Code: pull requests and the GitHub inbox. Self-contained so it
+                 can become its own top-level tab later. -->
+            <RadioButton x:Name="CodeModeRadio" Content="Code"
                          GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
         </StackPanel>
 
@@ -177,7 +182,7 @@
 
         <!-- Row 3: mode content on the left, inline detail sidebar on the right
              (macOS 60/40 layout; the sidebar column expands only when a task is selected). -->
-        <Grid Grid.Row="3">
+        <Grid x:Name="ModeContent" Grid.Row="3">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="3*" />
                 <ColumnDefinition x:Name="DetailColumn" Width="0" />
@@ -309,6 +314,9 @@
         <local:TaskDetailPanel x:Name="DetailPanel" Grid.Column="1"
                                Visibility="Collapsed" Margin="16,16,0,0" />
         </Grid>
+
+        <code:CodeView x:Name="CodeSection" Grid.Row="2" Grid.RowSpan="2" Margin="0,16,0,0"
+                       Visibility="Collapsed" />
 
         <!-- Loading Overlay -->
         <Border x:Name="LoadingOverlay" 

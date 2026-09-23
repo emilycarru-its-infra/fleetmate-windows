@@ -23,6 +23,19 @@ public enum PullRequestRelation
     /// or they are an assignee (GitHub).
     /// </summary>
     AssignedToMe,
+
+    /// <summary>
+    /// GitHub <c>involves:@me</c> — mentioned, commented, or otherwise pulled
+    /// in without being the author, assignee or requested reviewer.
+    /// </summary>
+    Involved,
+
+    /// <summary>
+    /// Open in a repository the operator's configured owner/organization holds
+    /// (GitHub), or anywhere in the configured organization (Azure DevOps) —
+    /// the "everything on my projects" view in Code.
+    /// </summary>
+    Organization,
 }
 
 /// <summary>Lifecycle state, normalized across both providers.</summary>
@@ -65,6 +78,8 @@ public static class PullRequestRelationExtensions
     public static string SectionTitle(this PullRequestRelation relation) => relation switch
     {
         PullRequestRelation.CreatedByMe => "Created by me",
+        PullRequestRelation.Involved => "Involves me",
+        PullRequestRelation.Organization => "Organization",
         _ => "Assigned to me",
     };
 }
@@ -150,6 +165,12 @@ public sealed class UnifiedPullRequest : IEquatable<UnifiedPullRequest>
 
     public IReadOnlyList<PullRequestReviewer> Reviewers { get; init; } = Array.Empty<PullRequestReviewer>();
     public string WebUrl { get; init; } = string.Empty;
+
+    /// <summary>
+    /// GitHub GraphQL node id, needed for the draft/ready mutations, which have
+    /// no REST equivalent. Empty for Azure DevOps.
+    /// </summary>
+    public string NodeId { get; init; } = string.Empty;
 
     /// <summary>
     /// A PR can be both created by and assigned to the same user; the queue shows

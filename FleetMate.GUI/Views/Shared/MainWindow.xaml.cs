@@ -25,6 +25,18 @@ public partial class MainWindow : Window
         // Navigate to Dashboard on startup
         ContentFrame.Navigate(GetOrCreatePage("Dashboard"));
         TabDashboard.IsChecked = true;
+
+        if (Application.Current is App app)
+        {
+            app.Inbox.Changed += (_, _) => Dispatcher.Invoke(() => UpdateProjectsBadge(app.Inbox.UnreadCount));
+        }
+    }
+
+    private void UpdateProjectsBadge(int unread)
+    {
+        ProjectsBadge.Visibility = unread > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ProjectsBadgeText.Text = unread > 99 ? "99+" : unread.ToString();
+        ProjectsBadge.ToolTip = $"{unread} unread GitHub notification{(unread == 1 ? "" : "s")}";
     }
 
     private void OnTabChecked(object sender, RoutedEventArgs e)
