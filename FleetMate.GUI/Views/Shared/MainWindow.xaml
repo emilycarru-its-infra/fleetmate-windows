@@ -84,15 +84,18 @@
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xF0E3;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Projects" VerticalAlignment="Center" />
-                                <!-- Unread GitHub notifications, so a review request is seen
-                                     without having to open Code to look for it. -->
-                                <Border x:Name="ProjectsBadge" Visibility="Collapsed" Background="#D13A3A"
-                                        CornerRadius="8" MinWidth="16" Height="16" Padding="4,0"
-                                        Margin="6,0,0,0" VerticalAlignment="Center">
-                                    <TextBlock x:Name="ProjectsBadgeText" FontSize="10" FontWeight="SemiBold"
-                                               Foreground="White" HorizontalAlignment="Center"
-                                               VerticalAlignment="Center" />
-                                </Border>
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="TabDevelopment" Tag="Development" GroupName="MainTabs"
+                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon Glyph="&#xE943;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Development" VerticalAlignment="Center" />
+                                <!-- Unread GitHub notifications as a plain count, so a review
+                                     request is seen without opening the tab to look. -->
+                                <TextBlock x:Name="DevelopmentCount" Visibility="Collapsed" Margin="6,0,0,0"
+                                           VerticalAlignment="Center" FontSize="12"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabIdentity" Tag="Identity" GroupName="MainTabs"

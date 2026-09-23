@@ -13,7 +13,7 @@ namespace FleetMate.GUI.Views.Shared;
 /// description, conversation, commits and red/green diffs in one scroll.
 ///
 /// A control rather than a window so the same view serves the dashboard's
-/// pop-out <see cref="PullRequestDetailWindow"/> and the Code section's inline
+/// pop-out <see cref="PullRequestDetailWindow"/> and the Development tab's inline
 /// right pane.
 /// </summary>
 public partial class PullRequestDetailView : UserControl
@@ -391,7 +391,7 @@ public partial class PullRequestDetailView : UserControl
         ActionStatus.Visibility = Visibility.Visible;
         ActionStatus.Text = message;
         ActionStatus.Foreground = isError
-            ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xD1, 0x3A, 0x3A))
+            ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xE0, 0x7A, 0x1F))
             : (System.Windows.Media.Brush)FindResource("SystemControlForegroundBaseMediumBrush");
     }
 

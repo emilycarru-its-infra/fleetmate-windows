@@ -33,7 +33,7 @@ public enum PullRequestRelation
     /// <summary>
     /// Open in a repository the operator's configured owner/organization holds
     /// (GitHub), or anywhere in the configured organization (Azure DevOps) —
-    /// the "everything on my projects" view in Code.
+    /// the "everything on my projects" view in Development.
     /// </summary>
     Organization,
 }
@@ -173,6 +173,13 @@ public sealed class UnifiedPullRequest : IEquatable<UnifiedPullRequest>
     public string NodeId { get; init; } = string.Empty;
 
     /// <summary>
+    /// The latest few comments and reviews, newest last — fed to the
+    /// Development tab's activity sidebar. Filled only by the Development list
+    /// queries; the dashboard queue leaves it empty.
+    /// </summary>
+    public List<PullRequestComment> RecentComments { get; set; } = new();
+
+    /// <summary>
     /// A PR can be both created by and assigned to the same user; the queue shows
     /// it under every section it belongs to.
     /// </summary>
@@ -232,6 +239,12 @@ public sealed class PullRequestQueue
 
     public bool IsEmpty => PullRequests.Count == 0;
 
+    /// <summary>
+    /// Names the signed-in operator appears under — GitHub login, Azure DevOps
+    /// display name — so "Hide mine" can drop their own comments.
+    /// </summary>
+    public HashSet<string> ViewerNames { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     public IReadOnlyList<UnifiedPullRequest> Section(PullRequestRelation relation) =>
         PullRequests
             .Where(pr => pr.Relations.Contains(relation))
@@ -247,6 +260,7 @@ public sealed class PullRequestQueue
     {
         foreach (var pr in other.PullRequests) Insert(pr);
         Errors.AddRange(other.Errors);
+        ViewerNames.UnionWith(other.ViewerNames);
     }
 
     public void Insert(UnifiedPullRequest pr)
@@ -255,6 +269,7 @@ public sealed class PullRequestQueue
         if (existing != null)
         {
             foreach (var relation in pr.Relations) existing.Relations.Add(relation);
+            if (existing.RecentComments.Count == 0) existing.RecentComments = pr.RecentComments;
         }
         else
         {

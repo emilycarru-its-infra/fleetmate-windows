@@ -7,7 +7,7 @@ using Serilog;
 namespace FleetMate.Core.Services.Projects;
 
 /// <summary>
-/// The Code section's side of the Azure DevOps service: every active PR in
+/// The Development tab's side of the Azure DevOps service: every active PR in
 /// the organization, policy evaluations as checks, and the review actions that
 /// mirror the GitHub ones (approve, request changes, comment, draft/ready).
 /// Complete and abandon already live beside the queue.
@@ -19,7 +19,7 @@ public partial class AzureDevOpsService
     /// latter tagged <see cref="PullRequestRelation.Organization"/>. A PR that
     /// is both keeps both relations. Never throws.
     /// </summary>
-    public async Task<PullRequestQueue> GetCodePullRequestsAsync(int topPerProject = 100)
+    public async Task<PullRequestQueue> GetDevelopmentPullRequestsAsync(int topPerProject = 100)
     {
         var queue = await GetMyPullRequestsAsync("active", topPerProject);
 
@@ -37,7 +37,12 @@ public partial class AzureDevOpsService
             }));
 
             foreach (var pr in perProject.SelectMany(x => x)) queue.Insert(pr);
-            Log.Information("[azdo] Code list → {Count} pull requests", queue.PullRequests.Count);
+
+            var identity = await GetCurrentIdentityAsync();
+            if (!string.IsNullOrEmpty(identity.DisplayName)) queue.ViewerNames.Add(identity.DisplayName!);
+
+            await EnrichWithThreadsAsync(queue.PullRequests);
+            Log.Information("[azdo] Development list → {Count} pull requests", queue.PullRequests.Count);
         }
         catch (Exception ex)
         {
@@ -46,6 +51,60 @@ public partial class AzureDevOpsService
         }
 
         return queue;
+    }
+
+    /// <summary>
+    /// The PR list endpoint carries no comment count, last activity or
+    /// comments, so read each PR's threads once: that fills the count, moves
+    /// "Updated" to the latest comment, and feeds the activity sidebar. Bounded
+    /// to eight requests at a time; one unreadable PR keeps its bare row.
+    /// </summary>
+    private async Task EnrichWithThreadsAsync(IEnumerable<UnifiedPullRequest> pullRequests)
+    {
+        using var gate = new SemaphoreSlim(8);
+
+        await Task.WhenAll(pullRequests.Select(async pr =>
+        {
+            await gate.WaitAsync();
+            try
+            {
+                var threads = await GetJsonAsync(PullRequestSubPath(pr.Repository, pr.Number, pr.Container, "threads"));
+                ApplyThreads(pr, ParseDevOpsComments(threads));
+            }
+            catch (Exception ex)
+            {
+                Log.Debug(ex, "[azdo] threads unavailable for {Repository}!{Id}", pr.Repository, pr.Number);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }));
+    }
+
+    internal static void ApplyThreads(UnifiedPullRequest pr, List<PullRequestComment> comments)
+    {
+        var human = comments.Where(c => !c.IsSystem).ToList();
+        pr.CommentCount = human.Count;
+
+        if (comments.Select(c => c.Date).Max() is { } latest && latest > (pr.UpdatedAt ?? DateTime.MinValue))
+            pr.UpdatedAt = latest;
+
+        // Link each comment to its thread; the id is "<thread>-<comment>".
+        pr.RecentComments = human
+            .TakeLast(5)
+            .Select(c => new PullRequestComment
+            {
+                Id = c.Id,
+                AuthorName = c.AuthorName,
+                Body = c.Body,
+                Date = c.Date,
+                IsSystem = false,
+                Url = string.IsNullOrEmpty(pr.WebUrl)
+                    ? null
+                    : $"{pr.WebUrl}?discussionId={c.Id.Split('-')[0]}",
+            })
+            .ToList();
     }
 
     // MARK: - Votes, comments, draft

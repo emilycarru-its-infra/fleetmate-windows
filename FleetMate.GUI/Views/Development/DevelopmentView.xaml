@@ -1,4 +1,4 @@
-<UserControl x:Class="FleetMate.GUI.Views.Projects.Code.CodeView"
+<UserControl x:Class="FleetMate.GUI.Views.Development.DevelopmentView"
              Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -26,6 +26,21 @@
                 </DockPanel>
                 <TextBlock Text="{Binding Byline}" FontSize="10" Margin="0,2,0,0" Opacity="0.75"
                            TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="ActivityRowTemplate">
+            <StackPanel Margin="2,5" Cursor="Hand">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding Age}" FontSize="10" Opacity="0.6"
+                               Margin="6,0,0,0" />
+                    <TextBlock Text="{Binding AuthorName}" FontSize="11" FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis" />
+                </DockPanel>
+                <TextBlock Text="{Binding PullRequestLabel}" FontSize="10" Opacity="0.7" Margin="0,1,0,0"
+                           TextTrimming="CharacterEllipsis" ToolTip="{Binding PullRequestTitle}" />
+                <TextBlock Text="{Binding Snippet}" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap"
+                           MaxHeight="48" TextTrimming="CharacterEllipsis" FontStyle="{Binding SnippetStyle}" />
             </StackPanel>
         </DataTemplate>
 
@@ -64,6 +79,8 @@
             <ColumnDefinition Width="400" MinWidth="280" />
             <ColumnDefinition Width="6" />
             <ColumnDefinition Width="*" MinWidth="360" />
+            <ColumnDefinition x:Name="ActivitySplitterColumn" Width="6" />
+            <ColumnDefinition x:Name="ActivityColumn" Width="320" MinWidth="0" />
         </Grid.ColumnDefinitions>
 
         <!-- Left: pull requests | inbox -->
@@ -83,21 +100,12 @@
                     </Button>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
-                    <RadioButton x:Name="PullRequestsSegment" Content="Pull requests" GroupName="CodeSegment"
+                    <RadioButton x:Name="PullRequestsSegment" Content="Pulls" GroupName="DevelopmentSegment"
                                  IsChecked="True" Checked="OnSegmentChanged"
                                  Style="{StaticResource NavigationTabStyle}" />
-                    <RadioButton x:Name="InboxSegment" GroupName="CodeSegment" Checked="OnSegmentChanged"
-                                 Style="{StaticResource NavigationTabStyle}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Inbox" VerticalAlignment="Center" />
-                            <Border x:Name="InboxBadge" Visibility="Collapsed" Background="#D13A3A"
-                                    CornerRadius="8" MinWidth="16" Height="16" Padding="4,0" Margin="6,0,0,0">
-                                <TextBlock x:Name="InboxBadgeText" FontSize="10" FontWeight="SemiBold"
-                                           Foreground="White" HorizontalAlignment="Center"
-                                           VerticalAlignment="Center" />
-                            </Border>
-                        </StackPanel>
-                    </RadioButton>
+                    <!-- The unread count rides in the label ("Inbox 8"), not a badge. -->
+                    <RadioButton x:Name="InboxSegment" Content="Inbox" GroupName="DevelopmentSegment"
+                                 Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}" />
                 </StackPanel>
             </DockPanel>
 
@@ -185,6 +193,33 @@
             </StackPanel>
 
             <shared:PullRequestDetailView x:Name="DetailView" Visibility="Collapsed" />
+        </Grid>
+
+        <GridSplitter x:Name="ActivitySplitter" Grid.Column="3" Width="6" HorizontalAlignment="Stretch"
+                      Background="Transparent" />
+
+        <!-- Right: comments and reviews across every loaded pull request, newest first. -->
+        <Grid x:Name="ActivityPanel" Grid.Column="4">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <DockPanel Grid.Row="0" Margin="0,4,0,8">
+                <CheckBox x:Name="HideMineCheck" DockPanel.Dock="Right" Content="Hide mine" FontSize="11"
+                          MinWidth="0" Checked="OnHideMineChanged" Unchecked="OnHideMineChanged" />
+                <TextBlock Text="Activity" Style="{StaticResource SectionHeaderStyle}" VerticalAlignment="Center" />
+            </DockPanel>
+            <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="0">
+                <Grid>
+                    <ListView x:Name="ActivityList" BorderThickness="0" SelectionMode="Single"
+                              ItemTemplate="{StaticResource ActivityRowTemplate}"
+                              ItemContainerStyle="{StaticResource FleetListViewItemStyle}"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                              SelectionChanged="OnActivitySelected" />
+                    <TextBlock x:Name="ActivityEmpty" Text="No recent comments." Visibility="Collapsed"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.6" />
+                </Grid>
+            </Border>
         </Grid>
     </Grid>
 </UserControl>

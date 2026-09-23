@@ -51,15 +51,15 @@ public partial class App : Application
     /// </summary>
     public FleetMate.Core.Models.Projects.PullRequestQueue? PullRequestQueue { get; set; }
 
-    /// <summary>The Code section's wider PR list (involves me + organization), cached like the queue.</summary>
-    public FleetMate.Core.Models.Projects.PullRequestQueue? CodePullRequests { get; set; }
+    /// <summary>The Development tab's PR list (involves me + organization), cached like the queue.</summary>
+    public FleetMate.Core.Models.Projects.PullRequestQueue? DevelopmentPullRequests { get; set; }
 
-    /// <summary>GitHub notifications, polled from startup so the Projects tab badge is live.</summary>
-    public FleetMate.GUI.Views.Projects.Code.CodeInbox Inbox { get; }
+    /// <summary>GitHub notifications, polled from startup so the Development tab count is live.</summary>
+    public FleetMate.GUI.Views.Development.DevelopmentInbox Inbox { get; }
 
     public App()
     {
-        Inbox = new FleetMate.GUI.Views.Projects.Code.CodeInbox(() =>
+        Inbox = new FleetMate.GUI.Views.Development.DevelopmentInbox(() =>
             Config is { } config ? new GitHubNotificationService(config.GitHubProviderOrDefault()) : null);
     }
 

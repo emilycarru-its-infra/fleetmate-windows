@@ -67,4 +67,7 @@ public sealed class PullRequestComment
     /// what people actually said.
     /// </summary>
     public bool IsSystem { get; init; }
+
+    /// <summary>Link straight to the comment, when the provider gives one.</summary>
+    public string? Url { get; init; }
 }

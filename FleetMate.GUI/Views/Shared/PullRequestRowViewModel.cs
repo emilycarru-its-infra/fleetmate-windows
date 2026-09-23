@@ -56,9 +56,9 @@ public sealed class PullRequestRowViewModel
     {
         PullRequestState.Draft => Brushes.Gray,
         PullRequestState.Merged => new SolidColorBrush(Color.FromRgb(0x6E, 0x54, 0x94)),
-        PullRequestState.Closed => new SolidColorBrush(Color.FromRgb(0xD1, 0x3A, 0x3A)),
+        PullRequestState.Closed => Brushes.Gray,
         _ => PullRequest.HasConflicts
-            ? new SolidColorBrush(Color.FromRgb(0xD1, 0x3A, 0x3A))
+            ? new SolidColorBrush(Color.FromRgb(0xE0, 0x7A, 0x1F))
             : new SolidColorBrush(Color.FromRgb(0x2D, 0xA4, 0x4E)),
     };
 

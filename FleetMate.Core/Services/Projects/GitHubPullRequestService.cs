@@ -234,6 +234,7 @@ public sealed partial class GitHubPullRequestService : IDisposable
             Reviewers = reviewers.Values.OrderBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase).ToList(),
             WebUrl = url,
             NodeId = Str(node, "id") ?? string.Empty,
+            RecentComments = ParseActivity(node),
             Relations = new HashSet<PullRequestRelation> { relation },
         };
     }

@@ -43,7 +43,7 @@ public sealed class PullRequestCheck
     public bool IsRequired { get; init; }
 }
 
-/// <summary>One GitHub notification thread — the Code inbox row.</summary>
+/// <summary>One GitHub notification thread — the Development inbox row.</summary>
 public sealed class GitHubNotification
 {
     /// <summary>Thread id, used by mark-read and unsubscribe.</summary>

@@ -3,30 +3,30 @@ using System.Windows.Media;
 using FleetMate.Core.Models.Projects;
 using FleetMate.GUI.Views.Shared;
 
-namespace FleetMate.GUI.Views.Projects.Code;
+namespace FleetMate.GUI.Views.Development;
 
-/// <summary>Source filter for the Code pull request list.</summary>
-public enum CodeSourceFilter { All, DevOps, GitHub }
+/// <summary>Source filter for the Development pull request list.</summary>
+public enum DevelopmentSourceFilter { All, DevOps, GitHub }
 
 /// <summary>
 /// Scope filter. <see cref="Everything"/> is the default, because the point of
-/// Code is to see every open PR on the operator's projects, not just their own.
+/// Development is to see every open PR on the operator's projects, not just their own.
 /// </summary>
-public enum CodeScope { Everything, Mine }
+public enum DevelopmentScope { Everything, Mine }
 
-/// <summary>The Code list's filtering rules, kept out of the view so they can be tested.</summary>
-public static class CodeFilter
+/// <summary>The Development list's filtering rules, kept out of the view so they can be tested.</summary>
+public static class DevelopmentFilter
 {
-    public static bool MatchesSource(UnifiedPullRequest pr, CodeSourceFilter source) => source switch
+    public static bool MatchesSource(UnifiedPullRequest pr, DevelopmentSourceFilter source) => source switch
     {
-        CodeSourceFilter.DevOps => pr.Source == PullRequestSource.AzureDevOps,
-        CodeSourceFilter.GitHub => pr.Source == PullRequestSource.GitHub,
+        DevelopmentSourceFilter.DevOps => pr.Source == PullRequestSource.AzureDevOps,
+        DevelopmentSourceFilter.GitHub => pr.Source == PullRequestSource.GitHub,
         _ => true,
     };
 
     /// <summary>Mine = anything with a personal relation; Organization alone does not count.</summary>
-    public static bool MatchesScope(UnifiedPullRequest pr, CodeScope scope) =>
-        scope == CodeScope.Everything
+    public static bool MatchesScope(UnifiedPullRequest pr, DevelopmentScope scope) =>
+        scope == DevelopmentScope.Everything
         || pr.Relations.Any(r => r != PullRequestRelation.Organization);
 
     /// <summary>Case-insensitive match on title, repository, author, reference and branch.</summary>
@@ -43,7 +43,7 @@ public static class CodeFilter
 
     /// <summary>Every filter together, busiest-activity first, ready to group by repository.</summary>
     public static List<UnifiedPullRequest> Apply(
-        IEnumerable<UnifiedPullRequest> prs, CodeSourceFilter source, CodeScope scope,
+        IEnumerable<UnifiedPullRequest> prs, DevelopmentSourceFilter source, DevelopmentScope scope,
         string? repository, string? search) =>
         prs.Where(pr => MatchesSource(pr, source)
                         && MatchesScope(pr, scope)
@@ -55,6 +55,19 @@ public static class CodeFilter
     /// <summary>"owner/repo" for GitHub, "Project/Repo" for DevOps — the group header and repo-chip key.</summary>
     public static string RepositoryKey(UnifiedPullRequest pr) => $"{pr.Container}/{pr.Repository}";
 
+    /// <summary>
+    /// Every recent comment and review across the loaded PRs, newest first,
+    /// optionally without the operator's own.
+    /// </summary>
+    public static List<DevelopmentActivityRowViewModel> Activity(
+        IEnumerable<UnifiedPullRequest> prs, IReadOnlySet<string> viewerNames, bool hideMine, int limit = 200) =>
+        prs.SelectMany(pr => pr.RecentComments.Select(c => (pr, c)))
+           .Where(e => !hideMine || !viewerNames.Contains(e.c.AuthorName))
+           .OrderByDescending(e => e.c.Date ?? DateTime.MinValue)
+           .Take(limit)
+           .Select(e => new DevelopmentActivityRowViewModel { PullRequest = e.pr, Comment = e.c })
+           .ToList();
+
     /// <summary>Repositories with their PR counts, busiest first, ties alphabetical.</summary>
     public static List<(string Repository, int Count)> RepositoryCounts(IEnumerable<UnifiedPullRequest> prs) =>
         prs.GroupBy(RepositoryKey)
@@ -64,8 +77,8 @@ public static class CodeFilter
            .ToList();
 }
 
-/// <summary>One row in the Code pull request list.</summary>
-public sealed class CodePullRequestRowViewModel
+/// <summary>One row in the Development pull request list.</summary>
+public sealed class DevelopmentPullRequestRowViewModel
 {
     public required UnifiedPullRequest PullRequest { get; init; }
 
@@ -76,7 +89,7 @@ public sealed class CodePullRequestRowViewModel
     public string StateLabel => Row.StateLabel;
     public Brush StateBrush => Row.StateBrush;
     public string SourceLabel => Row.SourceLabel;
-    public string RepositoryKey => CodeFilter.RepositoryKey(PullRequest);
+    public string RepositoryKey => DevelopmentFilter.RepositoryKey(PullRequest);
 
     /// <summary>
     /// Why this PR is on the operator's plate, strongest reason first — "Review"
@@ -91,8 +104,34 @@ public sealed class CodePullRequestRowViewModel
     public Visibility RelationVisibility => RelationLabel.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 }
 
-/// <summary>One row in the Code inbox.</summary>
-public sealed class CodeNotificationRowViewModel
+/// <summary>One comment or review in the activity sidebar.</summary>
+public sealed class DevelopmentActivityRowViewModel
+{
+    public required UnifiedPullRequest PullRequest { get; init; }
+    public required PullRequestComment Comment { get; init; }
+
+    public string AuthorName => Comment.AuthorName;
+    public string Age => DevelopmentNotificationRowViewModel.Age(Comment.Date);
+    public string PullRequestLabel => $"{PullRequest.Repository} {PullRequest.Reference} · {PullRequest.Title}";
+    public string PullRequestTitle => PullRequest.Title;
+
+    /// <summary>Review verbs ("approved") read as events, so they render italic.</summary>
+    public FontStyle SnippetStyle => Comment.IsSystem ? FontStyles.Italic : FontStyles.Normal;
+
+    /// <summary>First 240 characters, HTML stripped (DevOps), whitespace collapsed.</summary>
+    public string Snippet
+    {
+        get
+        {
+            var text = PullRequestCommentViewModel.Strip(Comment.Body);
+            text = System.Text.RegularExpressions.Regex.Replace(text, "\\s+", " ").Trim();
+            return text.Length > 240 ? text[..240] + "…" : text;
+        }
+    }
+}
+
+/// <summary>One row in the Development inbox.</summary>
+public sealed class DevelopmentNotificationRowViewModel
 {
     public required GitHubNotification Notification { get; init; }
 

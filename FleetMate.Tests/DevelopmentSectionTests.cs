@@ -1,17 +1,17 @@
 using System.Text.Json;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
-using FleetMate.GUI.Views.Projects.Code;
+using FleetMate.GUI.Views.Development;
 using FleetMate.GUI.Views.Shared;
 using Xunit;
 
 namespace FleetMate.Tests;
 
 /// <summary>
-/// The Code section: inbox parsing, check normalization across both providers,
+/// The Development tab: inbox parsing, check normalization across both providers,
 /// the wider PR search, and the list's filters and action rules.
 /// </summary>
-public class CodeSectionTests
+public class DevelopmentSectionTests
 {
     // MARK: - Inbox
 
@@ -79,14 +79,14 @@ public class CodeSectionTests
     [InlineData("mention", "Mentioned")]
     [InlineData("something_new", "something new")]
     public void Inbox_ReasonLabels(string reason, string expected) =>
-        Assert.Equal(expected, CodeNotificationRowViewModel.ReasonLabel(reason));
+        Assert.Equal(expected, DevelopmentNotificationRowViewModel.ReasonLabel(reason));
 
     // MARK: - Search
 
     [Fact]
     public void Search_AddsInvolvesAndOneQueryPerDistinctOwner()
     {
-        var searches = GitHubPullRequestService.CodeSearches(new[] { "acme", "ACME", "", "widgets" });
+        var searches = GitHubPullRequestService.DevelopmentSearches(new[] { "acme", "ACME", "", "widgets" });
 
         Assert.Contains(searches, s => s.Relation == PullRequestRelation.Involved && s.Query.Contains("involves:@me"));
 
@@ -98,6 +98,18 @@ public class CodeSectionTests
         // Aliases must be valid GraphQL identifiers and unique.
         Assert.Equal(searches.Count, searches.Select(s => s.Alias).Distinct().Count());
         Assert.All(searches, s => Assert.Matches("^[A-Za-z_][A-Za-z0-9_]*$", s.Alias));
+    }
+
+    [Fact]
+    public void Search_BatchesTwoPerQueryPersonalFirst()
+    {
+        var searches = GitHubPullRequestService.DevelopmentSearches(new[] { "a", "b", "c" });
+        var batches = GitHubPullRequestService.Batch(searches);
+
+        Assert.Equal(new[] { 2, 2, 2, 1 }, batches.Select(b => b.Count));
+        Assert.All(batches.Take(2).SelectMany(b => b), s => Assert.NotEqual(PullRequestRelation.Organization, s.Relation));
+        Assert.All(batches.Skip(2).SelectMany(b => b), s => Assert.Equal(PullRequestRelation.Organization, s.Relation));
+        Assert.Equal(searches.Count, batches.Sum(b => b.Count));
     }
 
     // MARK: - Checks
@@ -253,11 +265,11 @@ public class CodeSectionTests
         var mine = Pr(relations: new[] { PullRequestRelation.Organization, PullRequestRelation.Involved });
         var orgOnly = Pr(repo: "other", relations: PullRequestRelation.Organization);
 
-        var result = CodeFilter.Apply(new[] { mine, orgOnly }, CodeSourceFilter.All, CodeScope.Mine, null, null);
+        var result = DevelopmentFilter.Apply(new[] { mine, orgOnly }, DevelopmentSourceFilter.All, DevelopmentScope.Mine, null, null);
         Assert.Single(result);
         Assert.Same(mine, result[0]);
 
-        Assert.Equal(2, CodeFilter.Apply(new[] { mine, orgOnly }, CodeSourceFilter.All, CodeScope.Everything, null, null).Count);
+        Assert.Equal(2, DevelopmentFilter.Apply(new[] { mine, orgOnly }, DevelopmentSourceFilter.All, DevelopmentScope.Everything, null, null).Count);
     }
 
     [Fact]
@@ -267,16 +279,16 @@ public class CodeSectionTests
         var b = Pr(repo: "tools", title: "Beta");
         var c = Pr(PullRequestSource.AzureDevOps, repo: "fleet", title: "Alpha two");
 
-        Assert.Equal(new[] { a }, CodeFilter.Apply(new[] { a, b, c }, CodeSourceFilter.GitHub, CodeScope.Everything, "acme/fleet", "alp"));
-        Assert.Equal(2, CodeFilter.Apply(new[] { a, b, c }, CodeSourceFilter.All, CodeScope.Everything, null, "ALPHA").Count);
-        Assert.Equal(3, CodeFilter.Apply(new[] { a, b, c }, CodeSourceFilter.All, CodeScope.Everything, null, "feature/widget").Count);
-        Assert.Equal(2, CodeFilter.Apply(new[] { a, b, c }, CodeSourceFilter.GitHub, CodeScope.Everything, null, "#42").Count);
+        Assert.Equal(new[] { a }, DevelopmentFilter.Apply(new[] { a, b, c }, DevelopmentSourceFilter.GitHub, DevelopmentScope.Everything, "acme/fleet", "alp"));
+        Assert.Equal(2, DevelopmentFilter.Apply(new[] { a, b, c }, DevelopmentSourceFilter.All, DevelopmentScope.Everything, null, "ALPHA").Count);
+        Assert.Equal(3, DevelopmentFilter.Apply(new[] { a, b, c }, DevelopmentSourceFilter.All, DevelopmentScope.Everything, null, "feature/widget").Count);
+        Assert.Equal(2, DevelopmentFilter.Apply(new[] { a, b, c }, DevelopmentSourceFilter.GitHub, DevelopmentScope.Everything, null, "#42").Count);
     }
 
     [Fact]
     public void Filter_RepositoryCountsBusiestFirst()
     {
-        var counts = CodeFilter.RepositoryCounts(new[] { Pr(repo: "b"), Pr(repo: "a"), Pr(repo: "b") });
+        var counts = DevelopmentFilter.RepositoryCounts(new[] { Pr(repo: "b"), Pr(repo: "a"), Pr(repo: "b") });
         Assert.Equal(("acme/b", 2), counts[0]);
         Assert.Equal(("acme/a", 1), counts[1]);
     }
@@ -284,12 +296,105 @@ public class CodeSectionTests
     [Fact]
     public void Row_RelationLabelPrefersReview()
     {
-        var row = new CodePullRequestRowViewModel
+        var row = new DevelopmentPullRequestRowViewModel
         {
             PullRequest = Pr(relations: new[] { PullRequestRelation.Involved, PullRequestRelation.AssignedToMe }),
         };
         Assert.Equal("Review", row.RelationLabel);
-        Assert.Equal("", new CodePullRequestRowViewModel { PullRequest = Pr(relations: PullRequestRelation.Organization) }.RelationLabel);
+        Assert.Equal("", new DevelopmentPullRequestRowViewModel { PullRequest = Pr(relations: PullRequestRelation.Organization) }.RelationLabel);
+    }
+
+    // MARK: - Activity
+
+    [Fact]
+    public void Activity_ParsesCommentsReviewsAndThreadsOldestFirst()
+    {
+        const string json = """
+            {
+              "recentComments": { "nodes": [
+                { "author": { "login": "ada" }, "body": "Looks close", "createdAt": "2026-09-20T10:00:00Z", "url": "https://github.com/o/r/pull/1#c1" } ] },
+              "recentReviews": { "nodes": [
+                { "author": { "login": "bob" }, "body": "", "state": "APPROVED", "submittedAt": "2026-09-21T10:00:00Z", "url": "https://github.com/o/r/pull/1#r1" },
+                { "author": { "login": "bob" }, "body": "", "state": "PENDING", "submittedAt": "2026-09-22T10:00:00Z", "url": "https://github.com/o/r/pull/1#r2" } ] },
+              "recentThreads": { "nodes": [
+                { "comments": { "nodes": [
+                  { "author": { "login": "cy" }, "body": "Nit on line 4", "createdAt": "2026-09-19T10:00:00Z", "url": "https://github.com/o/r/pull/1#t1" } ] } } ] }
+            }
+            """;
+        using var doc = JsonDocument.Parse(json);
+        var activity = GitHubPullRequestService.ParseActivity(doc.RootElement);
+
+        Assert.Equal(new[] { "cy", "ada", "bob" }, activity.Select(c => c.AuthorName));
+        Assert.Equal("approved", activity[2].Body);
+        Assert.True(activity[2].IsSystem);
+        Assert.Equal("https://github.com/o/r/pull/1#c1", activity[1].Url);
+    }
+
+    [Fact]
+    public void Activity_NewestFirstAndHideMine()
+    {
+        var older = Pr(repo: "a");
+        older.RecentComments = new()
+        {
+            new PullRequestComment { AuthorName = "me", Body = "mine", Date = new DateTime(2026, 9, 20) },
+        };
+        var newer = Pr(repo: "b");
+        newer.RecentComments = new()
+        {
+            new PullRequestComment { AuthorName = "ada", Body = "theirs", Date = new DateTime(2026, 9, 22) },
+        };
+
+        var viewer = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ME" };
+
+        var all = DevelopmentFilter.Activity(new[] { older, newer }, viewer, hideMine: false);
+        Assert.Equal(new[] { "ada", "me" }, all.Select(r => r.AuthorName));
+
+        var hidden = DevelopmentFilter.Activity(new[] { older, newer }, viewer, hideMine: true);
+        Assert.Equal(new[] { "ada" }, hidden.Select(r => r.AuthorName));
+    }
+
+    [Fact]
+    public void Activity_DevOpsThreadsFillCountUpdatedAndLinks()
+    {
+        var pr = new UnifiedPullRequest
+        {
+            Source = PullRequestSource.AzureDevOps,
+            Number = 7,
+            Container = "Platform",
+            Repository = "fleet",
+            CreatedAt = new DateTime(2026, 9, 1),
+            WebUrl = "https://devops.example.com/acme/Platform/_git/fleet/pullrequest/7",
+        };
+
+        AzureDevOpsService.ApplyThreads(pr, new List<PullRequestComment>
+        {
+            new() { Id = "3-1", AuthorName = "System", Body = "voted", Date = new DateTime(2026, 9, 5), IsSystem = true },
+            new() { Id = "4-1", AuthorName = "Ada", Body = "Please rename", Date = new DateTime(2026, 9, 3) },
+        });
+
+        Assert.Equal(1, pr.CommentCount);
+        Assert.Equal(new DateTime(2026, 9, 5), pr.UpdatedAt);
+        Assert.Single(pr.RecentComments);
+        Assert.EndsWith("pullrequest/7?discussionId=4", pr.RecentComments[0].Url);
+    }
+
+    [Fact]
+    public void Queue_MergeKeepsViewerNamesAndActivity()
+    {
+        var a = new PullRequestQueue();
+        a.ViewerNames.Add("ada");
+        a.Insert(Pr(relations: PullRequestRelation.Organization));
+
+        var withActivity = Pr(relations: PullRequestRelation.CreatedByMe);
+        withActivity.RecentComments = new() { new PullRequestComment { AuthorName = "bob", Body = "hi" } };
+        var b = new PullRequestQueue();
+        b.ViewerNames.Add("Ada Lovelace");
+        b.Insert(withActivity);
+
+        a.Merge(b);
+
+        Assert.Equal(2, a.ViewerNames.Count);
+        Assert.Single(a.PullRequests[0].RecentComments);
     }
 
     [Fact]
@@ -300,6 +405,6 @@ public class CodeSectionTests
         queue.Insert(Pr(relations: PullRequestRelation.CreatedByMe));
 
         Assert.Single(queue.PullRequests);
-        Assert.True(CodeFilter.MatchesScope(queue.PullRequests[0], CodeScope.Mine));
+        Assert.True(DevelopmentFilter.MatchesScope(queue.PullRequests[0], DevelopmentScope.Mine));
     }
 }

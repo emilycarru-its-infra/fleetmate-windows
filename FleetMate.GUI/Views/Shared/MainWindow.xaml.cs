@@ -28,15 +28,15 @@ public partial class MainWindow : Window
 
         if (Application.Current is App app)
         {
-            app.Inbox.Changed += (_, _) => Dispatcher.Invoke(() => UpdateProjectsBadge(app.Inbox.UnreadCount));
+            app.Inbox.Changed += (_, _) => Dispatcher.Invoke(() => UpdateDevelopmentCount(app.Inbox.UnreadCount));
         }
     }
 
-    private void UpdateProjectsBadge(int unread)
+    private void UpdateDevelopmentCount(int unread)
     {
-        ProjectsBadge.Visibility = unread > 0 ? Visibility.Visible : Visibility.Collapsed;
-        ProjectsBadgeText.Text = unread > 99 ? "99+" : unread.ToString();
-        ProjectsBadge.ToolTip = $"{unread} unread GitHub notification{(unread == 1 ? "" : "s")}";
+        DevelopmentCount.Visibility = unread > 0 ? Visibility.Visible : Visibility.Collapsed;
+        DevelopmentCount.Text = unread > 99 ? "99+" : unread.ToString();
+        TabDevelopment.ToolTip = unread > 0 ? $"{unread} unread GitHub notification{(unread == 1 ? "" : "s")}" : null;
     }
 
     private void OnTabChecked(object sender, RoutedEventArgs e)
@@ -78,6 +78,7 @@ public partial class MainWindow : Window
         "Inventory" => new AssetsPage(),
         "Tickets" => new TicketsPage(),
         "Projects" => new BoardsPage(),
+        "Development" => new FleetMate.GUI.Views.Development.DevelopmentPage(),
         "Identity" => new IdentityPage(),
         _ => new DashboardPage()
     };

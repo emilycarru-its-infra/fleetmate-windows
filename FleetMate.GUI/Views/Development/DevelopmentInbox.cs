@@ -3,16 +3,16 @@ using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
 using Serilog;
 
-namespace FleetMate.GUI.Views.Projects.Code;
+namespace FleetMate.GUI.Views.Development;
 
 /// <summary>
-/// The GitHub inbox, held for the app's lifetime rather than by the Code view.
+/// The GitHub inbox, held for the app's lifetime rather than by the Development view.
 ///
-/// It polls from startup whether or not Code has been opened, because the whole
-/// point is the unread badge on the Projects tab: a notification nobody has
+/// It polls from startup whether or not Development has been opened, because the whole
+/// point is the unread count on the Development tab: a notification nobody has
 /// gone looking for is exactly the one that gets missed.
 /// </summary>
-public sealed class CodeInbox
+public sealed class DevelopmentInbox
 {
     /// <summary>
     /// Five minutes: well inside GitHub's advertised X-Poll-Interval (60s) and
@@ -24,7 +24,7 @@ public sealed class CodeInbox
     private DispatcherTimer? _timer;
     private bool _refreshing;
 
-    public CodeInbox(Func<GitHubNotificationService?> serviceFactory)
+    public DevelopmentInbox(Func<GitHubNotificationService?> serviceFactory)
     {
         _serviceFactory = serviceFactory;
     }

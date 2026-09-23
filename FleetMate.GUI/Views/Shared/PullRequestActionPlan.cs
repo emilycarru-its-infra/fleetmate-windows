@@ -58,8 +58,8 @@ public sealed class PullRequestCheckViewModel
     public Brush Brush => Check.State switch
     {
         PullRequestCheckState.Success => new SolidColorBrush(Color.FromRgb(0x2D, 0xA4, 0x4E)),
-        PullRequestCheckState.Failure => new SolidColorBrush(Color.FromRgb(0xD1, 0x3A, 0x3A)),
-        PullRequestCheckState.Pending => new SolidColorBrush(Color.FromRgb(0xD9, 0x9E, 0x0B)),
+        PullRequestCheckState.Failure => new SolidColorBrush(Color.FromRgb(0xE0, 0x7A, 0x1F)),
+        PullRequestCheckState.Pending => new SolidColorBrush(Color.FromRgb(0x3A, 0x6E, 0xA5)),
         _ => Brushes.Gray,
     };
 
