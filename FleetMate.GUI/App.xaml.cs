@@ -51,6 +51,18 @@ public partial class App : Application
     /// </summary>
     public FleetMate.Core.Models.Projects.PullRequestQueue? PullRequestQueue { get; set; }
 
+    /// <summary>The Development tab's PR list (involves me + organization), cached like the queue.</summary>
+    public FleetMate.Core.Models.Projects.PullRequestQueue? DevelopmentPullRequests { get; set; }
+
+    /// <summary>GitHub notifications, polled from startup so the Development tab count is live.</summary>
+    public FleetMate.GUI.Views.Development.DevelopmentInbox Inbox { get; }
+
+    public App()
+    {
+        Inbox = new FleetMate.GUI.Views.Development.DevelopmentInbox(() =>
+            Config is { } config ? new GitHubNotificationService(config.GitHubProviderOrDefault()) : null);
+    }
+
     // MARK: - TDX SSO State
     public bool IsTdxSsoAuthenticated => TdxService?.IsSsoAuthenticated ?? false;
     public string? TdxAuthenticatedUserName => TdxService?.AuthenticatedUserName;
@@ -562,6 +574,7 @@ public partial class App : Application
 
         var mainWindow = new MainWindow();
         mainWindow.Show();
+        Inbox.Start();
 
         // Give the broker a window to parent to. Only consulted if the silent
         // PRT path fails — on a managed device it never is — but without it an

@@ -14,7 +14,7 @@ namespace FleetMate.Core.Services.Projects;
 /// Device Flow → env → deprecated config token), so an SSO-authorized `gh`
 /// login is all that is needed.
 /// </summary>
-public sealed class GitHubPullRequestService : IDisposable
+public sealed partial class GitHubPullRequestService : IDisposable
 {
     private readonly GitHubGraphQLClient _client;
 
@@ -49,6 +49,7 @@ public sealed class GitHubPullRequestService : IDisposable
 
     private const string PullRequestFragment = """
         fragment PullRequestFields on PullRequest {
+          id
           number
           title
           url
@@ -232,6 +233,8 @@ public sealed class GitHubPullRequestService : IDisposable
             CommentCount = commentCount,
             Reviewers = reviewers.Values.OrderBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase).ToList(),
             WebUrl = url,
+            NodeId = Str(node, "id") ?? string.Empty,
+            RecentComments = ParseActivity(node),
             Relations = new HashSet<PullRequestRelation> { relation },
         };
     }
