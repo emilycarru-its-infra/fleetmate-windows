@@ -16,4 +16,6 @@ public partial class DevelopmentPage : Page
 
     private void OnActivityToggled(object sender, RoutedEventArgs e) =>
         View.ShowActivity(ActivityToggle.IsChecked == true);
+
+    private async void OnRefreshClicked(object sender, RoutedEventArgs e) => await View.RefreshAsync();
 }

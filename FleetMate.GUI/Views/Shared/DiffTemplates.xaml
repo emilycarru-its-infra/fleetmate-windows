@@ -1,0 +1,77 @@
+<!-- Red/green diff rendering shared by the pull request and commit viewers. -->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+        <!-- One diff row: gutter strip, both line numbers, marker, content. -->
+        <DataTemplate x:Key="DiffLineTemplate">
+            <Grid Background="{Binding RowBackground}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="3" />
+                    <ColumnDefinition Width="44" />
+                    <ColumnDefinition Width="44" />
+                    <ColumnDefinition Width="14" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Rectangle Grid.Column="0" Fill="{Binding GutterStrip}" />
+
+                <TextBlock Grid.Column="1" Text="{Binding OldLineLabel}" FontFamily="Consolas"
+                           FontSize="11" TextAlignment="Right" Padding="0,0,6,0"
+                           Foreground="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+                <TextBlock Grid.Column="2" Text="{Binding NewLineLabel}" FontFamily="Consolas"
+                           FontSize="11" TextAlignment="Right" Padding="0,0,6,0"
+                           Foreground="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+
+                <TextBlock Grid.Column="3" Text="{Binding Marker}" FontFamily="Consolas" FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+                <TextBlock Grid.Column="4" Text="{Binding Content}" FontFamily="Consolas" FontSize="11"
+                           Foreground="{Binding ContentBrush}" FontStyle="{Binding ContentStyle}"
+                           TextWrapping="NoWrap" />
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="DiffHunkTemplate">
+            <StackPanel>
+                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}" Padding="6,2">
+                    <TextBlock Text="{Binding Header}" FontFamily="Consolas" FontSize="10"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                </Border>
+                <ItemsControl ItemsSource="{Binding Lines}" ItemTemplate="{StaticResource DiffLineTemplate}" />
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- One file card in Changes. -->
+        <DataTemplate x:Key="DiffFileTemplate">
+            <Border BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                    BorderThickness="1" CornerRadius="6" Margin="0,0,0,12">
+                <StackPanel>
+                    <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                            CornerRadius="6,6,0,0" Padding="10,6">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding StatLabel}" FontSize="11"
+                                       FontFamily="Consolas" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding StatusLabel}" FontSize="10"
+                                       Visibility="{Binding StatusVisibility}" Margin="0,0,8,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            <TextBlock Text="{Binding Path}" FontFamily="Consolas" FontSize="12"
+                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}" />
+                        </DockPanel>
+                    </Border>
+
+                    <TextBlock Text="{Binding EmptyNotice}" Visibility="{Binding EmptyNoticeVisibility}"
+                               Padding="10,8" FontSize="11" TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+                    <!-- Wide lines scroll within their own card rather than
+                         forcing the whole sheet sideways. -->
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding Hunks}" ItemTemplate="{StaticResource DiffHunkTemplate}" />
+                    </ScrollViewer>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+</ResourceDictionary>
