@@ -1453,6 +1453,43 @@ public class GraphService : IDisposable
         catch (Exception ex) { Log.Error(ex, "Failed to remove member from group {Group}", groupNameOrId); return false; }
     }
 
+    /// <summary>
+    /// Append one line to an Intune managed device's notes, keeping what is
+    /// already there. The notes are visible on the device in the Intune admin
+    /// center, which makes them the place an operator action records its
+    /// reason and ticket. Notes are a beta-only property.
+    /// </summary>
+    public async Task<bool> AppendManagedDeviceNoteAsync(string managedDeviceId, string line)
+    {
+        if (!await SetAuthorizationAsync()) return false;
+        var url = $"https://graph.microsoft.com/beta/deviceManagement/managedDevices/{Uri.EscapeDataString(managedDeviceId)}";
+        try
+        {
+            var get = await _client.GetAsync($"{url}?$select=id,notes");
+            if (!get.IsSuccessStatusCode)
+            {
+                Log.Warning("Read notes failed for {Device}: {Status} - {Error}", managedDeviceId, get.StatusCode, await ReadErrorBodyAsync(get));
+                return false;
+            }
+            using var doc = JsonDocument.Parse(await get.Content.ReadAsStringAsync());
+            var existing = doc.RootElement.TryGetProperty("notes", out var n) && n.ValueKind == JsonValueKind.String
+                ? n.GetString() ?? string.Empty
+                : string.Empty;
+            var notes = string.IsNullOrWhiteSpace(existing) ? line : $"{existing.TrimEnd()}\n{line}";
+
+            var json = JsonSerializer.Serialize(new Dictionary<string, string> { ["notes"] = notes });
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var patch = await _client.PatchAsync(url, content);
+            if (!patch.IsSuccessStatusCode)
+            {
+                Log.Warning("Write notes failed for {Device}: {Status} - {Error}", managedDeviceId, patch.StatusCode, await ReadErrorBodyAsync(patch));
+                return false;
+            }
+            return true;
+        }
+        catch (Exception ex) { Log.Error(ex, "Failed to append notes for {Device}", managedDeviceId); return false; }
+    }
+
     /// <summary>Enable or disable a user account (PATCH accountEnabled).</summary>
     public async Task<bool> SetUserAccountEnabledAsync(string userPrincipalNameOrId, bool enabled)
     {
