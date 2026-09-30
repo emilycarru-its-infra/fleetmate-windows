@@ -173,6 +173,10 @@ class Program
             rootCommand.AddCommand(IntuneCommand.Create(graphService, reportMate));
             // Fleet reset — reset devices and clean the records that block re-enrollment
             rootCommand.AddCommand(WipeCommand.Create(graphService, snipeService));
+            // Reversible Windows lock — membership of the lock group, which an Intune remediation enforces
+            var lockGroup = config.Graph?.LockGroup ?? new GraphConfig().LockGroup;
+            rootCommand.AddCommand(LockCommand.CreateLock(graphService, lockGroup));
+            rootCommand.AddCommand(LockCommand.CreateUnlock(graphService, lockGroup));
             // Entra ID (Azure AD) user/group management
             rootCommand.AddCommand(EntraCommand.Create(graphService, reportMate));
 

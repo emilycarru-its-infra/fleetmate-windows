@@ -26,6 +26,14 @@ public class GraphConfig
     /// </summary>
     public int PageSize { get; set; } = 100;
 
+    /// <summary>
+    /// Entra group whose membership locks a Windows device (`fleetmate lock`
+    /// adds the device, `fleetmate unlock` removes it). The lock itself is an
+    /// Intune remediation assigned to this group; FleetMate only changes
+    /// membership.
+    /// </summary>
+    public string LockGroup { get; set; } = "Devices-Lock";
+
     // The per-scope Devices/Systems service principals were removed along with
     // the rest of the secret-bearing auth. Scope separation is now the operator's
     // own Entra role assignments, and privileged writes go through the
