@@ -109,6 +109,33 @@ public sealed class ElevationSession
         var state = show.Out.Trim();
         if (state == "Running") return;
 
+        RaiseCreating(domain, true);
+        try
+        {
+            await CreateSessionAsync(domain, name, state, ttlHours);
+        }
+        finally
+        {
+            RaiseCreating(domain, false);
+        }
+    }
+
+    /// <summary>
+    /// Raised with true when this process starts creating a domain's session
+    /// container and false when that finishes, success or not. Static because
+    /// the Graph transport and the chrome status each hold their own session
+    /// object; the container they share is per user and domain, not per object.
+    /// </summary>
+    public static event Action<GraphDomain, bool>? CreatingChanged;
+
+    private static void RaiseCreating(GraphDomain domain, bool creating)
+    {
+        try { CreatingChanged?.Invoke(domain, creating); }
+        catch (Exception ex) { Serilog.Log.Debug(ex, "Elevation CreatingChanged handler threw"); }
+    }
+
+    private async Task CreateSessionAsync(GraphDomain domain, string name, string state, int ttlHours)
+    {
         if (!string.IsNullOrEmpty(state))
             await RunAzAsync("container", "delete", "--resource-group", _config.ResourceGroup!, "--name", name, "--yes", "-o", "none");
 
@@ -157,6 +184,43 @@ public sealed class ElevationSession
         var show = await RunAzAsync("container", "show", "--resource-group", _config.ResourceGroup!, "--name", SessionName(domain), "--query", "instanceView.state", "-o", "tsv");
         var state = show.Out.Trim();
         return show.Code == 0 && state.Length > 0 ? state : null;
+    }
+
+    /// <summary>
+    /// The session's container state and expires tag in one read-only call —
+    /// the signal behind the chrome's starting / ready / expired status. A
+    /// missing container comes back as an empty state; a failed az call (not
+    /// signed in, no access) throws so the caller can show Unknown rather than
+    /// a confident None.
+    /// </summary>
+    public async Task<ElevationSessionInfo> GetSessionInfoAsync(GraphDomain domain)
+    {
+        EnsureConfigured();
+        var show = await RunAzAsync("container", "show", "--resource-group", _config.ResourceGroup!,
+            "--name", SessionName(domain), "--query", "{state:instanceView.state, expires:tags.expires}", "-o", "json");
+        if (show.Code != 0)
+        {
+            if (show.Err.Contains("ResourceNotFound", StringComparison.OrdinalIgnoreCase) ||
+                show.Err.Contains("was not found", StringComparison.OrdinalIgnoreCase))
+                return new ElevationSessionInfo(null, null);
+            throw new ElevationException($"Could not read elevation session state: {show.Err.Trim()}");
+        }
+        return ParseSessionInfo(show.Out);
+    }
+
+    internal static ElevationSessionInfo ParseSessionInfo(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new ElevationSessionInfo(null, null);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        string? state = root.TryGetProperty("state", out var st) && st.ValueKind == JsonValueKind.String ? st.GetString() : null;
+        long? expires = null;
+        if (root.TryGetProperty("expires", out var ex))
+        {
+            if (ex.ValueKind == JsonValueKind.String && long.TryParse(ex.GetString(), out var v)) expires = v;
+            else if (ex.ValueKind == JsonValueKind.Number && ex.TryGetInt64(out var n)) expires = n;
+        }
+        return new ElevationSessionInfo(state, expires);
     }
 
     /// <summary>

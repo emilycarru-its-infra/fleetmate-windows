@@ -535,6 +535,8 @@ public class FleetMateConfig
                 if (!string.IsNullOrEmpty(elevationIdentityPrefix)) config.Elevation.IdentityPrefix = elevationIdentityPrefix;
                 if (key.GetValue("ElevationDefaultTtlHours") is string ttlRaw && int.TryParse(ttlRaw, out var ttl))
                     config.Elevation.DefaultTtlHours = ttl;
+                if (key.GetValue("ElevationPrewarmOnLaunch") is string prewarmRaw && bool.TryParse(prewarmRaw, out var prewarm))
+                    config.Elevation.PrewarmOnLaunch = prewarm;
             }
 
             // Manage tab settings. The SSH key path and user also feed the
@@ -1120,6 +1122,14 @@ public class ElevationConfig
 
     /// <summary>Default elevation session TTL in hours.</summary>
     public int DefaultTtlHours { get; set; } = 8;
+
+    /// <summary>
+    /// Start the desktop app's elevation sessions in the background at launch,
+    /// so the first elevated action of the day does not wait on a container
+    /// boot. A running session is left alone; only a missing or expired one is
+    /// created.
+    /// </summary>
+    public bool PrewarmOnLaunch { get; set; } = true;
 
     /// <summary>True only when every required field is set — elevation refuses to run otherwise.</summary>
     public bool IsConfigured =>

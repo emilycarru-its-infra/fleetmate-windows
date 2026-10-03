@@ -203,8 +203,7 @@ public partial class DashboardPage : Page
             {
                 try
                 {
-                    var tickets = await _app.TdxService.SearchTicketsAsync(
-                        new TicketSearchRequest { MaxResults = 500 }, 500);
+                    var tickets = await _app.LoadBoardTicketsAsync();
                     Dispatcher.Invoke(() => _app.UpdateTicketsCache(tickets));
                 }
                 catch (Exception ex) { Log.Warning(ex, "Dashboard: failed to load tickets"); }
