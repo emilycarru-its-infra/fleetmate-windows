@@ -43,6 +43,31 @@ public partial class App : Application
     public ManageStateStore ManageState { get; private set; } = new();
 
     /// <summary>
+    /// Elevation session status for the window chrome. Null until services are
+    /// built; Off when elevation is not configured.
+    /// </summary>
+    public ElevationMonitor? ElevationMonitor { get; private set; }
+
+    /// <summary>Raised after services are rebuilt, so chrome can rebind.</summary>
+    public event Action? ServicesReloaded;
+
+    /// <summary>
+    /// The date window the cached tickets were loaded for. Held here so the
+    /// startup preload, the dashboard and the Tickets board all agree on it.
+    /// </summary>
+    public TicketDateRangePreset TicketDatePreset { get; set; } = TicketDateRangePreset.CurrentTerm;
+
+    /// <summary>
+    /// Load the board's ticket set — the same query the macOS app runs. See
+    /// <see cref="TicketBoardQuery"/>.
+    /// </summary>
+    public Task<List<TdxTicket>> LoadBoardTicketsAsync()
+    {
+        if (TdxService == null || Config.Tdx == null) return Task.FromResult(new List<TdxTicket>());
+        return TicketBoardQuery.LoadAsync(TdxService, Config.Tdx, TicketDatePreset);
+    }
+
+    /// <summary>
     /// The loaded pull request queue, cached here rather than in the view.
     ///
     /// A WPF page is rebuilt on navigation, so a queue held by the control dies
@@ -581,6 +606,7 @@ public partial class App : Application
         var mainWindow = new MainWindow();
         mainWindow.Show();
         Inbox.Start();
+        ElevationMonitor?.Start();
 
         // Give the broker a window to parent to. Only consulted if the silent
         // PRT path fails — on a managed device it never is — but without it an
@@ -681,7 +707,7 @@ public partial class App : Application
             {
                 try
                 {
-                    var tickets = await TdxService.SearchTicketsAsync(new TicketSearchRequest { MaxResults = 500 }, 500);
+                    var tickets = await LoadBoardTicketsAsync();
                     Dispatcher.Invoke(() => UpdateTicketsCache(tickets));
                     Log.Information("Preloaded {Count} tickets", tickets.Count);
                 }
@@ -737,6 +763,12 @@ public partial class App : Application
                 GraphService = new GraphService(Config.Graph, Config.Elevation);
                 Log.Information("GraphService initialized");
             }
+
+            ElevationMonitor = new ElevationMonitor(
+                Config.Elevation,
+                directTransport: GraphService == null || string.Equals(
+                    Environment.GetEnvironmentVariable("FLEETMATE_GRAPH_TRANSPORT"), "direct",
+                    StringComparison.OrdinalIgnoreCase));
 
             // Initialize SnipeService if configured. A URL is enough now: auth is
             // the operator's Entra session, so there is no API key to wait for.
@@ -818,6 +850,8 @@ public partial class App : Application
         TdxService = null;
         DevOpsService = null;
         DevOpsSsoService = null;
+        ElevationMonitor?.Dispose();
+        ElevationMonitor = null;
         ReportMateService = null;
         SecureShellService?.Dispose();
         SecureShellService = null;
@@ -828,6 +862,8 @@ public partial class App : Application
         Config = LoadDesktopConfiguration();
         AuthManager = new AuthManager(Config);
         InitializeServices();
+        ElevationMonitor?.Start();
+        ServicesReloaded?.Invoke();
 
         if (Current.MainWindow is MainWindow mainWindow)
             mainWindow.ResetPageCache();
@@ -911,6 +947,7 @@ public partial class App : Application
         DevOpsService?.Dispose();
         ReportMateService?.Dispose();
         SecureShellService?.Dispose();
+        ElevationMonitor?.Dispose();
         Log.CloseAndFlush();
         base.OnExit(e);
     }

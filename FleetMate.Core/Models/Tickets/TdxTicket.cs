@@ -495,6 +495,9 @@ public class TicketSearchRequest
     [JsonPropertyName("StatusIDs")]
     public List<int>? StatusIds { get; set; }
 
+    [JsonPropertyName("StatusClassIDs")]
+    public List<int>? StatusClassIds { get; set; }
+
     [JsonPropertyName("StatusClassNames")]
     public List<string>? StatusClassNames { get; set; }
 
