@@ -29,7 +29,65 @@ public partial class MainWindow : Window
         if (Application.Current is App app)
         {
             app.Inbox.Changed += (_, _) => Dispatcher.Invoke(() => UpdateDevelopmentCount(app.Inbox.UnreadCount));
+            BindElevationMonitor(app);
+            app.ServicesReloaded += () => Dispatcher.Invoke(() => BindElevationMonitor(app));
         }
+
+        // Re-derive the elevation label between polls: the expires tag lets
+        // Ready turn Expired on time without another az call.
+        _elevationTick = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        _elevationTick.Tick += (_, _) => UpdateElevationStatus();
+        _elevationTick.Start();
+    }
+
+    // ── Elevation status ──────────────────────────────────────────
+
+    private readonly System.Windows.Threading.DispatcherTimer _elevationTick;
+    private ElevationMonitor? _elevationMonitor;
+
+    private void BindElevationMonitor(App app)
+    {
+        if (_elevationMonitor != null) _elevationMonitor.Changed -= OnElevationChanged;
+        _elevationMonitor = app.ElevationMonitor;
+        if (_elevationMonitor != null) _elevationMonitor.Changed += OnElevationChanged;
+        UpdateElevationStatus();
+    }
+
+    private void OnElevationChanged() => Dispatcher.BeginInvoke(UpdateElevationStatus);
+
+    private void UpdateElevationStatus()
+    {
+        var monitor = _elevationMonitor;
+        if (monitor is not { Enabled: true })
+        {
+            ElevationButton.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var overall = monitor.Overall();
+        ElevationButton.Visibility = Visibility.Visible;
+        ElevationText.Text = ElevationStatusText.Label(overall);
+        ElevationDot.Fill = new SolidColorBrush(overall switch
+        {
+            ElevationSessionState.Ready => Colors.Green,
+            ElevationSessionState.Starting => Colors.DodgerBlue,
+            ElevationSessionState.Expired => Colors.Orange,
+            ElevationSessionState.None => Colors.Gray,
+            _ => Colors.Goldenrod,
+        });
+        ElevationButton.ToolTip = string.Join(Environment.NewLine, ElevationMonitor.DesktopDomains.Select(d =>
+                ElevationStatusText.DomainLine(d, monitor.StateOf(d), monitor.ExpiresOf(d), monitor.ErrorOf(d), DateTimeOffset.Now)))
+            + Environment.NewLine + Environment.NewLine
+            + "Click to re-check and start any session that is not running.";
+    }
+
+    private async void OnElevationClicked(object sender, RoutedEventArgs e)
+    {
+        if (_elevationMonitor is not { Enabled: true } monitor) return;
+        ElevationText.Text = "Checking…";
+        try { await monitor.PrewarmAsync(); }
+        catch (Exception ex) { Serilog.Log.Warning(ex, "Elevation check failed"); }
+        UpdateElevationStatus();
     }
 
     private void UpdateDevelopmentCount(int unread)

@@ -113,12 +113,10 @@
 
             <!-- Search -->
             <ui:SimpleStackPanel Grid.Column="5" Orientation="Horizontal" Spacing="8">
-                <ComboBox x:Name="LimitComboBox" Width="80" ToolTip="Max results" SelectionChanged="OnLimitChanged">
-                    <ComboBoxItem Content="500" IsSelected="True" />
-                    <ComboBoxItem Content="1000" />
-                    <ComboBoxItem Content="2000" />
-                    <ComboBoxItem Content="5000" />
-                </ComboBox>
+                <!-- Created-date window, same presets as macOS. Up to 5000
+                     tickets load per window, so there is no separate limit. -->
+                <ComboBox x:Name="DateRangeComboBox" Width="140" ToolTip="Tickets created in"
+                          DisplayMemberPath="Label" SelectionChanged="OnDateRangeChanged" />
                 <TextBox x:Name="SearchBox" Width="160" ui:ControlHelper.PlaceholderText="Search..." TextChanged="OnSearchChanged" />
             </ui:SimpleStackPanel>
         </Grid>
@@ -245,6 +243,9 @@
             
             <!-- Kanban Board View -->
             <ScrollViewer x:Name="BoardViewPanel" Grid.Column="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Visibility="Collapsed">
+                <!-- Blocks of columns. Responsible mode draws one block per
+                     responsible group (groupless tickets in a trailing "No Group"
+                     block, as on macOS); other modes are one headerless block. -->
                 <ItemsControl x:Name="BoardColumnsControl">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -253,6 +254,25 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
+                            <Grid Margin="{Binding BlockMargin}">
+                                <Rectangle Visibility="{Binding HeaderVisibility}" RadiusX="12" RadiusY="12"
+                                           Stroke="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                                           StrokeThickness="1.5" StrokeDashArray="4 3" />
+                                <DockPanel Margin="{Binding BlockPadding}">
+                                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="4,0,0,8"
+                                                Visibility="{Binding HeaderVisibility}">
+                                        <TextBlock Text="{Binding Header}" FontWeight="Bold" FontSize="13" />
+                                        <TextBlock Text="{Binding Count}" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Bottom"
+                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    </StackPanel>
+                                    <ItemsControl ItemsSource="{Binding Columns}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
                             <Border Background="{DynamicResource SubtleFillBrush}"
                                     CornerRadius="8" Width="280" Margin="0,0,16,0" VerticalAlignment="Top"
                                     AllowDrop="True" Drop="OnBoardColumnDrop" DragOver="OnBoardColumnDragOver"
@@ -332,6 +352,11 @@
                                     </ScrollViewer>
                                 </Grid>
                             </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </DockPanel>
+                            </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
@@ -345,23 +370,104 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <!-- Panel Header -->
-                    <Grid Grid.Row="0" Margin="12">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock x:Name="DetailTicketIdText" FontWeight="Bold" FontSize="16" 
-                                       Foreground="{DynamicResource SystemControlForegroundAccentBrush}" 
-                                       VerticalAlignment="Center" />
-                            <Button x:Name="CopyTicketIdButton" Width="28" Height="28" Content="" FontFamily="Segoe Fluent Icons" Margin="4,0,0,0"
-                                    ToolTip="Copy ticket number" Click="OnCopyTicketIdClicked" />
-                            <Button x:Name="CopyTicketLinkButton" Width="28" Height="28" Content="" FontFamily="Segoe Fluent Icons" Margin="4,0,0,0"
-                                    ToolTip="Copy ticket link" Click="OnCopyTicketLinkClicked" />
-                        </StackPanel>
-                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
-                            <Button x:Name="OpenInWebButton" Width="28" Height="28" Content="" FontFamily="Segoe Fluent Icons" Click="OnOpenInWebClicked" ToolTip="Open in Web Browser" />
-                            <Button Content="" FontFamily="Segoe Fluent Icons" Width="28" Height="28" Click="OnRefreshDetailClicked" ToolTip="Refresh" Margin="4,0,0,0" />
-                            <Button Content="" FontFamily="Segoe Fluent Icons" Width="28" Height="28" Click="OnCloseDetailPanel" Margin="4,0,0,0" />
-                        </StackPanel>
-                    </Grid>
+                    <!-- Panel Header, laid out like the macOS detail header:
+                         the ticket number (click to copy), copy-link and open-in-TDX
+                         on the left; close on the right; actions on their own row
+                         so they wrap in a narrow pane instead of clipping. -->
+                    <StackPanel Grid.Row="0" Margin="12,12,12,8">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Click="OnCloseDetailPanel" ToolTip="Close"
+                                    Style="{StaticResource ChromeIconButtonStyle}">
+                                <ui:FontIcon Glyph="&#xE711;" FontFamily="Segoe Fluent Icons" FontSize="12" />
+                            </Button>
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="CopyTicketIdButton" Click="OnCopyTicketIdClicked"
+                                        ToolTip="Copy ticket number" Style="{StaticResource ChromeIconButtonStyle}" Padding="0,2,6,2">
+                                    <TextBlock x:Name="DetailTicketIdText" FontWeight="Bold" FontSize="18"
+                                               Foreground="{DynamicResource SystemControlForegroundAccentBrush}" />
+                                </Button>
+                                <Button x:Name="CopyTicketLinkButton" Click="OnCopyTicketLinkClicked"
+                                        ToolTip="Copy ticket link" Style="{StaticResource ChromeIconButtonStyle}">
+                                    <ui:FontIcon Glyph="&#xE71B;" FontFamily="Segoe Fluent Icons" FontSize="14" />
+                                </Button>
+                                <Button x:Name="OpenInWebButton" Click="OnOpenInWebClicked"
+                                        ToolTip="Open in TDX" Style="{StaticResource ChromeIconButtonStyle}">
+                                    <ui:FontIcon Glyph="&#xE774;" FontFamily="Segoe Fluent Icons" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </DockPanel>
+
+                        <WrapPanel x:Name="DetailActionsPanel" Margin="0,6,0,0">
+                            <WrapPanel.Resources>
+                                <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                    <Setter Property="Padding" Value="10,4" />
+                                    <Setter Property="Margin" Value="0,0,6,6" />
+                                    <Setter Property="FontSize" Value="12" />
+                                </Style>
+                            </WrapPanel.Resources>
+                            <Button x:Name="AssignToMeButton" Click="OnAssignToMeClicked" ToolTip="Make me the responsible">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE77B;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
+                                    <TextBlock Text="Assign to me" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="ReallocateButton" Click="OnReallocateClicked" ToolTip="Reallocate to someone else">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE716;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
+                                    <TextBlock Text="Reallocate" VerticalAlignment="Center" />
+                                    <ui:FontIcon Glyph="&#xE70D;" FontFamily="Segoe Fluent Icons" FontSize="9" Margin="6,0,0,0" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="UnassignButton" Click="OnUnassignClicked" ToolTip="Clear the responsible person">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE8F8;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
+                                    <TextBlock Text="Unassign" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button Click="OnRefreshDetailClicked" ToolTip="Refresh this ticket">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE72C;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
+                                    <TextBlock Text="Refresh" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                        </WrapPanel>
+
+                        <!-- Reallocate popover, anchored to its button: search people,
+                             pick one, and the ticket's responsible changes. -->
+                        <Popup x:Name="ReallocatePopup" PlacementTarget="{Binding ElementName=ReallocateButton}"
+                               Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
+                               Opened="OnReallocatePopupOpened">
+                            <Border Background="{DynamicResource CardBackgroundBrush}"
+                                    BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1"
+                                    CornerRadius="8" Padding="12" Width="320" Margin="0,4,8,8"
+                                    TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.25" />
+                                </Border.Effect>
+                                <StackPanel>
+                                    <TextBlock Text="Reallocate to" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8" />
+                                    <TextBox x:Name="ReallocateSearchBox" ui:ControlHelper.PlaceholderText="Search people by name or email"
+                                             TextChanged="OnReallocateSearchChanged" PreviewKeyDown="OnReallocateSearchKeyDown" />
+                                    <TextBlock x:Name="ReallocateStatusText" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                               Text="Type at least two characters." />
+                                    <ListBox x:Name="ReallocateResultsList" MaxHeight="240" Margin="0,6,0,0"
+                                             BorderThickness="0" Background="Transparent"
+                                             MouseLeftButtonUp="OnReallocateResultPicked" KeyDown="OnReallocateResultsKeyDown">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Margin="0,2">
+                                                    <TextBlock Text="{Binding DisplayName}" FontSize="13" />
+                                                    <TextBlock Text="{Binding PrimaryEmail}" FontSize="11"
+                                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </StackPanel>
 
                     <!-- Detail Content -->
                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">

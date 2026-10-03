@@ -333,9 +333,7 @@ public partial class PullRequestQueueView : UserControl
 
             if (!result.Success)
             {
-                MessageBox.Show(
-                    $"{action} failed:\n\n{result.Error}",
-                    $"{action} pull request", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ShowActionError($"{action} failed: {result.Error}");
                 return;
             }
 
@@ -347,14 +345,38 @@ public partial class PullRequestQueueView : UserControl
         {
             Log.Error(ex, "[prs] {Action} failed for {Repo}#{Number}",
                 action, row.PullRequest.Repository, row.PullRequest.Number);
-            MessageBox.Show($"{action} failed:\n\n{ex.Message}",
-                $"{action} pull request", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowActionError($"{action} failed: {ex.Message}");
         }
         finally
         {
             QueueProgress.Visibility = Visibility.Collapsed;
         }
     }
+
+    private System.Windows.Threading.DispatcherTimer? _actionErrorTimer;
+
+    /// <summary>
+    /// Show an action failure in the banner. It clears itself after eight
+    /// seconds, so a failed action never blocks the window behind a dialog.
+    /// </summary>
+    private void ShowActionError(string message)
+    {
+        ActionErrorText.Text = message;
+        ActionErrorBanner.Visibility = Visibility.Visible;
+
+        _actionErrorTimer?.Stop();
+        _actionErrorTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+        _actionErrorTimer.Tick += (_, _) => HideActionError();
+        _actionErrorTimer.Start();
+    }
+
+    private void HideActionError()
+    {
+        _actionErrorTimer?.Stop();
+        ActionErrorBanner.Visibility = Visibility.Collapsed;
+    }
+
+    private void OnDismissActionError(object sender, RoutedEventArgs e) => HideActionError();
 
     private static bool Confirm(string title, string message) =>
         MessageBox.Show(message, title, MessageBoxButton.OKCancel, MessageBoxImage.Question)

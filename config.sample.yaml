@@ -58,6 +58,7 @@ elevation:
   transcriptAccount:                      # storage account for elevation transcripts
   identityPrefix:                         # e.g. "DevOps-" -> identity "DevOps-Devices" for the devices domain
   defaultTtlHours: 8
+  prewarmOnLaunch: true                   # desktop app starts missing/expired sessions at launch
 
 # TeamDynamix Configuration - Set via environment variables:
 # - TDX_BASE_URL: TDX Web API base URL

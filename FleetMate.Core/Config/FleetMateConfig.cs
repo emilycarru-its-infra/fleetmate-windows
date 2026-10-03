@@ -416,9 +416,59 @@ public class FleetMateConfig
             if (key == null)
             {
                 Log.Debug("Registry key not found: HKCU\\{Path}", RegistryPath);
-                return;
             }
-            
+            else
+            {
+                // Retired credentials: warn rather than silently ignore, so anyone
+                // still provisioning them finds out they are dead weight (and a
+                // live secret to revoke).
+                foreach (var retired in new[] { "GraphClientSecret", "TdxUsername", "TdxPassword", "TdxBeid", "TdxWebServicesKey" })
+                    WarnOnRetiredSecret(key, retired);
+                ApplyRegistryValues(name => key.GetValue(name), config, fromPolicy: false);
+                Log.Debug("Loaded credentials from registry: HKCU\\{Path}", RegistryPath);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to load credentials from registry");
+        }
+
+        // Managed settings go on top of the operator's own, so Intune can set
+        // them uniformly: machine policy, then user policy.
+        LoadPolicy(Registry.LocalMachine, "HKLM", config);
+        LoadPolicy(Registry.CurrentUser, "HKCU", config);
+    }
+
+    /// <summary>Where Intune (or Group Policy) writes managed FleetMate settings.</summary>
+    public const string PolicyRegistryPath = @"SOFTWARE\Policies\FleetMate";
+
+    private static void LoadPolicy(RegistryKey hive, string hiveName, FleetMateConfig config)
+    {
+        try
+        {
+            using var key = hive.OpenSubKey(PolicyRegistryPath);
+            if (key == null) return;
+            // Policy values may be REG_DWORD as easily as REG_SZ; read both as text.
+            ApplyRegistryValues(name => key.GetValue(name)?.ToString(), config, fromPolicy: true);
+            Log.Debug("Applied managed settings from {Hive}\\{Path}", hiveName, PolicyRegistryPath);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to read managed settings from {Hive}\\{Path}", hiveName, PolicyRegistryPath);
+        }
+    }
+
+    /// <summary>
+    /// Apply FleetMate's registry value names to <paramref name="config"/>.
+    /// The same names serve the operator's own key and the policy keys. A
+    /// policy source never supplies a secret: managed settings are readable by
+    /// every user on the machine, so a credential there would be a leak, and
+    /// the secret-bearing names are skipped outright.
+    /// </summary>
+    internal static void ApplyRegistryValues(Func<string, object?> read, FleetMateConfig config, bool fromPolicy)
+    {
+        var key = new RegistryValueReader(read, fromPolicy);
+        {
             // ReportMate
             var reportMateUrl = key.GetValue("ReportMateUrl") as string;
             if (!string.IsNullOrEmpty(reportMateUrl))
@@ -466,7 +516,6 @@ public class FleetMateConfig
             if (!string.IsNullOrEmpty(graphClientId))
                 config.Graph.ClientId = graphClientId;
 
-            WarnOnRetiredSecret(key, "GraphClientSecret");
 
 
             // TeamDynamix credentials
@@ -487,15 +536,6 @@ public class FleetMateConfig
             if (!string.IsNullOrEmpty(tdxAssetsAppId) && int.TryParse(tdxAssetsAppId, out var assetsAppId))
                 config.Tdx.AssetsAppId = assetsAppId;
             
-            // TDX service-account credentials are gone — SSO is the only path in.
-            // Warn rather than silently ignore, so anyone still provisioning
-            // these finds out they are dead weight (and a live secret to revoke).
-            WarnOnRetiredSecret(key, "TdxUsername");
-            WarnOnRetiredSecret(key, "TdxPassword");
-            WarnOnRetiredSecret(key, "TdxBeid");
-            WarnOnRetiredSecret(key, "TdxWebServicesKey");
-
-
             // Azure DevOps credentials
             config.AzureDevOps ??= new AzureDevOpsConfig();
             var devOpsBaseUrl = key.GetValue("DevOpsBaseUrl") as string;
@@ -535,6 +575,8 @@ public class FleetMateConfig
                 if (!string.IsNullOrEmpty(elevationIdentityPrefix)) config.Elevation.IdentityPrefix = elevationIdentityPrefix;
                 if (key.GetValue("ElevationDefaultTtlHours") is string ttlRaw && int.TryParse(ttlRaw, out var ttl))
                     config.Elevation.DefaultTtlHours = ttl;
+                if (key.GetValue("ElevationPrewarmOnLaunch") is string prewarmRaw && bool.TryParse(prewarmRaw, out var prewarm))
+                    config.Elevation.PrewarmOnLaunch = prewarm;
             }
 
             // Manage tab settings. The SSH key path and user also feed the
@@ -576,14 +618,42 @@ public class FleetMateConfig
                 }
             }
 
-            Log.Debug("Loaded credentials from registry: HKCU\\{Path}", RegistryPath);
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "Failed to load credentials from registry");
         }
     }
-    
+
+    /// <summary>
+    /// Reads registry values for <see cref="ApplyRegistryValues"/>, returning
+    /// nothing for a secret-bearing name when the source is policy.
+    /// </summary>
+    private sealed class RegistryValueReader
+    {
+        private static readonly HashSet<string> SecretNames = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "ReportMatePassphrase", "SnipeApiKey", "GraphClientSecret",
+            "TdxUsername", "TdxPassword", "TdxBeid", "TdxWebServicesKey",
+        };
+
+        private readonly Func<string, object?> _read;
+        private readonly bool _fromPolicy;
+
+        public RegistryValueReader(Func<string, object?> read, bool fromPolicy)
+        {
+            _read = read;
+            _fromPolicy = fromPolicy;
+        }
+
+        public object? GetValue(string name)
+        {
+            if (_fromPolicy && SecretNames.Contains(name))
+            {
+                if (_read(name) is not null)
+                    Log.Warning("[auth] Ignoring managed setting {Name}: secrets are never read from policy", name);
+                return null;
+            }
+            return _read(name);
+        }
+    }
+
     /// <summary>
     /// Save credentials to Windows Registry
     /// Called by 'fleetmate configure' command
@@ -1120,6 +1190,14 @@ public class ElevationConfig
 
     /// <summary>Default elevation session TTL in hours.</summary>
     public int DefaultTtlHours { get; set; } = 8;
+
+    /// <summary>
+    /// Start the desktop app's elevation sessions in the background at launch,
+    /// so the first elevated action of the day does not wait on a container
+    /// boot. A running session is left alone; only a missing or expired one is
+    /// created.
+    /// </summary>
+    public bool PrewarmOnLaunch { get; set; } = true;
 
     /// <summary>True only when every required field is set — elevation refuses to run otherwise.</summary>
     public bool IsConfigured =>
