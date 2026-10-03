@@ -50,8 +50,7 @@ public partial class TicketsPage : Page
     private bool _isBoardView = true;   // List vs Board view mode (Board is the default, macOS parity)
     private string _boardGroupBy = "Responsible"; // Status | Responsible | Priority | Group
     private string _feedFilter = "Comments";  // Comments (default), Activity, All
-    private int _maxResults = 500;  // Default max results
-    private bool _isInitialLoadDone;
+private bool _isInitialLoadDone;
     
     // Use cached tickets from App
     private List<TdxTicket> _allTickets => _app?.CachedTickets ?? new();
@@ -82,6 +81,16 @@ public partial class TicketsPage : Page
         }
 
         TicketsListView.ItemsSource = _ticketRows;
+
+        // Selecting the stored preset fires OnDateRangeChanged during
+        // construction; _isInitialLoadDone is still false then, so it only
+        // records the choice and the Loaded handler does the first load.
+        var now = DateTime.Now;
+        var presets = Enum.GetValues<TicketDateRangePreset>()
+            .Select(p => new DateRangeOption(p, TicketBoardQuery.Label(p, now)))
+            .ToList();
+        DateRangeComboBox.ItemsSource = presets;
+        DateRangeComboBox.SelectedItem = presets.FirstOrDefault(o => o.Preset == (_app?.TicketDatePreset ?? TicketDateRangePreset.CurrentTerm));
 
         // Trackpad horizontal swipes and Shift+wheel scroll the board.
         Shared.HorizontalWheel.Attach(BoardViewPanel);
@@ -188,15 +197,9 @@ public partial class TicketsPage : Page
 
         try
         {
-            var search = new TicketSearchRequest { MaxResults = _maxResults };
-            
-            // Apply group filter from config if set
-            if (_app.Config.Tdx?.ResponsibleGroupId > 0)
-            {
-                search.ResponsibleGroupIds = new List<int> { _app.Config.Tdx.ResponsibleGroupId };
-            }
-            
-            var tickets = await _tdxService.SearchTicketsAsync(search, _maxResults);
+            // Same set as macOS: created-date window, 5000 cap, the configured
+            // group if any, plus the operator's own groupless tickets.
+            var tickets = await _app.LoadBoardTicketsAsync();
             _app.UpdateTicketsCache(tickets);
             UpdateFilterOptions();
             ApplyFiltersAndSort();
@@ -544,47 +547,72 @@ public partial class TicketsPage : Page
     private void UpdateBoardView()
     {
         // Column dimension mirrors the macOS BoardGroupBy options: Status,
-        // Responsible (default), Priority, Group.
-        Func<TdxTicket, string> key = _boardGroupBy switch
+        // Responsible (default), Priority, Group. Groupless tickets always have
+        // a column — "No Group" — so none can fall off the board.
+        var paletteIndex = 0;
+        BoardColumn ToColumn(string key, IEnumerable<TdxTicket> tickets, SolidColorBrush header)
         {
-            "Status" => t => t.StatusName ?? "Unknown",
-            "Priority" => t => t.PriorityName ?? "No Priority",
-            "Group" => t => string.IsNullOrEmpty(t.ResponsibleGroupName) ? "No Group" : t.ResponsibleGroupName!,
-            _ => t => string.IsNullOrEmpty(t.ResponsibleFullName) ? "Unassigned" : t.ResponsibleFullName!
-        };
-
-        var grouped = _filteredTickets.GroupBy(key);
-        var ordered = _boardGroupBy switch
-        {
-            "Status" => grouped.OrderBy(g => GetStatusOrder(g.Key)),
-            "Priority" => grouped.OrderBy(g => GetPriorityOrder(g.Key)),
-            _ => grouped
-                .OrderBy(g => g.Key is "Unassigned" or "No Group" ? 1 : 0)
-                .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
-        };
-
-        var i = 0;
-        var columns = ordered
-            .Select(g => new BoardColumn
+            var list = tickets.ToList();
+            return new BoardColumn
             {
-                StatusName = g.Key,
-                HeaderColor = _boardGroupBy switch
-                {
-                    "Status" => GetStatusColor(g.Key),
-                    "Priority" => GetPriorityColor(g.Key),
-                    _ => ColumnPalette[i++ % ColumnPalette.Length]
-                },
+                StatusName = key,
+                HeaderColor = header,
                 // The count is of tickets in the column, not visible cards — a
                 // folded subtree must not read as work that disappeared.
-                Count = g.Count(),
+                Count = list.Count,
                 Rows = TicketHierarchy
-                    .Flatten(TicketHierarchy.Build(g), _collapsedTickets)
+                    .Flatten(TicketHierarchy.Build(list), _collapsedTickets)
                     .Select(row => new TicketRowViewModel { Row = row })
                     .ToList(),
-            })
-            .ToList();
+            };
+        }
+        SolidColorBrush NextColor() => ColumnPalette[paletteIndex++ % ColumnPalette.Length];
 
-        BoardColumnsControl.ItemsSource = columns;
+        List<BoardBlock> blocks;
+        switch (_boardGroupBy)
+        {
+            case "Status":
+                blocks = new()
+                {
+                    new BoardBlock(null, _filteredTickets
+                        .GroupBy(t => t.StatusName ?? "Unknown")
+                        .OrderBy(g => GetStatusOrder(g.Key))
+                        .Select(g => ToColumn(g.Key, g, GetStatusColor(g.Key)))
+                        .ToList()),
+                };
+                break;
+
+            case "Priority":
+                blocks = new()
+                {
+                    new BoardBlock(null, _filteredTickets
+                        .GroupBy(t => t.PriorityName ?? "No Priority")
+                        .OrderBy(g => GetPriorityOrder(g.Key))
+                        .Select(g => ToColumn(g.Key, g, GetPriorityColor(g.Key)))
+                        .ToList()),
+                };
+                break;
+
+            case "Group":
+                blocks = new()
+                {
+                    new BoardBlock(null, TicketBoardLayout
+                        .Columns(_filteredTickets, TicketBoardLayout.GroupKey, TicketBoardLayout.NoGroup)
+                        .Select(c => ToColumn(c.Key, c.Tickets, NextColor()))
+                        .ToList()),
+                };
+                break;
+
+            default: // Responsible: people inside their group's block
+                blocks = TicketBoardLayout.ResponsibleBlocks(_filteredTickets)
+                    .Select(b => new BoardBlock(b.Header, b.Columns
+                        .Select(c => ToColumn(c.Key, c.Tickets, NextColor()))
+                        .ToList()))
+                    .ToList();
+                break;
+        }
+
+        BoardColumnsControl.ItemsSource = blocks;
     }
 
     private static readonly SolidColorBrush[] ColumnPalette =
@@ -687,16 +715,16 @@ public partial class TicketsPage : Page
         }
     }
 
-    private async void OnLimitChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    private async void OnDateRangeChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (sender is ComboBox comboBox && comboBox.SelectedItem is ComboBoxItem item)
-        {
-            if (int.TryParse(item.Content?.ToString(), out int limit))
-            {
-                _maxResults = limit;
-                await LoadTicketsAsync();
-            }
-        }
+        if (_app == null || DateRangeComboBox.SelectedItem is not DateRangeOption option) return;
+        if (option.Preset == _app.TicketDatePreset && _isInitialLoadDone && _app.CachedTickets.Count > 0) return;
+
+        _app.TicketDatePreset = option.Preset;
+        if (!_isInitialLoadDone) return;
+
+        _app.CachedTickets.Clear();
+        await LoadTicketsAsync();
     }
 
     private void OnFeedFilterChanged(object sender, RoutedEventArgs e)
@@ -766,16 +794,17 @@ public partial class TicketsPage : Page
         }
     }
 
+    /// <summary>
+    /// The ticket's TDNext page, built from the configured base URL — never
+    /// from the ticket's <c>Uri</c>, which is an API path, and never from a
+    /// hardcoded host.
+    /// </summary>
     private string? GetTicketUrl()
     {
         if (_selectedTicket == null || _app?.Config?.Tdx == null) return null;
-        
-        var uri = _selectedTicket.Uri;
-        if (string.IsNullOrEmpty(uri)) return null;
-        
-        var baseUrl = _app.Config.Tdx.BaseUrl ?? "";
-        var webBaseUrl = baseUrl.Replace("/TDWebApi", "");
-        return webBaseUrl + uri;
+        var url = _app.Config.Tdx.GetTicketWebUrl(_selectedTicket.Id);
+        if (url == null) ShowActionMessage("No TeamDynamix URL is configured.", isError: true);
+        return url;
     }
 
     private async void OnRefreshClicked(object sender, RoutedEventArgs e)
@@ -1050,6 +1079,143 @@ public partial class TicketsPage : Page
         }
     }
 
+    // ── Responsible actions ───────────────────────────────────────
+    // Assign to me, Reallocate (anchored people picker) and Unassign, as in
+    // the macOS detail pane. Each one PATCHes ResponsibleUid and refreshes the
+    // ticket in place.
+
+    private CancellationTokenSource? _reallocateSearchCts;
+
+    private async void OnAssignToMeClicked(object sender, RoutedEventArgs e)
+    {
+        if (_selectedTicket == null || _tdxService == null) return;
+        var me = await _tdxService.GetMeAsync();
+        if (me?.Uid is not { } uid)
+        {
+            ShowActionMessage("Could not resolve your TeamDynamix person. Sign in to TDX first.", isError: true);
+            return;
+        }
+        await SetResponsibleAsync(uid, me.DisplayName);
+    }
+
+    private async void OnUnassignClicked(object sender, RoutedEventArgs e)
+    {
+        if (_selectedTicket == null) return;
+        await SetResponsibleAsync(null, null);
+    }
+
+    private void OnReallocateClicked(object sender, RoutedEventArgs e)
+    {
+        if (_selectedTicket == null) return;
+        ReallocatePopup.IsOpen = !ReallocatePopup.IsOpen;
+    }
+
+    private void OnReallocatePopupOpened(object? sender, EventArgs e)
+    {
+        ReallocateSearchBox.Text = "";
+        ReallocateResultsList.ItemsSource = null;
+        ReallocateStatusText.Text = "Type at least two characters.";
+        ReallocateSearchBox.Focus();
+    }
+
+    private async void OnReallocateSearchChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_tdxService == null) return;
+
+        _reallocateSearchCts?.Cancel();
+        var cts = _reallocateSearchCts = new CancellationTokenSource();
+        var query = ReallocateSearchBox.Text?.Trim() ?? "";
+
+        if (query.Length < 2)
+        {
+            ReallocateResultsList.ItemsSource = null;
+            ReallocateStatusText.Text = "Type at least two characters.";
+            return;
+        }
+
+        // Debounce: one lookup per pause in typing, not one per keystroke.
+        try { await Task.Delay(300, cts.Token); }
+        catch (TaskCanceledException) { return; }
+
+        ReallocateStatusText.Text = "Searching…";
+        var people = await _tdxService.SearchPeopleAsync(query, 15);
+        if (cts.IsCancellationRequested) return;
+
+        var pickable = people.Where(p => p.Uid is { } u && u != Guid.Empty).ToList();
+        ReallocateResultsList.ItemsSource = pickable;
+        ReallocateStatusText.Text = pickable.Count == 0 ? "No matching people." : "Pick a person.";
+    }
+
+    private void OnReallocateSearchKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Down && ReallocateResultsList.Items.Count > 0)
+        {
+            ReallocateResultsList.SelectedIndex = 0;
+            (ReallocateResultsList.ItemContainerGenerator.ContainerFromIndex(0) as ListBoxItem)?.Focus();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            ReallocatePopup.IsOpen = false;
+            e.Handled = true;
+        }
+    }
+
+    private async void OnReallocateResultsKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && ReallocateResultsList.SelectedItem is TdxPerson person)
+        {
+            e.Handled = true;
+            await PickReallocateAsync(person);
+        }
+        else if (e.Key == Key.Escape)
+        {
+            ReallocatePopup.IsOpen = false;
+            e.Handled = true;
+        }
+    }
+
+    private async void OnReallocateResultPicked(object sender, MouseButtonEventArgs e)
+    {
+        if (ReallocateResultsList.SelectedItem is TdxPerson person)
+            await PickReallocateAsync(person);
+    }
+
+    private async Task PickReallocateAsync(TdxPerson person)
+    {
+        ReallocatePopup.IsOpen = false;
+        if (person.Uid is { } uid) await SetResponsibleAsync(uid, person.DisplayName);
+    }
+
+    private async Task SetResponsibleAsync(Guid? uid, string? name)
+    {
+        if (_selectedTicket == null || _tdxService == null || _app == null) return;
+        var ticketId = _selectedTicket.Id;
+
+        ShowActionMessage(uid == null ? "Unassigning…" : $"Reallocating to {name}…", isLoading: true);
+        // TDX clears the responsible on an empty UID, as the board drop does.
+        var updated = await _tdxService.UpdateTicketAsync(ticketId, new Dictionary<string, object?>
+        {
+            ["ResponsibleUid"] = uid?.ToString() ?? "",
+        });
+
+        if (updated == null)
+        {
+            ShowActionMessage("TeamDynamix did not accept the change. See the log for the response.", isError: true);
+            return;
+        }
+
+        var idx = _app.CachedTickets.FindIndex(t => t.Id == ticketId);
+        if (idx >= 0) _app.CachedTickets[idx] = updated;
+        if (_selectedTicket?.Id == ticketId)
+        {
+            _selectedTicket = updated;
+            UpdateDetailPanel(updated);
+        }
+        ApplyFiltersAndSort();
+        ShowActionMessage(uid == null ? "Unassigned" : $"Reallocated to {updated.ResponsibleFullName ?? name}");
+    }
+
     private async void OnRefreshDetailClicked(object sender, RoutedEventArgs e)
     {
         if (_selectedTicket != null)
@@ -1173,6 +1339,29 @@ public class FeedDisplayItem
     public string FormattedDate { get; set; } = "";
     public string StrippedBody { get; set; } = "";
     public bool IsPrivate { get; set; }
+}
+
+/// <summary>A date-range choice for the Tickets toolbar.</summary>
+public sealed record DateRangeOption(TicketDateRangePreset Preset, string Label);
+
+/// <summary>
+/// A run of board columns under an optional header. Responsible mode draws one
+/// per responsible group; the other modes draw a single headerless block.
+/// </summary>
+public sealed class BoardBlock
+{
+    public BoardBlock(string? header, List<BoardColumn> columns)
+    {
+        Header = header;
+        Columns = columns;
+    }
+
+    public string? Header { get; }
+    public List<BoardColumn> Columns { get; }
+    public int Count => Columns.Sum(c => c.Count);
+    public Visibility HeaderVisibility => Header == null ? Visibility.Collapsed : Visibility.Visible;
+    public Thickness BlockMargin => Header == null ? new Thickness(0) : new Thickness(0, 0, 16, 0);
+    public Thickness BlockPadding => Header == null ? new Thickness(0) : new Thickness(8, 8, 0, 8);
 }
 
 // Helper class for board columns

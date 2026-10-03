@@ -125,6 +125,50 @@ public class TdxConfig
     }
 
     /// <summary>
+    /// The people API URL (tenant-level, not under an application ID)
+    /// </summary>
+    public string GetPeopleUrl(string? path = null)
+    {
+        if (string.IsNullOrEmpty(BaseUrl))
+            throw new InvalidOperationException("TDX BaseUrl is not configured. Set TDX_BASE_URL environment variable.");
+
+        var baseUrl = GetNormalizedApiBaseUrl();
+        return string.IsNullOrEmpty(path) ? $"{baseUrl}/api/people" : $"{baseUrl}/api/people/{path}";
+    }
+
+    /// <summary>
+    /// The TDNext page for a ticket — what "Open in TDX" and "Copy link" hand
+    /// out. Built from the configured base URL with the Web API suffix removed,
+    /// the same way the macOS app builds it. The ticket's own <c>Uri</c> field
+    /// is an API path, not a web page, so it must not be used here. Null when
+    /// no base URL is configured.
+    /// </summary>
+    public string? GetTicketWebUrl(int ticketId)
+    {
+        var root = GetWebRootUrl();
+        if (root == null) return null;
+        var appId = TicketingAppId ?? AppId;
+        return $"{root}/TDNext/Apps/{appId}/Tickets/TicketDet?TicketID={ticketId}";
+    }
+
+    /// <summary>
+    /// The tenant's web root: the base URL without a trailing <c>/api</c> or
+    /// <c>/TDWebApi</c>. Only a suffix is stripped — a host that happens to
+    /// contain the text elsewhere is left alone.
+    /// </summary>
+    public string? GetWebRootUrl()
+    {
+        var root = ServiceUri.Normalize(BaseUrl);
+        if (string.IsNullOrEmpty(root)) return null;
+
+        if (root.EndsWith("/api", StringComparison.OrdinalIgnoreCase))
+            root = root[..^"/api".Length].TrimEnd('/');
+        if (root.EndsWith("/TDWebApi", StringComparison.OrdinalIgnoreCase))
+            root = root[..^"/TDWebApi".Length].TrimEnd('/');
+        return root;
+    }
+
+    /// <summary>
     /// Check if TDX is configured (has required settings)
     /// </summary>
     public bool IsConfigured => !string.IsNullOrEmpty(BaseUrl) && AppId > 0;

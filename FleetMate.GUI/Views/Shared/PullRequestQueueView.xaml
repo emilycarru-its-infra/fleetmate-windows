@@ -77,6 +77,22 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
+        <!-- Action-failure banner along the top, over the header. Non-blocking:
+             it clears itself after a few seconds or on dismiss, instead of a
+             modal dialog that stops the whole window. -->
+        <Border x:Name="ActionErrorBanner" Grid.Row="0" Grid.RowSpan="4" Panel.ZIndex="10"
+                VerticalAlignment="Top" Visibility="Collapsed"
+                Background="#FFE07A1F" CornerRadius="6" Padding="10,6">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Click="OnDismissActionError" ToolTip="Dismiss"
+                        Background="Transparent" BorderThickness="0" Padding="4,0" Foreground="White">
+                    <ui:FontIcon Glyph="&#xE711;" FontFamily="Segoe Fluent Icons" FontSize="10" />
+                </Button>
+                <TextBlock x:Name="ActionErrorText" Foreground="White" FontSize="12"
+                           TextWrapping="Wrap" VerticalAlignment="Center" />
+            </DockPanel>
+        </Border>
+
         <!-- Title, count, and controls together on one line. The filters belong
              beside the thing they filter, not stranded at the far right. -->
         <DockPanel Grid.Row="0" Margin="0,0,0,6">

@@ -112,6 +112,20 @@
                      from any tab, matching the macOS toolbar. -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right"
                             Margin="0,0,116,0">
+                    <!-- Elevation session status. The per-user session container
+                         takes a while to boot and lives for its TTL, so the chrome
+                         says whether the next elevated action will wait on it.
+                         Click to re-check; it starts sessions that are not running. -->
+                    <Button x:Name="ElevationButton" Click="OnElevationClicked" Visibility="Collapsed"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Style="{StaticResource ChromeIconButtonStyle}" Margin="0,0,4,0">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse x:Name="ElevationDot" Width="8" Height="8" Fill="Gray"
+                                     VerticalAlignment="Center" Margin="0,0,6,0" />
+                            <TextBlock x:Name="ElevationText" Text="Elevation" FontSize="12"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                     <Button x:Name="AuthButton" ToolTip="Authentication status" Click="OnAuthClicked"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
                             Style="{StaticResource ChromeIconButtonStyle}">

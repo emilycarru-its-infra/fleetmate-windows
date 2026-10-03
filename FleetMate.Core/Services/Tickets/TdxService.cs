@@ -110,6 +110,7 @@ public class TdxService : IDisposable
         _ssoTokenExpiry = DateTime.MinValue;
         _ssoUserId = null;
         _ssoUserName = null;
+        _me = null;
         Log.Debug("TDX SSO token cleared");
     }
 
@@ -711,6 +712,60 @@ public class TdxService : IDisposable
 
         Log.Debug("Added comment to ticket {Id}", ticketId);
         return await response.Content.ReadFromJsonAsync<TdxFeedEntry>(_jsonOptions);
+    }
+
+    #endregion
+
+    #region People
+
+    /// <summary>
+    /// Look people up by name or email, for the Reallocate picker. Empty on any
+    /// failure — a picker with no matches is the honest outcome of a failed
+    /// lookup, and the operator can retry.
+    /// </summary>
+    public async Task<List<TdxPerson>> SearchPeopleAsync(string searchText, int maxResults = 10)
+    {
+        if (string.IsNullOrWhiteSpace(searchText) || !await SetAuthorizationAsync())
+            return new List<TdxPerson>();
+
+        try
+        {
+            var url = _config.GetPeopleUrl(
+                $"lookup?searchText={Uri.EscapeDataString(searchText.Trim())}&maxResults={maxResults}");
+            var response = await _client.GetAsync(url);
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Warning("TDX people lookup failed: {Status}", response.StatusCode);
+                return new List<TdxPerson>();
+            }
+
+            return await response.Content.ReadFromJsonAsync<List<TdxPerson>>(_jsonOptions) ?? new List<TdxPerson>();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "TDX people lookup failed");
+            return new List<TdxPerson>();
+        }
+    }
+
+    private TdxPerson? _me;
+
+    /// <summary>
+    /// The signed-in operator as a TDX person, resolved once per sign-in from
+    /// the SSO email the way the macOS app does it. Null when nobody is signed
+    /// in or the lookup finds no exact email match.
+    /// </summary>
+    public async Task<TdxPerson?> GetMeAsync()
+    {
+        var email = _ssoUserId;
+        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@')) return null;
+        if (_me != null && string.Equals(_me.PrimaryEmail, email, StringComparison.OrdinalIgnoreCase))
+            return _me;
+
+        var matches = await SearchPeopleAsync(email, 5);
+        _me = matches.FirstOrDefault(p => string.Equals(p.PrimaryEmail, email, StringComparison.OrdinalIgnoreCase))
+              ?? (matches.Count == 1 ? matches[0] : null);
+        return _me;
     }
 
     #endregion
