@@ -54,34 +54,43 @@ public class TicketBoardQueryTests
     }
 
     [Fact]
-    public void MineSearch_OnlyRunsWhenAGroupHidesUngroupedTickets()
+    public void OpenSearch_IsEveryOpenTicketWithNoDateWindow()
     {
-        var day = DateTime.Today;
-        Assert.Null(TicketBoardQuery.MineSearch(Config(group: 0), Me, day, day));
-        Assert.Null(TicketBoardQuery.MineSearch(Config(group: 42), null, day, day));
-        Assert.Null(TicketBoardQuery.MineSearch(Config(group: 42), Guid.Empty, day, day));
+        var open = TicketBoardQuery.OpenSearch(Config(group: 42));
+        Assert.Equal(new[] { 1, 2, 5, 6 }, open.StatusClassIds);
+        Assert.Equal(new[] { 42 }, open.ResponsibleGroupIds);
+        Assert.Null(open.CreatedDateFrom);
+        Assert.Null(open.CreatedDateTo);
+        Assert.Equal(5000, open.MaxResults);
 
-        var mine = TicketBoardQuery.MineSearch(Config(group: 42), Me, day, day.AddDays(1));
-        Assert.NotNull(mine);
-        Assert.Equal(new[] { Me }, mine!.ResponsibleUids);
-        Assert.Null(mine.ResponsibleGroupIds);
-        Assert.Equal(day, mine.CreatedDateFrom);
+        Assert.Null(TicketBoardQuery.OpenSearch(Config()).ResponsibleGroupIds);
+        Assert.Contains("\"StatusClassIDs\":[1,2,5,6]", JsonSerializer.Serialize(open));
     }
 
     [Fact]
-    public void Merge_AddsOnlyMyGrouplessTicketsAndNeverDuplicates()
+    public void MineSearch_IsMyOpenTicketsInAnyGroupWithNoDateWindow()
     {
-        var primary = new[] { T(1, 42, "Devices"), T(2, 42, "Devices") };
-        var mine = new[]
-        {
-            T(2, 42, "Devices"),   // already there
-            T(3),                  // groupless: the one that used to vanish
-            T(4, 0, ""),           // TDX sends 0 for no group
-            T(5, 7, "Network"),    // mine but in another group: not this board's
-        };
+        Assert.Null(TicketBoardQuery.MineSearch(null));
+        Assert.Null(TicketBoardQuery.MineSearch(Guid.Empty));
 
-        var merged = TicketBoardQuery.Merge(primary, mine);
-        Assert.Equal(new[] { 1, 2, 3, 4 }, merged.Select(t => t.Id));
+        var mine = TicketBoardQuery.MineSearch(Me)!;
+        Assert.Equal(new[] { Me }, mine.ResponsibleUids);
+        Assert.Equal(new[] { 1, 2, 5, 6 }, mine.StatusClassIds);
+        Assert.Null(mine.ResponsibleGroupIds);
+        Assert.Null(mine.CreatedDateFrom);
+        Assert.Equal(1000, mine.MaxResults);
+    }
+
+    [Fact]
+    public void Merge_CombinesAllThreeByIdWithoutDuplicates()
+    {
+        var dated = new[] { T(1, 42, "Devices"), T(2, 42, "Devices") };
+        var open = new[] { T(2, 42, "Devices"), T(9, 42, "Devices") };   // 9: open, created long ago
+        var mine = new[] { T(1, 42, "Devices"), T(3), T(5, 7, "Network") };
+
+        var merged = TicketBoardQuery.Merge(dated, open, mine);
+        Assert.Equal(new[] { 1, 2, 9, 3, 5 }, merged.Select(t => t.Id));
+        Assert.Equal(new[] { 1 }, TicketBoardQuery.Merge(new[] { T(1) }, null).Select(t => t.Id));
     }
 
     [Theory]
