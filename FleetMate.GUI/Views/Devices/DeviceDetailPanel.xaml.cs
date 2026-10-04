@@ -41,8 +41,10 @@ public partial class DeviceDetailPanel : UserControl
         // A Windows device's provisioning record follows Summary, where the
         // Mac shows a device's Apple organization record.
         if (autopilot != null) RenderAutopilot(autopilot);
-        var groupsHost = Section("Group Membership", "");
+        // The Intune sections follow, the first titled for what Intune is
+        // here: the device management service.
         RenderEnrollment(device);
+        var groupsHost = Section("Group Membership", "");
         RenderHardware(device);
         var complianceHost = RenderCompliance(device);
         var appsHost = Section("Detected Apps", "");
@@ -112,7 +114,7 @@ public partial class DeviceDetailPanel : UserControl
 
     private void RenderEnrollment(IntuneDevice d)
     {
-        var host = Section("Enrollment & Identity", "");
+        var host = Section("Device Management Service", "");
         AddRowMono(host, "Intune Device ID", d.Id);
         AddRowMono(host, "Entra Device ID", d.AzureAdDeviceId);
         AddRow(host, "Enrollment Type", FormatEnrollmentType(d.DeviceEnrollmentType));

@@ -21,12 +21,12 @@ public class AutopilotJoinTests
 
         var registered = rows.Single(r => r.Id == "a");
         Assert.Equal("Intune", registered.ServiceText);
-        Assert.Equal("Registered and Enrolled", registered.OrgStatusText);
+        Assert.Equal("Registered", registered.OrgStatusText);
         Assert.Equal("Lab", registered.GroupOrOrderText);
         Assert.Equal("PO-7", registered.PurchaseSourceText);
 
         var notRegistered = rows.Single(r => r.Id == "b");
-        Assert.Equal("Enrolled, Not Registered", notRegistered.OrgStatusText);
+        Assert.Equal("Not Registered", notRegistered.OrgStatusText);
         Assert.Equal("Not Registered", notRegistered.Value(DeviceFacet.GroupTag));
 
         var mac = rows.Single(r => r.Id == "m");

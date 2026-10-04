@@ -15,9 +15,9 @@ public static class AutopilotLabels
 {
     public static string Label(this AutopilotRegistration r) => r switch
     {
-        AutopilotRegistration.RegisteredAndEnrolled => "Registered and Enrolled",
+        AutopilotRegistration.RegisteredAndEnrolled => "Registered",
         AutopilotRegistration.RegisteredNotEnrolled => "Registered, Not Enrolled",
-        _ => "Enrolled, Not Registered",
+        _ => "Not Registered",
     };
 
     /// <summary>The deployment profile assignment, as a reader would say it.</summary>
