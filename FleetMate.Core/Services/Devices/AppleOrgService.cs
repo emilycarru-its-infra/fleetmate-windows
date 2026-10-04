@@ -217,6 +217,28 @@ public sealed class AppleOrgService : IDisposable
             .ToList();
     }
 
+    /// <summary>
+    /// Activation Lock, read one device at a time. Report only: no bypass
+    /// code is read or stored, and nothing here can clear a lock. A failed or
+    /// empty read — Apple returns 5xx for devices in an internal-only lock
+    /// state — is Unknown, never Disabled.
+    /// </summary>
+    public async Task<AppleActivationLock> ActivationLockAsync(string serial, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await GetAsync<AppleSingleResponse<AppleActivationLockAttributes>>(
+                $"v1/orgDevices/{Uri.EscapeDataString(serial)}/activationLockStatus", ct);
+            var attributes = response?.Data?.Attributes;
+            return AppleActivationLocks.From(attributes?.IsLocked, attributes?.LockType);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            Log.Debug(ex, "Activation Lock read failed for {Serial}; reporting Unknown", serial);
+            return AppleActivationLock.Unknown;
+        }
+    }
+
     // ── Actions ──────────────────────────────────────────────────────────
 
     /// <summary>The orgDeviceActivities request body for an action.</summary>
