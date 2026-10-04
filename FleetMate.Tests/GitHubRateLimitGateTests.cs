@@ -226,7 +226,7 @@ public class GitHubHttpHandlerTests : IDisposable
     public void Cache_EvictsTheLeastRecentlyUsed()
     {
         var cache = new GitHubETagCache(capacity: 3);
-        GitHubETagCache.Entry E(string tag) => new(tag, false, HttpStatusCode.OK, Array.Empty<byte>(), null);
+        GitHubETagCache.Entry E(string tag) => new(tag, false, null, HttpStatusCode.OK, Array.Empty<byte>(), null, DateTimeOffset.UtcNow, null);
         cache.Store("a", E("1"));
         cache.Store("b", E("2"));
         cache.Store("c", E("3"));
