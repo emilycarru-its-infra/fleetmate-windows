@@ -16,9 +16,9 @@
         <StackPanel Grid.Row="0" Margin="16,14,16,10">
             <!-- Header. The search sits over the header, centred on the page rather
                  than between the title and the buttons. -->
-            <Grid Margin="0,0,0,6">
+            <Grid x:Name="HeaderGrid" Margin="0,0,0,6" SizeChanged="OnHeaderSizeChanged">
                 <DockPanel>
-                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                    <StackPanel x:Name="HeaderActions" SizeChanged="OnHeaderSizeChanged" DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
                         <ui:ProgressRing x:Name="HeaderProgress" IsActive="True" Width="18" Height="18"
                                          Margin="0,0,8,0" Visibility="Collapsed" />
                         <Button Click="OnRefreshClicked" Margin="0,0,4,0"
@@ -29,14 +29,16 @@
                             </StackPanel>
                         </Button>
                     </StackPanel>
-                    <StackPanel>
+                    <StackPanel x:Name="HeaderTitle" HorizontalAlignment="Left" SizeChanged="OnHeaderSizeChanged">
                         <TextBlock Text="Dashboard" Style="{StaticResource TitleTextStyle}" Margin="0,0,0,2" />
                         <TextBlock Text="Fleet overview across all connected systems" Style="{StaticResource SubtitleTextStyle}" />
                     </StackPanel>
                 </DockPanel>
 
                 <!-- Search everything: scans the loaded caches; results drop
-                     below at the same width and close on a click outside. -->
+                     below at the same width and close on a click outside. At
+                     most 700 wide, narrower when the title or buttons need the
+                     room (OnHeaderSizeChanged). -->
                 <TextBox x:Name="GlobalSearchBox" Width="700" HorizontalAlignment="Center" Height="36" FontSize="14"
                          VerticalAlignment="Center" VerticalContentAlignment="Center"
                          ui:ControlHelper.PlaceholderText="Search everything — serial, hostname, user, ticket…"
