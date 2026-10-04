@@ -231,6 +231,22 @@ public partial class IntunePage : Page
         ApplyFilters();
     }
 
+    /// <summary>
+    /// Show only devices whose <paramref name="facet"/> is one of
+    /// <paramref name="values"/> (none clears that category). This is the
+    /// entry point for widgets and links that filter the list from outside.
+    /// </summary>
+    public void SetFacetFilter(DeviceFacet facet, params string[] values)
+    {
+        _facetSelection[facet].Clear();
+        _facetSelection[facet].UnionWith(values);
+        foreach (var box in FiltersHost.Children.OfType<CheckBox>())
+            if (box.Tag is (DeviceFacet f, string v) && f == facet)
+                box.IsChecked = _facetSelection[facet].Contains(v);
+        UpdateFiltersButton();
+        ApplyFilters();
+    }
+
     private void ClearFacetSelection()
     {
         foreach (var set in _facetSelection.Values) set.Clear();
