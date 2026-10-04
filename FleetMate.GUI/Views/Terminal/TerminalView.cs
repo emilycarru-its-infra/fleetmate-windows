@@ -13,7 +13,11 @@ using Serilog;
 namespace FleetMate.GUI.Views.Terminal;
 
 /// <summary>What one terminal pane runs, and where.</summary>
-public sealed record TerminalLaunch(string Title, TerminalCommand Command, string? WorkingDirectory, RepoLocation? Repo = null);
+public sealed record TerminalLaunch(string Title, TerminalCommand Command, string? WorkingDirectory, RepoLocation? Repo = null)
+{
+    /// <summary>Take keyboard focus once ready. A session opened by the person does; one auto-started at launch does not.</summary>
+    public bool TakeFocus { get; init; } = true;
+}
 
 /// <summary>
 /// One terminal pane: xterm.js in a WebView2, wired to a process behind a
@@ -31,23 +35,58 @@ public sealed class TerminalView : UserControl, IDisposable
     private bool _ready;
     private bool _started;
     private short _cols = 120, _rows = 30;
+    private readonly TerminalSignalScanner _scanner = new();
+    private bool _focusWhenReady;
 
     public event EventHandler? ToggleRequested;
     public event EventHandler? Exited;
+    /// <summary>The title, directory or activity changed; the session list redraws the row.</summary>
+    public event EventHandler? StateChanged;
+    /// <summary>A panel key binding was pressed inside this terminal.</summary>
+    public event Action<TerminalView, TerminalAction, int>? KeyAction;
 
-    public string Title => _launch.Title;
+    /// <summary>The command's label, until the program sets a title with OSC 0 or 2.</summary>
+    public string Title { get; private set; }
+    public string? Directory { get; private set; }
+    /// <summary>"osc" once the shell has reported its directory itself; "poll" while it is read from the process.</summary>
+    public string DirectorySource { get; private set; } = "poll";
+    public SessionActivity Activity { get; } = new();
+    /// <summary>Whether this pane is on screen now; a bell from a hidden pane asks for attention.</summary>
+    public bool IsShown { get; set; }
+    public int ProcessId => _session?.ProcessId ?? 0;
 
     public TerminalView(TerminalLaunch launch)
     {
         _launch = launch;
+        Title = launch.Title;
+        Directory = launch.WorkingDirectory;
+        _focusWhenReady = launch.TakeFocus;
         Content = _web;
         Loaded += async (_, _) => await InitializeAsync();
     }
 
     public void FocusTerminal()
     {
+        if (!_ready) { _focusWhenReady = true; return; }
         _web.Focus();
         Post(new { type = "focus" });
+    }
+
+    public void Clear() => Post(new { type = "clear" });
+
+    /// <summary>
+    /// Read the child's directory, for shells that never report it with OSC 7
+    /// or OSC 9;9. Once a shell has reported it, its reports win.
+    /// </summary>
+    public void PollDirectory()
+    {
+        if (DirectorySource == "osc" || ProcessId == 0) return;
+        var dir = ProcessDirectory.TryGet(ProcessId);
+        if (dir != null && !string.Equals(dir, Directory, StringComparison.OrdinalIgnoreCase))
+        {
+            Directory = dir;
+            StateChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     /// <summary>
@@ -112,7 +151,15 @@ public sealed class TerminalView : UserControl, IDisposable
         {
             case "ready":
                 _ready = true;
+                Post(new { type = "config", chords = TerminalKeyBindings.Chords() });
                 FlushPending();
+                if (_focusWhenReady) FocusTerminal();
+                break;
+            case "key":
+                var action = TerminalKeyBindings.Map(m.GetProperty("code").GetString() ?? "",
+                    m.GetProperty("ctrl").GetBoolean(), m.GetProperty("shift").GetBoolean(),
+                    m.GetProperty("alt").GetBoolean(), out var index);
+                if (action != TerminalAction.None) KeyAction?.Invoke(this, action, index);
                 break;
             case "resize":
                 _cols = (short)Math.Max(1, m.GetProperty("cols").GetInt32());
@@ -141,7 +188,7 @@ public sealed class TerminalView : UserControl, IDisposable
             Write(output.Replace("\n", "\r\n"));
             if (!ok) { Write("\r\n\x1b[33mClone failed; starting in the repos folder instead.\x1b[0m\r\n"); workingDirectory = RepoLocator.DefaultRoot; }
         }
-        if (workingDirectory != null && !Directory.Exists(workingDirectory))
+        if (workingDirectory != null && !System.IO.Directory.Exists(workingDirectory))
         {
             Write($"\x1b[33m{workingDirectory} does not exist; starting in your home folder.\x1b[0m\r\n");
             workingDirectory = null;
@@ -156,7 +203,13 @@ public sealed class TerminalView : UserControl, IDisposable
             _session.Output += Write;
             _session.Exited += code =>
             {
-                Dispatcher.BeginInvoke(() => { Post(new { type = "exit", code }); Exited?.Invoke(this, EventArgs.Empty); });
+                Dispatcher.BeginInvoke(() =>
+                {
+                    Activity.Exit();
+                    Post(new { type = "exit", code });
+                    Exited?.Invoke(this, EventArgs.Empty);
+                    StateChanged?.Invoke(this, EventArgs.Empty);
+                });
             };
             _session.Start(_launch.Command.CommandLine,
                 workingDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), env, _cols, _rows);
@@ -172,7 +225,7 @@ public sealed class TerminalView : UserControl, IDisposable
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(repo.Path)!);
+            System.IO.Directory.CreateDirectory(Path.GetDirectoryName(repo.Path)!);
             var psi = new ProcessStartInfo("git") { RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true, UseShellExecute = false };
             psi.ArgumentList.Add("clone");
             psi.ArgumentList.Add(repo.CloneUrl!);
@@ -189,9 +242,30 @@ public sealed class TerminalView : UserControl, IDisposable
         }
     }
 
-    /// <summary>Output can arrive before the page is ready; hold it until then.</summary>
+    /// <summary>
+    /// Output can arrive before the page is ready; hold it until then. Each
+    /// chunk is also read for titles, directories and bells, and marks the
+    /// session active.
+    /// </summary>
     private void Write(string text)
     {
+        List<TerminalSignal> signals;
+        lock (_gate) signals = _scanner.Scan(text);
+        Dispatcher.BeginInvoke(() =>
+        {
+            Activity.Output(DateTime.UtcNow);
+            foreach (var signal in signals)
+            {
+                switch (signal)
+                {
+                    case TitleSignal t when t.Title.Trim().Length > 0: Title = t.Title.Trim(); break;
+                    case DirectorySignal d: Directory = d.Path; DirectorySource = "osc"; break;
+                    case BellSignal: Activity.Bell(IsShown); break;
+                }
+            }
+            StateChanged?.Invoke(this, EventArgs.Empty);
+        });
+
         lock (_gate)
         {
             if (!_ready) { _pending.Append(text); return; }
