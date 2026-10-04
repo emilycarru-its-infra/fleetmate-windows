@@ -307,23 +307,28 @@ public partial class DevelopmentView : UserControl
         var inbox = app.Inbox;
 
         var unread = inbox.UnreadCount;
-        InboxSegment.Content = unread > 0 ? $"Inbox {unread}" : "Inbox";
+
+        // Shown only while there is something unread — and kept while it is
+        // the open segment, so marking everything read does not yank the page.
+        InboxSegment.Visibility = unread > 0 || InboxSegment.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        MarkAllReadButton.IsEnabled = unread > 0;
 
         var selectedId = _selectedNotification?.Id;
-        var rows = inbox.Notifications.Select(n => new DevelopmentNotificationRowViewModel { Notification = n }).ToList();
+        var rows = DevelopmentFilter.Inbox(inbox.Notifications, _showReadNotifications)
+            .Select(n => new DevelopmentNotificationRowViewModel { Notification = n }).ToList();
         InboxList.ItemsSource = rows;
         if (selectedId != null) InboxList.SelectedItem = rows.FirstOrDefault(r => r.Notification.Id == selectedId);
 
         InboxStatus.Text = inbox.LastError is { } error && inbox.Notifications.Count == 0
             ? $"GitHub inbox unavailable — {error}"
-            : $"{unread} unread of {rows.Count}"
-              + (inbox.LastRefreshed is { } at ? $" · updated {at:HH:mm}" : "")
+            : (inbox.LastRefreshed is { } at ? $"Checked {at:HH:mm}" : "")
               + (inbox.LastError != null ? " · last refresh failed" : "");
 
         if (InboxSegment.IsChecked == true)
         {
             EmptyText.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            EmptyText.Text = inbox.LastError != null ? "Could not reach GitHub notifications." : "Inbox zero.";
+            EmptyText.Text = inbox.LastError != null ? "Could not reach GitHub notifications."
+                : _showReadNotifications ? "No notifications." : "Inbox zero.";
         }
     }
 
@@ -376,14 +381,14 @@ public partial class DevelopmentView : UserControl
 
     private async void OnMarkReadClicked(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is not DevelopmentNotificationRowViewModel row || AppInstance is not { } app) return;
+        if (RowOf<DevelopmentNotificationRowViewModel>(sender) is not { } row || AppInstance is not { } app) return;
         var result = await app.Inbox.MarkReadAsync(row.Notification);
         if (!result.Success) InboxStatus.Text = $"Mark read failed — {result.Error}";
     }
 
     private async void OnUnsubscribeClicked(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is not DevelopmentNotificationRowViewModel row || AppInstance is not { } app) return;
+        if (RowOf<DevelopmentNotificationRowViewModel>(sender) is not { } row || AppInstance is not { } app) return;
         var result = await app.Inbox.UnsubscribeAsync(row.Notification);
         if (!result.Success) InboxStatus.Text = $"Unsubscribe failed — {result.Error}";
     }
