@@ -139,11 +139,19 @@
                                                 <TextBlock Text="{Binding Time}" DockPanel.Dock="Right" FontSize="10"
                                                            VerticalAlignment="Center" Margin="8,0,0,0"
                                                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                    <ui:FontIcon Glyph="{Binding IconGlyph}" FontSize="12" Margin="0,0,6,0"
+                                                <!-- Item name trims; the pill and admin keep their room. -->
+                                                <Grid VerticalAlignment="Center">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="Auto" MaxWidth="140" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <ui:FontIcon Grid.Column="0" Glyph="{Binding IconGlyph}" FontSize="12" Margin="0,0,6,0"
                                                                  Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                                    <TextBlock Text="{Binding Text}" FontSize="12" TextTrimming="CharacterEllipsis" />
-                                                    <Border CornerRadius="8" Padding="6,0" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                    <TextBlock Grid.Column="1" Text="{Binding Text}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                               VerticalAlignment="Center" />
+                                                    <Border Grid.Column="2" CornerRadius="8" Padding="6,0" Margin="6,0,0,0" VerticalAlignment="Center"
                                                             Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
                                                         <Border.Style>
                                                             <Style TargetType="Border">
@@ -156,10 +164,10 @@
                                                         </Border.Style>
                                                         <TextBlock Text="{Binding Pill}" FontSize="10" />
                                                     </Border>
-                                                    <TextBlock Text="{Binding Context}" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center"
-                                                               TextTrimming="CharacterEllipsis"
+                                                    <TextBlock Grid.Column="3" Text="{Binding Context}" FontSize="11" Margin="6,0,0,0"
+                                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                                </StackPanel>
+                                                </Grid>
                                             </DockPanel>
                                         </Border>
                                     </DataTemplate>

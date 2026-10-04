@@ -20,7 +20,9 @@ public class SnipeHistoryTests
     [Theory]
     [InlineData("_snipeit_chip_7", "Chip")]
     [InlineData("_snipeit_display_resolution_12", "Display Resolution")]
-    [InlineData("status_id", "Status Id")]
+    [InlineData("status_id", "Status ID")]
+    [InlineData("_snipeit_gpu_14", "GPU")]
+    [InlineData("_snipeit_intune_id_3", "Intune ID")]
     [InlineData("name", "Name")]
     public void FieldLabel_StripsCustomFieldPrefixAndId(string key, string expected) =>
         Assert.Equal(expected, SnipeHistory.FieldLabel(key));
