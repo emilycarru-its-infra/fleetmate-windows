@@ -82,7 +82,13 @@ public partial class BoardsPage : Page
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
     {
-        if (_isInitialLoadDone) return;
+        // The page is cached across tab switches, so a deep link that arrives
+        // after the first visit is handled here.
+        if (_isInitialLoadDone)
+        {
+            await ShowPendingWorkItemAsync();
+            return;
+        }
         _isInitialLoadDone = true;
 
         // Initialize AzDO service for list mode
@@ -109,7 +115,12 @@ public partial class BoardsPage : Page
         await LoadBucketsAsync();
         await LoadTasksAsync();
 
-        // A lightbox's "Open in Projects" handed us a work item to show.
+        await ShowPendingWorkItemAsync();
+    }
+
+    /// <summary>A lightbox's "Open in Projects", or a global search hit, handed us a work item to show.</summary>
+    private async Task ShowPendingWorkItemAsync()
+    {
         if (_app?.PendingNavigateWorkItemId is { } pendingId)
         {
             _app.PendingNavigateWorkItemId = null;
