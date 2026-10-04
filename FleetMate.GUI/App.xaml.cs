@@ -122,6 +122,25 @@ public partial class App : Application
     public string? PendingNavigateDeviceId { get; set; }
     public int? PendingNavigateTicketId { get; set; }
     public int? PendingNavigateWorkItemId { get; set; }
+    public int? PendingNavigateAssetId { get; set; }
+
+    // MARK: - App-level error
+    // Shown at the top of the Recent Activity popover, with an orange dot on
+    // its toolbar icon while one is set.
+    public string? AppError { get; private set; }
+    public event EventHandler? AppErrorChanged;
+
+    public void ReportAppError(string message)
+    {
+        AppError = message;
+        AppErrorChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void ClearAppError()
+    {
+        AppError = null;
+        AppErrorChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     /// <summary>The FLEETMATE_CONTEXT file every terminal session points at.</summary>
     public FleetMate.Core.Services.Terminal.AppContextFile Context { get; } =
@@ -610,6 +629,8 @@ public partial class App : Application
         {
             Log.Error(args.Exception, "Unobserved task exception");
             args.SetObserved();
+            Current?.Dispatcher.BeginInvoke(() =>
+                ReportAppError(args.Exception.InnerException?.Message ?? args.Exception.Message));
         };
         Log.Information("FleetMate GUI starting (pid {Pid}, version {Version})",
             Environment.ProcessId,
