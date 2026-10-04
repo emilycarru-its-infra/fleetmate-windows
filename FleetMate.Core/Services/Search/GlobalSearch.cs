@@ -184,7 +184,14 @@ public static partial class GlobalSearch
             return hit == null ? null : hit with { Link = link };
         });
 
-        return groups;
+        // An exact match leads: "148" or "#148" should put pull request !148
+        // ahead of serials that merely contain 148, so Enter opens it.
+        return groups
+            .Select((group, index) => (group, index))
+            .OrderBy(x => x.group.Hits.Count > 0 && x.group.Hits[0].Rank == 0 ? 0 : 1)
+            .ThenBy(x => x.index)
+            .Select(x => x.group)
+            .ToList();
     }
 
     /// <summary>A work item fetched by id because it was not cached, put first.</summary>
