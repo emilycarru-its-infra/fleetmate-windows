@@ -192,4 +192,22 @@ public class SearchEverythingTests
     [InlineData("fleetmate://device")]
     public void NewRoutes_RejectMalformed(string link) =>
         Assert.Throws<FleetMateLinkException>(() => FleetMateLink.Parse(link));
+    [Theory]
+    [InlineData("27391")]
+    [InlineData("#27391")]
+    [InlineData("!27391")]
+    public void ExactNumberMatchLeadsAheadOfSubstringMatchesInEarlierCategories(string query)
+    {
+        var sources = Sources();
+        var withSerial = new SearchSources
+        {
+            Devices = new[] { new IntuneDevice { Id = "dev-9", DeviceName = "LAB-9", SerialNumber = "X273919Z" } },
+            PullRequests = sources.PullRequests,
+        };
+
+        var groups = GlobalSearch.Search(query, withSerial);
+
+        Assert.Equal(SearchCategory.PullRequests, groups[0].Category);
+        Assert.Equal("27391", groups[0].Hits[0].Key);
+    }
 }
