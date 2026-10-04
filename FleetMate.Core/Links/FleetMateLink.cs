@@ -35,6 +35,16 @@ public abstract record FleetMateLink
     public sealed record GitHubRun(string Owner, string Repo, int RunId) : FleetMateLink;
     public sealed record WorkItem(int Id) : FleetMateLink;
     public sealed record GitHubIssue(string Owner, string Repo, int Number) : FleetMateLink;
+    /// <summary>An Intune managed device, by its Intune ID.</summary>
+    public sealed record Device(string IntuneId) : FleetMateLink;
+    /// <summary>A Snipe-IT asset, by its asset ID.</summary>
+    public sealed record Asset(int Id) : FleetMateLink;
+    /// <summary>A TeamDynamix ticket, by its ID.</summary>
+    public sealed record Ticket(int Id) : FleetMateLink;
+    /// <summary>An Entra user, by object ID.</summary>
+    public sealed record User(string Id) : FleetMateLink;
+    /// <summary>An Entra group, by object ID.</summary>
+    public sealed record Group(string Id) : FleetMateLink;
 
     // ── Parse ────────────────────────────────────────────────────────────
 
@@ -101,6 +111,31 @@ public abstract record FleetMateLink
                 return parts.Length == 4 && parts[0].Equals("github", StringComparison.OrdinalIgnoreCase) && ParseNumber(parts[3]) is { } issue
                     ? new GitHubIssue(parts[1], parts[2], issue)
                     : throw Bad(text, "fleetmate://issue/github/<owner>/<repo>/<number>");
+
+            case "device":
+                return parts.Length == 1 && parts[0].Length > 0
+                    ? new Device(parts[0])
+                    : throw Bad(text, "fleetmate://device/<intuneId>");
+
+            case "asset":
+                return parts.Length == 1 && ParseNumber(parts[0]) is { } asset
+                    ? new Asset(asset)
+                    : throw Bad(text, "fleetmate://asset/<id>");
+
+            case "ticket":
+                return parts.Length == 1 && ParseNumber(parts[0]) is { } ticket
+                    ? new Ticket(ticket)
+                    : throw Bad(text, "fleetmate://ticket/<id>");
+
+            case "user":
+                return parts.Length == 1 && parts[0].Length > 0
+                    ? new User(parts[0])
+                    : throw Bad(text, "fleetmate://user/<id>");
+
+            case "group":
+                return parts.Length == 1 && parts[0].Length > 0
+                    ? new Group(parts[0])
+                    : throw Bad(text, "fleetmate://group/<id>");
 
             case "open":
                 var target = QueryValue(query, "url");
@@ -186,6 +221,11 @@ public abstract record FleetMateLink
             GitHubRun r => $"pipeline/github/{E(r.Owner)}/{E(r.Repo)}/{r.RunId}",
             WorkItem w => $"workitem/{w.Id}",
             GitHubIssue i => $"issue/github/{E(i.Owner)}/{E(i.Repo)}/{i.Number}",
+            Device d => $"device/{E(d.IntuneId)}",
+            Asset a => $"asset/{a.Id}",
+            Ticket t => $"ticket/{t.Id}",
+            User u => $"user/{E(u.Id)}",
+            Group g => $"group/{E(g.Id)}",
             _ => throw new InvalidOperationException("Unknown link kind."),
         };
         return $"{Scheme}://{path}";
@@ -231,7 +271,7 @@ public sealed class FleetMateLinkException : Exception
     private static string Describe(FleetMateLinkError kind, string link, string? expected) => kind switch
     {
         FleetMateLinkError.NotFleetMate => $"Not a fleetmate: link: {link}",
-        FleetMateLinkError.UnknownRoute => $"FleetMate doesn't know the link \"{link}\". Links open pull, commit, pipeline, workitem, issue or open?url=.",
+        FleetMateLinkError.UnknownRoute => $"FleetMate doesn't know the link \"{link}\". Links open pull, commit, pipeline, workitem, issue, device, asset, ticket, user, group or open?url=.",
         FleetMateLinkError.Malformed => $"The link {link} is incomplete. Expected {expected}.",
         _ => $"FleetMate can't open {link}. It takes Azure DevOps or GitHub pull request, commit, pipeline, work item and issue URLs.",
     };
