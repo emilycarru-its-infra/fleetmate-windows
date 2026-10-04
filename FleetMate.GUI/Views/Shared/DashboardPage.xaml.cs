@@ -884,7 +884,7 @@ public partial class DashboardPage : Page
             {
                 items.Add(new ActivityItem(GlyphAsset,
                     $"{a.DisplayName}  -  {a.StatusLabel?.Name ?? ""}",
-                    dt.Value, "Inventory"));
+                    dt.Value, "Inventory", AssetId: a.Id));
             }
         }
 
@@ -894,11 +894,15 @@ public partial class DashboardPage : Page
             var dt = ParseSnipeDate(entry.CreatedAt?.DateTime);
             if (dt.HasValue && dt.Value.ToUniversalTime() > cutoff)
             {
-                var action = entry.ActionType ?? "activity";
-                var itemName = entry.Item?.Name ?? "item";
-                var admin = entry.Admin?.Name ?? "";
-                var text = $"{admin} {action} {itemName}".Trim();
-                items.Add(new ActivityItem(GlyphActivity, text, dt.Value, "Inventory"));
+                // Lead with what changed; the action is the pill and the admin
+                // is context — not "<admin> update <item>" on every row.
+                var itemName = string.IsNullOrWhiteSpace(entry.Item?.Name) ? "item" : entry.Item!.Name!;
+                var admin = entry.CreatedBy?.Name ?? entry.Admin?.Name;
+                var isAsset = entry.Item?.Type?.Contains("asset", StringComparison.OrdinalIgnoreCase) == true;
+                items.Add(new ActivityItem(GlyphActivity, itemName, dt.Value, "Inventory",
+                    AssetId: isAsset && entry.Item!.Id > 0 ? entry.Item.Id : null,
+                    Pill: entry.ActionType ?? "activity",
+                    Context: string.IsNullOrWhiteSpace(admin) ? null : admin));
             }
         }
 
@@ -909,7 +913,7 @@ public partial class DashboardPage : Page
 
         var sorted = filtered
             .OrderByDescending(i => i.Timestamp)
-            .Select(i => new { IconGlyph = i.IconGlyph, Text = i.Text, Time = FormatRelative(i.Timestamp), Tab = i.Tab, DeviceId = i.DeviceId, TicketId = i.TicketId })
+            .Select(i => new { IconGlyph = i.IconGlyph, Text = i.Text, Time = FormatRelative(i.Timestamp), Tab = i.Tab, DeviceId = i.DeviceId, TicketId = i.TicketId, AssetId = i.AssetId, Pill = i.Pill, Context = i.Context })
             .ToList();
 
         ActivityFeed.ItemsSource = sorted;
@@ -924,10 +928,12 @@ public partial class DashboardPage : Page
             var tab = (string?)dc.GetType().GetProperty("Tab")?.GetValue(dc);
             var deviceId = (string?)dc.GetType().GetProperty("DeviceId")?.GetValue(dc);
             var ticketId = (int?)dc.GetType().GetProperty("TicketId")?.GetValue(dc);
+            var assetId = (int?)dc.GetType().GetProperty("AssetId")?.GetValue(dc);
             if (_app != null)
             {
                 _app.PendingNavigateDeviceId = deviceId;
                 _app.PendingNavigateTicketId = ticketId;
+                _app.PendingNavigateAssetId = assetId;
             }
             if (tab != null) NavigateToTab(tab);
         }
@@ -995,7 +1001,8 @@ public partial class DashboardPage : Page
 
     // ── Data types ────────────────────────────────────────────────
 
-    private record ActivityItem(string IconGlyph, string Text, DateTime Timestamp, string Tab, string? DeviceId = null, int? TicketId = null);
+    private record ActivityItem(string IconGlyph, string Text, DateTime Timestamp, string Tab, string? DeviceId = null, int? TicketId = null,
+        int? AssetId = null, string? Pill = null, string? Context = null);
 }
 
 internal static class StringExtensions
