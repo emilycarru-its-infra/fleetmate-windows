@@ -195,6 +195,9 @@ public class FleetMateConfig
     // Manage tab (roster, command library, SSH and RDP session settings)
     public ManageConfig Manage { get; set; } = new();
 
+    /// <summary>The agent terminal panel: AgentCommand, AgentAutoStart, Repos and the managed RepoDefaults.</summary>
+    public TerminalSettings Terminal { get; set; } = new();
+
     // Azure DevOps Configuration
     public AzureDevOpsConfig? AzureDevOps { get; set; }
 
@@ -449,7 +452,9 @@ public class FleetMateConfig
             using var key = hive.OpenSubKey(PolicyRegistryPath);
             if (key == null) return;
             // Policy values may be REG_DWORD as easily as REG_SZ; read both as text.
-            ApplyRegistryValues(name => key.GetValue(name)?.ToString(), config, fromPolicy: true);
+            // A REG_MULTI_SZ list (RepoDefaults) stays a list.
+            ApplyRegistryValues(name => key.GetValue(name) is string[] list ? list : key.GetValue(name)?.ToString(),
+                config, fromPolicy: true);
             Log.Debug("Applied managed settings from {Hive}\\{Path}", hiveName, PolicyRegistryPath);
         }
         catch (Exception ex)
@@ -582,6 +587,17 @@ public class FleetMateConfig
             // Manage tab settings. The SSH key path and user also feed the
             // shared SecureShell configuration so the CLI connects the same way.
             config.Manage ??= new ManageConfig();
+            // Agent terminal. RepoDefaults is the managed seed list, so only
+            // policy sets it; the operator's own list is Repos.
+            if (key.GetValue("AgentCommand") is string agentCommand && !string.IsNullOrWhiteSpace(agentCommand))
+                config.Terminal.AgentCommand = agentCommand.Trim();
+            if (key.GetValue("AgentAutoStart") is string agentAutoStart)
+                config.Terminal.AgentAutoStart = agentAutoStart is "1" || agentAutoStart.Equals("true", StringComparison.OrdinalIgnoreCase);
+            if (!fromPolicy && key.GetValue("Repos") is { } repos)
+                config.Terminal.Repos = TerminalSettings.ParseList(repos);
+            if (fromPolicy && key.GetValue("RepoDefaults") is { } repoDefaults)
+                config.Terminal.RepoDefaults = TerminalSettings.ParseList(repoDefaults);
+
             if (key.GetValue("ManageRosterPath") is string rosterPath && !string.IsNullOrWhiteSpace(rosterPath))
                 config.Manage.RosterPath = rosterPath;
             if (key.GetValue("ManageRosterRepoProject") is string rosterRepoProject && !string.IsNullOrWhiteSpace(rosterRepoProject))
