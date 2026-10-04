@@ -113,6 +113,9 @@ public sealed class DeviceListRow
     public string PurchaseSourceText => Apple?.PurchaseSourceLabel() ?? Blank(Autopilot?.PurchaseOrderIdentifier) ?? Missing;
     public string AddedText => Apple?.AddedToOrg is { } added ? added.ToLocalTime().ToString("yyyy-MM-dd") : Missing;
     public string AddedSort => Apple?.AddedToOrg?.ToString("o") ?? "";
+    /// <summary>"—" until the device has been selected and its Activation Lock read.</summary>
+    public string ActivationLockText => Apple != null && ActivationLockCache.Get(Apple.SerialNumber) is { } l ? l.ColumnText() : Missing;
+    public bool ActivationLockIsLocked => Apple != null && ActivationLockCache.Get(Apple.SerialNumber)?.IsLocked() == true;
 
     public string EnrollmentLabel => IsEnrolled ? "Enrolled" : "Not Enrolled";
 

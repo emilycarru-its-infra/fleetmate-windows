@@ -22,7 +22,8 @@ namespace FleetMate.GUI.Views.Devices;
 /// AppleCare coverage when the device is selected.
 /// </summary>
 public sealed record AppleOrgContext(AppleOrgDevice Device, string ServiceName, string? ServerName,
-    Func<Task<List<AppleCareAgreement>>>? LoadAppleCare);
+    Func<Task<List<AppleCareAgreement>>>? LoadAppleCare,
+    Func<Task<AppleActivationLock>>? LoadActivationLock = null);
 
 public partial class DeviceDetailPanel : UserControl
 {
@@ -113,12 +114,28 @@ public partial class DeviceDetailPanel : UserControl
         AddRowMono(host, "Wi-Fi MAC", d.WifiMacAddresses.Count > 0 ? string.Join(", ", d.WifiMacAddresses) : null);
         AddRowMono(host, "Ethernet MAC", d.EthernetMacAddresses.Count > 0 ? string.Join(", ", d.EthernetMacAddresses) : null);
         AddRow(host, "Migration", d.MigrationStatus == null ? (d.IsMigrationCapable == true ? "Eligible" : null) : d.MigrationLabel());
+        var activationLock = ctx.LoadActivationLock == null ? Task.CompletedTask : AddActivationLock(host, ctx);
         AddRow(host, "Migration Deadline", d.MigrationDeadline?.ToLocalTime().ToString("yyyy-MM-dd HH:mm"));
 
-        if (ctx.LoadAppleCare == null) return Task.CompletedTask;
+        if (ctx.LoadAppleCare == null) return activationLock;
         var coverage = Section("AppleCare", "");
         AddNote(coverage, "Loading coverage...");
-        return LoadAppleCareAsync(ctx, coverage, current);
+        return Task.WhenAll(activationLock, LoadAppleCareAsync(ctx, coverage, current));
+    }
+
+    /// <summary>Report only: no bypass code is shown and nothing here clears a lock.</summary>
+    private async Task AddActivationLock(StackPanel host, AppleOrgContext ctx)
+    {
+        var row = Row("Activation Lock", "Reading Activation Lock…", mono: false);
+        var value = row.Children.OfType<TextBlock>().Last();
+        value.Foreground = (Brush)FindResource("SystemControlForegroundBaseMediumBrush");
+        host.Children.Add(row);
+
+        var state = await ctx.LoadActivationLock!();
+        value.Text = state.DetailText();
+        value.Foreground = state.IsLocked()
+            ? new SolidColorBrush(Color.FromRgb(0xE8, 0x89, 0x0C))
+            : (Brush)FindResource("SystemControlForegroundBaseHighBrush");
     }
 
     private async Task LoadAppleCareAsync(AppleOrgContext ctx, StackPanel host, string current)

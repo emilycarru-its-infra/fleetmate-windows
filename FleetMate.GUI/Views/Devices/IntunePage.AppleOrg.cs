@@ -74,7 +74,21 @@ public partial class IntunePage
         if (row.Apple is not { } device || OrgOf(row) is not { } org) return null;
         var serial = device.SerialNumber;
         return new AppleOrgContext(device, row.OrgName ?? org.Profile.ServiceName, row.ServerName,
-            () => AppleService(org.Profile.Name)?.AppleCareAsync(serial) ?? Task.FromResult(new List<AppleCareAgreement>()));
+            () => AppleService(org.Profile.Name)?.AppleCareAsync(serial) ?? Task.FromResult(new List<AppleCareAgreement>()),
+            () => ReadActivationLockAsync(org.Profile.Name, serial));
+    }
+
+    /// <summary>Read once per device per session; the column shows it from then on.</summary>
+    private async Task<AppleActivationLock> ReadActivationLockAsync(string profileName, string serial)
+    {
+        if (ActivationLockCache.Get(serial) is { } known) return known;
+        var state = AppleService(profileName) is { } service
+            ? await service.ActivationLockAsync(serial)
+            : AppleActivationLock.Unknown;
+        ActivationLockCache.Set(serial, state);
+        // Rows are plain values: redraw so the optional column picks it up.
+        DevicesDataGrid.Items.Refresh();
+        return state;
     }
 
     /// <summary>Show the Apple cards that fit every selected device; true when any does.</summary>
