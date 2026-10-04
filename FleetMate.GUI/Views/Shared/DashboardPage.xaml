@@ -143,6 +143,22 @@
                                                     <ui:FontIcon Glyph="{Binding IconGlyph}" FontSize="12" Margin="0,0,6,0"
                                                                  Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                                     <TextBlock Text="{Binding Text}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                                    <Border CornerRadius="8" Padding="6,0" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                            Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Pill}" Value="{x:Null}">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <TextBlock Text="{Binding Pill}" FontSize="10" />
+                                                    </Border>
+                                                    <TextBlock Text="{Binding Context}" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                                 </StackPanel>
                                             </DockPanel>
                                         </Border>
