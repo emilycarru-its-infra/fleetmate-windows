@@ -50,12 +50,28 @@ public sealed class TerminalView : UserControl, IDisposable
         Post(new { type = "focus" });
     }
 
+    /// <summary>
+    /// One WebView2 environment for every terminal, with its data in the
+    /// user's profile. Left to its default, WebView2 puts the folder beside
+    /// the host executable, which a normal user cannot write to, and the
+    /// terminal fails with access denied. It is kept apart from the sign-in
+    /// window's folder because that one is created with different options.
+    /// </summary>
+    private static readonly Lazy<Task<CoreWebView2Environment>> SharedEnvironment = new(() =>
+    {
+        var folder = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "FleetMate", "WebView2-Terminal");
+        System.IO.Directory.CreateDirectory(folder);
+        return CoreWebView2Environment.CreateAsync(browserExecutableFolder: null, userDataFolder: folder);
+    });
+
     private async Task InitializeAsync()
     {
         if (_web.CoreWebView2 != null) return;
         try
         {
-            await _web.EnsureCoreWebView2Async();
+            await _web.EnsureCoreWebView2Async(await SharedEnvironment.Value);
             var core = _web.CoreWebView2!;
             core.Settings.AreDefaultContextMenusEnabled = false;
             core.Settings.IsZoomControlEnabled = false;
