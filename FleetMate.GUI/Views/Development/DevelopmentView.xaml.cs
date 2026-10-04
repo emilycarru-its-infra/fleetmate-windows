@@ -36,6 +36,7 @@ public partial class DevelopmentView : UserControl
         DetailView.StateChanged += async (_, _) => await RefreshAsync();
         RunView.RunChanged += async (_, _) => await LoadRunsAsync();
         StartTimers();
+        HookLinks();
     }
 
     private static App? AppInstance => Application.Current as App;
