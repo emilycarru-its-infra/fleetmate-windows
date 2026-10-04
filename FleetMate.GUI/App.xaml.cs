@@ -122,6 +122,10 @@ public partial class App : Application
     public string? PendingNavigateDeviceId { get; set; }
     public int? PendingNavigateTicketId { get; set; }
     public int? PendingNavigateWorkItemId { get; set; }
+
+    /// <summary>The FLEETMATE_CONTEXT file every terminal session points at.</summary>
+    public FleetMate.Core.Services.Terminal.AppContextFile Context { get; } =
+        new(FleetMate.Core.Services.Terminal.AppContextFile.DefaultPath);
     
     // MARK: - Cached Data
     // Data caches with timestamps to avoid reloading on tab switches
