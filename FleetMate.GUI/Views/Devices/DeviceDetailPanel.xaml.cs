@@ -27,7 +27,7 @@ public partial class DeviceDetailPanel : UserControl
         InitializeComponent();
     }
 
-    public async Task ShowDeviceAsync(IntuneDevice device, GraphService? graphService)
+    public async Task ShowDeviceAsync(IntuneDevice device, GraphService? graphService, AutopilotDevice? autopilot = null)
     {
         _device = device;
         _graphService = graphService;
@@ -38,6 +38,9 @@ public partial class DeviceDetailPanel : UserControl
         ContentPanel.Children.Clear();
 
         RenderSummary(device);
+        // A Windows device's provisioning record follows Summary, where the
+        // Mac shows a device's Apple organization record.
+        if (autopilot != null) RenderAutopilot(autopilot);
         var groupsHost = Section("Group Membership", "");
         RenderEnrollment(device);
         RenderHardware(device);
@@ -60,6 +63,30 @@ public partial class DeviceDetailPanel : UserControl
             LoadGroupsAsync(device, groupsHost, current),
             LoadCompliancePoliciesAsync(device.Id, complianceHost, current),
             LoadDetectedAppsAsync(device.Id, appsHost, current));
+    }
+
+    /// <summary>A device Autopilot knows and Intune doesn't: only its Autopilot record.</summary>
+    public void ShowAutopilotOnly(AutopilotDevice identity)
+    {
+        _device = null;
+        DeviceName.Text = string.IsNullOrWhiteSpace(identity.DisplayName) ? "Not Enrolled" : identity.DisplayName;
+        DeviceSerial.Text = identity.SerialNumber ?? identity.Id;
+        ContentPanel.Children.Clear();
+        RenderAutopilot(identity);
+        AddNote(Section("Device Management Service", ""), "Not enrolled in Intune.");
+    }
+
+    private void RenderAutopilot(AutopilotDevice a)
+    {
+        var host = Section("Windows Autopilot", "");
+        AddRow(host, "Group Tag", a.GroupTag);
+        AddRow(host, "Enrollment State", a.EnrollmentState);
+        AddRow(host, "Manufacturer", a.Manufacturer);
+        AddRow(host, "Model", a.Model);
+        AddRow(host, "System Family", a.SystemFamily);
+        AddRow(host, "Last Contacted", a.LastContactedDateTime?.ToLocalTime().ToString("yyyy-MM-dd HH:mm"));
+        AddRow(host, "Assigned User", a.UserPrincipalName);
+        AddRowMono(host, "Autopilot ID", a.Id);
     }
 
     // ── Summary ──────────────────────────────────────────────────────────
@@ -216,7 +243,7 @@ public partial class DeviceDetailPanel : UserControl
                     var color = policy.State?.ToLowerInvariant() switch
                     {
                         "compliant" => "#27ae60",
-                        "noncompliant" or "error" => "#e74c3c",
+                        "noncompliant" or "error" => "#e8890c",
                         "conflict" => "#f39c12",
                         _ => "#718096"
                     };
@@ -437,7 +464,7 @@ public partial class DeviceDetailPanel : UserControl
         var (color, text) = (state?.ToLowerInvariant()) switch
         {
             "compliant" => ("#27ae60", "Compliant"),
-            "noncompliant" => ("#e74c3c", "Non-Compliant"),
+            "noncompliant" => ("#e8890c", "Non-Compliant"),
             "ingrace" or "ingraceperiod" => ("#f39c12", "In Grace Period"),
             _ => ("#666", state ?? "Unknown")
         };
@@ -469,7 +496,7 @@ public partial class DeviceDetailPanel : UserControl
             CornerRadius = new CornerRadius(4)
         });
 
-        var barColor = usedPercent > 90 ? "#e74c3c" : usedPercent > 70 ? "#f39c12" : "#27ae60";
+        var barColor = usedPercent > 90 ? "#e8890c" : usedPercent > 70 ? "#f39c12" : "#27ae60";
         bar.Children.Add(new Border
         {
             Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(barColor)),
