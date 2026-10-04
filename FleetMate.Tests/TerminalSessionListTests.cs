@@ -188,3 +188,16 @@ public class TerminalSessionListTests
         Assert.Equal(1000 - TerminalLayoutState.MinPageHeight, layout.Height);
     }
 }
+
+public class TerminalTitleTests
+{
+    [Theory]
+    [InlineData(@"C:\Program Files\PowerShell\7\pwsh.exe", false)]
+    [InlineData(@"C:\WINDOWS\system32\cmd.exe", false)]
+    [InlineData("", false)]
+    [InlineData("renamed", true)]
+    [InlineData("claude: fix the build", true)]
+    [InlineData(@"~\repo", true)]
+    public void ExecutablePathTitlesAreIgnored(string title, bool meaningful) =>
+        Xunit.Assert.Equal(meaningful, FleetMate.Core.Services.Terminal.TerminalTitle.IsMeaningful(title));
+}
