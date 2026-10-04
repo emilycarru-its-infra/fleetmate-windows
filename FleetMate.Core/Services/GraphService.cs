@@ -852,7 +852,7 @@ public class GraphService : IDisposable
     }
 
     /// <summary>
-    /// AutoPilot Reset a device (cleanWindowsDevice).
+    /// AutoPilot Reset a device (wipe with keepEnrollmentData).
     ///
     /// Keeps the OS, drivers, Wi-Fi and enrollment, removing user profiles, apps
     /// and settings so the machine returns to OOBE ready for the next user. This
@@ -862,36 +862,46 @@ public class GraphService : IDisposable
     /// </summary>
     public async Task<DeviceActionResult> AutopilotResetDeviceAsync(string deviceId, bool keepUserData = false, bool confirmed = false)
     {
-        var guard = RequireConfirmation(confirmed, "cleanWindowsDevice", deviceId);
+        const string action = "autopilotReset";
+        var guard = RequireConfirmation(confirmed, action, deviceId);
         if (guard != null) return guard;
 
         if (!await SetAuthorizationAsync())
-            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "cleanWindowsDevice", Message = "Not authenticated" };
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = action, Message = "Not authenticated" };
 
         try
         {
-            var url = $"deviceManagement/managedDevices/{deviceId}/cleanWindowsDevice";
-            var body = new { keepUserData };
-            var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            var (url, body) = AutopilotResetRequest(deviceId, keepUserData);
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
 
             var response = await _client.PostAsync(url, content);
 
             if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NoContent)
             {
                 Log.Information("AutoPilot Reset triggered for device {DeviceId}", deviceId);
-                return new DeviceActionResult { Success = true, DeviceId = deviceId, Action = "cleanWindowsDevice" };
+                return new DeviceActionResult { Success = true, DeviceId = deviceId, Action = action };
             }
 
             var error = await ReadErrorBodyAsync(response);
             Log.Warning("Failed to AutoPilot Reset device {DeviceId}: {Status} - {Error}", deviceId, response.StatusCode, error);
-            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "cleanWindowsDevice", Message = error };
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = action, Message = error };
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to AutoPilot Reset device {DeviceId}", deviceId);
-            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "cleanWindowsDevice", Message = ex.Message };
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = action, Message = ex.Message };
         }
     }
+
+    /// <summary>
+    /// Autopilot Reset is a wipe that keeps the enrollment: Windows goes back
+    /// to the Autopilot experience and re-provisions. It is NOT
+    /// cleanWindowsDevice, which is Fresh Start (a reinstall that leaves the
+    /// device as it was enrolled).
+    /// </summary>
+    internal static (string Url, string Body) AutopilotResetRequest(string deviceId, bool keepUserData = false) =>
+        ($"deviceManagement/managedDevices/{deviceId}/wipe",
+         JsonSerializer.Serialize(new { keepEnrollmentData = true, keepUserData }));
 
     /// <summary>Factory-reset multiple devices.</summary>
     public async Task<List<DeviceActionResult>> WipeDevicesAsync(IEnumerable<string> deviceIds, bool keepEnrollmentData = false, bool keepUserData = false, bool confirmed = false)
