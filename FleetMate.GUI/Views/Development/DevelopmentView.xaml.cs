@@ -170,6 +170,17 @@ public partial class DevelopmentView : UserControl
         if (AppInstance?.DevelopmentPullRequests is { } queue) RenderPullRequests(queue);
     }
 
+    /// <summary>Show Pulls filtered to one repository — the Development widget's bar click.</summary>
+    public void ShowRepository(string repository)
+    {
+        _source = DevelopmentSourceFilter.All;
+        SourceAll.IsChecked = true;
+        SourceDevOps.IsChecked = SourceGitHub.IsChecked = false;
+        _repository = repository;
+        PullRequestsSegment.IsChecked = true;
+        Rerender();
+    }
+
     private void OnPullsRepoChanged(object sender, SelectionChangedEventArgs e)
     {
         var repo = RepoFilterMenu.Picked(PullsRepoCombo, out var changed);
