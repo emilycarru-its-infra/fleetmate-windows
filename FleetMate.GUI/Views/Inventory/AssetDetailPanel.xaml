@@ -6,7 +6,6 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -34,8 +33,22 @@
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                 </StackPanel>
 
+                <!-- Details | History, then the actions — all one 28px row. The
+                     segment choice sticks as you move between assets. -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top">
+                    <Border CornerRadius="8" Padding="2" Margin="0,0,8,0" Height="28"
+                            BorderThickness="1" BorderBrush="{DynamicResource CardBorderBrush}">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton x:Name="DetailsSegment" Content="Details" GroupName="AssetDetailSegment"
+                                         IsChecked="True" Checked="OnSegmentChanged" Padding="9,2"
+                                         Style="{StaticResource NavigationTabStyle}" />
+                            <RadioButton x:Name="HistorySegment" Content="History" GroupName="AssetDetailSegment"
+                                         Checked="OnSegmentChanged" Padding="9,2"
+                                         Style="{StaticResource NavigationTabStyle}" />
+                        </StackPanel>
+                    </Border>
                     <Button x:Name="ReAllocateButton" Click="OnReAllocateClicked" Margin="0,0,6,0"
+                            Height="28" Padding="10,0"
                             Background="{DynamicResource SystemControlBackgroundAccentBrush}" Foreground="White">
                         <StackPanel Orientation="Horizontal">
                             <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE748;" FontSize="12"
@@ -43,12 +56,14 @@
                             <TextBlock Text="Re-Allocate" VerticalAlignment="Center" FontSize="12" />
                         </StackPanel>
                     </Button>
-                    <Button Click="OnOpenInSnipeClicked" ToolTip="Open in Snipe-IT" Width="30" Height="30"
-                            Padding="0" Margin="0,0,6,0">
-                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE774;" FontSize="13" />
+                    <Button Click="OnOpenInSnipeClicked" ToolTip="Open in Snipe-IT" Width="28" Height="28"
+                            Padding="0" Margin="0,0,6,0"
+                            BorderThickness="1" BorderBrush="{DynamicResource CardBorderBrush}">
+                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE774;" FontSize="12" />
                     </Button>
-                    <Button Click="OnCloseClicked" ToolTip="Close" Width="30" Height="30" Padding="0">
-                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE711;" FontSize="13" />
+                    <Button Click="OnCloseClicked" ToolTip="Close" Width="28" Height="28" Padding="0"
+                            BorderThickness="1" BorderBrush="{DynamicResource CardBorderBrush}">
+                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE711;" FontSize="12" />
                     </Button>
                 </StackPanel>
             </Grid>
@@ -73,22 +88,14 @@
             </Grid>
         </StackPanel>
 
-        <!-- Details | History. The choice sticks as you move between assets. -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="16,0,16,8">
-            <RadioButton x:Name="DetailsSegment" Content="Details" GroupName="AssetDetailSegment"
-                         IsChecked="True" Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}" />
-            <RadioButton x:Name="HistorySegment" Content="History" GroupName="AssetDetailSegment"
-                         Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}" />
-        </StackPanel>
-
         <!-- Scrollable cards, in priority order: state and people first, the
              machine itself and money second, identifiers and metadata after. -->
-        <ScrollViewer x:Name="DetailsView" Grid.Row="2" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer x:Name="DetailsView" Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel x:Name="CardsHost" Margin="16,0,16,16" />
         </ScrollViewer>
 
         <!-- Change history, newest first: one card per event, field changes under it. -->
-        <Grid x:Name="HistoryView" Grid.Row="2" Visibility="Collapsed">
+        <Grid x:Name="HistoryView" Grid.Row="1" Visibility="Collapsed">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
