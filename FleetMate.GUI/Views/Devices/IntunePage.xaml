@@ -24,6 +24,8 @@
                 <TextBlock x:Name="DeviceCountText" Margin="8,0,0,0" Style="{StaticResource SubtitleTextStyle}" />
                 <TextBlock x:Name="AutopilotLoadingText" Margin="8,0,0,0" Style="{StaticResource SubtitleTextStyle}"
                            Text="· reading Autopilot…" Visibility="Collapsed" />
+                <TextBlock x:Name="AppleLoadingText" Margin="8,0,0,0" Style="{StaticResource SubtitleTextStyle}"
+                           Text="· reading Apple organizations…" Visibility="Collapsed" />
                 <TextBlock x:Name="SelectionCountText" Margin="8,0,0,0" Foreground="{DynamicResource SystemControlForegroundAccentBrush}" FontWeight="SemiBold" />
             </StackPanel>
         </StackPanel>
@@ -191,6 +193,42 @@
                             <TextBlock x:Name="NoActionsText" Visibility="Collapsed" TextWrapping="Wrap" Margin="0,4,0,0"
                                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                                        Text="No actions apply to every selected device." />
+
+                            <!-- Apple organization: offered when one organization holds every selected device.
+                                 These actions only ever receive serial numbers. -->
+                            <TextBlock x:Name="AppleActionsHeader" Text="Apple Organization" FontWeight="SemiBold"
+                                       Margin="0,4,0,4" Visibility="Collapsed" />
+                            <Expander x:Name="AppleAssignSection" Header="Assign Management Service" Visibility="Collapsed">
+                                <StackPanel Margin="8">
+                                    <ComboBox x:Name="AppleServerCombo" HorizontalAlignment="Stretch" Margin="0,0,0,8"
+                                              DisplayMemberPath="Name" ui:ControlHelper.PlaceholderText="Device management service" />
+                                    <Button Content="Assign" Click="OnAppleAssignClicked" HorizontalAlignment="Stretch" Margin="0,0,0,6" />
+                                    <Button x:Name="AppleUnassignButton" Content="Unassign" Click="OnAppleUnassignClicked" HorizontalAlignment="Stretch" />
+                                </StackPanel>
+                            </Expander>
+                            <Expander x:Name="AppleMigrationSection" Header="Migrate Management Service" Visibility="Collapsed">
+                                <StackPanel Margin="8">
+                                    <TextBlock Text="Move the devices to another service without erasing them, by a deadline at most 90 days out."
+                                               TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
+                                    <ComboBox x:Name="AppleMigrationServerCombo" HorizontalAlignment="Stretch" Margin="0,0,0,8"
+                                              DisplayMemberPath="Name" ui:ControlHelper.PlaceholderText="Destination service" />
+                                    <DatePicker x:Name="AppleMigrationDeadline" Margin="0,0,0,8" HorizontalAlignment="Stretch" />
+                                    <Button x:Name="AppleScheduleMigrationButton" Content="Schedule Migration" Click="OnAppleScheduleMigrationClicked"
+                                            HorizontalAlignment="Stretch" Margin="0,0,0,6" />
+                                    <Button x:Name="AppleUpdateDeadlineButton" Content="Change Deadline" Click="OnAppleUpdateDeadlineClicked"
+                                            HorizontalAlignment="Stretch" Margin="0,0,0,6" />
+                                    <Button x:Name="AppleCancelMigrationButton" Content="Cancel Migration" Click="OnAppleCancelMigrationClicked"
+                                            HorizontalAlignment="Stretch" />
+                                </StackPanel>
+                            </Expander>
+                            <Expander x:Name="AppleReleaseSection" Header="Release from Organization" Visibility="Collapsed">
+                                <StackPanel Margin="8">
+                                    <TextBlock Text="Remove the devices from Apple Business Manager. They lose their enrollment assignment. This cannot be undone."
+                                               TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
+                                    <Button Content="Release" Click="OnAppleReleaseClicked" HorizontalAlignment="Stretch"
+                                            Background="#E8890C" Foreground="White" />
+                                </StackPanel>
+                            </Expander>
 
                             <!-- Windows Autopilot: offered when every selected device has an identity. -->
                             <TextBlock x:Name="AutopilotActionsHeader" Text="Windows Autopilot" FontWeight="SemiBold"
