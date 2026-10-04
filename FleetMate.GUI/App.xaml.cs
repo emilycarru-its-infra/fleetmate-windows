@@ -596,6 +596,7 @@ public partial class App : Application
 
         // Initialize services
         InitializeServices();
+        StartHandbook();
 
         if (e.Args.Contains("--headless-tdx-sso", StringComparer.OrdinalIgnoreCase))
         {
