@@ -39,7 +39,7 @@ public partial class IntunePage : Page
         Enum.GetValues<DeviceFacet>().ToDictionary(f => f, _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
     private static readonly string[] OptionalColumns =
-        { "Model", "Manufacturer", "Ownership", "Migration", "Purchase Source", "Added" };
+        { "Model", "Manufacturer", "Ownership", "Migration", "Purchase Source", "Added", "Activation Lock" };
 
     private static string ColumnsStatePath => System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

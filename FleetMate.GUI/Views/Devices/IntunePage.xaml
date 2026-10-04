@@ -151,6 +151,19 @@
                             <DataGridTextColumn Header="Migration" Binding="{Binding MigrationText}" Width="100" Visibility="Collapsed" />
                             <DataGridTextColumn Header="Purchase Source" Binding="{Binding PurchaseSourceText}" Width="120" Visibility="Collapsed" />
                             <DataGridTextColumn Header="Added" Binding="{Binding AddedText}" Width="100" Visibility="Collapsed" />
+                            <!-- Read per device on selection, so most rows read "—": neither sortable nor a filter. -->
+                            <DataGridTextColumn Header="Activation Lock" Binding="{Binding ActivationLockText}" Width="120"
+                                                Visibility="Collapsed" CanUserSort="False">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ActivationLockIsLocked}" Value="True">
+                                                <Setter Property="Foreground" Value="#E8890C" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>
