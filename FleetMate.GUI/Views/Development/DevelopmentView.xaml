@@ -8,7 +8,14 @@
 
     <UserControl.Resources>
         <DataTemplate x:Key="PullRequestRowTemplate">
-            <StackPanel Margin="2,4">
+            <StackPanel Margin="2,4" Background="Transparent">
+                <StackPanel.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Open in Browser" Click="OnPullRequestOpenInBrowser" />
+                        <MenuItem Header="Copy Link" Click="OnPullRequestCopyLink" />
+                        <MenuItem Header="{Binding CopyIdLabel}" Click="OnPullRequestCopyId" />
+                    </ContextMenu>
+                </StackPanel.ContextMenu>
                 <DockPanel>
                     <Border DockPanel.Dock="Left" CornerRadius="3" Padding="4,1" Margin="0,0,6,0"
                             VerticalAlignment="Center"
@@ -51,6 +58,12 @@
                             <DataTemplate>
                                 <Border Padding="6,3" Cursor="Hand" Background="Transparent" Tag="{Binding}"
                                         MouseLeftButtonUp="OnCommitClicked">
+                                    <Border.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Open in Browser" Click="OnCommitOpenInBrowser" />
+                                            <MenuItem Header="Copy SHA" Click="OnCommitCopySha" />
+                                        </ContextMenu>
+                                    </Border.ContextMenu>
                                     <StackPanel>
                                         <TextBlock Text="{Binding Subject}" FontSize="11" TextTrimming="CharacterEllipsis"
                                                    ToolTip="{Binding Subject}" />
@@ -68,7 +81,13 @@
         </DataTemplate>
 
         <DataTemplate x:Key="PipelineRunRowTemplate">
-            <DockPanel Margin="2,4">
+            <DockPanel Margin="2,4" Background="Transparent">
+                <DockPanel.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Open in Browser" Click="OnRunOpenInBrowser" />
+                        <MenuItem Header="Copy Link" Click="OnRunCopyLink" />
+                    </ContextMenu>
+                </DockPanel.ContextMenu>
                 <ui:FontIcon DockPanel.Dock="Left" Glyph="{Binding StatusGlyph}" Foreground="{Binding StatusBrush}"
                              FontSize="12" Margin="0,2,8,0" VerticalAlignment="Top" ToolTip="{Binding StatusLabel}" />
                 <StackPanel>
@@ -89,7 +108,17 @@
         </DataTemplate>
 
         <DataTemplate x:Key="NotificationRowTemplate">
-            <DockPanel Margin="2,4">
+            <DockPanel Margin="2,4" Background="Transparent">
+                <DockPanel.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="Mark as Read" Click="OnMarkReadClicked" Visibility="{Binding MarkReadVisibility}" />
+                        <MenuItem Header="Done" Click="OnDoneClicked" />
+                        <MenuItem Header="Unsubscribe" Click="OnUnsubscribeClicked" />
+                        <Separator />
+                        <MenuItem Header="Open in Browser" Click="OnNotificationOpenInBrowser" />
+                        <MenuItem Header="Copy Link" Click="OnNotificationCopyLink" />
+                    </ContextMenu>
+                </DockPanel.ContextMenu>
                 <Ellipse DockPanel.Dock="Left" Width="8" Height="8" Margin="0,5,8,0" VerticalAlignment="Top"
                          Fill="{DynamicResource SystemControlForegroundAccentBrush}"
                          Visibility="{Binding UnreadVisibility}" />
@@ -98,6 +127,10 @@
                     <Button Padding="5,2" Margin="0,0,2,0" ToolTip="Mark as read" Tag="{Binding}"
                             Click="OnMarkReadClicked" Visibility="{Binding MarkReadVisibility}">
                         <ui:FontIcon Glyph="&#xE8C3;" FontSize="11" />
+                    </Button>
+                    <Button Padding="5,2" Margin="0,0,2,0" ToolTip="Done — remove from inbox" Tag="{Binding}"
+                            Click="OnDoneClicked">
+                        <ui:FontIcon Glyph="&#xE73E;" FontSize="11" />
                     </Button>
                     <Button Padding="5,2" ToolTip="Unsubscribe from this thread" Tag="{Binding}"
                             Click="OnUnsubscribeClicked">
@@ -137,12 +170,14 @@
                 <ui:ProgressRing x:Name="LoadingRing" DockPanel.Dock="Right" IsActive="True" Width="14" Height="14"
                                  VerticalAlignment="Center" Visibility="Collapsed" />
                 <StackPanel Orientation="Horizontal">
+                    <!-- Inbox leads and appears only while it has unread notifications.
+                         The unread count is on the Development tab itself. -->
+                    <RadioButton x:Name="InboxSegment" Content="Inbox" GroupName="DevelopmentSegment"
+                                 Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}"
+                                 Visibility="Collapsed" />
                     <RadioButton x:Name="PullRequestsSegment" Content="Pulls" GroupName="DevelopmentSegment"
                                  IsChecked="True" Checked="OnSegmentChanged"
                                  Style="{StaticResource NavigationTabStyle}" />
-                    <!-- The unread count rides in the label ("Inbox 8"), not a badge. -->
-                    <RadioButton x:Name="InboxSegment" Content="Inbox" GroupName="DevelopmentSegment"
-                                 Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}" />
                     <RadioButton x:Name="CommitsSegment" Content="Commits" GroupName="DevelopmentSegment"
                                  Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}" />
                     <RadioButton x:Name="PipelinesSegment" Content="Pipelines" GroupName="DevelopmentSegment"
@@ -211,12 +246,16 @@
                 <TextBlock x:Name="PipelinesCount" FontSize="11" Margin="0,4,0,0" Opacity="0.7" />
             </StackPanel>
 
-            <!-- Inbox header -->
+            <!-- Inbox header: Unread / All, last checked, Mark all read. -->
             <DockPanel x:Name="InboxHeader" Grid.Row="1" Margin="0,0,0,8" Visibility="Collapsed">
-                <Button DockPanel.Dock="Right" Content="Mark all read" Padding="8,2" FontSize="11"
-                        Click="OnMarkAllReadClicked" />
+                <Button x:Name="MarkAllReadButton" DockPanel.Dock="Right" Content="Mark all read" Padding="8,2"
+                        FontSize="11" Click="OnMarkAllReadClicked" ToolTip="Mark every notification as read" />
+                <ToggleButton x:Name="InboxUnreadChip" Content="Unread" IsChecked="True" Tag="Unread"
+                              Padding="10,2" FontSize="11" Margin="0,0,4,0" Click="OnInboxFilterClicked" />
+                <ToggleButton x:Name="InboxAllChip" Content="All" Tag="All"
+                              Padding="10,2" FontSize="11" Margin="0,0,8,0" Click="OnInboxFilterClicked" />
                 <TextBlock x:Name="InboxStatus" FontSize="11" Opacity="0.7" VerticalAlignment="Center"
-                           TextWrapping="Wrap" />
+                           TextTrimming="CharacterEllipsis" />
             </DockPanel>
 
             <Border Grid.Row="2" Style="{StaticResource CardStyle}" Padding="0">
