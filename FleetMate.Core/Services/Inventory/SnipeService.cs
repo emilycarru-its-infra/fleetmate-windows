@@ -1212,6 +1212,50 @@ public class SnipeService : IDisposable
     }
     
     /// <summary>
+    /// Change history for one asset, newest first. Reads the asset's own
+    /// history endpoint and falls back to the activity report filtered to the
+    /// asset where that endpoint is missing or refused.
+    /// </summary>
+    public async Task<List<SnipeActivity>> GetAssetHistoryAsync(int assetId, int limit = 500)
+    {
+        var rows = await GetActivityRowsAsync(
+            $"/api/v1/hardware/{assetId}/history?limit={limit}&order=desc&sort=created_at");
+        return rows ?? await GetActivityRowsAsync(
+            $"/api/v1/reports/activity?item_type=asset&item_id={assetId}&limit={limit}&order=desc&sort=created_at")
+            ?? new List<SnipeActivity>();
+    }
+
+    /// <summary>Null when the request fails, so a caller can try another route.</summary>
+    private async Task<List<SnipeActivity>?> GetActivityRowsAsync(string url)
+    {
+        try
+        {
+            var response = await _client.GetAsync(url);
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Warning("Activity request {Url} failed: {Status}", url, response.StatusCode);
+                return null;
+            }
+            // Same "charset=utf8" header as the activity report — read raw bytes.
+            // Snipe reports some errors as 200 {"status":"error"}; no rows
+            // array means this route did not answer.
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            using var doc = JsonDocument.Parse(bytes);
+            if (!doc.RootElement.TryGetProperty("rows", out var rows) || rows.ValueKind != JsonValueKind.Array)
+            {
+                Log.Warning("Activity request {Url} returned no rows", url);
+                return null;
+            }
+            return rows.Deserialize<List<SnipeActivity>>(_jsonOptions);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Activity request {Url} failed", url);
+            return null;
+        }
+    }
+    
+    /// <summary>
     /// Get maintenance records
     /// </summary>
     public async Task<List<SnipeMaintenance>> GetMaintenancesAsync(int? assetId = null)
