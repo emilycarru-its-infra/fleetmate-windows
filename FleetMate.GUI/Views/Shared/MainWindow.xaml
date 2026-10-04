@@ -153,6 +153,41 @@
                                  Style="{StaticResource NavigationTabStyle}">
                         <ui:FontIcon Glyph="&#xE713;" FontFamily="Segoe Fluent Icons" FontSize="14" />
                     </RadioButton>
+                    <!-- Global search: last in the toolbar on every tab. Ctrl+K
+                         focuses it, Enter opens the first hit, Esc clears. -->
+                    <Grid Width="260" Height="28" Margin="8,0,0,0" VerticalAlignment="Center"
+                          shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                        <TextBox x:Name="SearchBox" AutomationProperties.AutomationId="ToolbarSearchBox"
+                                 AutomationProperties.Name="Search" MinHeight="28" Height="28" FontSize="12"
+                                 Padding="28,4,60,0" VerticalContentAlignment="Center"
+                                 BorderThickness="1"
+                                 BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                                 Background="{DynamicResource CardBackgroundBrush}"
+                                 ui:ControlHelper.PlaceholderText="Search"
+                                 ui:ControlHelper.PlaceholderForeground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                 TextChanged="OnSearchTextChanged" PreviewKeyDown="OnSearchKeyDown" />
+                        <ui:FontIcon Glyph="&#xE721;" FontFamily="Segoe Fluent Icons" FontSize="13"
+                                     HorizontalAlignment="Left" VerticalAlignment="Center" Margin="9,0,0,0"
+                                     IsHitTestVisible="False"
+                                     Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <Border x:Name="SearchHint" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                Margin="0,0,6,0" Padding="5,0" CornerRadius="3" IsHitTestVisible="False"
+                                BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                            <TextBlock Text="Ctrl+K" FontSize="10"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        </Border>
+                        <Popup x:Name="SearchPopup" PlacementTarget="{Binding ElementName=SearchBox}"
+                               Placement="Bottom" HorizontalOffset="-300" StaysOpen="False" AllowsTransparency="True">
+                            <Border Background="{DynamicResource CardBackgroundBrush}"
+                                    BorderBrush="{DynamicResource CardBorderBrush}"
+                                    BorderThickness="1" CornerRadius="8" Width="560" MaxHeight="620"
+                                    TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="600">
+                                    <StackPanel x:Name="SearchResults" Margin="8" />
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
                     <Popup x:Name="RecentActivityPopup" PlacementTarget="{Binding ElementName=RecentActivityButton}"
                            Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
                         <Border Background="{DynamicResource CardBackgroundBrush}"
