@@ -20,8 +20,6 @@ namespace FleetMate.GUI.Views.Development;
 /// </summary>
 public partial class DevelopmentView : UserControl
 {
-    private const int RepoChipLimit = 12;
-
     private DevelopmentSourceFilter _source = DevelopmentSourceFilter.All;
     private DevelopmentScope _scope = DevelopmentScope.Everything;
     private string? _repository;
@@ -135,7 +133,8 @@ public partial class DevelopmentView : UserControl
             .Where(pr => DevelopmentFilter.MatchesSource(pr, _source) && DevelopmentFilter.MatchesScope(pr, _scope))
             .ToList();
 
-        RenderRepoChips(scoped);
+        _repository = RepoFilterMenu.Fill(PullsRepoCombo,
+            RepoFilterMenu.Counts(scoped, DevelopmentFilter.RepositoryKey), _repository);
 
         var visible = DevelopmentFilter.Apply(queue.PullRequests, _source, _scope, _repository, SearchBox.Text);
         var rows = visible.Select(pr => new DevelopmentPullRequestRowViewModel { PullRequest = pr }).ToList();
@@ -166,42 +165,16 @@ public partial class DevelopmentView : UserControl
         }
     }
 
-    private void RenderRepoChips(List<UnifiedPullRequest> scoped)
-    {
-        var counts = DevelopmentFilter.RepositoryCounts(scoped);
-
-        // A repository that vanished (refresh, scope change) must not keep filtering.
-        if (_repository != null && counts.All(c => c.Repository != _repository)) _repository = null;
-
-        RepoChipsPanel.Children.Clear();
-        if (counts.Count < 2) return;
-
-        foreach (var (repo, count) in counts.Take(RepoChipLimit))
-        {
-            var chip = new ToggleButton
-            {
-                Content = $"{repo.Split('/').Last()} {count}",
-                ToolTip = repo,
-                Tag = repo,
-                IsChecked = repo == _repository,
-                Padding = new Thickness(8, 1, 8, 1),
-                FontSize = 10,
-                Margin = new Thickness(0, 0, 4, 4),
-            };
-            chip.Click += OnRepoChipClicked;
-            RepoChipsPanel.Children.Add(chip);
-        }
-    }
-
     private void Rerender()
     {
         if (AppInstance?.DevelopmentPullRequests is { } queue) RenderPullRequests(queue);
     }
 
-    private void OnRepoChipClicked(object sender, RoutedEventArgs e)
+    private void OnPullsRepoChanged(object sender, SelectionChangedEventArgs e)
     {
-        var repo = (sender as ToggleButton)?.Tag as string;
-        _repository = _repository == repo ? null : repo;
+        var repo = RepoFilterMenu.Picked(PullsRepoCombo, out var changed);
+        if (!changed || repo == _repository) return;
+        _repository = repo;
         Rerender();
     }
 
@@ -211,6 +184,9 @@ public partial class DevelopmentView : UserControl
     {
         if ((sender as FrameworkElement)?.Tag is string tag && Enum.TryParse<DevelopmentSourceFilter>(tag, out var source))
             _source = source;
+
+        // A repository picked under the old source means nothing under the new one.
+        _repository = null;
 
         SourceAll.IsChecked = _source == DevelopmentSourceFilter.All;
         SourceDevOps.IsChecked = _source == DevelopmentSourceFilter.DevOps;
