@@ -56,6 +56,21 @@ public partial class App
                 PendingNavigateGitHubIssue = issue;
                 window.NavigateToTab("Projects");
                 break;
+            case FleetMateLink.Device device:
+                PendingNavigateDeviceId = device.IntuneId;
+                window.NavigateToTab("Devices");
+                break;
+            case FleetMateLink.Asset asset:
+                PendingNavigateAssetId = asset.Id;
+                window.NavigateToTab("Inventory");
+                break;
+            case FleetMateLink.Ticket ticket:
+                PendingNavigateTicketId = ticket.Id;
+                window.NavigateToTab("Tickets");
+                break;
+            case FleetMateLink.User or FleetMateLink.Group:
+                window.NavigateToTab("Identity");
+                break;
             default:
                 PendingDevelopmentLink = parsed;
                 window.NavigateToTab("Development");

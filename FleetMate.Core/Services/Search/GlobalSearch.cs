@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using FleetMate.Core.Links;
 using FleetMate.Core.Models.Devices;
 using FleetMate.Core.Models.Identity;
 using FleetMate.Core.Models.Inventory;
@@ -7,7 +8,7 @@ using FleetMate.Core.Models.Tickets;
 
 namespace FleetMate.Core.Services.Search;
 
-public enum SearchCategory { Devices, Inventory, Tickets, WorkItems, Users, Groups }
+public enum SearchCategory { Devices, Inventory, Tickets, WorkItems, Users, Groups, PullRequests, Issues, Commits, PipelineRuns }
 
 /// <summary>
 /// One result: what to show (title, subtitle, and which field matched) and
@@ -17,6 +18,12 @@ public sealed record SearchHit(SearchCategory Category, string Title, string? Su
 {
     /// <summary>Lower ranks sort first: 0 exact, 1 prefix, 2 contains.</summary>
     public int Rank { get; init; }
+
+    /// <summary>
+    /// The fleetmate:// link that opens this hit, the same route an outside
+    /// link takes. Empty only when the source record lacks what a link needs.
+    /// </summary>
+    public string Link { get; init; } = "";
 }
 
 /// <summary>A category's best hits, capped, with the full match count.</summary>
@@ -25,6 +32,8 @@ public sealed record SearchGroup(SearchCategory Category, int Total, IReadOnlyLi
     public string Title => Category switch
     {
         SearchCategory.WorkItems => "Work Items",
+        SearchCategory.PullRequests => "Pull Requests",
+        SearchCategory.PipelineRuns => "Pipeline Runs",
         _ => Category.ToString(),
     };
 }
@@ -38,6 +47,14 @@ public sealed class SearchSources
     public IReadOnlyList<WorkItem> WorkItems { get; init; } = Array.Empty<WorkItem>();
     public IReadOnlyList<EntraUser> Users { get; init; } = Array.Empty<EntraUser>();
     public IReadOnlyList<EntraGroup> Groups { get; init; } = Array.Empty<EntraGroup>();
+    /// <summary>The Development tab's open pull requests.</summary>
+    public IReadOnlyList<UnifiedPullRequest> PullRequests { get; init; } = Array.Empty<UnifiedPullRequest>();
+    /// <summary>GitHub inbox notifications; those about issues are searched.</summary>
+    public IReadOnlyList<GitHubNotification> Notifications { get; init; } = Array.Empty<GitHubNotification>();
+    /// <summary>The Development tab's recent commits, per repository.</summary>
+    public IReadOnlyList<RepositoryCommits> Commits { get; init; } = Array.Empty<RepositoryCommits>();
+    /// <summary>The Development tab's recent pipeline runs.</summary>
+    public IReadOnlyList<PipelineRun> Runs { get; init; } = Array.Empty<PipelineRun>();
 }
 
 /// <summary>
@@ -58,6 +75,13 @@ public static partial class GlobalSearch
     {
         var m = WorkItemIdPattern().Match(query?.Trim() ?? "");
         return m.Success && int.TryParse(m.Groups[1].Value, out var id) && id > 0 ? id : null;
+    }
+
+    /// <summary>A pull request or issue number typed bare, or after ! or #.</summary>
+    public static int? ParseNumber(string? query)
+    {
+        var m = NumberPattern().Match(query?.Trim() ?? "");
+        return m.Success && int.TryParse(m.Groups[1].Value, out var n) && n > 0 ? n : null;
     }
 
     /// <summary>Searching starts at two characters, or at any work-item id.</summary>
@@ -108,6 +132,58 @@ public static partial class GlobalSearch
         Add(groups, SearchCategory.Groups, sources.Groups, g =>
             Best(SearchCategory.Groups, text, g.Id, g.DisplayName, null, ("Name", g.DisplayName)));
 
+        var number = ParseNumber(q);
+        var sha = q.Length >= 7 && FleetMateLink.IsSha(q) ? q : null;
+
+        Add(groups, SearchCategory.PullRequests, sources.PullRequests, p =>
+        {
+            var title = $"!{p.Number} {p.Title}";
+            var hit = number == p.Number
+                ? new SearchHit(SearchCategory.PullRequests, title, Sub(Repo(p.Container, p.Repository), p.AuthorName),
+                    $"Number: {p.Number}", p.Number.ToString())
+                : Best(SearchCategory.PullRequests, text, p.Number.ToString(), title,
+                    Sub(Repo(p.Container, p.Repository), p.AuthorName),
+                    ("Title", p.Title), ("Repo", Repo(p.Container, p.Repository)), ("Author", p.AuthorName),
+                    ("Branch", p.SourceBranch));
+            return hit == null ? null : hit with { Link = PullRequestLink(p) };
+        });
+
+        Add(groups, SearchCategory.Issues, sources.Notifications.Where(n => n.SubjectType == "Issue"), n =>
+        {
+            if (!Uri.TryCreate(n.WebUrl, UriKind.Absolute, out var url)
+                || TryParseWeb(url) is not FleetMateLink.GitHubIssue issue) return null;
+            var title = $"#{issue.Number} {n.SubjectTitle}";
+            var hit = number == issue.Number
+                ? new SearchHit(SearchCategory.Issues, title, n.Repository, $"Number: {issue.Number}", issue.Number.ToString())
+                : Best(SearchCategory.Issues, text, issue.Number.ToString(), title, n.Repository, ("Title", n.SubjectTitle));
+            return hit == null ? null : hit with { Link = issue.ToLink() };
+        });
+
+        Add(groups, SearchCategory.Commits, sources.Commits.SelectMany(r => r.Commits.Select(c => (Repo: r, Commit: c))), x =>
+        {
+            var (repo, c) = x;
+            if (!FleetMateLink.IsSha(c.Id)) return null;
+            var message = FirstLine(c.Message);
+            var title = $"{c.ShortSha} {message}";
+            var hit = sha != null && c.Id.StartsWith(sha, StringComparison.OrdinalIgnoreCase)
+                ? new SearchHit(SearchCategory.Commits, title, Sub(repo.DisplayName, c.AuthorName), $"SHA: {c.ShortSha}", c.Id)
+                    { Rank = c.Id.Length == sha.Length ? 0 : 1 }
+                : Best(SearchCategory.Commits, text, c.Id, title, Sub(repo.DisplayName, c.AuthorName),
+                    ("Message", message), ("Author", c.AuthorName));
+            return hit == null ? null : hit with { Link = new FleetMateLink.Commit(Source(repo.Source, repo.Container, repo.Repository), c.Id).ToLink() };
+        });
+
+        Add(groups, SearchCategory.PipelineRuns, sources.Runs, r =>
+        {
+            if (RunLink(r) is not { } link) return null;
+            var title = $"{r.PipelineName} {r.RunNumber}".Trim();
+            var hit = number == r.RunId
+                ? new SearchHit(SearchCategory.PipelineRuns, title, Sub(r.Container, r.Branch), $"Run: {r.RunId}", r.RunId.ToString())
+                : Best(SearchCategory.PipelineRuns, text, r.RunId.ToString(), title, Sub(r.Container, r.Branch),
+                    ("Run number", r.RunNumber), ("Pipeline", r.PipelineName), ("Branch", r.Branch));
+            return hit == null ? null : hit with { Link = link };
+        });
+
         return groups;
     }
 
@@ -132,12 +208,15 @@ public static partial class GlobalSearch
 
     private static SearchHit WorkItemHit(WorkItem w) =>
         new(SearchCategory.WorkItems, $"#{w.Id} {w.Fields.Title}",
-            Sub(w.Fields.WorkItemType, w.Fields.State), $"ID: {w.Id}", w.Id.ToString());
+            Sub(w.Fields.WorkItemType, w.Fields.State), $"ID: {w.Id}", w.Id.ToString())
+        { Link = new FleetMateLink.WorkItem(w.Id).ToLink() };
 
     private static void Add<T>(List<SearchGroup> groups, SearchCategory category, IEnumerable<T> items,
         Func<T, SearchHit?> match)
     {
-        var hits = items.Select(match).OfType<SearchHit>().ToList();
+        var hits = items.Select(match).OfType<SearchHit>()
+            .Select(h => h.Link.Length > 0 ? h : h with { Link = KeyLink(h) })
+            .ToList();
         if (hits.Count == 0) return;
         groups.Add(new SearchGroup(category, hits.Count,
             hits.OrderBy(h => h.Rank).ThenBy(h => h.Title, StringComparer.OrdinalIgnoreCase)
@@ -162,6 +241,48 @@ public static partial class GlobalSearch
             $"{b.Label}: {Clip(b.Value)}", key) { Rank = b.Rank };
     }
 
+    /// <summary>The link for a hit whose key is the id its tab opens it by.</summary>
+    private static string KeyLink(SearchHit hit) => hit.Category switch
+    {
+        SearchCategory.Devices => new FleetMateLink.Device(hit.Key).ToLink(),
+        SearchCategory.Inventory when int.TryParse(hit.Key, out var id) => new FleetMateLink.Asset(id).ToLink(),
+        SearchCategory.Tickets when int.TryParse(hit.Key, out var id) => new FleetMateLink.Ticket(id).ToLink(),
+        SearchCategory.WorkItems when int.TryParse(hit.Key, out var id) => new FleetMateLink.WorkItem(id).ToLink(),
+        SearchCategory.Users => new FleetMateLink.User(hit.Key).ToLink(),
+        SearchCategory.Groups => new FleetMateLink.Group(hit.Key).ToLink(),
+        _ => "",
+    };
+
+    private static FleetMateLink.LinkSource Source(PullRequestSource source, string container, string repo) =>
+        source == PullRequestSource.GitHub
+            ? new FleetMateLink.GitHub(container, repo)
+            : new FleetMateLink.AzureDevOps(container, repo);
+
+    private static string PullRequestLink(UnifiedPullRequest p) =>
+        new FleetMateLink.PullRequest(Source(p.Source, p.Container, p.Repository), p.Number).ToLink();
+
+    private static string? RunLink(PipelineRun r)
+    {
+        if (r.RunId is <= 0 or > int.MaxValue) return null;
+        if (r.Source == PullRequestSource.AzureDevOps) return new FleetMateLink.AzureDevOpsRun(r.Container, (int)r.RunId).ToLink();
+        return string.IsNullOrEmpty(r.Repository) ? null : new FleetMateLink.GitHubRun(r.Container, r.Repository, (int)r.RunId).ToLink();
+    }
+
+    private static FleetMateLink? TryParseWeb(Uri url)
+    {
+        try { return FleetMateLink.ParseWeb(url); }
+        catch (FleetMateLinkException) { return null; }
+    }
+
+    private static string Repo(string container, string repo) =>
+        string.IsNullOrEmpty(container) ? repo : $"{container}/{repo}";
+
+    private static string FirstLine(string message)
+    {
+        var line = message.Split('\n', 2)[0].Trim();
+        return line.Length == 0 ? "(no message)" : line;
+    }
+
     private static string? Sub(params string?[] parts)
     {
         var shown = parts.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
@@ -169,6 +290,9 @@ public static partial class GlobalSearch
     }
 
     private static string Clip(string value) => value.Length <= 40 ? value : value[..39] + "…";
+
+    [GeneratedRegex(@"^[!#]?(\d+)$")]
+    private static partial Regex NumberPattern();
 
     [GeneratedRegex(@"^(?:[A-Za-z]+#|#)?(\d+)$")]
     private static partial Regex WorkItemIdPattern();

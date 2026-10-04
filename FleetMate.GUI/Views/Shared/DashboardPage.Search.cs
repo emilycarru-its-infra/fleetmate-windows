@@ -76,15 +76,7 @@ public partial class DashboardPage
             return;
         }
 
-        var groups = GlobalSearch.Search(query, new SearchSources
-        {
-            Devices = _app.CachedDevices,
-            Assets = _app.CachedAssets,
-            Tickets = _app.CachedTickets,
-            WorkItems = _app.CachedWorkItems,
-            Users = _app.CachedUsers,
-            Groups = _app.CachedGroups,
-        });
+        var groups = GlobalSearch.Search(query, _app.BuildSearchSources());
         RenderSearchResults(groups);
 
         // A typed work-item id that isn't cached: fetch just that item.
@@ -210,43 +202,16 @@ public partial class DashboardPage
     private SearchHit? FirstResult() =>
         GlobalSearchResults.Children.OfType<Border>().Select(b => b.Tag).OfType<SearchHit>().FirstOrDefault();
 
-    /// <summary>Go to the hit's tab and open it there, then clear the query.</summary>
+    /// <summary>
+    /// Open the hit through its fleetmate:// link, the same route an outside
+    /// link takes, then clear the query.
+    /// </summary>
     private void OpenSearchHit(SearchHit hit)
     {
         if (_app == null) return;
-
-        _app.PendingNavigateDeviceId = null;
-        _app.PendingNavigateAssetId = null;
-        _app.PendingNavigateTicketId = null;
-        _app.PendingNavigateWorkItemId = null;
-
-        string tab;
-        switch (hit.Category)
-        {
-            case SearchCategory.Devices:
-                _app.PendingNavigateDeviceId = hit.Key;
-                tab = "Devices";
-                break;
-            case SearchCategory.Inventory:
-                _app.PendingNavigateAssetId = int.Parse(hit.Key);
-                tab = "Inventory";
-                break;
-            case SearchCategory.Tickets:
-                _app.PendingNavigateTicketId = int.Parse(hit.Key);
-                tab = "Tickets";
-                break;
-            case SearchCategory.WorkItems:
-                _app.PendingNavigateWorkItemId = int.Parse(hit.Key);
-                tab = "Projects";
-                break;
-            default:
-                tab = "Identity";
-                break;
-        }
-
         GlobalSearchPopup.IsOpen = false;
         GlobalSearchBox.Text = "";
-        NavigateToTab(tab);
+        if (hit.Link.Length > 0) _app.OpenLink(hit.Link);
     }
 
     private static string CategoryGlyph(SearchCategory category) => category switch
@@ -255,6 +220,10 @@ public partial class DashboardPage
         SearchCategory.Inventory => GlyphAsset,
         SearchCategory.Tickets => GlyphTicket,
         SearchCategory.WorkItems => GlyphWorkItem,
+        SearchCategory.PullRequests => "\uE8AB",
+        SearchCategory.Issues => "\uE7BA",
+        SearchCategory.Commits => "\uE73E",
+        SearchCategory.PipelineRuns => "\uE768",
         SearchCategory.Users => "",
         _ => "",
     };
