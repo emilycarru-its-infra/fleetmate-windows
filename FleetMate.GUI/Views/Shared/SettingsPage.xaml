@@ -231,6 +231,49 @@
                 </ScrollViewer>
             </TabItem>
 
+            <TabItem Header="Terminal" AutomationProperties.AutomationId="SettingsTerminalTab">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
+                    <StackPanel Margin="2" MaxWidth="860">
+                        <TextBlock Text="Terminal" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" />
+                        <TextBlock Text="The terminal panel (Ctrl+`) runs a shell or a coding agent beside any tab. Every session gets FLEETMATE_CONTEXT, a JSON file describing what is selected in the app, and the fleetmate CLI on PATH."
+                                   Style="{StaticResource SubtitleTextStyle}" TextWrapping="Wrap" Margin="0,0,0,14" />
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Agent command" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <TextBlock Text="shell, claude, codex, claude-remote, codex-remote, or any program followed by its arguments."
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" TextWrapping="Wrap" />
+                                <ComboBox x:Name="AgentCommandComboBox" IsEditable="True" Margin="0,6,0,10" MinWidth="360"
+                                          HorizontalAlignment="Left"
+                                          AutomationProperties.AutomationId="AgentCommandComboBox" />
+                                <CheckBox x:Name="AgentAutoStartCheckBox" AutomationProperties.AutomationId="AgentAutoStartCheckBox"
+                                          Content="Open an agent session when FleetMate starts and whenever a new terminal tab opens" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Repos" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <TextBlock Text="One per line: a local folder, or a clone URL that is cloned under your FleetMate repos folder the first time you open it. The terminal's new-session menu offers a session in each."
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" TextWrapping="Wrap" />
+                                <TextBox x:Name="ReposTextBox" AutomationProperties.AutomationId="ReposTextBox"
+                                         AcceptsReturn="True" TextWrapping="NoWrap" MinHeight="110" Margin="0,6,0,6"
+                                         FontFamily="Cascadia Mono, Consolas" VerticalScrollBarVisibility="Auto" />
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Content="Reset to defaults" Click="OnResetReposClicked"
+                                            AutomationProperties.AutomationId="ResetReposButton" />
+                                    <TextBlock x:Name="RepoDefaultsText" TextWrapping="Wrap" FontSize="11" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                </DockPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Button Content="Save Settings" HorizontalAlignment="Right" Margin="0,2,0,18"
+                                Style="{StaticResource AccentButtonStyle}" Padding="22,7" Click="OnSaveClicked" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
             <TabItem Header="Appearance">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
                     <StackPanel Margin="2" MaxWidth="860">
