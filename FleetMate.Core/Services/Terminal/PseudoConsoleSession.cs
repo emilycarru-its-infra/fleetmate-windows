@@ -38,10 +38,12 @@ public sealed class PseudoConsoleSession : IDisposable
             throw new Win32Exception(Marshal.GetLastWin32Error(), "CreatePipe failed");
 
         var hr = CreatePseudoConsole(new Coord(cols, rows), inputRead, outputWrite, 0, out _console);
-        // The console holds its own references to these ends.
-        inputRead.Dispose();
-        outputWrite.Dispose();
-        if (hr != 0) throw new Win32Exception(hr, "CreatePseudoConsole failed");
+        if (hr != 0)
+        {
+            inputRead.Dispose();
+            outputWrite.Dispose();
+            throw new Win32Exception(hr, "CreatePseudoConsole failed");
+        }
 
         var size = IntPtr.Zero;
         InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref size);
@@ -52,7 +54,14 @@ public sealed class PseudoConsoleSession : IDisposable
                 (IntPtr)IntPtr.Size, IntPtr.Zero, IntPtr.Zero))
             throw new Win32Exception(Marshal.GetLastWin32Error(), "UpdateProcThreadAttribute failed");
 
-        var startup = new StartupInfoEx { StartupInfo = { cb = Marshal.SizeOf<StartupInfoEx>() }, lpAttributeList = _attributeList };
+        // STARTF_USESTDHANDLES with empty handles: without it the child inherits
+        // this process's own standard handles (a hidden console or a pipe) and
+        // reads input from there instead of from the pseudoconsole.
+        var startup = new StartupInfoEx
+        {
+            StartupInfo = { cb = Marshal.SizeOf<StartupInfoEx>(), dwFlags = StartfUseStdHandles },
+            lpAttributeList = _attributeList
+        };
         var block = TerminalEnvironment.ToEnvironmentBlock(environment);
         var commandBuffer = new StringBuilder(commandLine);
         if (!CreateProcessW(null, commandBuffer, IntPtr.Zero, IntPtr.Zero, false,
@@ -60,6 +69,10 @@ public sealed class PseudoConsoleSession : IDisposable
                 string.IsNullOrWhiteSpace(workingDirectory) ? null : workingDirectory,
                 ref startup, out var info))
             throw new Win32Exception(Marshal.GetLastWin32Error(), $"Could not start: {commandLine}");
+
+        // The console's own ends close only once the child holds it.
+        inputRead.Dispose();
+        outputWrite.Dispose();
 
         _process = info.hProcess;
         _thread = info.hThread;
@@ -139,6 +152,7 @@ public sealed class PseudoConsoleSession : IDisposable
     private const uint ExtendedStartupInfoPresent = 0x00080000;
     private const uint CreateUnicodeEnvironment = 0x00000400;
     private const uint Infinite = 0xFFFFFFFF;
+    private const int StartfUseStdHandles = 0x00000100;
 
     [StructLayout(LayoutKind.Sequential)]
     private readonly struct Coord(short x, short y)
