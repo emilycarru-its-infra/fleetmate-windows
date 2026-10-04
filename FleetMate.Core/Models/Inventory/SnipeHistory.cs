@@ -65,10 +65,16 @@ public static partial class SnipeHistory
             name = TrailingId().Replace(name, "");
         }
         var words = name.Split('_', StringSplitOptions.RemoveEmptyEntries)
-            .Select(w => char.ToUpperInvariant(w[0]) + w[1..]);
+            .Select(w => Acronyms.Contains(w) ? w.ToUpperInvariant() : char.ToUpperInvariant(w[0]) + w[1..]);
         var label = string.Join(" ", words);
         return label.Length == 0 ? key : label;
     }
+
+    /// <summary>Key words that read as acronyms, so "intune_id" is "Intune ID", not "Intune Id".</summary>
+    private static readonly HashSet<string> Acronyms = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "id", "cpu", "gpu", "npu", "eol", "imei", "upn", "mac", "ip", "os", "url", "uuid",
+    };
 
     public static IReadOnlyList<SnipeFieldChange> ParseChanges(object? logMeta)
     {
