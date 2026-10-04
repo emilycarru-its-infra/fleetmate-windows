@@ -269,7 +269,11 @@ public partial class PullRequestQueueView : UserControl
         SourceFilterChanged?.Invoke(this, _sourceFilter);
     }
 
-    private async void OnRefreshClicked(object sender, RoutedEventArgs e) => await LoadAsync(forceRefresh: true);
+    private async void OnRefreshClicked(object sender, RoutedEventArgs e)
+    {
+        FleetMate.Core.Services.Projects.GitHubSync.RequestFullResync();
+        await LoadAsync(forceRefresh: true);
+    }
 
     private async void OnRowClicked(object sender, MouseButtonEventArgs e)
     {

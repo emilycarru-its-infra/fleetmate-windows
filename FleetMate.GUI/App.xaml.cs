@@ -187,6 +187,8 @@ public partial class App : Application
     /// <summary>Invalidate all caches</summary>
     public void InvalidateAllCaches()
     {
+        // Refresh means fresh: GitHub data is rebuilt in full, not incrementally.
+        FleetMate.Core.Services.Projects.GitHubSync.RequestFullResync();
         _devicesCacheTime = null;
         _assetsCacheTime = null;
         _ticketsCacheTime = null;

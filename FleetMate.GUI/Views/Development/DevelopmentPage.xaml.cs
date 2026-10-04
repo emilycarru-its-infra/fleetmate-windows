@@ -17,5 +17,10 @@ public partial class DevelopmentPage : Page
     private void OnActivityToggled(object sender, RoutedEventArgs e) =>
         View.ShowActivity(ActivityToggle.IsChecked == true);
 
-    private async void OnRefreshClicked(object sender, RoutedEventArgs e) => await View.RefreshAsync();
+    private async void OnRefreshClicked(object sender, RoutedEventArgs e)
+    {
+        // Refresh means fresh: GitHub data is rebuilt in full, not incrementally.
+        FleetMate.Core.Services.Projects.GitHubSync.RequestFullResync();
+        await View.RefreshAsync();
+    }
 }
