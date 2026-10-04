@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 
 namespace FleetMate.Core.Services.Projects;
 
@@ -9,11 +10,15 @@ namespace FleetMate.Core.Services.Projects;
 /// The HTTP pipeline every GitHub client sends through. For requests to
 /// api.github.com it:
 /// - fails fast while the request's budget gate is closed;
-/// - sends REST GETs with If-None-Match from the shared ETag cache, and turns
-///   a 304 back into the cached 200, because GitHub does not count a 304
-///   against the hourly budget;
+/// - answers a REST GET from the shared cache, without calling GitHub,
+///   while the X-Poll-Interval GitHub last gave for it has not run out;
+/// - otherwise sends it with If-None-Match / If-Modified-Since from the
+///   stored validators, and turns a 304 back into the cached 200, because
+///   GitHub does not count a 304 against the hourly budget;
 /// - records every response's rate-limit headers on the gate.
-/// Requests to any other host pass straight through.
+/// A Refresh (<see cref="GitHubSync.RequestFullResync"/>) skips the
+/// poll-interval shortcut for anything stored before it. Requests to any
+/// other host pass straight through.
 /// </summary>
 public sealed class GitHubHttpHandler : DelegatingHandler
 {
@@ -32,27 +37,39 @@ public sealed class GitHubHttpHandler : DelegatingHandler
             return await base.SendAsync(request, ct);
 
         var bucket = BucketFor(request.RequestUri!);
-        GitHubRateLimitGate.Check(bucket);
-
         var conditional = request.Method == HttpMethod.Get && bucket == GitHubRateLimitBucket.Core;
         var key = conditional ? CacheKey(request) : null;
         var cached = key != null ? _cache.Get(key) : null;
-        if (cached != null) request.Headers.IfNoneMatch.Add(new EntityTagHeaderValue(cached.ETag, cached.IsWeak));
+        var now = GitHubSync.Now();
+
+        // Inside GitHub's poll interval the answer cannot have changed.
+        if (cached is { PollUntil: { } pollUntil } && pollUntil > now && !GitHubSync.IsStale(cached.StoredAt))
+            return cached.ToResponse(request);
+
+        GitHubRateLimitGate.Check(bucket);
+
+        if (cached?.ETag is { } tag) request.Headers.IfNoneMatch.Add(new EntityTagHeaderValue(tag, cached.IsWeak));
+        else if (cached?.LastModified is { } since) request.Headers.IfModifiedSince = since;
 
         var response = await base.SendAsync(request, ct);
         if (BucketFor(response, bucket) is { } recorded) GitHubRateLimitGate.Record(response, recorded);
 
         if (response.StatusCode == HttpStatusCode.NotModified && cached != null)
         {
+            var refreshed = cached with { StoredAt = now, PollUntil = PollUntil(response, now) };
+            _cache.Store(key!, refreshed);
             response.Dispose();
-            return cached.ToResponse(request);
+            return refreshed.ToResponse(request);
         }
 
-        if (key != null && response.IsSuccessStatusCode && response.Headers.ETag is { } etag)
+        if (key != null && response.IsSuccessStatusCode
+            && (response.Headers.ETag != null || response.Content.Headers.LastModified != null))
         {
             var body = await response.Content.ReadAsByteArrayAsync(ct);
-            var entry = new GitHubETagCache.Entry(etag.Tag, etag.IsWeak, response.StatusCode, body,
-                response.Content.Headers.ContentType?.ToString());
+            var entry = new GitHubETagCache.Entry(
+                response.Headers.ETag?.Tag, response.Headers.ETag?.IsWeak ?? false,
+                response.Content.Headers.LastModified, response.StatusCode, body,
+                response.Content.Headers.ContentType?.ToString(), now, PollUntil(response, now));
             _cache.Store(key, entry);
             response.Dispose();
             return entry.ToResponse(request);
@@ -82,6 +99,11 @@ public sealed class GitHubHttpHandler : DelegatingHandler
         };
     }
 
+    private static DateTimeOffset? PollUntil(HttpResponseMessage response, DateTimeOffset now) =>
+        response.Headers.TryGetValues("X-Poll-Interval", out var values)
+        && int.TryParse(values.FirstOrDefault(), out var seconds) && seconds > 0
+            ? now.AddSeconds(seconds) : null;
+
     /// <summary>
     /// The URL plus who asked: two accounts can see different bodies at the
     /// same URL. The token is hashed so the cache never holds it.
@@ -95,17 +117,22 @@ public sealed class GitHubHttpHandler : DelegatingHandler
 }
 
 /// <summary>
-/// One in-memory cache of ETagged GitHub REST bodies for the whole process,
-/// least recently used first out, capped so a long session cannot grow it
-/// without bound.
+/// The process's GitHub REST response cache, shared by every tab and kept on
+/// disk so it survives a relaunch: %LOCALAPPDATA%\FleetMate\github-cache\http,
+/// which is per user. Memory holds the ~600 most recently used entries; disk
+/// holds up to <see cref="DefaultDiskCapacity"/>, oldest written first out.
+/// Files are written beside and swapped in, so a reader never sees half of one.
 /// </summary>
 public sealed class GitHubETagCache
 {
     public const int DefaultCapacity = 600;
+    public const int DefaultDiskCapacity = 2000;
 
-    public static GitHubETagCache Shared { get; } = new();
+    public static GitHubETagCache Shared { get; } = new(directory: Path.Combine(GitHubSync.CacheRoot, "http"));
 
-    public sealed record Entry(string ETag, bool IsWeak, HttpStatusCode Status, byte[] Body, string? ContentType)
+    public sealed record Entry(
+        string? ETag, bool IsWeak, DateTimeOffset? LastModified, HttpStatusCode Status, byte[] Body,
+        string? ContentType, DateTimeOffset StoredAt, DateTimeOffset? PollUntil)
     {
         public HttpResponseMessage ToResponse(HttpRequestMessage request)
         {
@@ -116,11 +143,20 @@ public sealed class GitHubETagCache
     }
 
     private readonly int _capacity;
+    private readonly int _diskCapacity;
+    private readonly string? _directory;
     private readonly object _lock = new();
     private readonly Dictionary<string, LinkedListNode<(string Key, Entry Entry)>> _map = new();
     private readonly LinkedList<(string Key, Entry Entry)> _order = new();
+    private int _writesSincePrune;
 
-    public GitHubETagCache(int capacity = DefaultCapacity) => _capacity = capacity;
+    /// <param name="directory">Where to keep entries on disk; null keeps them in memory only.</param>
+    public GitHubETagCache(int capacity = DefaultCapacity, string? directory = null, int diskCapacity = DefaultDiskCapacity)
+    {
+        _capacity = capacity;
+        _directory = directory;
+        _diskCapacity = diskCapacity;
+    }
 
     public int Count { get { lock (_lock) return _map.Count; } }
 
@@ -128,25 +164,80 @@ public sealed class GitHubETagCache
     {
         lock (_lock)
         {
-            if (!_map.TryGetValue(key, out var node)) return null;
-            _order.Remove(node);
-            _order.AddFirst(node);
-            return node.Value.Entry;
+            if (_map.TryGetValue(key, out var node))
+            {
+                _order.Remove(node);
+                _order.AddFirst(node);
+                return node.Value.Entry;
+            }
         }
+
+        if (ReadDisk(key) is not { } fromDisk) return null;
+        lock (_lock) Remember(key, fromDisk);
+        return fromDisk;
     }
 
     public void Store(string key, Entry entry)
     {
-        lock (_lock)
+        lock (_lock) Remember(key, entry);
+        WriteDisk(key, entry);
+    }
+
+    private void Remember(string key, Entry entry)
+    {
+        if (_map.TryGetValue(key, out var existing)) _order.Remove(existing);
+        _map[key] = _order.AddFirst((key, entry));
+        while (_map.Count > _capacity && _order.Last is { } last)
         {
-            if (_map.TryGetValue(key, out var existing)) _order.Remove(existing);
-            var node = _order.AddFirst((key, entry));
-            _map[key] = node;
-            while (_map.Count > _capacity && _order.Last is { } last)
+            _order.RemoveLast();
+            _map.Remove(last.Value.Key);
+        }
+    }
+
+    private sealed record DiskEntry(
+        string Key, string? ETag, bool IsWeak, DateTimeOffset? LastModified, int Status, string Body,
+        string? ContentType, DateTimeOffset StoredAt, DateTimeOffset? PollUntil);
+
+    private string? PathFor(string key) => _directory == null ? null : Path.Combine(_directory, GitHubSync.Hash(key) + ".json");
+
+    private Entry? ReadDisk(string key)
+    {
+        if (PathFor(key) is not { } path) return null;
+        var disk = GitHubSync.ReadJson<DiskEntry>(path);
+        if (disk == null || disk.Key != key) return null;
+        return new Entry(disk.ETag, disk.IsWeak, disk.LastModified, (HttpStatusCode)disk.Status,
+            Convert.FromBase64String(disk.Body), disk.ContentType, disk.StoredAt, disk.PollUntil);
+    }
+
+    private void WriteDisk(string key, Entry entry)
+    {
+        if (PathFor(key) is not { } path) return;
+        try
+        {
+            var disk = new DiskEntry(key, entry.ETag, entry.IsWeak, entry.LastModified, (int)entry.Status,
+                Convert.ToBase64String(entry.Body), entry.ContentType, entry.StoredAt, entry.PollUntil);
+            GitHubSync.WriteAtomically(path, JsonSerializer.Serialize(disk));
+            if (Interlocked.Increment(ref _writesSincePrune) >= 25)
             {
-                _order.RemoveLast();
-                _map.Remove(last.Value.Key);
+                Interlocked.Exchange(ref _writesSincePrune, 0);
+                PruneDisk();
             }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Debug(ex, "[github] could not write the response cache");
+        }
+    }
+
+    /// <summary>Keep the disk cache under its cap, oldest written first out.</summary>
+    internal void PruneDisk()
+    {
+        if (_directory == null || !Directory.Exists(_directory)) return;
+        var files = new DirectoryInfo(_directory).GetFiles("*.json");
+        if (files.Length <= _diskCapacity) return;
+        foreach (var old in files.OrderBy(f => f.LastWriteTimeUtc).Take(files.Length - _diskCapacity))
+        {
+            try { old.Delete(); } catch (IOException) { }
         }
     }
 }
