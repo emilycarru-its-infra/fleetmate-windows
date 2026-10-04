@@ -134,10 +134,14 @@ public static class WidgetCatalog
         });
     }
 
-    private static bool IsClosed(string? state) =>
-        state is not null && (state.Equals("Done", StringComparison.OrdinalIgnoreCase)
-                              || state.Equals("Closed", StringComparison.OrdinalIgnoreCase)
-                              || state.Equals("Removed", StringComparison.OrdinalIgnoreCase));
+    /// <summary>
+    /// States that take a work item off the open list. Resolved counts: the
+    /// work is done and only awaits closing, so it is not something to do.
+    /// </summary>
+    private static readonly HashSet<string> FinishedStates =
+        new(StringComparer.OrdinalIgnoreCase) { "Closed", "Removed", "Done", "Completed", "Resolved" };
+
+    internal static bool IsClosed(string? state) => state is not null && FinishedStates.Contains(state);
 
     private static List<UIElement> Projects(App app)
     {
@@ -154,7 +158,8 @@ public static class WidgetCatalog
 
         if (loaded)
         {
-            var states = items.GroupBy(w => string.IsNullOrEmpty(w.State) ? "Unknown" : w.State)
+            // Open work only: finished states would dwarf what is left to do.
+            var states = active.GroupBy(w => string.IsNullOrEmpty(w.State) ? "Unknown" : w.State)
                 .Select(g => new ChartSlice(g.Key, g.Count()))
                 .OrderByDescending(s => s.Value)
                 .ToList();
