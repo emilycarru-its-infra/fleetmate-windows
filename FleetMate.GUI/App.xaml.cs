@@ -107,6 +107,7 @@ public partial class App : Application
     public string? PendingNavigateDeviceId { get; set; }
     public int? PendingNavigateTicketId { get; set; }
     public int? PendingNavigateWorkItemId { get; set; }
+    public int? PendingNavigateAssetId { get; set; }
     
     // MARK: - Cached Data
     // Data caches with timestamps to avoid reloading on tab switches

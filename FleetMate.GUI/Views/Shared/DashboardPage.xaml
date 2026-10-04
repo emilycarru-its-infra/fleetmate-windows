@@ -14,24 +14,48 @@
 
         <!-- Fixed page header -->
         <StackPanel Grid.Row="0" Margin="16,14,16,10">
-            <!-- Header -->
-            <DockPanel Margin="0,0,0,6">
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
-                    <ui:ProgressRing x:Name="HeaderProgress" IsActive="True" Width="18" Height="18"
-                                     Margin="0,0,8,0" Visibility="Collapsed" />
-                    <Button Click="OnRefreshClicked" Margin="0,0,4,0"
-                            Style="{StaticResource ChromeIconButtonStyle}" ToolTip="Refresh dashboard">
-                        <StackPanel Orientation="Horizontal">
-                            <ui:FontIcon Glyph="&#xE72C;" FontSize="13" Margin="0,0,6,0" />
-                            <TextBlock Text="Refresh" />
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
-                <StackPanel>
-                    <TextBlock Text="Dashboard" Style="{StaticResource TitleTextStyle}" Margin="0,0,0,2" />
-                    <TextBlock Text="Fleet overview across all connected systems" Style="{StaticResource SubtitleTextStyle}" />
-                </StackPanel>
-            </DockPanel>
+            <!-- Header. The search sits over the header, centred on the page rather
+                 than between the title and the buttons. -->
+            <Grid x:Name="HeaderGrid" Margin="0,0,0,6" SizeChanged="OnHeaderSizeChanged">
+                <DockPanel>
+                    <StackPanel x:Name="HeaderActions" SizeChanged="OnHeaderSizeChanged" DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                        <ui:ProgressRing x:Name="HeaderProgress" IsActive="True" Width="18" Height="18"
+                                         Margin="0,0,8,0" Visibility="Collapsed" />
+                        <Button Click="OnRefreshClicked" Margin="0,0,4,0"
+                                Style="{StaticResource ChromeIconButtonStyle}" ToolTip="Refresh dashboard">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon Glyph="&#xE72C;" FontSize="13" Margin="0,0,6,0" />
+                                <TextBlock Text="Refresh" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <StackPanel x:Name="HeaderTitle" HorizontalAlignment="Left" SizeChanged="OnHeaderSizeChanged">
+                        <TextBlock Text="Dashboard" Style="{StaticResource TitleTextStyle}" Margin="0,0,0,2" />
+                        <TextBlock Text="Fleet overview across all connected systems" Style="{StaticResource SubtitleTextStyle}" />
+                    </StackPanel>
+                </DockPanel>
+
+                <!-- Search everything: scans the loaded caches; results drop
+                     below at the same width and close on a click outside. At
+                     most 700 wide, narrower when the title or buttons need the
+                     room (OnHeaderSizeChanged). -->
+                <TextBox x:Name="GlobalSearchBox" Width="700" HorizontalAlignment="Center" Height="36" FontSize="14"
+                         VerticalAlignment="Center" VerticalContentAlignment="Center"
+                         ui:ControlHelper.PlaceholderText="Search everything — serial, hostname, user, ticket…"
+                         TextChanged="OnGlobalSearchChanged" GotKeyboardFocus="OnGlobalSearchFocused"
+                         PreviewKeyDown="OnGlobalSearchKeyDown" />
+                <Popup x:Name="GlobalSearchPopup" PlacementTarget="{Binding ElementName=GlobalSearchBox}"
+                       Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
+                       VerticalOffset="4" Width="{Binding ActualWidth, ElementName=GlobalSearchBox}">
+                    <Border Background="{DynamicResource CardBackgroundBrush}"
+                            BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1"
+                            CornerRadius="8" Padding="6">
+                        <ScrollViewer MaxHeight="560" VerticalScrollBarVisibility="Auto">
+                            <StackPanel x:Name="GlobalSearchResults" />
+                        </ScrollViewer>
+                    </Border>
+                </Popup>
+            </Grid>
 
             <!-- Error Banner -->
             <Border x:Name="ErrorBanner" Visibility="Collapsed" Background="#33FF6600" CornerRadius="4" Padding="12,8" Margin="0,0,0,8">
@@ -139,11 +163,35 @@
                                                 <TextBlock Text="{Binding Time}" DockPanel.Dock="Right" FontSize="10"
                                                            VerticalAlignment="Center" Margin="8,0,0,0"
                                                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                    <ui:FontIcon Glyph="{Binding IconGlyph}" FontSize="12" Margin="0,0,6,0"
+                                                <!-- Item name trims; the pill and admin keep their room. -->
+                                                <Grid VerticalAlignment="Center">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="Auto" MaxWidth="140" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <ui:FontIcon Grid.Column="0" Glyph="{Binding IconGlyph}" FontSize="12" Margin="0,0,6,0"
                                                                  Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                                    <TextBlock Text="{Binding Text}" FontSize="12" TextTrimming="CharacterEllipsis" />
-                                                </StackPanel>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Text}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                                               VerticalAlignment="Center" />
+                                                    <Border Grid.Column="2" CornerRadius="8" Padding="6,0" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                            Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Pill}" Value="{x:Null}">
+                                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <TextBlock Text="{Binding Pill}" FontSize="10" />
+                                                    </Border>
+                                                    <TextBlock Grid.Column="3" Text="{Binding Context}" FontSize="11" Margin="6,0,0,0"
+                                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                </Grid>
                                             </DockPanel>
                                         </Border>
                                     </DataTemplate>
