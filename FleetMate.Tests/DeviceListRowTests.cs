@@ -29,6 +29,7 @@ public class DeviceListRowTests
         Assert.False(unenrolled.IsEnrolled);
         Assert.StartsWith(DeviceListRow.AutopilotOnlyPrefix, unenrolled.Id);
         Assert.Equal("Not Enrolled", unenrolled.ComplianceText);
+        Assert.Equal("Registered, Not Enrolled", unenrolled.OrgStatusText);
         Assert.Equal("Windows", unenrolled.PlatformText);
         Assert.Equal(DeviceListRow.Missing, unenrolled.OsText);
     }
@@ -39,7 +40,7 @@ public class DeviceListRowTests
         var row = new DeviceListRow(new IntuneDevice { Id = "x", DeviceName = "" }, null);
         Assert.Equal(DeviceListRow.Missing, row.NameText);
         Assert.Equal(DeviceListRow.Missing, row.SerialText);
-        Assert.Equal(DeviceListRow.Missing, row.ServiceText);
+        Assert.Equal(DeviceListRow.Missing, row.ServiceText); // not Windows: no OS set
         Assert.Equal(DeviceListRow.Missing, row.OrgStatusText);
         Assert.Equal(DeviceListRow.Missing, row.LastSyncText);
         Assert.Equal("Unknown", row.ComplianceText);

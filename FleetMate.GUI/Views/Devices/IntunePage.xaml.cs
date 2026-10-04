@@ -90,6 +90,11 @@ public partial class IntunePage : Page
         };
     }
 
+    /// <summary>
+    /// Show Intune's devices as soon as they arrive, then merge Autopilot in
+    /// when it lands: its identity listing is slow, and the list never waits
+    /// on it.
+    /// </summary>
     private async Task LoadDevicesAsync()
     {
         if (_graphService == null || _app == null)
@@ -102,33 +107,57 @@ public partial class IntunePage : Page
         DevicesDataGrid.Visibility = Visibility.Visible;
         NotConfiguredText.Visibility = Visibility.Collapsed;
 
-        var needIntune = !(_app.IsDevicesCacheValid && _app.CachedDevices.Count > 0);
-        if (needIntune || _autopilot.Count == 0) LoadingPanel.Visibility = Visibility.Visible;
+        var autopilotTask = _autopilot.Count == 0 ? LoadAutopilotAsync() : Task.CompletedTask;
 
+        if (!(_app.IsDevicesCacheValid && _app.CachedDevices.Count > 0))
+        {
+            LoadingPanel.Visibility = Visibility.Visible;
+            try
+            {
+                _app.UpdateDevicesCache(await _graphService.GetManagedDevicesAsync(limit: 10000));
+            }
+            catch (Exception ex)
+            {
+                ShowActionMessage($"Error: {ex.Message}", isError: true);
+            }
+            finally
+            {
+                LoadingPanel.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        RebuildRows();
+        await autopilotTask;
+    }
+
+    private async Task LoadAutopilotAsync()
+    {
+        if (_graphService == null) return;
+        AutopilotLoadingText.Visibility = Visibility.Visible;
         try
         {
-            var intuneTask = needIntune
-                ? _graphService.GetManagedDevicesAsync(limit: 10000)
-                : Task.FromResult(_app.CachedDevices);
-            var autopilotTask = _autopilot.Count == 0
-                ? _graphService.GetAutopilotDevicesAsync(limit: 20000)
-                : Task.FromResult(_autopilot);
-            await Task.WhenAll(intuneTask, autopilotTask);
-
-            if (needIntune) _app.UpdateDevicesCache(intuneTask.Result);
-            _autopilot = autopilotTask.Result;
-            _allRows = DeviceListJoin.Merge(_allDevices, _autopilot);
-            RebuildFilters();
-            ApplyFilters();
+            _autopilot = await _graphService.GetAutopilotDevicesAsync(limit: 20000);
         }
         catch (Exception ex)
         {
-            ShowActionMessage($"Error: {ex.Message}", isError: true);
+            Serilog.Log.Warning(ex, "Devices: failed to read Autopilot identities");
         }
         finally
         {
-            LoadingPanel.Visibility = Visibility.Collapsed;
+            AutopilotLoadingText.Visibility = Visibility.Collapsed;
         }
+        RebuildRows();
+    }
+
+    /// <summary>Re-join Intune and Autopilot, keeping the selection and filters.</summary>
+    private void RebuildRows()
+    {
+        var selectedIds = new HashSet<string>(SelectedRows().Select(r => r.Id));
+        _allRows = DeviceListJoin.Merge(_allDevices, _autopilot);
+        RebuildFilters();
+        ApplyFilters();
+        foreach (var row in _rows.Where(r => selectedIds.Contains(r.Id) && !DevicesDataGrid.SelectedItems.Contains(r)))
+            DevicesDataGrid.SelectedItems.Add(row);
     }
 
     // ── Filters ──────────────────────────────────────────────────────────
@@ -142,6 +171,8 @@ public partial class IntunePage : Page
         FiltersHost.Children.Clear();
         foreach (var facet in Enum.GetValues<DeviceFacet>())
         {
+            // The Autopilot categories appear once its identities are read.
+            if (_autopilot.Count == 0 && DeviceFacets.AutopilotOnly.Contains(facet)) continue;
             FiltersHost.Children.Add(new TextBlock
             {
                 Text = facet.Title(),
@@ -353,20 +384,32 @@ public partial class IntunePage : Page
     /// <summary>
     /// Offer only the actions valid for every selected device: Intune's need
     /// every device enrolled; Fresh Start, Autopilot Reset and Cimian need
-    /// every device to be Windows.
+    /// every device to be Windows; Autopilot's need every device registered.
     /// </summary>
     private void UpdateActionSections(List<DeviceListRow> selected)
     {
         var allEnrolled = selected.All(r => r.IsEnrolled);
         var allWindows = selected.All(r => r.IsWindows);
+        var identities = selected.Select(r => r.Autopilot).ToList();
+
+        static Visibility Show(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
 
         foreach (var section in new[] { SyncSection, RestartSection, LockSection, RetireSection, WipeSection,
                      DeleteRecordSection, ReinstallAppSection, OsUpdateSection })
-            section.Visibility = allEnrolled ? Visibility.Visible : Visibility.Collapsed;
+            section.Visibility = Show(allEnrolled);
         foreach (var section in new[] { FreshStartSection, AutopilotResetSection, PushCimianSection })
-            section.Visibility = allEnrolled && allWindows ? Visibility.Visible : Visibility.Collapsed;
+            section.Visibility = Show(allEnrolled && allWindows);
 
-        NoActionsText.Visibility = allEnrolled ? Visibility.Collapsed : Visibility.Visible;
+        AutopilotGroupTagSection.Visibility = Show(AutopilotAction.SetGroupTag.IsAvailable(identities));
+        AutopilotAssignUserSection.Visibility = Show(AutopilotAction.AssignUser.IsAvailable(identities));
+        AutopilotUnassignUserSection.Visibility = Show(AutopilotAction.UnassignUser.IsAvailable(identities));
+        AutopilotSyncSection.Visibility = Show(AutopilotAction.Sync.IsAvailable(identities));
+        AutopilotDeleteSection.Visibility = Show(AutopilotAction.Delete.IsAvailable(identities));
+
+        var anyAutopilot = AutopilotAction.Sync.IsAvailable(identities);
+        AutopilotActionsHeader.Visibility = Show(anyAutopilot);
+        IntuneActionsHeader.Visibility = Show(anyAutopilot && allEnrolled);
+        NoActionsText.Visibility = Show(!allEnrolled && !anyAutopilot);
     }
 
     private async Task ShowDeviceDetailAsync(DeviceListRow row)
