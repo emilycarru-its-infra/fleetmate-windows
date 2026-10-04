@@ -85,16 +85,18 @@ public class GraphService : IDisposable
             Environment.GetEnvironmentVariable("FLEETMATE_GRAPH_TRANSPORT"), "direct",
             StringComparison.OrdinalIgnoreCase);
 
+        // Both transports wait out Graph throttling (429, or 503 with Retry-After).
         _client = _useElevation
-            ? new HttpClient(new ElevationHttpHandler(elevation ?? new ElevationConfig(), Elevation))
+            ? new HttpClient(new GraphThrottlingHandler(new ElevationHttpHandler(elevation ?? new ElevationConfig(), Elevation)))
             {
                 BaseAddress = new Uri("https://graph.microsoft.com/v1.0/"),
-                Timeout = TimeSpan.FromSeconds(120) // allow for the one-time ~30s container cold start
+                Timeout = TimeSpan.FromSeconds(300) // the one-time ~30s container cold start, plus up to three throttle waits
             }
-            : new HttpClient
+            : new HttpClient(new GraphThrottlingHandler(new HttpClientHandler()))
             {
                 BaseAddress = new Uri("https://graph.microsoft.com/v1.0/"),
-                Timeout = TimeSpan.FromSeconds(60)
+                // Room for up to three throttle waits of at most 60 s each.
+                Timeout = TimeSpan.FromSeconds(240)
             };
 
         _jsonOptions = new JsonSerializerOptions
