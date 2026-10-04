@@ -80,11 +80,15 @@ public partial class DeviceDetailPanel : UserControl
     {
         var host = Section("Windows Autopilot", "");
         AddRow(host, "Group Tag", a.GroupTag);
-        AddRow(host, "Enrollment State", a.EnrollmentState);
+        AddRow(host, "Enrollment State", a.EnrollmentStateLabel());
+        AddRow(host, "Deployment Profile", a.ProfileStatusLabel());
+        AddRow(host, "Purchase Order", a.PurchaseOrderIdentifier);
         AddRow(host, "Manufacturer", a.Manufacturer);
         AddRow(host, "Model", a.Model);
         AddRow(host, "System Family", a.SystemFamily);
-        AddRow(host, "Last Contacted", a.LastContactedDateTime?.ToLocalTime().ToString("yyyy-MM-dd HH:mm"));
+        // Graph reports a device that never checked in as 0001-01-01.
+        AddRow(host, "Last Contacted", a.LastContactedDateTime is { Year: > 1 } contacted
+            ? contacted.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : null);
         AddRow(host, "Assigned User", a.UserPrincipalName);
         AddRowMono(host, "Autopilot ID", a.Id);
     }

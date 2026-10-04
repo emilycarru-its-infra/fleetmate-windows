@@ -141,7 +141,7 @@
                             </DataGridTemplateColumn>
                             <DataGridTextColumn Header="Last Sync" Binding="{Binding LastSyncText}" SortMemberPath="LastSyncSort" Width="130" />
                             <DataGridTextColumn Header="Management Service" Binding="{Binding ServiceText}" Width="150" />
-                            <DataGridTextColumn Header="Org Status" Binding="{Binding OrgStatusText}" Width="100" />
+                            <DataGridTextColumn Header="Org Status" Binding="{Binding OrgStatusText}" Width="190" />
                             <DataGridTextColumn Header="Group / Order" Binding="{Binding GroupOrOrderText}" Width="120" />
                             <DataGridTextColumn Header="Model" Binding="{Binding ModelText}" Width="160" Visibility="Collapsed" />
                             <DataGridTextColumn Header="Manufacturer" Binding="{Binding ManufacturerText}" Width="120" Visibility="Collapsed" />
