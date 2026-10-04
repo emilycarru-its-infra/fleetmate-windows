@@ -23,11 +23,11 @@
     <!-- TextElement.Foreground: a bare WPF TextBlock defaults to black no matter
          the theme, so in dark mode every TextBlock without an explicit Foreground
          disappears. Setting the inherited foreground here fixes all of them. -->
-    <Grid Background="{DynamicResource AppBackgroundBrush}"
+    <Grid x:Name="RootGrid" Background="{DynamicResource AppBackgroundBrush}"
           TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="48" />
-            <RowDefinition Height="*" MinHeight="200" />
+            <RowDefinition x:Name="ContentRow" Height="*" />
             <RowDefinition Height="Auto" />
             <RowDefinition x:Name="TerminalRow" Height="0" />
         </Grid.RowDefinitions>
@@ -167,9 +167,18 @@
         <Frame Grid.Row="1" x:Name="ContentFrame" NavigationUIVisibility="Hidden" Background="Transparent" />
 
         <!-- Agent terminal: reachable from every tab, resized by dragging the splitter. -->
-        <GridSplitter x:Name="TerminalSplitter" Grid.Row="2" Height="4" HorizontalAlignment="Stretch"
-                      ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" Visibility="Collapsed"
-                      Background="Transparent" Cursor="SizeNS" />
+        <!-- The divider is a Thumb, not a GridSplitter: its height comes from
+             the pointer's position in the window, so it tracks smoothly, and
+             dragging it near the top switches to full-window mode. -->
+        <Thumb x:Name="TerminalDivider" Grid.Row="2" Height="5" Cursor="SizeNS" Visibility="Collapsed"
+               AutomationProperties.AutomationId="TerminalDivider"
+               DragStarted="OnDividerDragStarted" DragDelta="OnDividerDragDelta">
+            <Thumb.Template>
+                <ControlTemplate TargetType="Thumb">
+                    <Border Background="Transparent" />
+                </ControlTemplate>
+            </Thumb.Template>
+        </Thumb>
         <term:TerminalPanel x:Name="Terminal" Grid.Row="3" Visibility="Collapsed" />
     </Grid>
 </Window>
