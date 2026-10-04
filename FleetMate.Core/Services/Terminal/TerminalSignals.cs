@@ -104,6 +104,25 @@ public sealed class TerminalSignalScanner
 }
 
 /// <summary>How a session's directory is shown in the list.</summary>
+/// <summary>
+/// Whether a window title says anything. Windows sets a console's title to the
+/// program's own path (C:\Program Files\PowerShell\pwsh.exe), which names no
+/// session, so the list keeps the command's label instead.
+/// </summary>
+public static class TerminalTitle
+{
+    public static bool IsMeaningful(string? title)
+    {
+        var t = title?.Trim();
+        if (string.IsNullOrEmpty(t)) return false;
+        var name = t.Replace('/', '\\').Split('\\').Last();
+        var isExecutablePath = t.Contains('\\') && (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                                                      || name.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)
+                                                      || name.EndsWith(".bat", StringComparison.OrdinalIgnoreCase));
+        return !isExecutablePath;
+    }
+}
+
 public static class TerminalPathDisplay
 {
     /// <summary>

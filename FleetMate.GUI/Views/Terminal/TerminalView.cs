@@ -258,7 +258,7 @@ public sealed class TerminalView : UserControl, IDisposable
             {
                 switch (signal)
                 {
-                    case TitleSignal t when t.Title.Trim().Length > 0: Title = t.Title.Trim(); break;
+                    case TitleSignal t when TerminalTitle.IsMeaningful(t.Title): Title = t.Title.Trim(); break;
                     case DirectorySignal d: Directory = d.Path; DirectorySource = "osc"; break;
                     case BellSignal: Activity.Bell(IsShown); break;
                 }
