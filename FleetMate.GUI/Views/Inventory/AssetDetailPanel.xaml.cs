@@ -221,6 +221,8 @@ public partial class AssetDetailPanel : UserControl
         }
 
         AddFullCard(MetadataCard(asset));
+
+        if (HandbookCard(asset) is { } handbook) AddFullCard(handbook);
     }
 
     private Border InventoryCard(SnipeAsset asset)
