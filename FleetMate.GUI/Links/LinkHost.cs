@@ -93,6 +93,14 @@ public static class LinkHost
         _mutex?.Dispose();
     }
 
+    /// <summary>True for an exe under a project's bin\Debug or bin\Release folder.</summary>
+    internal static bool IsBuildOutput(string exe)
+    {
+        var path = exe.Replace('/', '\\');
+        return path.Contains(@"\bin\Debug\", StringComparison.OrdinalIgnoreCase)
+            || path.Contains(@"\bin\Release\", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// Register <c>fleetmate:</c> for the current user, pointing at this
     /// executable, when it is missing or points elsewhere. A development run
@@ -113,6 +121,15 @@ public static class LinkHost
                     return;
                 }
                 exe = apphost;
+            }
+
+            // A build from a source tree must not take the protocol away from the
+            // installed app: the registration would outlive the build folder.
+            // FLEETMATE_REGISTER_LINKS=1 opts a development build in on purpose.
+            if (IsBuildOutput(exe) && Environment.GetEnvironmentVariable("FLEETMATE_REGISTER_LINKS") != "1")
+            {
+                Log.Information("fleetmate: links not registered: {Exe} is a build output", exe);
+                return;
             }
 
             var command = $"\"{exe}\" \"%1\"";
