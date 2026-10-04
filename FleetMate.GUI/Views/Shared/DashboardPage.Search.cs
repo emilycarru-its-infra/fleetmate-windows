@@ -17,6 +17,30 @@ public partial class DashboardPage
 {
     private int _searchGeneration;
 
+    private const double SearchMaxWidth = 700;
+    private const double SearchMinWidth = 180;
+    private const double SearchGap = 16;
+
+    /// <summary>
+    /// Keep the search centred on the page, at most 700 wide, and shrink it
+    /// so it never reaches the title on the left or the buttons on the right.
+    /// Below its minimum it hides rather than overlap.
+    /// </summary>
+    private void OnHeaderSizeChanged(object sender, SizeChangedEventArgs e) => FitSearchBox();
+
+    private void FitSearchBox()
+    {
+        // Fires once from InitializeComponent, before every part exists.
+        if (HeaderGrid == null || HeaderTitle == null || HeaderActions == null || GlobalSearchBox == null) return;
+        var total = HeaderGrid.ActualWidth;
+        if (total <= 0) return;
+        var side = Math.Max(HeaderTitle.ActualWidth, HeaderActions.ActualWidth) + SearchGap;
+        var width = Math.Min(SearchMaxWidth, total - 2 * side);
+        GlobalSearchBox.Visibility = width >= SearchMinWidth ? Visibility.Visible : Visibility.Collapsed;
+        if (width >= SearchMinWidth) GlobalSearchBox.Width = width;
+        if (GlobalSearchBox.Visibility != Visibility.Visible) GlobalSearchPopup.IsOpen = false;
+    }
+
     private void OnGlobalSearchChanged(object sender, TextChangedEventArgs e) => _ = RunGlobalSearchAsync();
 
     private void OnGlobalSearchFocused(object sender, KeyboardFocusChangedEventArgs e)
@@ -154,7 +178,8 @@ public partial class DashboardPage
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(6, 1, 6, 1),
             Margin = new Thickness(10, 0, 0, 0),
-            MaxWidth = 260,
+            // The title keeps the room; the label takes at most 40% of a narrow panel.
+            MaxWidth = Math.Min(260, Math.Max(120, GlobalSearchBox.ActualWidth * 0.4)),
             VerticalAlignment = VerticalAlignment.Center,
             Child = new TextBlock
             {
