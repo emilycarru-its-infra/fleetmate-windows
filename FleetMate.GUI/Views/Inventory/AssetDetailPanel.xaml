@@ -6,6 +6,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -72,10 +73,39 @@
             </Grid>
         </StackPanel>
 
+        <!-- Details | History. The choice sticks as you move between assets. -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="16,0,16,8">
+            <RadioButton x:Name="DetailsSegment" Content="Details" GroupName="AssetDetailSegment"
+                         IsChecked="True" Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}" />
+            <RadioButton x:Name="HistorySegment" Content="History" GroupName="AssetDetailSegment"
+                         Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}" />
+        </StackPanel>
+
         <!-- Scrollable cards, in priority order: state and people first, the
              machine itself and money second, identifiers and metadata after. -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer x:Name="DetailsView" Grid.Row="2" VerticalScrollBarVisibility="Auto">
             <StackPanel x:Name="CardsHost" Margin="16,0,16,16" />
         </ScrollViewer>
+
+        <!-- Change history, newest first: one card per event, field changes under it. -->
+        <Grid x:Name="HistoryView" Grid.Row="2" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <DockPanel Grid.Row="0" Margin="16,0,16,8">
+                <TextBlock x:Name="HistoryCountText" DockPanel.Dock="Right" FontSize="11" Margin="10,0,0,0"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <TextBox x:Name="HistoryFilterBox" TextChanged="OnHistoryFilterChanged"
+                         ui:ControlHelper.PlaceholderText="Filter history" />
+            </DockPanel>
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="HistoryHost" Margin="16,0,16,16" />
+            </ScrollViewer>
+            <ui:ProgressRing x:Name="HistoryLoadingRing" Grid.Row="1" Width="24" Height="24"
+                             IsActive="False" Visibility="Collapsed"
+                             HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0" />
+        </Grid>
     </Grid>
 </UserControl>
