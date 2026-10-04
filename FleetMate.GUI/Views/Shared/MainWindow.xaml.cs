@@ -38,6 +38,13 @@ public partial class MainWindow : Window
         _elevationTick = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
         _elevationTick.Tick += (_, _) => UpdateElevationStatus();
         _elevationTick.Start();
+
+        // The terminal panel: hide on request, end every session with the
+        // window, and with AgentAutoStart open an agent session at launch.
+        Terminal.HideRequested += (_, _) => SetTerminalVisible(false);
+        Closed += (_, _) => Terminal.DisposeAll();
+        if (Application.Current is App { Config.Terminal.AgentAutoStart: true })
+            Loaded += (_, _) => SetTerminalVisible(true);
     }
 
     // ── Elevation status ──────────────────────────────────────────
@@ -97,6 +104,39 @@ public partial class MainWindow : Window
         TabDevelopment.ToolTip = unread > 0 ? $"{unread} unread GitHub notification{(unread == 1 ? "" : "s")}" : null;
     }
 
+    // ── Terminal panel ───────────────────────────────────────────────────
+
+    private double _terminalHeight = 300;
+
+    private void OnWindowPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        // Ctrl+` toggles the terminal, as in VS Code. Inside a terminal the
+        // page itself reports the keystroke (WebView2 keeps keys to itself).
+        if (e.Key == System.Windows.Input.Key.Oem3 &&
+            System.Windows.Input.Keyboard.Modifiers == System.Windows.Input.ModifierKeys.Control)
+        {
+            ToggleTerminal();
+            e.Handled = true;
+        }
+    }
+
+    private void OnTerminalToggleClicked(object sender, RoutedEventArgs e) => ToggleTerminal();
+
+    public void ToggleTerminal() => SetTerminalVisible(Terminal.Visibility != Visibility.Visible);
+
+    public void SetTerminalVisible(bool visible)
+    {
+        if (!visible && Terminal.Visibility == Visibility.Visible && TerminalRow.ActualHeight > 40)
+            _terminalHeight = TerminalRow.ActualHeight;
+        Terminal.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        TerminalSplitter.Visibility = Terminal.Visibility;
+        TerminalRow.Height = visible ? new GridLength(_terminalHeight) : new GridLength(0);
+        TerminalToggleButton.IsChecked = visible;
+        if (!visible) return;
+        if (!Terminal.HasSessions) Terminal.OpenDefaultSession();
+        else Terminal.FocusActive();
+    }
+
     private void OnTabChecked(object sender, RoutedEventArgs e)
     {
         if (ContentFrame == null) return; // Not yet initialized
@@ -143,6 +183,7 @@ public partial class MainWindow : Window
 
     private void NavigateToPage(string tag)
     {
+        FleetMate.GUI.Views.Terminal.ContextPublisher.Tab(tag);
         ContentFrame.Navigate(GetOrCreatePage(tag));
     }
 

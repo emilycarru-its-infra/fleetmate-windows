@@ -14,6 +14,10 @@ public partial class SettingsPage : Page
 {
     private const string RegistryPath = @"SOFTWARE\FleetMate";
     private bool _isLoadingSettings;
+    private IReadOnlyList<string> _repoDefaults = Array.Empty<string>();
+
+    private void OnResetReposClicked(object sender, RoutedEventArgs e) =>
+        ReposTextBox.Text = string.Join(Environment.NewLine, _repoDefaults);
 
     public SettingsPage()
     {
@@ -63,6 +67,17 @@ public partial class SettingsPage : Page
         ManageRdpUserTextBox.Text = manage.RdpUser;
         ManageIncludeRetiredCheckBox.IsChecked = manage.IncludeRetired;
         ManageIncludeProvisioningCheckBox.IsChecked = manage.IncludeProvisioning;
+
+        // Terminal. Repos starts from the managed defaults until the operator saves their own.
+        var terminal = config.Terminal;
+        AgentCommandComboBox.ItemsSource = FleetMate.Core.Services.Terminal.AgentCommands.Choices;
+        AgentCommandComboBox.Text = terminal.AgentCommand;
+        AgentAutoStartCheckBox.IsChecked = terminal.AgentAutoStart;
+        ReposTextBox.Text = string.Join(Environment.NewLine, terminal.EffectiveRepos);
+        _repoDefaults = terminal.RepoDefaults;
+        RepoDefaultsText.Text = terminal.RepoDefaults.Count > 0
+            ? $"Your organization's defaults: {terminal.RepoDefaults.Count} repo(s)."
+            : "No default repos are set by policy.";
         RefreshRdpCredentialStatus();
         SshKeyStatusText.Text = manage.HasSshKey
             ? $"Key found at {manage.ResolvedSshKeyPath}. Sessions connect as {manage.ResolvedSshUser}."
@@ -137,6 +152,15 @@ public partial class SettingsPage : Page
             key.SetValue("ManageIncludeRetired", ManageIncludeRetiredCheckBox.IsChecked == true ? "1" : "0");
             key.SetValue("ManageIncludeProvisioning", ManageIncludeProvisioningCheckBox.IsChecked == true ? "1" : "0");
             key.DeleteValue("SnipeApiKey", throwOnMissingValue: false);
+
+            // Terminal. An empty repo list is removed so the managed defaults seed it again.
+            SetOrDeleteReg(key, "AgentCommand", AgentCommandComboBox.Text);
+            key.SetValue("AgentAutoStart", AgentAutoStartCheckBox.IsChecked == true ? "1" : "0");
+            var repos = FleetMate.Core.Config.TerminalSettings.ParseList(ReposTextBox.Text);
+            if (repos.Count == 0 || repos.SequenceEqual(_repoDefaults, StringComparer.OrdinalIgnoreCase))
+                key.DeleteValue("Repos", throwOnMissingValue: false);
+            else
+                key.SetValue("Repos", repos.ToArray(), RegistryValueKind.MultiString);
 
             // TDX
             // TDX — SSO only. Clear any service-account credential left behind by
