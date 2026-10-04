@@ -10,6 +10,14 @@ public partial class MainWindow
 {
     private Border? _linkBanner;
 
+    /// <summary>Remove a banner left by an earlier link, once a later one opens.</summary>
+    public void HideLinkBanner()
+    {
+        if (_linkBanner == null || Content is not Grid root) return;
+        root.Children.Remove(_linkBanner);
+        _linkBanner = null;
+    }
+
     /// <summary>Show <paramref name="message"/> across the top of the window until dismissed.</summary>
     public void ShowLinkBanner(string message)
     {
