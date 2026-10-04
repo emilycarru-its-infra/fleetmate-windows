@@ -14,7 +14,7 @@ namespace FleetMate.Core.Services;
 /// Microsoft Graph service for Intune devices and Entra ID users/groups
 /// Uses Azure CLI SSO for authentication
 /// </summary>
-public class GraphService : IDisposable
+public partial class GraphService : IDisposable
 {
     private readonly HttpClient _client;
     private readonly GraphConfig _config;

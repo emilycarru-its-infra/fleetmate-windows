@@ -31,14 +31,18 @@ public static class IntuneCommand
         command.AddCommand(CreateDevicesCommand(graphService));
         command.AddCommand(CreateDeviceCommand(graphService));
         command.AddCommand(CreateComplianceCommand(graphService));
+        command.AddCommand(IntuneLifecycleCommands.CreateNonCompliant(graphService));
+        command.AddCommand(IntuneLifecycleCommands.CreateLaps(graphService));
         command.AddCommand(CreateUpdatesCommand(graphService));
         command.AddCommand(CreateSyncCommand(graphService));
         command.AddCommand(CreateRebootCommand(graphService));
         command.AddCommand(CreateLockCommand(graphService));
         command.AddCommand(CreateWipeCommand(graphService));
         command.AddCommand(CreateRetireCommand(graphService));
+        command.AddCommand(IntuneLifecycleCommands.CreateFreshStart(graphService));
+        command.AddCommand(IntuneLifecycleCommands.CreateOffboard(graphService));
         command.AddCommand(CreateAutopilotResetCommand(graphService));
-        command.AddCommand(CreateDeleteCommand(graphService));
+        command.AddCommand(IntuneLifecycleCommands.CreateDeleteRecord(graphService));
         command.AddCommand(CreateAutopilotCommand(graphService));
         command.AddCommand(CreateCleanupCommand(graphService));
         command.AddCommand(CreateCimianPushCommand(graphService));
@@ -68,27 +72,6 @@ public static class IntuneCommand
             var id = await ResolveDeviceIdAsync(graphService!, identifier);
             ReportAction(await graphService!.AutopilotResetDeviceAsync(id!, keepUserData: keepUserData, confirmed: true), "AutoPilot Reset");
         }, idArg, keepUserDataOption, confirmOption);
-        return command;
-    }
-
-    private static Command CreateDeleteCommand(GraphService? graphService)
-    {
-        var command = new Command("delete", "Delete a device's Intune record (server-side only; sends nothing to the device)");
-        var idArg = new Argument<string>(name: "identifier", description: "Serial number or managedDevice id");
-        var confirmOption = new Option<bool>(aliases: ["--confirm"], description: "Required to actually delete");
-        command.AddArgument(idArg);
-        command.AddOption(confirmOption);
-        command.SetHandler(async (identifier, confirm) =>
-        {
-            if (!EnsureConfigured(graphService)) return;
-            if (!confirm)
-            {
-                AnsiConsole.MarkupLine($"[yellow]This will delete the Intune record for {Markup.Escape(identifier)}, leaving it unmanaged until it re-enrolls. Re-run with --confirm to proceed.[/]");
-                return;
-            }
-            var id = await ResolveDeviceIdAsync(graphService!, identifier);
-            ReportAction(await graphService!.DeleteManagedDeviceAsync(id!, confirmed: true), "delete");
-        }, idArg, confirmOption);
         return command;
     }
 
