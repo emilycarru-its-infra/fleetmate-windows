@@ -131,6 +131,15 @@
                                   Background="Transparent" BorderThickness="0" Padding="8,5" Margin="0,0,4,0">
                         <ui:FontIcon Glyph="&#xE756;" FontFamily="Segoe Fluent Icons" FontSize="14" />
                     </ToggleButton>
+                    <!-- Graphs: shows or hides this tab's widget strip (Ctrl+Alt+G).
+                         Accent while shown, secondary while hidden; absent on tabs
+                         with no widgets. -->
+                    <Button x:Name="GraphsButton" Click="OnGraphsClicked" Visibility="Collapsed"
+                            AutomationProperties.AutomationId="GraphsButton" AutomationProperties.Name="Graphs"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Style="{StaticResource ChromeIconButtonStyle}" Margin="0,0,4,0">
+                        <ui:FontIcon x:Name="GraphsIcon" Glyph="&#xE9D2;" FontFamily="Segoe Fluent Icons" FontSize="14" />
+                    </Button>
                     <!-- Recent Activity: what changed on this tab, from any tab. The
                          orange dot marks an app-level error, shown at the popover's top. -->
                     <Button x:Name="RecentActivityButton" ToolTip="Recent activity" Click="OnRecentActivityClicked"

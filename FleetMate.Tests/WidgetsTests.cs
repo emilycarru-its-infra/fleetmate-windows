@@ -76,5 +76,5 @@ public class WidgetsTests
 
     [Fact]
     public void CollapsedStateKeyMatchesMacOS() =>
-        Assert.Equal("widgets.collapsed.Devices", WidgetsSection.PersistenceKey("Devices"));
+        Assert.Equal("widgets.collapsed.Devices", WidgetVisibility.PersistenceKey("Devices"));
 }
