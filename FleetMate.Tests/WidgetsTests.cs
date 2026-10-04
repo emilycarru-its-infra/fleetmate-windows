@@ -65,6 +65,15 @@ public class WidgetsTests
     public void TicketIsActiveUnlessClosedByName(string? status, bool expected) =>
         Assert.Equal(expected, WidgetCatalog.IsActiveTicket(status));
 
+    [Theory]
+    [InlineData("Resolved", true)]
+    [InlineData("Completed", true)]
+    [InlineData("closed", true)]
+    [InlineData("Active", false)]
+    [InlineData("New", false)]
+    public void ResolvedWorkIsFinished(string state, bool expected) =>
+        Assert.Equal(expected, WidgetCatalog.IsClosed(state));
+
     [Fact]
     public void CollapsedStateKeyMatchesMacOS() =>
         Assert.Equal("widgets.collapsed.Devices", WidgetsSection.PersistenceKey("Devices"));
