@@ -137,6 +137,10 @@ public partial class MainWindow : Window
             ToggleFullWindow();
             e.Handled = true;
         }
+        else if (HandleSearchShortcut(key, mods))
+        {
+            e.Handled = true;
+        }
         else if (mods == Ctrl && TabShortcut(key) is { } tab)
         {
             // Ctrl+1–7 switch tabs, in tab-bar order.
