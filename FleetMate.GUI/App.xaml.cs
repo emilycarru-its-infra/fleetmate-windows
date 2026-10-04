@@ -668,7 +668,10 @@ public partial class App : Application
             {
                 try
                 {
-                    var devices = await GraphService.GetManagedDevicesAsync();
+                    // The whole fleet: the Devices list trusts this cache, so a
+                    // first page alone would leave every other device looking
+                    // unenrolled once Autopilot is joined to it.
+                    var devices = await GraphService.GetManagedDevicesAsync(limit: 10000);
                     Dispatcher.Invoke(() => UpdateDevicesCache(devices));
                     Log.Information("Preloaded {Count} devices", devices.Count);
                 }

@@ -23,6 +23,13 @@ public partial class IntunePage : Page
     private List<DeviceListRow> _allRows = new();
     private List<MobileApp> _mobileApps = new();
     private bool _isInitialLoadDone;
+    /// <summary>The load in flight, so a second visit joins it instead of fetching again.</summary>
+    private Task? _loading;
+    /// <summary>
+    /// Set once Intune's devices are in. Autopilot is joined only after that:
+    /// joined to an empty list, every identity would read as not enrolled.
+    /// </summary>
+    private bool _intuneReady;
 
     /// <summary>Autopilot identities, kept with the page like the Intune cache is kept on the app.</summary>
     private static List<AutopilotDevice> _autopilot = new();
@@ -95,7 +102,13 @@ public partial class IntunePage : Page
     /// when it lands: its identity listing is slow, and the list never waits
     /// on it.
     /// </summary>
-    private async Task LoadDevicesAsync()
+    private Task LoadDevicesAsync()
+    {
+        if (_loading is { IsCompleted: false }) return _loading;
+        return _loading = LoadDevicesCoreAsync();
+    }
+
+    private async Task LoadDevicesCoreAsync()
     {
         if (_graphService == null || _app == null)
         {
@@ -109,6 +122,7 @@ public partial class IntunePage : Page
 
         var autopilotTask = _autopilot.Count == 0 ? LoadAutopilotAsync() : Task.CompletedTask;
 
+        _intuneReady = false;
         if (!(_app.IsDevicesCacheValid && _app.CachedDevices.Count > 0))
         {
             LoadingPanel.Visibility = Visibility.Visible;
@@ -126,6 +140,7 @@ public partial class IntunePage : Page
             }
         }
 
+        _intuneReady = true;
         RebuildRows();
         await autopilotTask;
     }
@@ -146,7 +161,7 @@ public partial class IntunePage : Page
         {
             AutopilotLoadingText.Visibility = Visibility.Collapsed;
         }
-        RebuildRows();
+        if (_intuneReady) RebuildRows();
     }
 
     /// <summary>Re-join Intune and Autopilot, keeping the selection and filters.</summary>
@@ -352,11 +367,11 @@ public partial class IntunePage : Page
             SelectedDevicesText.Text = $"{selectedCount} device(s) selected";
             if (selectedCount <= 3)
             {
-                SelectedDeviceNamesText.Text = string.Join(", ", selected.Select(r => r.NameText));
+                SelectedDeviceNamesText.Text = string.Join(", ", selected.Select(Label));
             }
             else
             {
-                var first2 = string.Join(", ", selected.Take(2).Select(r => r.NameText));
+                var first2 = string.Join(", ", selected.Take(2).Select(Label));
                 SelectedDeviceNamesText.Text = $"{first2} and {selectedCount - 2} more...";
             }
 
@@ -380,6 +395,9 @@ public partial class IntunePage : Page
             HideActionsPanel();
         }
     }
+
+    /// <summary>A device's name, or its serial when it has none yet.</summary>
+    private static string Label(DeviceListRow r) => r.NameText != DeviceListRow.Missing ? r.NameText : r.SerialText;
 
     /// <summary>
     /// Offer only the actions valid for every selected device: Intune's need
