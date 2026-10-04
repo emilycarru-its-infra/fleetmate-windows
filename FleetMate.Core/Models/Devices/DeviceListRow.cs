@@ -2,9 +2,9 @@ namespace FleetMate.Core.Models.Devices;
 
 /// <summary>
 /// A row of the Devices list: an Intune record joined to its Windows Autopilot
-/// identity, or an Autopilot identity Intune has no record of yet ("Not
-/// Enrolled"). Every row answers every column and every filter, with "—"
-/// where its sources have no value. The macOS client also joins each row to
+/// identity, or an Autopilot identity Intune has no record of yet
+/// ("Registered, Not Enrolled"). Every row answers every column and every
+/// filter, with "—" where its sources have no value. The macOS client also joins each row to
 /// its Apple School or Business Manager record; Windows has no client for
 /// those services yet, so the Apple columns read "—" and the Apple filters
 /// read "Not in Organization" for every row.
@@ -19,11 +19,14 @@ public sealed class DeviceListRow
 
     public IntuneDevice? Intune { get; }
     public AutopilotDevice? Autopilot { get; }
+    /// <summary>Where a Windows device stands between Autopilot and Intune; null for other platforms.</summary>
+    public AutopilotRegistration? Registration { get; }
 
-    public DeviceListRow(IntuneDevice? intune, AutopilotDevice? autopilot)
+    public DeviceListRow(IntuneDevice? intune, AutopilotDevice? autopilot, AutopilotRegistration? registration = null)
     {
         Intune = intune;
         Autopilot = autopilot;
+        Registration = registration;
     }
 
     /// <summary>Enrolled rows keep the Intune ID; every MDM action is keyed on it.</summary>
@@ -69,10 +72,14 @@ public sealed class DeviceListRow
     public string LastSyncText => Intune?.LastSyncDateTime is { } t ? t.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : Missing;
     public DateTime LastSyncSort => Intune?.LastSyncDateTime ?? DateTime.MinValue;
 
-    /// <summary>The Apple organization's device management service; no Windows source yet.</summary>
-    public string ServiceText => Missing;
-    /// <summary>The Apple organization's status for the device; no Windows source yet.</summary>
-    public string OrgStatusText => Missing;
+    /// <summary>
+    /// The service managing the device: Intune for an enrolled Windows device.
+    /// For Apple devices it is the Apple organization's assignment, which
+    /// Windows cannot read yet.
+    /// </summary>
+    public string ServiceText => IsWindows && IsEnrolled ? "Intune" : Missing;
+    /// <summary>The Autopilot registration for a Windows device; the Apple organization status otherwise (not read on Windows yet).</summary>
+    public string OrgStatusText => Registration?.Label() ?? Missing;
     /// <summary>The device's grouping in its provisioning system: the Autopilot group tag here.</summary>
     public string GroupOrOrderText => Blank(Autopilot?.GroupTag) ?? Missing;
 
@@ -80,7 +87,8 @@ public sealed class DeviceListRow
     public string ManufacturerText => Blank(Intune?.Manufacturer) ?? Blank(Autopilot?.Manufacturer) ?? Missing;
     public string OwnershipText => Blank(Intune?.ManagedDeviceOwnerType) is { } o ? Capitalize(o) : Missing;
     public string MigrationText => Missing;
-    public string PurchaseSourceText => Missing;
+    /// <summary>The purchase order an Autopilot registration carries.</summary>
+    public string PurchaseSourceText => Blank(Autopilot?.PurchaseOrderIdentifier) ?? Missing;
     public string AddedText => Missing;
 
     public string EnrollmentLabel => IsEnrolled ? "Enrolled" : "Not Enrolled";
@@ -92,9 +100,12 @@ public sealed class DeviceListRow
     /// </summary>
     public string Value(DeviceFacet facet) => facet switch
     {
-        DeviceFacet.ManagementService => NotInOrganization,
-        DeviceFacet.OrgStatus => NotInOrganization,
+        DeviceFacet.ManagementService => IsWindows ? (IsEnrolled ? "Intune" : "No Service") : NotInOrganization,
+        DeviceFacet.OrgStatus => Registration?.Label() ?? NotInOrganization,
         DeviceFacet.AppleOrganization => NotInOrganization,
+        DeviceFacet.GroupTag => AutopilotValue(a => a.GroupTagLabel()),
+        DeviceFacet.DeploymentProfile => AutopilotValue(a => a.ProfileStatusLabel()),
+        DeviceFacet.AutopilotEnrollment => AutopilotValue(a => a.EnrollmentStateLabel()),
         DeviceFacet.Platform => PlatformLabel ?? "Unknown",
         DeviceFacet.Compliance => ComplianceText,
         DeviceFacet.Manufacturer => Blank(Intune?.Manufacturer) ?? Blank(Autopilot?.Manufacturer) ?? "Unknown",
@@ -104,6 +115,13 @@ public sealed class DeviceListRow
         DeviceFacet.Enrollment => EnrollmentLabel,
         _ => "Unknown",
     };
+
+    /// <summary>
+    /// Autopilot facet values: the identity's own, "Not Registered" for a
+    /// Windows device with none, and "Not in Autopilot" for other platforms.
+    /// </summary>
+    private string AutopilotValue(Func<AutopilotDevice, string> read) =>
+        Autopilot != null ? read(Autopilot) : Registration == null ? "Not in Autopilot" : "Not Registered";
 
     /// <summary>What the search box matches.</summary>
     public bool Matches(string text) =>
@@ -124,6 +142,9 @@ public enum DeviceFacet
     ManagementService,
     OrgStatus,
     AppleOrganization,
+    GroupTag,
+    DeploymentProfile,
+    AutopilotEnrollment,
     Platform,
     Compliance,
     Manufacturer,
@@ -140,8 +161,15 @@ public static class DeviceFacets
         DeviceFacet.ManagementService => "Device Management Service",
         DeviceFacet.OrgStatus => "Organization Status",
         DeviceFacet.AppleOrganization => "Apple Organization",
+        DeviceFacet.GroupTag => "Group Tag",
+        DeviceFacet.DeploymentProfile => "Deployment Profile",
+        DeviceFacet.AutopilotEnrollment => "Autopilot Enrollment",
         _ => facet.ToString(),
     };
+
+    /// <summary>Facets with nothing to say until Autopilot identities are read.</summary>
+    public static readonly IReadOnlySet<DeviceFacet> AutopilotOnly =
+        new HashSet<DeviceFacet> { DeviceFacet.GroupTag, DeviceFacet.DeploymentProfile, DeviceFacet.AutopilotEnrollment };
 
     /// <summary>Each value of a facet across the rows, with how many rows carry it, most common first.</summary>
     public static List<(string Value, int Count)> Counts(IEnumerable<DeviceListRow> rows, DeviceFacet facet) =>
@@ -165,31 +193,58 @@ public static class DeviceListJoin
     public static string Normalize(string serial) => serial.Trim().ToUpperInvariant();
 
     /// <summary>
-    /// Every Intune record becomes a row, carrying its Autopilot identity:
-    /// matched by the managed-device ID Autopilot records, else by serial.
-    /// Autopilot identities no Intune record matches follow as their own
-    /// "Not Enrolled" rows.
+    /// Every Intune record becomes a row. With Autopilot identities read, each
+    /// is matched to an Intune record: by the managed device ID Autopilot
+    /// links, then the Entra device ID, then serial (preferring the most
+    /// recently synced record, since a re-enrolment leaves the old one behind).
+    /// Each Intune record matches at most once. Identities nothing matches
+    /// follow as their own rows: registered, not enrolled.
     /// </summary>
     public static List<DeviceListRow> Merge(IReadOnlyList<IntuneDevice> intune, IReadOnlyList<AutopilotDevice> autopilot)
     {
-        var byManagedId = autopilot.Where(a => !string.IsNullOrEmpty(a.ManagedDeviceId)
-                                               && a.ManagedDeviceId != "00000000-0000-0000-0000-000000000000")
-            .GroupBy(a => a.ManagedDeviceId!, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-        var bySerial = autopilot.Where(a => !string.IsNullOrWhiteSpace(a.SerialNumber))
-            .GroupBy(a => Normalize(a.SerialNumber!))
-            .ToDictionary(g => g.Key, g => g.First());
+        if (autopilot.Count == 0)
+            return intune.Select(d => new DeviceListRow(d, null)).ToList();
 
-        var matched = new HashSet<string>();
-        var rows = new List<DeviceListRow>(intune.Count + autopilot.Count);
+        var byId = new Dictionary<string, IntuneDevice>();
+        var byEntra = new Dictionary<string, IntuneDevice>();
+        var bySerial = new Dictionary<string, IntuneDevice>();
         foreach (var record in intune)
         {
-            var identity = byManagedId.GetValueOrDefault(record.Id)
-                ?? (string.IsNullOrWhiteSpace(record.SerialNumber) ? null : bySerial.GetValueOrDefault(Normalize(record.SerialNumber!)));
-            if (identity != null) matched.Add(identity.Id);
-            rows.Add(new DeviceListRow(record, identity));
+            byId[record.Id.ToLowerInvariant()] = record;
+            if (AutopilotLabels.Linked(record.AzureAdDeviceId) is { } entra) byEntra[entra] = record;
+            if (!string.IsNullOrWhiteSpace(record.SerialNumber))
+            {
+                var key = Normalize(record.SerialNumber!);
+                if (!bySerial.TryGetValue(key, out var existing)
+                    || (existing.LastSyncDateTime ?? DateTime.MinValue) < (record.LastSyncDateTime ?? DateTime.MinValue))
+                    bySerial[key] = record;
+            }
         }
-        rows.AddRange(autopilot.Where(a => !matched.Contains(a.Id)).Select(a => new DeviceListRow(null, a)));
+
+        var matched = new Dictionary<string, AutopilotDevice>();
+        var unenrolled = new List<AutopilotDevice>();
+        foreach (var identity in autopilot)
+        {
+            IntuneDevice? candidate = null;
+            if (AutopilotLabels.Linked(identity.ManagedDeviceId) is { } managed) byId.TryGetValue(managed, out candidate);
+            if (candidate == null && AutopilotLabels.Linked(identity.AzureActiveDirectoryDeviceId) is { } entra)
+                byEntra.TryGetValue(entra, out candidate);
+            if (candidate == null && !string.IsNullOrWhiteSpace(identity.SerialNumber))
+                bySerial.TryGetValue(Normalize(identity.SerialNumber!), out candidate);
+
+            if (candidate != null && matched.TryAdd(candidate.Id.ToLowerInvariant(), identity)) continue;
+            unenrolled.Add(identity);
+        }
+
+        var rows = intune.Select(record =>
+        {
+            var identity = matched.GetValueOrDefault(record.Id.ToLowerInvariant());
+            var isWindows = record.OperatingSystem?.Contains("Windows", StringComparison.OrdinalIgnoreCase) == true;
+            AutopilotRegistration? registration = identity != null ? AutopilotRegistration.RegisteredAndEnrolled
+                : isWindows ? AutopilotRegistration.EnrolledNotRegistered : null;
+            return new DeviceListRow(record, identity, registration);
+        }).ToList();
+        rows.AddRange(unenrolled.Select(a => new DeviceListRow(null, a, AutopilotRegistration.RegisteredNotEnrolled)));
         return rows;
     }
 }

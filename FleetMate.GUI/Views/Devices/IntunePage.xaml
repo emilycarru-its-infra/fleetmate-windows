@@ -22,6 +22,8 @@
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="Device Management Service" Style="{StaticResource SubtitleTextStyle}" />
                 <TextBlock x:Name="DeviceCountText" Margin="8,0,0,0" Style="{StaticResource SubtitleTextStyle}" />
+                <TextBlock x:Name="AutopilotLoadingText" Margin="8,0,0,0" Style="{StaticResource SubtitleTextStyle}"
+                           Text="· reading Autopilot…" Visibility="Collapsed" />
                 <TextBlock x:Name="SelectionCountText" Margin="8,0,0,0" Foreground="{DynamicResource SystemControlForegroundAccentBrush}" FontWeight="SemiBold" />
             </StackPanel>
         </StackPanel>
@@ -50,6 +52,13 @@
                     </DockPanel>
                 </Border>
             </Popup>
+            <Button x:Name="ImportHashesButton" Margin="0,0,8,0" Click="OnImportHashesClicked"
+                    ToolTip="Register devices with Windows Autopilot from a hardware hash CSV">
+                <StackPanel Orientation="Horizontal">
+                    <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8B5;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                    <TextBlock Text="Import Hashes" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
             <Button x:Name="ActionsButton" Content="Actions" Margin="0,0,8,0" Click="OnActionsClicked" IsEnabled="False" />
             <Button x:Name="RefreshButton" Click="OnRefreshClicked"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="Refresh" VerticalAlignment="Center" /></StackPanel></Button>
         </StackPanel>
@@ -181,7 +190,46 @@
                         <StackPanel>
                             <TextBlock x:Name="NoActionsText" Visibility="Collapsed" TextWrapping="Wrap" Margin="0,4,0,0"
                                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                                       Text="No Intune actions apply: a selected device is not enrolled in Intune." />
+                                       Text="No actions apply to every selected device." />
+
+                            <!-- Windows Autopilot: offered when every selected device has an identity. -->
+                            <TextBlock x:Name="AutopilotActionsHeader" Text="Windows Autopilot" FontWeight="SemiBold"
+                                       Margin="0,4,0,4" Visibility="Collapsed" />
+                            <Expander x:Name="AutopilotGroupTagSection" Header="Set Group Tag" Visibility="Collapsed">
+                                <StackPanel Margin="8">
+                                    <TextBox x:Name="AutopilotGroupTagBox" ui:ControlHelper.PlaceholderText="Group tag (empty clears it)" Margin="0,0,0,8" />
+                                    <Button Content="Set Group Tag" Click="OnAutopilotSetGroupTagClicked" HorizontalAlignment="Stretch" />
+                                </StackPanel>
+                            </Expander>
+                            <Expander x:Name="AutopilotAssignUserSection" Header="Assign User" Visibility="Collapsed">
+                                <StackPanel Margin="8">
+                                    <TextBox x:Name="AutopilotUserBox" ui:ControlHelper.PlaceholderText="user@domain" Margin="0,0,0,8" />
+                                    <Button Content="Assign User" Click="OnAutopilotAssignUserClicked" HorizontalAlignment="Stretch" />
+                                </StackPanel>
+                            </Expander>
+                            <Expander x:Name="AutopilotUnassignUserSection" Header="Unassign User" Visibility="Collapsed">
+                                <StackPanel Margin="8">
+                                    <TextBlock Text="Remove the assigned user from the selected Autopilot identities."
+                                               TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
+                                    <Button Content="Unassign User" Click="OnAutopilotUnassignUserClicked" HorizontalAlignment="Stretch" />
+                                </StackPanel>
+                            </Expander>
+                            <Expander x:Name="AutopilotSyncSection" Header="Sync Autopilot" Visibility="Collapsed">
+                                <StackPanel Margin="8">
+                                    <TextBlock Text="Ask Intune to sync registrations with the Autopilot service. This applies to the whole tenant."
+                                               TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
+                                    <Button Content="Sync Autopilot" Click="OnAutopilotSyncClicked" HorizontalAlignment="Stretch" />
+                                </StackPanel>
+                            </Expander>
+                            <Expander x:Name="AutopilotDeleteSection" Header="Delete Autopilot Identity" Visibility="Collapsed">
+                                <StackPanel Margin="8">
+                                    <TextBlock Text="Remove the selected devices from Autopilot. The devices are untouched; they stop receiving an Autopilot profile."
+                                               TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
+                                    <Button Content="Delete Identity" Click="OnAutopilotDeleteClicked" HorizontalAlignment="Stretch"
+                                            Background="#E8890C" Foreground="White" />
+                                </StackPanel>
+                            </Expander>
+                            <TextBlock x:Name="IntuneActionsHeader" Text="Intune" FontWeight="SemiBold" Margin="0,10,0,4" Visibility="Collapsed" />
                             <!-- Sync Section -->
                             <Expander x:Name="SyncSection" Header="Sync Device" IsExpanded="True">
                                 <StackPanel Margin="8">

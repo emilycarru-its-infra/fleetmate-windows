@@ -63,6 +63,16 @@ public class AutopilotDevice
 
     [JsonPropertyName("displayName")]
     public string? DisplayName { get; set; }
+
+    [JsonPropertyName("purchaseOrderIdentifier")]
+    public string? PurchaseOrderIdentifier { get; set; }
+
+    /// <summary>notAssigned, assignedInSync, assignedOutOfSync, pending, failed…</summary>
+    [JsonPropertyName("deploymentProfileAssignmentStatus")]
+    public string? DeploymentProfileAssignmentStatus { get; set; }
+
+    [JsonPropertyName("addressableUserName")]
+    public string? AddressableUserName { get; set; }
 }
 
 /// <summary>Response for an AutoPilot device identity list</summary>
