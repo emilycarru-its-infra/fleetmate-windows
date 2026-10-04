@@ -45,6 +45,7 @@ public partial class App
         }
 
         Log.Information("Opening {Link}", parsed.ToLink());
+        window.HideLinkBanner();
         switch (parsed)
         {
             case FleetMateLink.WorkItem workItem:
