@@ -252,6 +252,7 @@ public partial class AssetsPage : Page
 
     private void AssetListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        FleetMate.GUI.Views.Terminal.ContextPublisher.Asset(AssetListView.SelectedItem as SnipeAsset);
         if (AssetListView.SelectedItem is SnipeAsset asset)
         {
             _selectedAsset = asset;
