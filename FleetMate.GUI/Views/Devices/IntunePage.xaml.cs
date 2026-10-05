@@ -229,6 +229,7 @@ public partial class IntunePage : Page
     private void OnDeviceSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         var selectedCount = DevicesDataGrid.SelectedItems.Count;
+        Terminal.ContextPublisher.Devices(DevicesDataGrid.SelectedItems.Cast<IntuneDevice>());
         var hasSelection = selectedCount > 0;
 
         ActionsButton.IsEnabled = hasSelection;

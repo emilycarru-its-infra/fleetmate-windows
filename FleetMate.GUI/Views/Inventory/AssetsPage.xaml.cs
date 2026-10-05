@@ -302,6 +302,7 @@ public partial class AssetsPage : Page
 
     private void AssetListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        FleetMate.GUI.Views.Terminal.ContextPublisher.Asset(AssetListView.SelectedItem as SnipeAsset);
         if (AssetListView.SelectedItem is SnipeAsset asset)
         {
             // A stray click right after a deep link: put the linked asset back.
