@@ -78,6 +78,15 @@ public sealed record WipeOptions
         return body;
     }
 
+    /// <summary>How the Devices wipe card names an obliteration behaviour (the macOS client's wording).</summary>
+    public static string ObliterationDisplayName(string behavior) => behavior switch
+    {
+        "doNotObliterate" => "EACS only (fail if unavailable)",
+        "obliterateWithWarning" => "Erase, warn first",
+        "always" => "Always full erase",
+        _ => "Default (EACS, fall back to erase)",
+    };
+
     /// <summary>The body as the dry run prints it: keys sorted so two runs print identically.</summary>
     public static string Describe(JsonObject body) =>
         "{" + string.Join(",", body.OrderBy(p => p.Key, StringComparer.Ordinal)
@@ -100,11 +109,48 @@ public sealed record OffboardPlan
     /// <summary>Delete the Windows Autopilot registration, releasing the hardware hash. Windows only.</summary>
     public bool DeleteAutopilotRegistration { get; init; }
     public OffboardEntraAction EntraAction { get; init; } = OffboardEntraAction.None;
+
+    public static string DisplayName(OffboardTerminalAction action) => action switch
+    {
+        OffboardTerminalAction.Wipe => "Wipe (factory reset)",
+        OffboardTerminalAction.Retire => "Retire (remove company data)",
+        _ => "Leave the device alone",
+    };
+
+    public static string DisplayName(OffboardEntraAction action) => action switch
+    {
+        OffboardEntraAction.Disable => "Disable the Entra device object",
+        OffboardEntraAction.Delete => "Delete the Entra device object",
+        _ => "Leave the Entra device object",
+    };
+
+    /// <summary>The confirmation text: every step the plan will take, for how many devices.</summary>
+    public string Summary(int deviceCount)
+    {
+        var parts = new List<string>();
+        if (TerminalAction == OffboardTerminalAction.Wipe) parts.Add("factory-reset");
+        else if (TerminalAction == OffboardTerminalAction.Retire) parts.Add("retire");
+        if (DeleteAutopilotRegistration) parts.Add("delete the Autopilot registration");
+        if (EntraAction == OffboardEntraAction.Disable) parts.Add("disable the Entra device object");
+        else if (EntraAction == OffboardEntraAction.Delete) parts.Add("delete the Entra device object");
+        if (DeleteIntuneRecord) parts.Add("delete the Intune record");
+
+        if (parts.Count == 0) return "No offboard steps are selected.";
+        var steps = parts.Count == 1 ? parts[0] : string.Join(", ", parts.Take(parts.Count - 1)) + " and " + parts[^1];
+        return $"This will {steps} for {deviceCount} device(s). This cannot be undone.";
+    }
+
+    /// <summary>Deleting the record before the device checks in cancels the pending wipe or retire.</summary>
+    public bool CancelsPendingAction => DeleteIntuneRecord && TerminalAction != OffboardTerminalAction.None;
 }
 
 public enum OffboardOutcome { Succeeded, Failed, Skipped }
 
-public sealed record OffboardStepResult(string Step, OffboardOutcome Outcome, string? Detail = null);
+public sealed record OffboardStepResult(string Step, OffboardOutcome Outcome, string? Detail = null)
+{
+    /// <summary>The step as a results list shows it: the step, then why, when there is a reason.</summary>
+    public string Display => Detail == null ? Step : $"{Step} — {Detail}";
+}
 
 /// <summary>One step of a dry run: what would be sent, or why the step drops out.</summary>
 public sealed record OffboardPlannedStep(string Step, bool WillRun, string Detail);
