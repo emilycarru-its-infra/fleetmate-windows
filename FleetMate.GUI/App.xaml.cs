@@ -77,13 +77,28 @@ public partial class App : Application
     public FleetMate.Core.Models.Projects.PullRequestQueue? PullRequestQueue { get; set; }
 
     /// <summary>The Development tab's PR list (involves me + organization), cached like the queue.</summary>
-    public FleetMate.Core.Models.Projects.PullRequestQueue? DevelopmentPullRequests { get; set; }
+    public FleetMate.Core.Models.Projects.PullRequestQueue? DevelopmentPullRequests
+    {
+        get => _developmentPullRequests;
+        set { _developmentPullRequests = value; NotifyCacheChanged("PullRequests"); }
+    }
+    private FleetMate.Core.Models.Projects.PullRequestQueue? _developmentPullRequests;
 
     /// <summary>Development › Commits: repositories with recent commits, cached across tab switches.</summary>
-    public List<FleetMate.Core.Models.Projects.RepositoryCommits>? DevelopmentCommits { get; set; }
+    public List<FleetMate.Core.Models.Projects.RepositoryCommits>? DevelopmentCommits
+    {
+        get => _developmentCommits;
+        set { _developmentCommits = value; NotifyCacheChanged("Commits"); }
+    }
+    private List<FleetMate.Core.Models.Projects.RepositoryCommits>? _developmentCommits;
 
     /// <summary>Development › Pipelines: recent runs, cached across tab switches.</summary>
-    public List<FleetMate.Core.Models.Projects.PipelineRun>? DevelopmentRuns { get; set; }
+    public List<FleetMate.Core.Models.Projects.PipelineRun>? DevelopmentRuns
+    {
+        get => _developmentRuns;
+        set { _developmentRuns = value; NotifyCacheChanged("Runs"); }
+    }
+    private List<FleetMate.Core.Models.Projects.PipelineRun>? _developmentRuns;
 
     /// <summary>GitHub notifications, polled from startup so the Development tab count is live.</summary>
     public FleetMate.GUI.Views.Development.DevelopmentInbox Inbox { get; }
@@ -120,8 +135,32 @@ public partial class App : Application
     public List<TdxTicket> CachedTickets { get; set; } = new();
     public List<EntraUser> CachedUsers { get; set; } = new();
     public List<EntraGroup> CachedGroups { get; set; } = new();
-    public List<WorkItem> CachedWorkItems { get; set; } = new();
-    public List<Sprint> CachedSprints { get; set; } = new();
+    public List<WorkItem> CachedWorkItems
+    {
+        get => _cachedWorkItems;
+        set { _cachedWorkItems = value; NotifyCacheChanged("WorkItems"); }
+    }
+    private List<WorkItem> _cachedWorkItems = new();
+
+    public List<Sprint> CachedSprints
+    {
+        get => _cachedSprints;
+        set { _cachedSprints = value; NotifyCacheChanged("Sprints"); }
+    }
+    private List<Sprint> _cachedSprints = new();
+
+    /// <summary>
+    /// Raised on the UI thread when a shared cache changes, with its key:
+    /// Devices, Assets, Tickets, WorkItems, Sprints, Issues, PullRequests,
+    /// Commits, Runs. The tab Widgets sections redraw from it.
+    /// </summary>
+    public event Action<string>? CacheChanged;
+
+    public void NotifyCacheChanged(string key)
+    {
+        if (Dispatcher.CheckAccess()) CacheChanged?.Invoke(key);
+        else Dispatcher.BeginInvoke(() => CacheChanged?.Invoke(key));
+    }
     
     // Cache timestamps
     private DateTime? _devicesCacheTime;
@@ -158,6 +197,7 @@ public partial class App : Application
     {
         CachedDevices = devices;
         _devicesCacheTime = DateTime.Now;
+        NotifyCacheChanged("Devices");
     }
     
     /// <summary>Update assets cache</summary>
@@ -165,6 +205,7 @@ public partial class App : Application
     {
         CachedAssets = assets;
         _assetsCacheTime = DateTime.Now;
+        NotifyCacheChanged("Assets");
     }
     
     /// <summary>Update tickets cache</summary>
@@ -172,6 +213,7 @@ public partial class App : Application
     {
         CachedTickets = tickets;
         _ticketsCacheTime = DateTime.Now;
+        NotifyCacheChanged("Tickets");
     }
     
     /// <summary>Update users cache</summary>
