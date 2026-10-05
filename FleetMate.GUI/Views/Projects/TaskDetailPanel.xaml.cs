@@ -36,11 +36,13 @@ public partial class TaskDetailPanel : UserControl
         TaskId.Text = $"#{task.Id}";
 
         ContentPanel.Children.Clear();
+        _loadToken++;
+        _detail = null;
 
         switch (task.Provider.ToLowerInvariant())
         {
             case "azdevops":
-                RenderAzDoDetail(task);
+                LoadWorkItemSidebar(task);
                 break;
             case "github":
                 RenderGitHubDetail(task);

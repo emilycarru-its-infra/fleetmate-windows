@@ -276,7 +276,7 @@ public partial class AzureDevOpsService
             if (!created.IsSuccessStatusCode)
                 return PullRequestActionResult.Failed($"{(int)created.StatusCode}: {Truncate(await created.Content.ReadAsStringAsync())}");
 
-            var artifact = $"vstfs:///Git/Ref/{repo.ProjectId}%2F{repo.Id}%2FGB{Uri.EscapeDataString(branch)}";
+            var artifact = BranchArtifactUri(repo.ProjectId, repo.Id, branch);
             return await PatchWorkItemAsync(workItemId, new[]
             {
                 new JsonPatchOperation
