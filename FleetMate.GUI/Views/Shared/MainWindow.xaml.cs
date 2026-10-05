@@ -25,6 +25,7 @@ public partial class MainWindow : Window
         // Development is the launch tab; there is no Dashboard.
         ContentFrame.Navigate(GetOrCreatePage("Development"));
         TabDevelopment.IsChecked = true;
+        UpdateGraphsButton();
 
         if (Application.Current is App app)
         {
@@ -141,6 +142,11 @@ public partial class MainWindow : Window
             ToggleFullWindow();
             e.Handled = true;
         }
+        else if (key == System.Windows.Input.Key.G && mods == (Ctrl | System.Windows.Input.ModifierKeys.Alt))
+        {
+            ToggleGraphs();
+            e.Handled = true;
+        }
         else if (HandleSearchShortcut(key, mods))
         {
             e.Handled = true;
@@ -215,6 +221,7 @@ public partial class MainWindow : Window
         if (sender is RadioButton radio && radio.Tag is string tag)
         {
             NavigateToPage(tag);
+            UpdateGraphsButton();
         }
     }
 
