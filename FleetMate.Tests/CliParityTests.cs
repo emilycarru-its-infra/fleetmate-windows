@@ -20,7 +20,6 @@ public class CliParityTests
         root.AddCommand(IntuneCommand.Create(graph, null));
         root.AddCommand(AutopilotCommand.Create(graph));
         root.AddCommand(EntraCommand.Create(graph, null));
-        root.AddCommand(MunkiReportCommand.Create(new FleetMateConfig()));
         return root;
     }
 
@@ -44,14 +43,6 @@ public class CliParityTests
     [InlineData("autopilot delete SER-1 --dry-run")]
     [InlineData("autopilot assign-user SER-1 pat@example.edu --display-name Pat")]
     [InlineData("autopilot unassign-user SER-1")]
-    [InlineData("munkireport")]
-    [InlineData("munkireport devices -t MacBook -l 10 --json")]
-    [InlineData("munkireport device SER-1 --json")]
-    [InlineData("munkireport info SER-1")]
-    [InlineData("munkireport installs SER-1 -f office")]
-    [InlineData("munkireport errors -l 3")]
-    [InlineData("munkireport stale -d 3 --json")]
-    [InlineData("munkireport query \"select 1\"")]
     public void MacCommandLines_Parse(string line) => Assert.Empty(Root().Parse(line).Errors);
 
     [Theory]
@@ -251,35 +242,5 @@ public class CliParityTests
             Task.FromResult(Ok($"delete-entra {objectId}", confirmed, !FailEntra));
         public Task<GraphService.DeviceActionResult> DeleteManagedDeviceAsync(string deviceId, bool confirmed) =>
             Task.FromResult(Ok($"delete-record {deviceId}", confirmed));
-    }
-
-    // ── MunkiReport ─────────────────────────────────────────────────────
-
-    [Fact]
-    public void MunkiReport_ParsesSqliteOutput()
-    {
-        var rows = MunkiReportService.ParseRows("serial_number|hostname\r\nSER-1|lab-1\nSER-2|lab-2\n");
-        Assert.Equal(2, rows.Count);
-        Assert.Equal("lab-2", rows[1]["hostname"]);
-        Assert.Empty(MunkiReportService.ParseRows("serial_number|hostname\n"));
-    }
-
-    [Fact]
-    public void MunkiReport_QuotesSqlAndShell()
-    {
-        Assert.Equal("'it''s'", MunkiReportService.SqlLiteral("it's"));
-        Assert.Equal("sqlite3 -header -separator '|' '/db/x.sqlite' 'select '\"'\"'a'\"'\"''",
-            MunkiReportService.SqliteCommand("select 'a'", "/db/x.sqlite"));
-    }
-
-    [Fact]
-    public void MunkiReport_SshArgumentsComeFromConfig()
-    {
-        var config = new FleetMateConfig { MunkiReportSshHost = "reports.example.edu", MunkiReportSshKeyPath = "/keys/id" };
-        var args = MunkiReportService.SshArguments(config, "true");
-        Assert.Contains("StrictHostKeyChecking=accept-new", args);
-        Assert.Equal("root@reports.example.edu", args[^2]);
-        Assert.Equal("true", args[^1]);
-        Assert.False(new MunkiReportService(new FleetMateConfig()).IsConfigured);
     }
 }

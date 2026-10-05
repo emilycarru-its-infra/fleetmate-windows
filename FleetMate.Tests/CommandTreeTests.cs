@@ -58,7 +58,6 @@ public class CommandTreeTests
         root.AddCommand(TasksCommand.Create(config));
         root.AddCommand(ProjectsCommand.Create(config));
         root.AddCommand(ReportMateCommand.Create(reportMate));
-        root.AddCommand(MunkiReportCommand.Create(config));
 
         return root;
     }
@@ -67,7 +66,7 @@ public class CommandTreeTests
     {
         "errors", "troubleshoot", "device", "test", "lint", "validate", "qa",
         "status", "configure", "snipe", "ssh", "manage", "deadline", "devops", "cimian",
-        "intune", "autopilot", "entra", "tdx", "tasks", "projects", "reportmate", "munkireport",
+        "intune", "autopilot", "entra", "tdx", "tasks", "projects", "reportmate",
     };
 
     [Fact]
@@ -80,9 +79,9 @@ public class CommandTreeTests
     }
 
     [Fact]
-    public void Root_HasTwentyThreeCommands()
+    public void Root_HasTwentyTwoCommands()
     {
-        Assert.Equal(23, BuildRoot().Subcommands.Count);
+        Assert.Equal(22, BuildRoot().Subcommands.Count);
     }
 
     [Theory]

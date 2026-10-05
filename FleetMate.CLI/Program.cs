@@ -204,7 +204,6 @@ class Program
 
             // ReportMate fleet reporting
             rootCommand.AddCommand(ReportMateCommand.Create(reportMate));
-            rootCommand.AddCommand(MunkiReportCommand.Create(config));
 
             var result = await rootCommand.InvokeAsync(args);
             
