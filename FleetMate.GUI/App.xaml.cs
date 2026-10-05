@@ -638,6 +638,16 @@ public partial class App : Application
             Environment.ProcessId,
             typeof(App).Assembly.GetName().Version);
 
+        // One FleetMate per person: a second launch (a fleetmate: link opened
+        // from a browser or chat) hands its link to the first and exits.
+        var startupLink = Links.LinkHost.LinkFromArgs(e.Args);
+        var headless = e.Args.Contains("--headless-tdx-sso", StringComparer.OrdinalIgnoreCase);
+        if (!headless && !Links.LinkHost.TryBecomePrimary(startupLink))
+        {
+            Shutdown();
+            return;
+        }
+
         // Load configuration
         Config = LoadDesktopConfiguration();
 
@@ -674,6 +684,7 @@ public partial class App : Application
 
         var mainWindow = new MainWindow();
         mainWindow.Show();
+        StartLinks(startupLink);
         Inbox.Start();
         ElevationMonitor?.Start();
 
@@ -1010,6 +1021,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        Links.LinkHost.Stop();
         GraphService?.Dispose();
         SnipeService?.Dispose();
         TdxService?.Dispose();
