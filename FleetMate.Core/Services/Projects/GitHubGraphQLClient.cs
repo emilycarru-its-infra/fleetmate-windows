@@ -25,7 +25,8 @@ public class GitHubGraphQLClient : IDisposable
         Func<string, string, CancellationToken, Task>? deviceFlowPrompt = null)
     {
         _tokenSource = new GitHubTokenSource(config) { DeviceFlowPrompt = deviceFlowPrompt };
-        _client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        // Every request goes through the shared gate and ETag cache.
+        _client = new HttpClient(new GitHubHttpHandler()) { Timeout = TimeSpan.FromSeconds(30) };
         _client.DefaultRequestHeaders.Add("User-Agent", "FleetMate");
         
         _jsonOptions = new JsonSerializerOptions
@@ -72,7 +73,7 @@ public class GitHubGraphQLClient : IDisposable
         // Every client instance drains one hourly quota, so the gate is checked
         // before the token is even resolved — a call we know will be rejected
         // should not cost a round trip.
-        GitHubRateLimitGate.Check();
+        GitHubRateLimitGate.Check(GitHubRateLimitBucket.GraphQL);
 
         await EnsureTokenAsync();
 
@@ -88,7 +89,7 @@ public class GitHubGraphQLClient : IDisposable
 
         if (!response.IsSuccessStatusCode)
         {
-            GitHubRateLimitGate.TripIfRateLimitStatus((int)response.StatusCode, responseBody);
+            // The handler has already read the rate-limit headers.
             Log.Error("GitHub GraphQL HTTP {Status}: {Body}", (int)response.StatusCode, responseBody);
             throw new InvalidOperationException($"GitHub GraphQL HTTP {(int)response.StatusCode}: {responseBody}");
         }
@@ -103,7 +104,7 @@ public class GitHubGraphQLClient : IDisposable
 
             // GraphQL reports throttling as a 200 with an error body, so the
             // status check above never sees it.
-            GitHubRateLimitGate.TripIfRateLimit(firstError);
+            GitHubRateLimitGate.TripIfRateLimit(firstError, GitHubRateLimitBucket.GraphQL);
 
             Log.Error("GitHub GraphQL error: {Error}", firstError);
             throw new InvalidOperationException($"GitHub GraphQL error: {firstError}");
@@ -143,7 +144,7 @@ public class GitHubGraphQLClient : IDisposable
         Dictionary<string, object>? body = null,
         CancellationToken ct = default)
     {
-        GitHubRateLimitGate.Check();
+        GitHubRateLimitGate.Check(GitHubRateLimitBucket.Core);
 
         await EnsureTokenAsync(ct);
 
@@ -164,7 +165,6 @@ public class GitHubGraphQLClient : IDisposable
         if (!response.IsSuccessStatusCode)
         {
             var responseBody = Encoding.UTF8.GetString(responseBytes);
-            GitHubRateLimitGate.TripIfRateLimitStatus((int)response.StatusCode, responseBody);
             Log.Error("GitHub REST HTTP {Status}: {Body}", (int)response.StatusCode, responseBody);
             throw new HttpRequestException(
                 $"GitHub REST HTTP {(int)response.StatusCode}: {responseBody}",
@@ -185,11 +185,13 @@ public class GitHubGraphQLClient : IDisposable
     /// </summary>
     public async Task<string> GetRestRedirectedTextAsync(string path, CancellationToken ct = default)
     {
-        GitHubRateLimitGate.Check();
+        GitHubRateLimitGate.Check(GitHubRateLimitBucket.Core);
         await EnsureTokenAsync(ct);
 
-        using var handler = new HttpClientHandler { AllowAutoRedirect = false };
-        using var authed = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(60) };
+        using var authed = new HttpClient(new GitHubHttpHandler(inner: new HttpClientHandler { AllowAutoRedirect = false }))
+        {
+            Timeout = TimeSpan.FromSeconds(60)
+        };
         using var request = new HttpRequestMessage(HttpMethod.Get, $"https://api.github.com{path}");
         request.Headers.UserAgent.ParseAdd("FleetMate");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
@@ -208,7 +210,6 @@ public class GitHubGraphQLClient : IDisposable
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
         {
-            GitHubRateLimitGate.TripIfRateLimitStatus((int)response.StatusCode, body);
             throw new HttpRequestException($"GitHub REST HTTP {(int)response.StatusCode}: {body}", null, response.StatusCode);
         }
 

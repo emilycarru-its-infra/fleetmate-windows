@@ -289,6 +289,10 @@ public class SnipeActivity
     [JsonPropertyName("admin")]
     public SnipeAssignee? Admin { get; set; }
     
+    /// <summary>Newer Snipe-IT releases name the acting admin created_by.</summary>
+    [JsonPropertyName("created_by")]
+    public SnipeAssignee? CreatedBy { get; set; }
+    
     [JsonPropertyName("target")]
     public SnipeAssignee? Target { get; set; }
     
