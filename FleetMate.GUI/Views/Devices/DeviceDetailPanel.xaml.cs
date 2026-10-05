@@ -15,6 +15,16 @@ namespace FleetMate.GUI.Views.Devices;
 /// Detected Apps. The async sections render into placeholders reserved at
 /// build time so they land in order, not at the bottom as they arrive.
 /// </summary>
+/// <summary>
+/// An Apple organization record to show beside a device: the record, the
+/// organization's service name ("Apple School Manager"), the name of the
+/// device management service it is assigned to, and how to read its
+/// AppleCare coverage when the device is selected.
+/// </summary>
+public sealed record AppleOrgContext(AppleOrgDevice Device, string ServiceName, string? ServerName,
+    Func<Task<List<AppleCareAgreement>>>? LoadAppleCare,
+    Func<Task<AppleActivationLock>>? LoadActivationLock = null);
+
 public partial class DeviceDetailPanel : UserControl
 {
     private IntuneDevice? _device;
@@ -27,7 +37,8 @@ public partial class DeviceDetailPanel : UserControl
         InitializeComponent();
     }
 
-    public async Task ShowDeviceAsync(IntuneDevice device, GraphService? graphService, AutopilotDevice? autopilot = null)
+    public async Task ShowDeviceAsync(IntuneDevice device, GraphService? graphService, AutopilotDevice? autopilot = null,
+        AppleOrgContext? apple = null)
     {
         _device = device;
         _graphService = graphService;
@@ -38,8 +49,10 @@ public partial class DeviceDetailPanel : UserControl
         ContentPanel.Children.Clear();
 
         RenderSummary(device);
-        // A Windows device's provisioning record follows Summary, where the
-        // Mac shows a device's Apple organization record.
+        // A device's provisioning record follows Summary: its Apple
+        // organization record, or a Windows device's Autopilot identity.
+        Task appleCare = Task.CompletedTask;
+        if (apple != null) appleCare = RenderAppleOrg(apple, device.Id);
         if (autopilot != null) RenderAutopilot(autopilot);
         // The Intune sections follow, the first titled for what Intune is
         // here: the device management service.
@@ -63,9 +76,88 @@ public partial class DeviceDetailPanel : UserControl
         // Parallel like the Mac; each fills its own reserved host.
         var current = device.Id;
         await Task.WhenAll(
+            appleCare,
             LoadGroupsAsync(device, groupsHost, current),
             LoadCompliancePoliciesAsync(device.Id, complianceHost, current),
             LoadDetectedAppsAsync(device.Id, appsHost, current));
+    }
+
+    /// <summary>A device an Apple organization holds and Intune doesn't: only its organization record.</summary>
+    public async Task ShowAppleOnlyAsync(AppleOrgContext apple)
+    {
+        _device = null;
+        DeviceName.Text = string.IsNullOrWhiteSpace(apple.Device.Model) ? "Not Enrolled" : apple.Device.Model;
+        DeviceSerial.Text = apple.Device.SerialNumber;
+        ContentPanel.Children.Clear();
+        var appleCare = RenderAppleOrg(apple, "apple-org:" + apple.Device.SerialNumber);
+        AddNote(Section("Device Management Service", ""), "Not enrolled in Intune.");
+        await appleCare;
+    }
+
+    /// <summary>
+    /// The organization's section, titled for its service: status, assigned
+    /// service, order and purchase, dates, MAC addresses, migration, and
+    /// AppleCare read when the device is selected.
+    /// </summary>
+    private Task RenderAppleOrg(AppleOrgContext ctx, string current)
+    {
+        var d = ctx.Device;
+        var host = Section(ctx.ServiceName, "");
+        AddRow(host, "Status", d.OrgStatusLabel());
+        AddRow(host, "Management Service", ctx.ServerName ?? (d.AssignedServerId == null ? "Not assigned" : d.AssignedServerId));
+        AddRow(host, "Model", d.Model);
+        AddRow(host, "Product Family", d.ProductFamily);
+        AddRow(host, "Order Number", d.OrderNumber);
+        AddRow(host, "Purchase Source", d.PurchaseSourceLabel() is var source && source != DeviceListRow.Missing ? source : null);
+        AddRow(host, "Order Date", d.OrderDate?.ToLocalTime().ToString("yyyy-MM-dd"));
+        AddRow(host, "Added", d.AddedToOrg?.ToLocalTime().ToString("yyyy-MM-dd"));
+        AddRow(host, "Released", d.ReleasedFromOrg?.ToLocalTime().ToString("yyyy-MM-dd"));
+        AddRowMono(host, "Wi-Fi MAC", d.WifiMacAddresses.Count > 0 ? string.Join(", ", d.WifiMacAddresses) : null);
+        AddRowMono(host, "Ethernet MAC", d.EthernetMacAddresses.Count > 0 ? string.Join(", ", d.EthernetMacAddresses) : null);
+        AddRow(host, "Migration", d.MigrationStatus == null ? (d.IsMigrationCapable == true ? "Eligible" : null) : d.MigrationLabel());
+        var activationLock = ctx.LoadActivationLock == null ? Task.CompletedTask : AddActivationLock(host, ctx);
+        AddRow(host, "Migration Deadline", d.MigrationDeadline?.ToLocalTime().ToString("yyyy-MM-dd HH:mm"));
+
+        if (ctx.LoadAppleCare == null) return activationLock;
+        var coverage = Section("AppleCare", "");
+        AddNote(coverage, "Loading coverage...");
+        return Task.WhenAll(activationLock, LoadAppleCareAsync(ctx, coverage, current));
+    }
+
+    /// <summary>Report only: no bypass code is shown and nothing here clears a lock.</summary>
+    private async Task AddActivationLock(StackPanel host, AppleOrgContext ctx)
+    {
+        var row = Row("Activation Lock", "Reading Activation Lock…", mono: false);
+        var value = row.Children.OfType<TextBlock>().Last();
+        value.Foreground = (Brush)FindResource("SystemControlForegroundBaseMediumBrush");
+        host.Children.Add(row);
+
+        var state = await ctx.LoadActivationLock!();
+        value.Text = state.DetailText();
+        value.Foreground = state.IsLocked()
+            ? new SolidColorBrush(Color.FromRgb(0xE8, 0x89, 0x0C))
+            : (Brush)FindResource("SystemControlForegroundBaseHighBrush");
+    }
+
+    private async Task LoadAppleCareAsync(AppleOrgContext ctx, StackPanel host, string current)
+    {
+        try
+        {
+            var agreements = await ctx.LoadAppleCare!();
+            if (DeviceSerial.Text != ctx.Device.SerialNumber && _device?.Id != current) return;
+            host.Children.Clear();
+            if (agreements.Count == 0) { AddNote(host, "No coverage on record."); return; }
+            foreach (var a in agreements)
+            {
+                var span = string.Join(" – ", new[] { a.Start, a.End }.Where(x => x != null).Select(x => x!.Value.ToLocalTime().ToString("yyyy-MM-dd")));
+                AddRow(host, a.Description, string.Join(" · ", new[] { a.IsCanceled ? "Canceled" : a.Status, span }.Where(x => !string.IsNullOrEmpty(x))));
+            }
+        }
+        catch (Exception ex)
+        {
+            host.Children.Clear();
+            AddNote(host, $"Coverage could not be read: {ex.Message}");
+        }
     }
 
     /// <summary>A device Autopilot knows and Intune doesn't: only its Autopilot record.</summary>
