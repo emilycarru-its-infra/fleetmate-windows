@@ -36,7 +36,8 @@ public class GitHubTaskProvider : ITaskProvider, IDisposable
         _config = config.Tasks?.Providers?.GitHub ?? new GitHubProviderConfig();
         _tokenSource = new GitHubTokenSource(_config) { DeviceFlowPrompt = deviceFlowPrompt };
         
-        _client = new HttpClient
+        // Shares the process-wide rate-limit gates and ETag cache.
+        _client = new HttpClient(new GitHubHttpHandler())
         {
             BaseAddress = new Uri("https://api.github.com/"),
             Timeout = TimeSpan.FromSeconds(30)
