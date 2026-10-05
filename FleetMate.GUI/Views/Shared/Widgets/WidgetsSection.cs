@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using Microsoft.Win32;
 using Serilog;
 
@@ -15,23 +15,61 @@ public interface IWidgetFilterHost
 }
 
 /// <summary>
-/// The collapsible "Widgets" section at the top of a tab: a header with a
-/// chevron, then that tab's cards in full-width rows. Redraws when the app's
-/// data for the tab changes. The collapsed state is kept per tab in
-/// HKCU\SOFTWARE\FleetMate under <c>widgets.collapsed.&lt;Tab&gt;</c>; the
-/// default is expanded.
+/// Whether each tab's widgets are shown — the toolbar Graphs button's state.
+/// Kept per tab in HKCU\SOFTWARE\FleetMate under <c>widgets.collapsed.&lt;Tab&gt;</c>;
+/// shown by default.
 /// </summary>
-public sealed class WidgetsSection : StackPanel
+public static class WidgetVisibility
 {
     private const string RegistryPath = @"SOFTWARE\FleetMate";
 
-    private readonly WidgetFlowPanel _flow = new() { Margin = new Thickness(0, 8, 0, 4) };
-    private readonly TextBlock _chevron = new()
+    /// <summary>Raised with the tab whose widgets were shown or hidden.</summary>
+    public static event Action<string>? Changed;
+
+    public static string PersistenceKey(string tab) => $"widgets.collapsed.{tab}";
+
+    public static bool IsShown(string tab)
     {
-        FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 10, VerticalAlignment = VerticalAlignment.Center,
-        Margin = new Thickness(0, 0, 6, 0),
-    };
-    private bool _collapsed;
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RegistryPath);
+            return key?.GetValue(PersistenceKey(tab)) is not int value || value == 0;
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
+    public static void Toggle(string tab) => SetShown(tab, !IsShown(tab));
+
+    public static void SetShown(string tab, bool shown)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(RegistryPath);
+            key.SetValue(PersistenceKey(tab), shown ? 0 : 1, RegistryValueKind.DWord);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[widgets] Could not save the shown state for {Tab}", tab);
+        }
+        Changed?.Invoke(tab);
+    }
+}
+
+/// <summary>
+/// The widget strip at the top of a tab: no header of its own, shown or
+/// hidden by the toolbar Graphs button. Hidden, the tab is exactly its
+/// original layout; shown, the cards slide down and fade in. Redraws when the
+/// app's data for the tab changes.
+/// </summary>
+public sealed class WidgetsSection : StackPanel
+{
+    private static readonly Duration RevealDuration = new(TimeSpan.FromMilliseconds(220));
+
+    private readonly WidgetFlowPanel _flow = new() { Margin = new Thickness(0, 0, 0, 4) };
+    private readonly TranslateTransform _slide = new();
     private bool _dirty = true;
 
     public static readonly DependencyProperty TabProperty = DependencyProperty.Register(
@@ -44,18 +82,12 @@ public sealed class WidgetsSection : StackPanel
         set => SetValue(TabProperty, value);
     }
 
-    public static string PersistenceKey(string tab) => $"widgets.collapsed.{tab}";
+    public static string PersistenceKey(string tab) => WidgetVisibility.PersistenceKey(tab);
 
     public WidgetsSection()
     {
         Margin = new Thickness(0, 0, 0, 8);
-
-        var header = new StackPanel { Orientation = Orientation.Horizontal, Cursor = Cursors.Hand, Background = Brushes.Transparent };
-        header.Children.Add(_chevron);
-        header.Children.Add(new TextBlock { Text = "Widgets", FontSize = 13, FontWeight = FontWeights.SemiBold });
-        header.MouseLeftButtonUp += (_, _) => SetCollapsed(!_collapsed);
-
-        Children.Add(header);
+        RenderTransform = _slide;
         Children.Add(_flow);
 
         Loaded += OnLoaded;
@@ -71,8 +103,7 @@ public sealed class WidgetsSection : StackPanel
             return;
         }
 
-        _collapsed = ReadCollapsed(Tab);
-        ApplyCollapsed();
+        Visibility = WidgetVisibility.IsShown(Tab) ? Visibility.Visible : Visibility.Collapsed;
 
         if (Application.Current is App app)
         {
@@ -81,15 +112,37 @@ public sealed class WidgetsSection : StackPanel
             app.Inbox.Changed -= OnInboxChanged;
             app.Inbox.Changed += OnInboxChanged;
         }
+        WidgetVisibility.Changed -= OnVisibilityChanged;
+        WidgetVisibility.Changed += OnVisibilityChanged;
 
         Rebuild();
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        WidgetVisibility.Changed -= OnVisibilityChanged;
         if (Application.Current is not App app) return;
         app.CacheChanged -= OnCacheChanged;
         app.Inbox.Changed -= OnInboxChanged;
+    }
+
+    private void OnVisibilityChanged(string tab)
+    {
+        if (tab != Tab) return;
+
+        if (!WidgetVisibility.IsShown(Tab))
+        {
+            Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        Visibility = Visibility.Visible;
+        if (_dirty || _flow.Children.Count == 0) Rebuild();
+
+        // Move from the top and fade in.
+        var ease = new CubicEase { EasingMode = EasingMode.EaseInOut };
+        _slide.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(-16, 0, RevealDuration) { EasingFunction = ease });
+        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, RevealDuration) { EasingFunction = ease });
     }
 
     private void OnInboxChanged(object? sender, EventArgs e) => OnCacheChanged("Inbox");
@@ -104,7 +157,7 @@ public sealed class WidgetsSection : StackPanel
 
     private void Rebuild()
     {
-        if (Application.Current is not App app || _collapsed) return;
+        if (Application.Current is not App app || Visibility != Visibility.Visible) return;
         _dirty = false;
 
         try
@@ -132,45 +185,5 @@ public sealed class WidgetsSection : StackPanel
             if (node is IWidgetFilterHost host) return host;
         }
         return null;
-    }
-
-    private void SetCollapsed(bool collapsed)
-    {
-        _collapsed = collapsed;
-        ApplyCollapsed();
-        WriteCollapsed(Tab, collapsed);
-        if (!collapsed && (_dirty || _flow.Children.Count == 0)) Rebuild();
-    }
-
-    private void ApplyCollapsed()
-    {
-        _flow.Visibility = _collapsed ? Visibility.Collapsed : Visibility.Visible;
-        _chevron.Text = _collapsed ? "" : "";
-    }
-
-    private static bool ReadCollapsed(string tab)
-    {
-        try
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(RegistryPath);
-            return key?.GetValue(PersistenceKey(tab)) is int value && value != 0;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static void WriteCollapsed(string tab, bool collapsed)
-    {
-        try
-        {
-            using var key = Registry.CurrentUser.CreateSubKey(RegistryPath);
-            key.SetValue(PersistenceKey(tab), collapsed ? 1 : 0, RegistryValueKind.DWord);
-        }
-        catch (Exception ex)
-        {
-            Log.Debug(ex, "[widgets] Could not save the collapsed state for {Tab}", tab);
-        }
     }
 }
