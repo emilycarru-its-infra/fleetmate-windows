@@ -58,6 +58,25 @@ public partial class QueriesListControl : UserControl
         return "General";
     }
 
+    /// <summary>When anything in a query last changed.</summary>
+    internal static DateTime LatestChange(QueryRunDisplay run) =>
+        run.Rows.Count == 0 ? DateTime.MinValue : run.Rows.Max(r => r.Task.UpdatedAt);
+
+    /// <summary>
+    /// Areas and the queries inside each, most recently active first — the
+    /// macOS order. Ties fall back to name. Column sorting inside a query is
+    /// unchanged.
+    /// </summary>
+    internal static List<(string Key, List<QueryRunDisplay> Runs)> RecentFirst(IEnumerable<QueryRunDisplay> runs) =>
+        runs.GroupBy(r => r.AreaBucket)
+            .Select(g => (g.Key, Runs: g
+                .OrderByDescending(LatestChange)
+                .ThenBy(r => r.Query.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList()))
+            .OrderByDescending(s => s.Runs.Max(LatestChange))
+            .ThenBy(s => s.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
     public void ShowRuns(List<QueryRunDisplay> runs, string search, bool showClosed)
     {
         _runs = runs;
@@ -85,14 +104,8 @@ public partial class QueriesListControl : UserControl
     {
         SectionsPanel.Children.Clear();
 
-        // Buckets A→Z with "General" last; queries A→Z inside each bucket.
-        var sections = _runs
-            .GroupBy(r => r.AreaBucket)
-            .OrderBy(g => g.Key == "General" ? 1 : 0)
-            .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
-
         var any = false;
-        foreach (var section in sections)
+        foreach (var section in RecentFirst(_runs))
         {
             var header = new TextBlock
             {
@@ -103,7 +116,7 @@ public partial class QueriesListControl : UserControl
             };
             SectionsPanel.Children.Add(header);
 
-            foreach (var run in section.OrderBy(r => r.Query.Name, StringComparer.OrdinalIgnoreCase))
+            foreach (var run in section.Runs)
             {
                 SectionsPanel.Children.Add(BuildQuery(run));
                 any = true;
