@@ -224,14 +224,15 @@ public class AzureDevOpsTaskProvider : ITaskProvider, IDisposable
 
     // MARK: - Mapping Helpers
 
-    private UnifiedTask MapToUnifiedTask(WorkItem workItem)
+    /// <summary>Work item to task. Static so the Projects Mine view can map @Me items the list did not load.</summary>
+    public static UnifiedTask MapToUnifiedTask(WorkItem workItem)
     {
         var fields = workItem.Fields;
         
         return new UnifiedTask
         {
             Id = workItem.Id.ToString(),
-            Provider = ProviderId,
+            Provider = "azdevops",
             Title = fields?.Title ?? "",
             Description = fields?.Description,
             State = MapStateFromAdo(fields?.State ?? "New"),
@@ -252,6 +253,10 @@ public class AzureDevOpsTaskProvider : ITaskProvider, IDisposable
                 ["areaPath"] = fields?.AreaPath ?? "",
                 ["iterationPath"] = fields?.IterationPath ?? "",
                 ["workItemType"] = fields?.WorkItemType ?? "",
+                ["project"] = fields?.TeamProject ?? "",
+                // The identity Azure DevOps wants back on an assignment, not the display name.
+                ["assignedToUniqueName"] = fields?.AssignedTo?.UniqueName ?? "",
+                ["workItemId"] = workItem.Id.ToString(),
             }
         };
     }
