@@ -589,10 +589,20 @@ public class FleetMateConfig
             config.Manage ??= new ManageConfig();
             // Agent terminal. RepoDefaults is the managed seed list, so only
             // policy sets it; the operator's own list is Repos.
-            if (key.GetValue("AgentCommand") is string agentCommand && !string.IsNullOrWhiteSpace(agentCommand))
-                config.Terminal.AgentCommand = agentCommand.Trim();
-            if (key.GetValue("AgentAutoStart") is string agentAutoStart)
-                config.Terminal.AgentAutoStart = agentAutoStart is "1" || agentAutoStart.Equals("true", StringComparison.OrdinalIgnoreCase);
+            // AgentCommand and AgentAutoStart are defaults the operator can
+            // change: policy and the operator's key are kept apart, and the
+            // operator's value wins (see TerminalSettings). An empty
+            // AgentCommand is a choice of the shell.
+            if (key.GetValue("AgentCommand") is string agentCommand)
+            {
+                if (fromPolicy) config.Terminal.PolicyAgentCommand = agentCommand.Trim();
+                else config.Terminal.UserAgentCommand = agentCommand.Trim();
+            }
+            if (TerminalSettings.ParseBool(key.GetValue("AgentAutoStart")) is { } agentAutoStart)
+            {
+                if (fromPolicy) config.Terminal.PolicyAgentAutoStart = agentAutoStart;
+                else config.Terminal.UserAgentAutoStart = agentAutoStart;
+            }
             if (!fromPolicy && key.GetValue("Repos") is { } repos)
                 config.Terminal.Repos = TerminalSettings.ParseList(repos);
             if (fromPolicy && key.GetValue("RepoDefaults") is { } repoDefaults)

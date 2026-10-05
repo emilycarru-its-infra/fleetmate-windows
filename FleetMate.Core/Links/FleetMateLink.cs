@@ -130,7 +130,7 @@ public abstract record FleetMateLink
             case "user":
                 return parts.Length == 1 && parts[0].Length > 0
                     ? new User(parts[0])
-                    : throw Bad(text, "fleetmate://user/<id>");
+                    : throw Bad(text, "fleetmate://user/<id or UPN>");
 
             case "group":
                 return parts.Length == 1 && parts[0].Length > 0

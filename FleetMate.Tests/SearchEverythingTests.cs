@@ -211,3 +211,17 @@ public class SearchEverythingTests
         Assert.Equal("15048", groups[0].Hits[0].Key);
     }
 }
+
+public class UserLinkTests
+{
+    [Theory]
+    [InlineData("fleetmate://user/pdoe@example.edu", "pdoe@example.edu")]
+    [InlineData("fleetmate://user/0f1e2d3c-0000-4000-8000-000000000001", "0f1e2d3c-0000-4000-8000-000000000001")]
+    public void UserLinkAcceptsAnIdOrAUpnAndRoundTrips(string link, string id)
+    {
+        var parsed = Assert.IsType<FleetMate.Core.Links.FleetMateLink.User>(FleetMate.Core.Links.FleetMateLink.TryParse(link, out _));
+        Xunit.Assert.Equal(id, parsed.Id);
+        var again = Assert.IsType<FleetMate.Core.Links.FleetMateLink.User>(FleetMate.Core.Links.FleetMateLink.TryParse(parsed.ToLink(), out _));
+        Xunit.Assert.Equal(id, again.Id);
+    }
+}

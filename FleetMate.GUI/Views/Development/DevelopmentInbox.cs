@@ -59,6 +59,11 @@ public sealed class DevelopmentInbox
             LastError = null;
             LastRefreshed = DateTime.Now;
         }
+        catch (GitHubRateLimitException ex)
+        {
+            Log.Information("[inbox] rate-limited until {Until:t}", ex.RetryAt.ToLocalTime());
+            LastError = ex.Message;
+        }
         catch (Exception ex)
         {
             // Signed out of GitHub is a normal state; keep the last list and
@@ -69,6 +74,8 @@ public sealed class DevelopmentInbox
         finally
         {
             _refreshing = false;
+            // Wait for GitHub's reset when the budget is spent, not a fixed tick.
+            if (_timer != null) _timer.Interval = GitHubRateLimitGate.NextPollDelay(GitHubRateLimitBucket.Core, PollInterval);
             Changed?.Invoke(this, EventArgs.Empty);
         }
     }

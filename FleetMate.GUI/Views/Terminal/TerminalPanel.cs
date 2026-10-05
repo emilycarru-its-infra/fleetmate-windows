@@ -114,12 +114,14 @@ public sealed class TerminalPanel : UserControl
     // ── Opening sessions ─────────────────────────────────────────────────
 
     /// <summary>
-    /// The session New opens: the agent command when AgentAutoStart is on,
-    /// otherwise the shell. <paramref name="takeFocus"/> is false for the
-    /// session started at launch, so it does not steal the keyboard.
+    /// A session running what Settings ▸ Terminal ▸ Runs names (the shell
+    /// when it names nothing). Sessions open only here, from the New menu,
+    /// and at launch: never from a tab change or from showing the panel.
+    /// <paramref name="takeFocus"/> is false for the session started at
+    /// launch, so it does not take the keyboard.
     /// </summary>
     public void OpenDefaultSession(bool takeFocus = true) =>
-        OpenSession((Settings.AgentAutoStart ? AgentLaunch(Settings.AgentCommand, null) : ShellLaunch(null)) with { TakeFocus = takeFocus });
+        OpenSession(AgentLaunch(Settings.AgentCommand, null) with { TakeFocus = takeFocus });
 
     public void FocusActive() => _active?.Panes.FirstOrDefault()?.FocusTerminal();
 
@@ -133,7 +135,7 @@ public sealed class TerminalPanel : UserControl
                 OpenSession(name == AgentCommands.Shell ? ShellLaunch(null) : AgentLaunch(name, null))));
         }
         var custom = Settings.AgentCommand;
-        var isCustom = !AgentCommands.Choices.Contains(custom, StringComparer.OrdinalIgnoreCase);
+        var isCustom = custom.Length > 0 && !AgentCommands.Choices.Contains(custom, StringComparer.OrdinalIgnoreCase);
         menu.Items.Add(MenuItem(isCustom ? $"custom: {custom}" : "custom (set in Settings ▸ Terminal)",
             (_, _) => OpenSession(AgentLaunch(custom, null)), enabled: isCustom));
 
@@ -158,7 +160,9 @@ public sealed class TerminalPanel : UserControl
     private static TerminalLaunch AgentLaunch(string agentCommand, RepoLocation? repo)
     {
         var command = AgentCommands.Resolve(agentCommand, AgentCommands.FindOnPath);
-        var label = string.IsNullOrWhiteSpace(agentCommand) ? AgentCommands.Shell : agentCommand.Split(' ')[0];
+        var label = string.IsNullOrWhiteSpace(agentCommand) || agentCommand.Equals(AgentCommands.Shell, StringComparison.OrdinalIgnoreCase)
+            ? AgentCommands.Shell
+            : agentCommand.Split(' ')[0];
         return new TerminalLaunch(repo != null ? $"{label} · {repo.Name}" : label, command, repo?.Path, repo);
     }
 
@@ -175,9 +179,10 @@ public sealed class TerminalPanel : UserControl
 
     private void SplitActive()
     {
-        if (_active == null) { OpenDefaultSession(); return; }
+        // Split needs a session to split; it never opens the first one.
+        if (_active == null) return;
         if (_active.Panes.Count >= 2) return;
-        AddPane(_active, Settings.AgentAutoStart ? AgentLaunch(Settings.AgentCommand, null) : ShellLaunch(null));
+        AddPane(_active, AgentLaunch(Settings.AgentCommand, null));
         Show(_active);
     }
 
