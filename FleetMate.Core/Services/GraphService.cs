@@ -85,16 +85,18 @@ public partial class GraphService : IDisposable
             Environment.GetEnvironmentVariable("FLEETMATE_GRAPH_TRANSPORT"), "direct",
             StringComparison.OrdinalIgnoreCase);
 
+        // Both transports wait out Graph throttling (429, or 503 with Retry-After).
         _client = _useElevation
-            ? new HttpClient(new ElevationHttpHandler(elevation ?? new ElevationConfig(), Elevation))
+            ? new HttpClient(new GraphThrottlingHandler(new ElevationHttpHandler(elevation ?? new ElevationConfig(), Elevation)))
             {
                 BaseAddress = new Uri("https://graph.microsoft.com/v1.0/"),
-                Timeout = TimeSpan.FromSeconds(120) // allow for the one-time ~30s container cold start
+                Timeout = TimeSpan.FromSeconds(300) // the one-time ~30s container cold start, plus up to three throttle waits
             }
-            : new HttpClient
+            : new HttpClient(new GraphThrottlingHandler(new HttpClientHandler()))
             {
                 BaseAddress = new Uri("https://graph.microsoft.com/v1.0/"),
-                Timeout = TimeSpan.FromSeconds(60)
+                // Room for up to three throttle waits of at most 60 s each.
+                Timeout = TimeSpan.FromSeconds(240)
             };
 
         _jsonOptions = new JsonSerializerOptions
@@ -239,8 +241,27 @@ public partial class GraphService : IDisposable
     /// </summary>
     public async Task<IntuneDevice?> GetDeviceBySerialAsync(string serialNumber)
     {
-        var filter = $"serialNumber eq '{serialNumber}'";
-        var devices = await GetManagedDevicesAsync(filter, 1);
+        var devices = await GetDevicesBySerialAsync(serialNumber, 1);
+        return devices.FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Every Intune record with exactly this serial. A re-enrolled machine
+    /// leaves its old record behind until it ages out, so there can be more
+    /// than one; destructive actions must refuse rather than pick. A value
+    /// that isn't a serial is never sent to Graph.
+    /// </summary>
+    public async Task<List<IntuneDevice>> GetDevicesBySerialAsync(string serialNumber, int limit = 10)
+    {
+        if (!ODataFilter.IsSerial(serialNumber)) return new List<IntuneDevice>();
+        return await GetManagedDevicesAsync($"serialNumber eq {ODataFilter.Serial(serialNumber)}", limit);
+    }
+
+    /// <summary>One Intune record by its managedDevice id, or null when there is none.</summary>
+    public async Task<IntuneDevice?> GetManagedDeviceByIdAsync(string managedDeviceId)
+    {
+        if (!ODataFilter.IsGuid(managedDeviceId)) return null;
+        var devices = await GetManagedDevicesAsync($"id eq {ODataFilter.Guid(managedDeviceId)}", 1);
         return devices.FirstOrDefault();
     }
 
@@ -249,7 +270,7 @@ public partial class GraphService : IDisposable
     /// </summary>
     public async Task<IntuneDevice?> GetDeviceByNameAsync(string deviceName)
     {
-        var filter = $"deviceName eq '{deviceName}'";
+        var filter = $"deviceName eq {ODataFilter.Literal(deviceName)}";
         var devices = await GetManagedDevicesAsync(filter, 1);
         return devices.FirstOrDefault();
     }
@@ -259,7 +280,7 @@ public partial class GraphService : IDisposable
     /// </summary>
     public async Task<List<IntuneDevice>> SearchDevicesAsync(string query, int limit = 50)
     {
-        var filter = $"startswith(deviceName, '{query}')";
+        var filter = $"startswith(deviceName, {ODataFilter.Literal(query)})";
         return await GetManagedDevicesAsync(filter, limit);
     }
 
@@ -654,7 +675,10 @@ public partial class GraphService : IDisposable
 
         try
         {
-            var lookupUrl = $"devices?$filter=deviceId eq '{Uri.EscapeDataString(azureAdDeviceId)}'&$select=id";
+            if (!ODataFilter.IsGuid(azureAdDeviceId)) return new List<EntraGroup>();
+            // Encode the whole filter once; encoding inside the literal left the
+            // quotes raw and the id encoded twice on the elevation transport.
+            var lookupUrl = $"devices?$filter={Uri.EscapeDataString($"deviceId eq {ODataFilter.Guid(azureAdDeviceId)}")}&$select=id";
             var lookupResponse = await _client.GetAsync(lookupUrl);
             if (!lookupResponse.IsSuccessStatusCode)
             {
@@ -852,7 +876,7 @@ public partial class GraphService : IDisposable
     }
 
     /// <summary>
-    /// AutoPilot Reset a device (cleanWindowsDevice).
+    /// AutoPilot Reset a device (wipe with keepEnrollmentData).
     ///
     /// Keeps the OS, drivers, Wi-Fi and enrollment, removing user profiles, apps
     /// and settings so the machine returns to OOBE ready for the next user. This
@@ -862,36 +886,46 @@ public partial class GraphService : IDisposable
     /// </summary>
     public async Task<DeviceActionResult> AutopilotResetDeviceAsync(string deviceId, bool keepUserData = false, bool confirmed = false)
     {
-        var guard = RequireConfirmation(confirmed, "cleanWindowsDevice", deviceId);
+        const string action = "autopilotReset";
+        var guard = RequireConfirmation(confirmed, action, deviceId);
         if (guard != null) return guard;
 
         if (!await SetAuthorizationAsync())
-            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "cleanWindowsDevice", Message = "Not authenticated" };
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = action, Message = "Not authenticated" };
 
         try
         {
-            var url = $"deviceManagement/managedDevices/{deviceId}/cleanWindowsDevice";
-            var body = new { keepUserData };
-            var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            var (url, body) = AutopilotResetRequest(deviceId, keepUserData);
+            var content = new StringContent(body, Encoding.UTF8, "application/json");
 
             var response = await _client.PostAsync(url, content);
 
             if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NoContent)
             {
                 Log.Information("AutoPilot Reset triggered for device {DeviceId}", deviceId);
-                return new DeviceActionResult { Success = true, DeviceId = deviceId, Action = "cleanWindowsDevice" };
+                return new DeviceActionResult { Success = true, DeviceId = deviceId, Action = action };
             }
 
             var error = await ReadErrorBodyAsync(response);
             Log.Warning("Failed to AutoPilot Reset device {DeviceId}: {Status} - {Error}", deviceId, response.StatusCode, error);
-            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "cleanWindowsDevice", Message = error };
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = action, Message = error };
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to AutoPilot Reset device {DeviceId}", deviceId);
-            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = "cleanWindowsDevice", Message = ex.Message };
+            return new DeviceActionResult { Success = false, DeviceId = deviceId, Action = action, Message = ex.Message };
         }
     }
+
+    /// <summary>
+    /// Autopilot Reset is a wipe that keeps the enrollment: Windows goes back
+    /// to the Autopilot experience and re-provisions. It is NOT
+    /// cleanWindowsDevice, which is Fresh Start (a reinstall that leaves the
+    /// device as it was enrolled).
+    /// </summary>
+    internal static (string Url, string Body) AutopilotResetRequest(string deviceId, bool keepUserData = false) =>
+        ($"deviceManagement/managedDevices/{deviceId}/wipe",
+         JsonSerializer.Serialize(new { keepEnrollmentData = true, keepUserData }));
 
     /// <summary>Factory-reset multiple devices.</summary>
     public async Task<List<DeviceActionResult>> WipeDevicesAsync(IEnumerable<string> deviceIds, bool keepEnrollmentData = false, bool keepUserData = false, bool confirmed = false)
@@ -970,7 +1004,7 @@ public partial class GraphService : IDisposable
     /// </summary>
     public async Task<List<MobileApp>> SearchMobileAppsAsync(string query, int limit = 50)
     {
-        var filter = $"contains(displayName, '{query}')";
+        var filter = $"contains(displayName, {ODataFilter.Literal(query)})";
         return await GetMobileAppsAsync(filter, limit);
     }
 
@@ -1069,8 +1103,8 @@ public partial class GraphService : IDisposable
 
         try
         {
-            var escaped = query.Replace("'", "''");
-            var filter = $"startswith(displayName,'{escaped}') or startswith(userPrincipalName,'{escaped}') or startswith(mail,'{escaped}')";
+            var literal = ODataFilter.Literal(query);
+            var filter = $"startswith(displayName,{literal}) or startswith(userPrincipalName,{literal}) or startswith(mail,{literal})";
             // Same $select as GetUserAsync — the list renders the enabled badge
             // too, and a narrower projection here put every result in the list
             // at odds with its own detail pane.
@@ -1141,8 +1175,7 @@ public partial class GraphService : IDisposable
     {
         if (string.IsNullOrWhiteSpace(userPrincipalName)) return new List<IntuneDevice>();
 
-        var escaped = userPrincipalName.Replace("'", "''");
-        return await GetManagedDevicesAsync($"userPrincipalName eq '{escaped}'", limit);
+        return await GetManagedDevicesAsync($"userPrincipalName eq {ODataFilter.Literal(userPrincipalName)}", limit);
     }
 
     public async Task<List<EntraGroup>> GetUserGroupsAsync(string userPrincipalNameOrId)
@@ -1275,7 +1308,7 @@ public partial class GraphService : IDisposable
 
         try
         {
-            var filter = $"displayName eq '{displayName}'";
+            var filter = $"displayName eq {ODataFilter.Literal(displayName)}";
             var url = $"groups?$filter={Uri.EscapeDataString(filter)}";
 
             var response = await _client.GetAsync(url);
@@ -1526,8 +1559,7 @@ public partial class GraphService : IDisposable
 
         try
         {
-            var escaped = query.Replace("'", "''");
-            var filter = $"startswith(displayName, '{escaped}')";
+            var filter = $"startswith(displayName, {ODataFilter.Literal(query)})";
             var url = $"groups?$filter={Uri.EscapeDataString(filter)}&$top={PageSizeFor(limit)}";
 
             // Follow @odata.nextLink until the caller's limit is met. A single
@@ -1620,10 +1652,10 @@ public partial class GraphService : IDisposable
                             var deviceId = member.TryGetProperty("deviceId", out var devIdProp)
                                 ? devIdProp.GetString() : null;
 
-                            if (!string.IsNullOrEmpty(deviceId))
+                            if (ODataFilter.IsGuid(deviceId))
                             {
                                 // Cross-reference with managed devices by azureADDeviceId
-                                var filter = $"azureADDeviceId eq '{deviceId}'";
+                                var filter = $"azureADDeviceId eq {ODataFilter.Guid(deviceId!)}";
                                 var managed = await GetManagedDevicesAsync(filter, 1);
                                 if (managed.Count > 0)
                                 {
@@ -1881,10 +1913,27 @@ if ($svc -and $svc.Status -ne 'Running') {
     /// </summary>
     public async Task<AutopilotDevice?> GetAutopilotDeviceBySerialAsync(string serialNumber)
     {
-        var devices = await GetAutopilotDevicesAsync($"contains(serialNumber,'{serialNumber}')", 5);
-        return devices.FirstOrDefault(d =>
-                   string.Equals(d.SerialNumber?.Trim(), serialNumber.Trim(), StringComparison.OrdinalIgnoreCase))
-               ?? devices.FirstOrDefault();
+        var matches = await GetAutopilotDevicesBySerialAsync(serialNumber);
+        return matches.Count == 1 ? matches[0] : null;
+    }
+
+    /// <summary>
+    /// Every Autopilot identity whose serial, trimmed, equals this one.
+    ///
+    /// This is the one lookup that can't use eq: Graph rejects
+    /// <c>serialNumber eq '…'</c> on windowsAutopilotDeviceIdentities. So the
+    /// validated, escaped serial goes into contains() to gather candidates,
+    /// and only exact case-insensitive matches are returned; a partial match
+    /// never is, so a short serial can't stand in for a longer one. Callers
+    /// acting destructively refuse on zero or several matches.
+    /// </summary>
+    public async Task<List<AutopilotDevice>> GetAutopilotDevicesBySerialAsync(string serialNumber)
+    {
+        if (!ODataFilter.IsSerial(serialNumber)) return new List<AutopilotDevice>();
+        var candidates = await GetAutopilotDevicesAsync($"contains(serialNumber,{ODataFilter.Serial(serialNumber)})", 25);
+        return candidates
+            .Where(d => string.Equals(d.SerialNumber?.Trim(), serialNumber.Trim(), StringComparison.OrdinalIgnoreCase))
+            .ToList();
     }
 
     /// <summary>List AutoPilot device identities, following paging to <paramref name="limit"/>.</summary>
@@ -2016,13 +2065,14 @@ if ($svc -and $svc.Status -ne 'Running') {
     /// <summary>Find the Entra device object for a device id (not the object id).</summary>
     public async Task<EntraDevice?> GetEntraDeviceByDeviceIdAsync(string deviceId)
     {
-        var devices = await GetEntraDevicesAsync($"deviceId eq '{deviceId}'", 1);
+        if (!ODataFilter.IsGuid(deviceId)) return null;
+        var devices = await GetEntraDevicesAsync($"deviceId eq {ODataFilter.Guid(deviceId)}", 1);
         return devices.FirstOrDefault();
     }
 
     /// <summary>Find Entra device objects by display name. Duplicates are the point — all matches are returned.</summary>
     public async Task<List<EntraDevice>> GetEntraDevicesByNameAsync(string displayName)
-        => await GetEntraDevicesAsync($"displayName eq '{displayName}'", 50);
+        => await GetEntraDevicesAsync($"displayName eq {ODataFilter.Literal(displayName)}", 50);
 
     /// <summary>
     /// Delete an Entra device object by its directory object id.
@@ -2071,6 +2121,30 @@ if ($svc -and $svc.Status -ne 'Running') {
         public IntuneDevice? Intune { get; set; }
         public List<EntraDevice> EntraDevices { get; set; } = new();
 
+        /// <summary>Every Intune record with exactly this serial; Intune is set only when there is one.</summary>
+        public List<IntuneDevice> IntuneCandidates { get; set; } = new();
+
+        /// <summary>Every Autopilot identity with exactly this serial; Autopilot is set only when there is one.</summary>
+        public List<AutopilotDevice> AutopilotCandidates { get; set; } = new();
+
+        /// <summary>The value given was not a serial number, so nothing was looked up.</summary>
+        public bool InvalidSerial { get; set; }
+
+        /// <summary>
+        /// Why a destructive action must not run on this serial, or null when it
+        /// resolves to at most one record of each kind. Picking one of several
+        /// records that share a serial is a guess, and a wrong guess wipes or
+        /// deletes the wrong record.
+        /// </summary>
+        public string? TargetRefusal =>
+            InvalidSerial ? $"\"{Serial}\" is not a serial number (letters, digits and hyphens only); device names are not accepted."
+            : IntuneCandidates.Count > 1 ? $"{IntuneCandidates.Count} Intune records share serial {Serial}: " +
+                string.Join("; ", IntuneCandidates.Select(d => $"{d.Id} {d.DeviceName} last sync {d.LastSyncDateTime:yyyy-MM-dd HH:mm}")) +
+                ". Act on one managedDevice id instead."
+            : AutopilotCandidates.Count > 1 ? $"{AutopilotCandidates.Count} Autopilot identities share serial {Serial}: " +
+                string.Join("; ", AutopilotCandidates.Select(a => a.Id)) + ". Resolve the duplicate first."
+            : null;
+
         /// <summary>
         /// True when Entra still holds a device object but Intune has no record —
         /// the state that fails the next OOBE at "Registering your device for
@@ -2110,8 +2184,16 @@ if ($svc -and $svc.Status -ne 'Running') {
         // way, so bracket them and let the state say which one it was.
         var before = Elevation.Snapshot();
 
-        state.Autopilot = await GetAutopilotDeviceBySerialAsync(serialNumber);
-        state.Intune = await GetDeviceBySerialAsync(serialNumber);
+        if (!ODataFilter.IsSerial(serialNumber))
+        {
+            state.InvalidSerial = true;
+            return state;
+        }
+
+        state.AutopilotCandidates = await GetAutopilotDevicesBySerialAsync(serialNumber);
+        state.Autopilot = state.AutopilotCandidates.Count == 1 ? state.AutopilotCandidates[0] : null;
+        state.IntuneCandidates = await GetDevicesBySerialAsync(serialNumber);
+        state.Intune = state.IntuneCandidates.Count == 1 ? state.IntuneCandidates[0] : null;
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -2227,6 +2309,11 @@ if ($svc -and $svc.Status -ne 'Running') {
             result.Errors.Add($"Could not read the current records for {state.Serial}, so nothing was changed.");
             return result;
         }
+        if (state.TargetRefusal is { } refusal)
+        {
+            result.Errors.Add(refusal + " Nothing was changed.");
+            return result;
+        }
 
         foreach (var twin in StaleEntraTwins(state))
         {
@@ -2278,6 +2365,13 @@ if ($svc -and $svc.Status -ne 'Running') {
                 $"Could not read the current records for {serialNumber}, so nothing was changed. " +
                 $"Elevated Graph call failed: {state.LookupError ?? "reason unavailable"}");
             Log.Error("Refused cleanDeviceRecords for {Serial}: record lookup failed", serialNumber);
+            return result;
+        }
+
+        if (state.TargetRefusal is { } refusal)
+        {
+            result.Errors.Add(refusal + " Nothing was changed.");
+            Log.Warning("Refused cleanDeviceRecords for {Serial}: target not unique", serialNumber);
             return result;
         }
 

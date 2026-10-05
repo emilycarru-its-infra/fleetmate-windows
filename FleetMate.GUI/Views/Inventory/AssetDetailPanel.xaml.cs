@@ -72,6 +72,8 @@ public partial class AssetDetailPanel : UserControl
         _asset = asset;
         _service = (Application.Current as App)?.SnipeService;
         Render();
+        _historyAssetId = null; // a fresh Show (new asset, or a save) refetches history
+        ShowSegment();
         _ = EnsureOptionsAsync();
     }
 

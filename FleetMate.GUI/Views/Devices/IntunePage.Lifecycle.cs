@@ -15,15 +15,15 @@ public partial class IntunePage
 {
     private void InitializeLifecycleControls()
     {
-        WipeObliterationComboBox.ItemsSource = Enum.GetValues<WipeOptions.ObliterationBehavior>()
-            .Select(b => new ComboBoxItem { Content = WipeOptions.DisplayName(b), Tag = b }).ToList();
+        WipeObliterationComboBox.ItemsSource = WipeOptions.ObliterationBehaviors
+            .Select(b => new ComboBoxItem { Content = WipeOptions.ObliterationDisplayName(b), Tag = b }).ToList();
         WipeObliterationComboBox.SelectedIndex = 0;
 
-        OffboardTerminalComboBox.ItemsSource = Enum.GetValues<OffboardPlan.TerminalAction>()
+        OffboardTerminalComboBox.ItemsSource = Enum.GetValues<OffboardTerminalAction>()
             .Select(a => new ComboBoxItem { Content = OffboardPlan.DisplayName(a), Tag = a }).ToList();
         OffboardTerminalComboBox.SelectedIndex = 0;
 
-        OffboardEntraComboBox.ItemsSource = Enum.GetValues<OffboardPlan.EntraAction>()
+        OffboardEntraComboBox.ItemsSource = Enum.GetValues<OffboardEntraAction>()
             .Select(a => new ComboBoxItem { Content = OffboardPlan.DisplayName(a), Tag = a }).ToList();
         OffboardEntraComboBox.SelectedIndex = 0;
     }
@@ -31,7 +31,8 @@ public partial class IntunePage
     /// <summary>Show the wipe options the selected platforms accept, and Offboard when every device can take it.</summary>
     private void UpdateLifecycleSections(List<DeviceListRow> selected)
     {
-        var platforms = selected.Where(r => r.Intune != null).Select(r => r.Intune!.Platform()).ToHashSet();
+        var platforms = selected.Where(r => r.Intune != null)
+            .Select(r => DevicePlatforms.From(r.Intune!.OperatingSystem)).ToHashSet();
         var hasWindows = platforms.Contains(DevicePlatform.Windows);
         var hasApple = platforms.Contains(DevicePlatform.MacOS) || platforms.Contains(DevicePlatform.IOS);
 
@@ -55,16 +56,16 @@ public partial class IntunePage
         KeepUserData = WipeKeepUserDataCheckBox.IsChecked == true,
         UseProtectedWipe = WipeProtectedCheckBox.IsChecked == true,
         MacOsUnlockCode = string.IsNullOrWhiteSpace(WipeUnlockCodeTextBox.Text) ? null : WipeUnlockCodeTextBox.Text.Trim(),
-        Obliteration = (WipeObliterationComboBox.SelectedItem as ComboBoxItem)?.Tag as WipeOptions.ObliterationBehavior?
-                       is { } b && b != WipeOptions.ObliterationBehavior.Default ? b : null,
+        // "default" is Graph's own default, so it's left out of the request.
+        ObliterationBehavior = (WipeObliterationComboBox.SelectedItem as ComboBoxItem)?.Tag is string b && b != "default" ? b : null,
     };
 
     private OffboardPlan CurrentOffboardPlan() => new()
     {
-        Terminal = (OffboardTerminalComboBox.SelectedItem as ComboBoxItem)?.Tag is OffboardPlan.TerminalAction t ? t : OffboardPlan.TerminalAction.Wipe,
+        TerminalAction = (OffboardTerminalComboBox.SelectedItem as ComboBoxItem)?.Tag is OffboardTerminalAction t ? t : OffboardTerminalAction.Wipe,
         WipeOptions = CurrentWipeOptions(),
         DeleteAutopilotRegistration = OffboardDeleteAutopilotCheckBox.IsChecked == true,
-        Entra = (OffboardEntraComboBox.SelectedItem as ComboBoxItem)?.Tag is OffboardPlan.EntraAction e ? e : OffboardPlan.EntraAction.None,
+        EntraAction = (OffboardEntraComboBox.SelectedItem as ComboBoxItem)?.Tag is OffboardEntraAction e ? e : OffboardEntraAction.None,
         DeleteIntuneRecord = OffboardDeleteIntuneCheckBox.IsChecked == true,
     };
 
@@ -74,9 +75,9 @@ public partial class IntunePage
     {
         if (OffboardTerminalComboBox == null || OffboardCancelsWarningText == null) return;
         var plan = CurrentOffboardPlan();
-        OffboardUsesWipeOptionsText.Visibility = Show(plan.Terminal == OffboardPlan.TerminalAction.Wipe);
+        OffboardUsesWipeOptionsText.Visibility = Show(plan.TerminalAction == OffboardTerminalAction.Wipe);
         OffboardCancelsWarningText.Visibility = Show(plan.CancelsPendingAction);
-        OffboardCancelsWarningText.Text = $"The pending action lives on the Intune record — deleting it before the device checks in cancels the {(plan.Terminal == OffboardPlan.TerminalAction.Wipe ? "wipe" : "retire")}.";
+        OffboardCancelsWarningText.Text = $"The pending action lives on the Intune record — deleting it before the device checks in cancels the {(plan.TerminalAction == OffboardTerminalAction.Wipe ? "wipe" : "retire")}.";
     }
 
     private async void OnOffboardClicked(object sender, RoutedEventArgs e)
@@ -99,14 +100,13 @@ public partial class IntunePage
             try
             {
                 results.Add(row.Intune is { } device
-                    ? await _graphService.OffboardDeviceAsync(device, plan, row.Autopilot, confirmed: true)
-                    : await offboarder.OffboardOrphanAsync(row.SerialText, row.Autopilot,
-                        await offboarder.FindOrphanEntraAsync(row.Autopilot), plan));
+                    ? await offboarder.OffboardAsync(device, plan)
+                    : await offboarder.OffboardOrphanAsync(row.SerialText, await OrphanRecordsAsync(row), plan));
             }
             catch (Exception ex)
             {
                 results.Add(new OffboardResult(row.SerialText, row.NameText, DevicePlatform.Other,
-                    new[] { new OffboardStepResult("Offboard", OffboardStepResult.StepOutcome.Failed, ex.Message) }));
+                    new[] { new OffboardStepResult("Offboard", OffboardOutcome.Failed, ex.Message) }));
             }
         }
 
@@ -119,6 +119,17 @@ public partial class IntunePage
             : $"Offboarded {results.Count - failed} device(s), {failed} with failures", isError: failed > 0);
     }
 
+    /// <summary>
+    /// The directory records of a device Intune no longer has, starting from
+    /// the Autopilot identity the row already carries: it holds the Entra id.
+    /// </summary>
+    private async Task<OrphanDeviceRecords> OrphanRecordsAsync(DeviceListRow row)
+    {
+        var entraId = AutopilotLabels.Linked(row.Autopilot?.AzureActiveDirectoryDeviceId);
+        var entra = entraId == null ? null : await _graphService!.GetEntraDeviceByDeviceIdAsync(entraId);
+        return new OrphanDeviceRecords(row.Autopilot, entra);
+    }
+
     private FrameworkElement ResultBlock(OffboardResult result)
     {
         var block = new StackPanel { Margin = new Thickness(0, 0, 0, 6) };
@@ -127,8 +138,8 @@ public partial class IntunePage
         {
             var (glyph, color) = step.Outcome switch
             {
-                OffboardStepResult.StepOutcome.Succeeded => ("✓", "#2E9E4F"),
-                OffboardStepResult.StepOutcome.Failed => ("✕", "#E8890C"),
+                OffboardOutcome.Succeeded => ("✓", "#2E9E4F"),
+                OffboardOutcome.Failed => ("✕", "#E8890C"),
                 _ => ("–", "#808080"),
             };
             var line = new TextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap };
