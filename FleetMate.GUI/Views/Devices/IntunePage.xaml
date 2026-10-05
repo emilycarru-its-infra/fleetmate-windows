@@ -327,8 +327,18 @@
                                 <StackPanel Margin="8">
                                     <TextBlock Text="Factory-reset the selected devices. This cannot be undone."
                                                TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
+                                    <!-- Each device gets only the options its platform accepts. -->
+                                    <TextBlock x:Name="WipeMixedPlatformText" Visibility="Collapsed" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,6"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                               Text="Mixed selection: each device gets only the options its platform supports." />
                                     <CheckBox x:Name="WipeKeepEnrollmentCheckBox" Content="Leave the device enrolled" FontSize="12" Margin="0,0,0,4" />
-                                    <CheckBox x:Name="WipeKeepUserDataCheckBox" Content="Keep user data" FontSize="12" Margin="0,0,0,8" />
+                                    <CheckBox x:Name="WipeKeepUserDataCheckBox" Content="Keep user data (Windows)" FontSize="12" Margin="0,0,0,4" />
+                                    <CheckBox x:Name="WipeProtectedCheckBox" Content="Protected wipe (Windows)" FontSize="12" Margin="0,0,0,4"
+                                              ToolTip="Retries until it succeeds and cannot be circumvented by the user. A device interrupted mid-wipe may not boot." />
+                                    <TextBox x:Name="WipeUnlockCodeTextBox" ui:ControlHelper.PlaceholderText="Recovery PIN (macOS/iOS)" Margin="0,4,0,4" />
+                                    <ComboBox x:Name="WipeObliterationComboBox" HorizontalAlignment="Stretch" Margin="0,0,0,8"
+                                              ui:ControlHelper.Header="Erase behaviour (macOS)"
+                                              ToolTip="macOS 12 and later. Erase All Content and Settings is instant; the fallback full erase is not." />
                                     <Button Content="Wipe Device" Click="OnWipeClicked" HorizontalAlignment="Stretch" Background="#E8890C" Foreground="White" />
                                 </StackPanel>
                             </Expander>
@@ -349,6 +359,28 @@
                                     <TextBlock Text="Reimage the selected devices through Windows Autopilot: removes apps and settings, keeps enrollment, and re-provisions."
                                                TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
                                     <Button Content="Autopilot Reset" Click="OnAutopilotResetClicked" HorizontalAlignment="Stretch" Background="#E8890C" Foreground="White" />
+                                </StackPanel>
+                            </Expander>
+
+                            <!-- Offboard: decommission across Intune, Autopilot and Entra in one pass. -->
+                            <Expander x:Name="OffboardSection" Header="Offboard Device">
+                                <StackPanel Margin="8">
+                                    <TextBlock Text="Decommission across Intune, Autopilot and Entra in one pass. Steps that do not apply to a device's platform are skipped."
+                                               TextWrapping="Wrap" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,0,8" />
+                                    <ComboBox x:Name="OffboardTerminalComboBox" HorizontalAlignment="Stretch" Margin="0,0,0,4"
+                                              ui:ControlHelper.Header="Intune action" SelectionChanged="OnOffboardPlanChanged" />
+                                    <TextBlock x:Name="OffboardUsesWipeOptionsText" Text="Uses the wipe options set above." FontSize="12" Margin="0,0,0,6"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    <CheckBox x:Name="OffboardDeleteAutopilotCheckBox" Content="Delete the Autopilot registration" FontSize="12" Margin="0,0,0,4"
+                                              ToolTip="Windows only. Releases the hardware hash so the device can be re-registered elsewhere." />
+                                    <ComboBox x:Name="OffboardEntraComboBox" HorizontalAlignment="Stretch" Margin="0,0,0,4"
+                                              ui:ControlHelper.Header="Entra device" />
+                                    <CheckBox x:Name="OffboardDeleteIntuneCheckBox" Content="Delete the Intune record" FontSize="12" Margin="0,0,0,4"
+                                              Checked="OnOffboardPlanChanged" Unchecked="OnOffboardPlanChanged" />
+                                    <TextBlock x:Name="OffboardCancelsWarningText" Visibility="Collapsed" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,6"
+                                               Foreground="#E8890C" />
+                                    <Button Content="Offboard Device" Click="OnOffboardClicked" HorizontalAlignment="Stretch" Background="#E8890C" Foreground="White" />
+                                    <StackPanel x:Name="OffboardResultsPanel" Margin="0,8,0,0" />
                                 </StackPanel>
                             </Expander>
 
