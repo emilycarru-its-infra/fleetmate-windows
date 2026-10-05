@@ -537,6 +537,55 @@ public class SecureShellService : IDisposable
     }
 
     /// <summary>
+    /// Copy a local file to <paramref name="remotePath"/> (a Windows path) over
+    /// SFTP, with the same key, host-key and timeout rules as commands.
+    /// </summary>
+    public async Task<SecureShellResult> UploadFileAsync(string ip, string localPath, string remotePath,
+        CancellationToken cancellationToken, string? username = null, string? deviceName = null)
+    {
+        var result = new SecureShellResult
+        {
+            Host = ip,
+            DeviceName = deviceName,
+            Command = $"upload {Path.GetFileName(localPath)}",
+            Username = username ?? _config.DefaultUsername,
+            StartedAt = DateTime.UtcNow
+        };
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            using var client = new SftpClient(ip, _config.Port, result.Username, _privateKey);
+            client.ConnectionInfo.Timeout = TimeSpan.FromSeconds(_config.ConnectionTimeoutSeconds);
+            if (_config.AcceptAllHostKeys) client.HostKeyReceived += (_, e) => { e.CanTrust = true; };
+            await client.ConnectAsync(cancellationToken);
+            result.Connected = true;
+
+            await using var source = File.OpenRead(localPath);
+            var target = Manage.PackageInstall.SftpPath(remotePath);
+            await Task.Run(() => client.UploadFile(source, target, canOverride: true), cancellationToken);
+            result.ExitCode = 0;
+            result.Outcome = SecureShellOutcome.Success;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            result.Outcome = SecureShellOutcome.Cancelled;
+        }
+        catch (Exception ex)
+        {
+            result.Error = ex;
+            result.ExitCode = -1;
+            result.Outcome = ClassifyException(ex);
+            Log.Warning(ex, "SFTP upload to {Host} failed", ip);
+        }
+        finally
+        {
+            sw.Stop();
+            result.Duration = sw.Elapsed;
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Map an exception from SSH.NET or the socket layer to an outcome an
     /// operator can act on. Auth failures and unreachable hosts look alike in
     /// a raw message, and are the two cases most often confused in the field.
