@@ -8,9 +8,9 @@ namespace FleetMate.GUI.Views.Development;
 /// <summary>
 /// The GitHub inbox, held for the app's lifetime rather than by the Development view.
 ///
-/// It polls from startup whether or not Development has been opened, because the whole
-/// point is the unread count on the Development tab: a notification nobody has
-/// gone looking for is exactly the one that gets missed.
+/// It polls from startup whether or not Development has been opened, so the Inbox
+/// segment is already showing when there is something unread: a notification
+/// nobody has gone looking for is exactly the one that gets missed.
 /// </summary>
 public sealed class DevelopmentInbox
 {
