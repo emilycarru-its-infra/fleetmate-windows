@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Media;
 using FleetMate.Core.Models.Projects;
+using FleetMate.GUI.Views.Shared;
 
 namespace FleetMate.GUI.Views.Development;
 
@@ -13,17 +14,13 @@ public static class CommitsAndPipelinesFilter
 {
     /// <summary>Repositories whose name, owner, or any commit subject/author/sha matches.</summary>
     public static List<RepositoryCommits> Commits(
-        IEnumerable<RepositoryCommits> repos, DevelopmentSourceFilter source, string? search)
+        IEnumerable<RepositoryCommits> repos, DevelopmentSourceFilter source, string? search, string? repository = null)
     {
         var needle = search?.Trim() ?? "";
 
         return repos
-            .Where(r => source switch
-            {
-                DevelopmentSourceFilter.DevOps => r.Source == PullRequestSource.AzureDevOps,
-                DevelopmentSourceFilter.GitHub => r.Source == PullRequestSource.GitHub,
-                _ => true,
-            })
+            .Where(r => MatchesSource(r.Source, source))
+            .Where(r => repository == null || r.DisplayName == repository)
             .Where(r => needle.Length == 0
                         || Has(r.DisplayName, needle)
                         || r.Commits.Any(c => Has(c.Subject, needle) || Has(c.AuthorName, needle) || c.Id.StartsWith(needle, StringComparison.OrdinalIgnoreCase)))
@@ -38,19 +35,16 @@ public static class CommitsAndPipelinesFilter
     /// Running and Succeeded still match every run.
     /// </summary>
     public static List<PipelineRun> Runs(
-        IEnumerable<PipelineRun> runs, DevelopmentSourceFilter source, PipelineStatusFilter status, string? search)
+        IEnumerable<PipelineRun> runs, DevelopmentSourceFilter source, PipelineStatusFilter status, string? search,
+        string? repository = null)
     {
         var needle = search?.Trim() ?? "";
         var all = runs.ToList();
         var latest = LatestRunIds(all);
 
         return all
-            .Where(r => source switch
-            {
-                DevelopmentSourceFilter.DevOps => r.Source == PullRequestSource.AzureDevOps,
-                DevelopmentSourceFilter.GitHub => r.Source == PullRequestSource.GitHub,
-                _ => true,
-            })
+            .Where(r => MatchesSource(r.Source, source))
+            .Where(r => repository == null || RunRepositoryKey(r) == repository)
             .Where(r => status switch
             {
                 PipelineStatusFilter.Running => r.Status.IsActive(),
@@ -64,6 +58,29 @@ public static class CommitsAndPipelinesFilter
             .OrderByDescending(r => r.SortDate)
             .ToList();
     }
+
+    /// <summary>Repository dropdown entries for Commits, within the current source.</summary>
+    public static List<(string Repository, int Count)> CommitRepositoryCounts(
+        IEnumerable<RepositoryCommits> repos, DevelopmentSourceFilter source) =>
+        RepoFilterMenu.Counts(
+            repos.Where(r => MatchesSource(r.Source, source)).SelectMany(r => r.Commits.Select(_ => r)),
+            r => r.DisplayName);
+
+    /// <summary>Repository dropdown entries for Pipelines, within the current source.</summary>
+    public static List<(string Repository, int Count)> RunRepositoryCounts(
+        IEnumerable<PipelineRun> runs, DevelopmentSourceFilter source) =>
+        RepoFilterMenu.Counts(runs.Where(r => MatchesSource(r.Source, source)), RunRepositoryKey);
+
+    /// <summary>"owner/repo" or "Project/Repo"; just the project for a build with no repository.</summary>
+    public static string RunRepositoryKey(PipelineRun run) =>
+        string.IsNullOrEmpty(run.Repository) ? run.Container : $"{run.Container}/{run.Repository}";
+
+    private static bool MatchesSource(PullRequestSource value, DevelopmentSourceFilter source) => source switch
+    {
+        DevelopmentSourceFilter.DevOps => value == PullRequestSource.AzureDevOps,
+        DevelopmentSourceFilter.GitHub => value == PullRequestSource.GitHub,
+        _ => true,
+    };
 
     /// <summary>
     /// One pipeline = source + container + pipeline id (name when there is no

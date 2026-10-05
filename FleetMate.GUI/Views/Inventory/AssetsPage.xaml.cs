@@ -14,6 +14,12 @@ public partial class AssetsPage : Page
     private List<SnipeAsset> _allAssets = new();
     private SnipeAsset? _selectedAsset;
     private bool _isInitialLoadDone;
+    private bool _isLoading;
+    /// <summary>When a deep link last opened an asset. The click that picked
+    /// the link can land on this list as it appears and select the wrong row,
+    /// so row clicks are ignored briefly after.</summary>
+    private DateTime _deepLinkOpenedAt = DateTime.MinValue;
+    private static readonly TimeSpan DeepLinkClickGuard = TimeSpan.FromMilliseconds(500);
 
     // Default sort: most recently touched assets first (macOS parity); any
     // column header click re-sorts by that column, clicking again flips it.
@@ -23,6 +29,7 @@ public partial class AssetsPage : Page
     public AssetsPage()
     {
         InitializeComponent();
+        InitColumns();
         AssetListView.AddHandler(System.Windows.Controls.Primitives.ButtonBase.ClickEvent,
             new RoutedEventHandler(OnColumnHeaderClicked));
         _config = Application.Current is App currentApp ? currentApp.Config : FleetMateConfig.Load();
@@ -44,7 +51,13 @@ public partial class AssetsPage : Page
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
     {
-        if (_isInitialLoadDone) return;
+        // The page is cached across tab switches, so a deep link is checked on
+        // every visit, not just the first.
+        if (_isInitialLoadDone)
+        {
+            await ApplyPendingAssetLinkAsync();
+            return;
+        }
         _isInitialLoadDone = true;
 
         if (_snipeService == null || !_snipeService.IsConfigured)
@@ -56,12 +69,45 @@ public partial class AssetsPage : Page
         await LoadAssetsAsync();
     }
 
+    /// <summary>
+    /// Open the asset a Dashboard row linked to: clear search and filters so
+    /// it can't be hidden, then select and scroll to it. While the list is
+    /// still loading the link waits for the load to finish; an asset missing
+    /// from the list is fetched by id.
+    /// </summary>
+    private async Task ApplyPendingAssetLinkAsync()
+    {
+        if (_isLoading || _snipeService == null) return;
+        if ((Application.Current as App)?.PendingNavigateAssetId is not { } assetId) return;
+        ((App)Application.Current).PendingNavigateAssetId = null;
+
+        var asset = _allAssets.FirstOrDefault(a => a.Id == assetId);
+        if (asset == null)
+        {
+            asset = await _snipeService.GetAssetAsync(assetId);
+            if (asset == null) return;
+            _allAssets.Add(asset);
+            UpdateFilterOptions();
+        }
+
+        SearchBox.Text = "";
+        ClearFilters();
+
+        var row = (AssetListView.ItemsSource as IEnumerable<SnipeAsset>)?.FirstOrDefault(a => a.Id == assetId);
+        if (row == null) return;
+        _deepLinkOpenedAt = DateTime.UtcNow;
+        _selectedAsset = row; // so the guard below lets this selection through
+        AssetListView.SelectedItem = row;
+        AssetListView.ScrollIntoView(row);
+    }
+
     private async Task LoadAssetsAsync()
     {
         if (_snipeService == null) return;
 
         try
         {
+            _isLoading = true;
             LoadingOverlay.Visibility = Visibility.Visible;
             _allAssets = await _snipeService.GetAssetsAsync(forceRefresh: true);
             UpdateFilterOptions();
@@ -85,8 +131,11 @@ public partial class AssetsPage : Page
         }
         finally
         {
+            _isLoading = false;
             LoadingOverlay.Visibility = Visibility.Collapsed;
         }
+
+        await ApplyPendingAssetLinkAsync();
     }
 
     private void UpdateDisplay()
@@ -135,6 +184,9 @@ public partial class AssetsPage : Page
         var areaFilter = AreaFilterComboBox.SelectedItem?.ToString();
         if (!string.IsNullOrEmpty(areaFilter) && areaFilter != "All")
             filtered = filtered.Where(a => a.Area == areaFilter);
+
+        var locationFilter = LocationFilterComboBox.SelectedItem?.ToString();
+        filtered = filtered.Where(a => AssetLocationFilter.Matches(a, locationFilter));
 
         var list = ApplySort(filtered).ToList();
         AssetListView.ItemsSource = list;
@@ -191,7 +243,9 @@ public partial class AssetsPage : Page
 
     private void OnFilterChanged(object sender, SelectionChangedEventArgs e) => UpdateDisplay();
 
-    private void OnClearFiltersClicked(object sender, RoutedEventArgs e)
+    private void OnClearFiltersClicked(object sender, RoutedEventArgs e) => ClearFilters();
+
+    private void ClearFilters()
     {
         StatusFilterComboBox.SelectedIndex = 0;
         CategoryFilterComboBox.SelectedIndex = 0;
@@ -201,6 +255,7 @@ public partial class AssetsPage : Page
         UsageFilterComboBox.SelectedIndex = 0;
         CatalogFilterComboBox.SelectedIndex = 0;
         AreaFilterComboBox.SelectedIndex = 0;
+        LocationFilterComboBox.SelectedIndex = 0;
         UpdateDisplay();
     }
 
@@ -235,6 +290,8 @@ public partial class AssetsPage : Page
         SetFilterItems(UsageFilterComboBox, usages);
         SetFilterItems(CatalogFilterComboBox, catalogs);
         SetFilterItems(AreaFilterComboBox, areas);
+        LocationFilterComboBox.ItemsSource = AssetLocationFilter.Options(_allAssets);
+        LocationFilterComboBox.SelectedIndex = 0;
     }
 
     private static void SetFilterItems(ComboBox comboBox, HashSet<string> items)
@@ -252,8 +309,17 @@ public partial class AssetsPage : Page
 
     private void AssetListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        FleetMate.GUI.Views.Terminal.ContextPublisher.Asset(AssetListView.SelectedItem as SnipeAsset);
         if (AssetListView.SelectedItem is SnipeAsset asset)
         {
+            // A stray click right after a deep link: put the linked asset back.
+            if (_selectedAsset != null && asset.Id != _selectedAsset.Id &&
+                DateTime.UtcNow - _deepLinkOpenedAt < DeepLinkClickGuard)
+            {
+                var linked = _selectedAsset;
+                Dispatcher.BeginInvoke(() => AssetListView.SelectedItem = linked);
+                return;
+            }
             _selectedAsset = asset;
             DetailHost.Visibility = Visibility.Visible;
             DetailPlaceholder.Visibility = Visibility.Collapsed;
