@@ -37,6 +37,7 @@ public static class EntraCommand
         command.AddCommand(CreateDeviceCommand(graphService));
         command.AddCommand(CreateDeleteDeviceCommand(graphService));
         command.AddCommand(CreateAuditCommand(graphService));
+        command.AddCommand(EntraSearchGroupsCommand.Create(graphService));
 
         return command;
     }
@@ -53,7 +54,7 @@ public static class EntraCommand
             var byDeviceId = await graph.GetEntraDeviceByDeviceIdAsync(query);
             if (byDeviceId != null) return [byDeviceId];
 
-            var byObjectId = await graph.GetEntraDevicesAsync($"id eq '{query}'", 1);
+            var byObjectId = await graph.GetEntraDevicesAsync($"id eq {ODataFilter.Guid(query)}", 1);
             if (byObjectId.Count > 0) return byObjectId;
         }
 
@@ -120,58 +121,71 @@ public static class EntraCommand
         return command;
     }
 
+    /// <summary>
+    /// Resolve the id a deletion was given to exactly one Entra device object:
+    /// first as a deviceId, then as a directory object id. Names are never
+    /// accepted, because display names repeat and deleting the wrong object of
+    /// a pair unenrolls a working machine.
+    /// </summary>
+    internal static async Task<EntraDevice?> ResolveEntraDeviceByIdAsync(GraphService graph, string id)
+    {
+        if (!ODataFilter.IsGuid(id)) return null;
+        var byDeviceId = await graph.GetEntraDeviceByDeviceIdAsync(id);
+        if (byDeviceId != null) return byDeviceId;
+        var byObjectId = await graph.GetEntraDevicesAsync($"id eq {ODataFilter.Guid(id)}", 2);
+        return byObjectId.Count == 1 ? byObjectId[0] : null;
+    }
+
     private static Command CreateDeleteDeviceCommand(GraphService? graphService)
     {
-        var command = new Command("delete-device", "Delete an Entra device object (DESTRUCTIVE)");
+        var command = new Command("delete-device",
+            "Delete one Entra device object by its object id or deviceId (DESTRUCTIVE). Find the id with `entra device <name>`.");
 
-        var queryArg = new Argument<string>(name: "query", description: "Display name, deviceId or object id");
+        var idArg = new Argument<string>(name: "id", description: "The device object's id or its deviceId (a GUID)");
         var confirmOption = new Option<bool>(aliases: ["--confirm"], description: "Required to actually delete");
-        var allOption = new Option<bool>(aliases: ["--all"], description: "Delete every object matching the query, not just a unique match");
 
-        command.AddArgument(queryArg);
+        command.AddArgument(idArg);
         command.AddOption(confirmOption);
-        command.AddOption(allOption);
 
-        command.SetHandler(async (query, confirm, all) =>
+        command.SetHandler(async (context) =>
         {
-            if (!EnsureConfigured(graphService)) return;
+            var id = context.ParseResult.GetValueForArgument(idArg);
+            var confirm = context.ParseResult.GetValueForOption(confirmOption);
+            if (!EnsureConfigured(graphService)) { context.ExitCode = 1; return; }
 
-            var devices = await ResolveEntraDevicesAsync(graphService!, query);
-
-            if (devices.Count == 0)
+            if (!ODataFilter.IsGuid(id))
             {
-                AnsiConsole.MarkupLine($"[yellow]No Entra device object found: {Markup.Escape(query)}[/]");
+                AnsiConsole.MarkupLine($"[red]{Markup.Escape(id)} is not an id.[/] delete-device takes the object id or deviceId (a GUID); names are not accepted.");
+                AnsiConsole.MarkupLine("[dim]Run `fleetmate entra device <name>` to list the matching objects and their ids.[/]");
+                context.ExitCode = 1;
                 return;
             }
 
-            // Refuse to guess between duplicates: deleting the wrong one of a
-            // matched pair unenrolls a working machine.
-            if (devices.Count > 1 && !all)
+            var device = await ResolveEntraDeviceByIdAsync(graphService!, id);
+            if (device == null)
             {
-                AnsiConsole.MarkupLine($"[yellow]{devices.Count} objects match {Markup.Escape(query)}.[/] Pass an object id, or --all to delete every match:");
-                foreach (var d in devices)
-                    AnsiConsole.MarkupLine($"  [dim]{d.Id}[/]  {Markup.Escape(d.DisplayName ?? "-")}  trust={d.TrustType}  last sign-in {d.ApproximateLastSignInDateTime?.ToString("yyyy-MM-dd") ?? "-"}");
+                AnsiConsole.MarkupLine($"[yellow]No Entra device object has the id or deviceId {Markup.Escape(id)}.[/] Nothing was changed.");
+                context.ExitCode = 1;
                 return;
             }
+
+            AnsiConsole.MarkupLine($"Target: [cyan]{Markup.Escape(device.DisplayName ?? "-")}[/]  object id [dim]{device.Id}[/]  deviceId [dim]{device.DeviceId ?? "-"}[/]  trust={device.TrustType}  last sign-in {device.ApproximateLastSignInDateTime?.ToString("yyyy-MM-dd") ?? "-"}");
 
             if (!confirm)
             {
-                AnsiConsole.MarkupLine($"[yellow]This will delete {devices.Count} Entra device object(s):[/]");
-                foreach (var d in devices)
-                    AnsiConsole.MarkupLine($"  [dim]{d.Id}[/]  {Markup.Escape(d.DisplayName ?? "-")}");
-                AnsiConsole.MarkupLine("Re-run with [cyan]--confirm[/] to proceed.");
+                AnsiConsole.MarkupLine("[yellow]Dry run.[/] Re-run with [cyan]--confirm[/] to delete that object.");
                 return;
             }
 
-            foreach (var d in devices)
+            var result = await graphService!.DeleteEntraDeviceAsync(device.Id, confirmed: true);
+            if (result.Success)
+                AnsiConsole.MarkupLine($"[green]Deleted[/] {Markup.Escape(device.DisplayName ?? device.Id)} ({device.Id})");
+            else
             {
-                var result = await graphService!.DeleteEntraDeviceAsync(d.Id, confirmed: true);
-                if (result.Success)
-                    AnsiConsole.MarkupLine($"[green]Deleted[/] {Markup.Escape(d.DisplayName ?? d.Id)} ({d.Id})");
-                else
-                    AnsiConsole.MarkupLine($"[red]Failed:[/] {Markup.Escape(result.Message ?? "unknown error")}");
+                AnsiConsole.MarkupLine($"[red]Failed:[/] {Markup.Escape(result.Message ?? "unknown error")}");
+                context.ExitCode = 1;
             }
-        }, queryArg, confirmOption, allOption);
+        });
 
         return command;
     }
@@ -434,7 +448,7 @@ public static class EntraCommand
 
         if (!string.IsNullOrWhiteSpace(activity))
         {
-            clauses.Add($"activityDisplayName eq '{activity.Replace("'", "''")}'");
+            clauses.Add($"activityDisplayName eq {ODataFilter.Literal(activity)}");
         }
 
         if (!string.IsNullOrWhiteSpace(target))
@@ -443,10 +457,9 @@ public static class EntraCommand
             // the caller usually has whichever one the failure put in front of
             // them. Graph will not accept an `or` across two `any` lambdas, so
             // the shape is chosen from the input instead.
-            var escaped = target.Replace("'", "''");
-            clauses.Add(Guid.TryParse(target, out _)
-                ? $"targetResources/any(t: t/id eq '{escaped}')"
-                : $"targetResources/any(t: t/displayName eq '{escaped}')");
+            clauses.Add(ODataFilter.IsGuid(target)
+                ? $"targetResources/any(t: t/id eq {ODataFilter.Guid(target)})"
+                : $"targetResources/any(t: t/displayName eq {ODataFilter.Literal(target)})");
         }
 
         return clauses.Count == 0 ? null : string.Join(" and ", clauses);
