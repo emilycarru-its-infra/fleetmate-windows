@@ -231,6 +231,97 @@
                 </ScrollViewer>
             </TabItem>
 
+            <TabItem Header="Apple" Loaded="OnAppleTabLoaded">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
+                    <StackPanel Margin="2" MaxWidth="860">
+                        <TextBlock Text="Apple School and Business Manager" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" />
+                        <TextBlock Text="API profiles for the organizations the Devices list reads. Each is kept in Windows Credential Manager for your account, never in a file or policy."
+                                   Style="{StaticResource SubtitleTextStyle}" TextWrapping="Wrap" Margin="0,0,0,14" />
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Profiles" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <ListBox x:Name="AppleProfilesList" MinHeight="60" MaxHeight="220" />
+                                <TextBlock x:Name="AppleProfilesEmptyText" Text="No profiles yet."
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,4,0,0" />
+                                <Button Content="Remove selected" HorizontalAlignment="Left" Margin="0,8,0,0" Click="OnRemoveAppleProfile" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Add a profile" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <TextBlock Text="Name" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <TextBox x:Name="AppleProfileNameBox" Margin="0,4,0,10" ui:ControlHelper.PlaceholderText="A name for this organization" />
+                                <TextBlock Text="Client ID" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <TextBox x:Name="AppleClientIdBox" Margin="0,4,0,10" ui:ControlHelper.PlaceholderText="SCHOOLAPI.… or BUSINESSAPI.…" />
+                                <TextBlock Text="Key ID" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <TextBox x:Name="AppleKeyIdBox" Margin="0,4,0,10" />
+                                <TextBlock Text="Private key (.p8 or .pem)" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <DockPanel Margin="0,4,0,10">
+                                    <Button DockPanel.Dock="Right" Content="Browse..." Margin="8,0,0,0" Click="OnBrowseAppleKey" />
+                                    <TextBox x:Name="AppleKeyPathBox" IsReadOnly="True" ui:ControlHelper.PlaceholderText="The key file Apple issued with the API account" />
+                                </DockPanel>
+                                <Button Content="Add Profile" HorizontalAlignment="Left" Style="{StaticResource AccentButtonStyle}" Click="OnAddAppleProfile" />
+                                <TextBlock x:Name="AppleProfileStatusText" TextWrapping="Wrap" Margin="0,8,0,0" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Terminal" AutomationProperties.AutomationId="SettingsTerminalTab">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
+                    <StackPanel Margin="2" MaxWidth="860">
+                        <TextBlock Text="Terminal" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" />
+                        <TextBlock Text="The terminal panel (Ctrl+`) runs a shell or a coding agent beside any tab. Every session gets FLEETMATE_CONTEXT, a JSON file describing what is selected in the app, and the fleetmate CLI on PATH."
+                                   Style="{StaticResource SubtitleTextStyle}" TextWrapping="Wrap" Margin="0,0,0,14" />
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Sessions" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <TextBlock Text="Runs" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <ComboBox x:Name="AgentCommandPicker" Margin="0,4,0,0" MinWidth="240" HorizontalAlignment="Left"
+                                          DisplayMemberPath="Label" SelectedValuePath="Key"
+                                          SelectionChanged="OnAgentCommandPickerChanged"
+                                          AutomationProperties.AutomationId="AgentCommandPicker" />
+                                <TextBox x:Name="AgentCustomCommandTextBox" Margin="0,6,0,0" MinWidth="360" HorizontalAlignment="Left"
+                                         Visibility="Collapsed" FontFamily="Cascadia Mono, Consolas"
+                                         ui:ControlHelper.PlaceholderText="Program and arguments, e.g. my-agent --model fast"
+                                         AutomationProperties.AutomationId="AgentCustomCommandTextBox" />
+                                <TextBlock x:Name="AgentCommandSourceText" FontSize="11" Margin="0,4,0,10" Visibility="Collapsed"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <CheckBox x:Name="AgentAutoStartCheckBox" AutomationProperties.AutomationId="AgentAutoStartCheckBox"
+                                          Content="Open a session when FleetMate starts" Margin="0,6,0,0" />
+                                <TextBlock x:Name="AgentAutoStartSourceText" FontSize="11" Margin="28,2,0,0" Visibility="Collapsed"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Repos" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <TextBlock Text="One per line: a local folder, or a clone URL that is cloned under your FleetMate repos folder the first time you open it. The terminal's new-session menu offers a session in each."
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" TextWrapping="Wrap" />
+                                <TextBox x:Name="ReposTextBox" AutomationProperties.AutomationId="ReposTextBox"
+                                         AcceptsReturn="True" TextWrapping="NoWrap" MinHeight="110" Margin="0,6,0,6"
+                                         FontFamily="Cascadia Mono, Consolas" VerticalScrollBarVisibility="Auto" />
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Content="Reset to defaults" Click="OnResetReposClicked"
+                                            AutomationProperties.AutomationId="ResetReposButton" />
+                                    <TextBlock x:Name="RepoDefaultsText" TextWrapping="Wrap" FontSize="11" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                </DockPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Button Content="Save Settings" HorizontalAlignment="Right" Margin="0,2,0,18"
+                                Style="{StaticResource AccentButtonStyle}" Padding="22,7" Click="OnSaveClicked" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
             <TabItem Header="Appearance">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
                     <StackPanel Margin="2" MaxWidth="860">

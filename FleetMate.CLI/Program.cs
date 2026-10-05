@@ -171,6 +171,7 @@ class Program
 
             // Intune device management
             rootCommand.AddCommand(IntuneCommand.Create(graphService, reportMate));
+            rootCommand.AddCommand(AutopilotCommand.Create(graphService));
             // Fleet reset — reset devices and clean the records that block re-enrollment
             rootCommand.AddCommand(WipeCommand.Create(graphService, snipeService));
             // Reversible Windows lock — membership of the lock group, which an Intune remediation enforces

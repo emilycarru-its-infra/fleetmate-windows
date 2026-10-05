@@ -30,12 +30,17 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
 
         var sb = new StringBuilder();
         sb.Append("az rest --method ").Append(method).Append(" --uri ").Append(SingleQuote(url));
+        var headers = ForwardedHeaders(request);
+        string? body = null;
         if (request.Content != null)
         {
-            var body = await request.Content.ReadAsStringAsync(cancellationToken);
-            if (!string.IsNullOrEmpty(body))
-                sb.Append(" --headers Content-Type=application/json --body ").Append(SingleQuote(body));
+            body = await request.Content.ReadAsStringAsync(cancellationToken);
+            if (!string.IsNullOrEmpty(body)) headers.Insert(0, "Content-Type=application/json");
         }
+        if (headers.Count > 0)
+            sb.Append(" --headers ").Append(string.Join(" ", headers.Select(SingleQuote)));
+        if (!string.IsNullOrEmpty(body))
+            sb.Append(" --body ").Append(SingleQuote(body));
         sb.Append(" -o json");
 
         try
@@ -107,6 +112,11 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
         var lower = url.ToLowerInvariant();
         if (lower.Contains("/devicemanagement/") || lower.Contains("/deviceappmanagement/"))
             return GraphDomain.Devices;
+        // A device's recovery secrets (BitLocker keys, Windows LAPS) belong
+        // with the device: the devices identity holds BitlockerKey.Read.All
+        // and DeviceLocalCredential.Read.All, the identity one does not.
+        if (lower.Contains("/informationprotection/bitlocker/") || lower.Contains("/directory/devicelocalcredentials"))
+            return GraphDomain.Devices;
         if (IsDirectoryDeviceCall(lower))
             return GraphDomain.Devices;
         return GraphDomain.Identity;
@@ -131,6 +141,18 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
         }
         return false;
     }
+
+    /// <summary>
+    /// Request headers to pass through to <c>az rest --headers</c>, as
+    /// name=value. Authorization belongs to the session's own identity and
+    /// Accept is az's own business, so neither is forwarded.
+    /// </summary>
+    internal static List<string> ForwardedHeaders(HttpRequestMessage request) =>
+        request.Headers
+            .Where(h => !h.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase)
+                        && !h.Key.Equals("Accept", StringComparison.OrdinalIgnoreCase))
+            .Select(h => $"{h.Key}={string.Join(",", h.Value)}")
+            .ToList();
 
     // Single-quote so the container shell does not expand $top/$filter/$ref/etc.
     private static string SingleQuote(string s) => "'" + s.Replace("'", "'\\''") + "'";
