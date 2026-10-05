@@ -30,6 +30,7 @@ public partial class ManageViewModel : ObservableObject
     private readonly MachineProbeService? _prober;
     private readonly RemoteSessionLauncher? _launcher;
     private readonly CommandRunner? _commandRunner;
+    private readonly IRemoteFileCopier? _copier;
     private readonly SynchronizationContext? _ui;
 
     private CancellationTokenSource? _scanCts;
@@ -80,10 +81,14 @@ public partial class ManageViewModel : ObservableObject
         _scanner = new HostScanner(directory, probe);
         _prober = runner == null ? null : new MachineProbeService(runner) { Concurrency = Math.Max(1, config.ProbeConcurrency) };
         _commandRunner = runner == null ? null : new CommandRunner(runner) { Concurrency = Math.Max(1, config.ProbeConcurrency) };
+        _copier = runner as IRemoteFileCopier;
         _ui = SynchronizationContext.Current;
     }
 
     public bool CanRun => _commandRunner != null;
+
+    /// <summary>Package installs need a transport that can copy files too.</summary>
+    public bool CanInstallPackages => _commandRunner != null && _copier != null;
 
     public bool CanProbe => _prober != null;
     public bool CanLaunch => _launcher != null;
@@ -208,6 +213,28 @@ public partial class ManageViewModel : ObservableObject
     public async Task RunCommandAsync(string command, string label, bool recordHistory = true, IReadOnlyList<MachineRowViewModel>? targets = null)
     {
         if (_commandRunner == null || string.IsNullOrWhiteSpace(command)) return;
+        var runner = _commandRunner;
+        await RunOnRowsAsync(label, recordHistory ? command : null, targets,
+            (runTargets, observer, ct) => runner.RunAsync(runTargets, command, observer, ct));
+    }
+
+    /// <summary>
+    /// Copy a package to the checked online machines (or the given rows) and
+    /// install it, with results streaming into the same pane as a command.
+    /// </summary>
+    public async Task InstallPackageAsync(string localPath, IReadOnlyList<MachineRowViewModel>? targets = null)
+    {
+        if (_commandRunner == null || _copier == null || !PackageInstall.IsSupported(localPath)) return;
+        var runner = _commandRunner;
+        var copier = _copier;
+        var name = System.IO.Path.GetFileName(localPath);
+        await RunOnRowsAsync($"Install {name}", $"install {name}", targets,
+            (runTargets, observer, ct) => runner.InstallPackageAsync(runTargets, localPath, copier, observer, ct));
+    }
+
+    private async Task RunOnRowsAsync(string label, string? historyCommand, IReadOnlyList<MachineRowViewModel>? targets,
+        Func<IReadOnlyList<RunTarget>, IRunObserver, CancellationToken, Task> run)
+    {
         var rows = (targets ?? OnlineSelectedRows.ToList()).Where(r => r.IsOnline).ToList();
         if (rows.Count == 0) return;
 
@@ -215,7 +242,7 @@ public partial class ManageViewModel : ObservableObject
         var cts = new CancellationTokenSource();
         _runCts = cts;
 
-        if (recordHistory) History = _store.AddHistory(History, label, command);
+        if (historyCommand != null) History = _store.AddHistory(History, label, historyCommand);
         LastRunLabel = label;
 
         Results.Clear();
@@ -233,7 +260,7 @@ public partial class ManageViewModel : ObservableObject
         var observer = new RunObserver(this, bySerial);
         try
         {
-            await _commandRunner.RunAsync(rows.Select(r => new RunTarget(r.Computer, r.Ip)).ToList(), command, observer, cts.Token);
+            await run(rows.Select(r => new RunTarget(r.Computer, r.Ip)).ToList(), observer, cts.Token);
         }
         catch (Exception ex)
         {
@@ -687,6 +714,36 @@ public partial class ManageViewModel : ObservableObject
             SelectionSubtitle = "";
             ReplaceRows(Array.Empty<RosterComputer>(), false);
         }
+    }
+
+    /// <summary>
+    /// "Add to Current View Only": put a machine in the list on screen without
+    /// saving it to a group. It is gone when the view changes. False when
+    /// nothing is selected, the entry is empty, or the machine is already shown.
+    /// </summary>
+    public bool AddAdhocComputer(string hostname, string ip)
+    {
+        if (!HasSelection) return false;
+        var device = new AdhocDevice(hostname, ip);
+        if (device.Hostname.Length == 0) return false;
+        if (Rows.Any(r => r.Computer.Hostname.Equals(device.Hostname, StringComparison.OrdinalIgnoreCase)
+                          || (device.Ip.Length > 0 && r.Ip == device.Ip)))
+            return false;
+        var row = new MachineRowViewModel(device.Computer);
+        if (device.Ip.Length > 0)
+            row.Scan = new HostScanResult { Serial = device.Computer.Serial, Ip = device.Ip, Source = AddressSource.Stored };
+        row.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(MachineRowViewModel.IsSelected) or nameof(MachineRowViewModel.Scan))
+                OnPropertyChanged(nameof(SelectedCount));
+            if (e.PropertyName == nameof(MachineRowViewModel.Scan)) OnPropertyChanged(nameof(OnlineCount));
+        };
+        Rows.Add(row);
+        SelectionSubtitle = SelectedGroup != null
+            ? $"Custom group, {Rows.Count} machines on screen"
+            : $"{Rows.Count} machines";
+        OnPropertyChanged(nameof(OnlineCount));
+        return true;
     }
 
     /// <summary>Add a device; duplicates by hostname or serial are ignored. Returns true when added.</summary>
