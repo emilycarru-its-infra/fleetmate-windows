@@ -79,6 +79,9 @@
         <!-- Buttons -->
         <DockPanel Grid.Row="3" Margin="0,14,0,0">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button x:Name="AddToViewButton" Content="Add to Current View Only" Margin="0,0,8,0" Padding="12,5"
+                        Visibility="Collapsed" Click="OnAddToCurrentView"
+                        ToolTip="Adds the machine to what is on screen without saving it to a group" />
                 <Button Content="Close" Margin="0,0,8,0" Padding="16,5" IsCancel="True" />
                 <Button x:Name="AddButton" Content="Add" Padding="16,5" Style="{StaticResource AccentButtonStyle}" Click="OnAdd" />
             </StackPanel>

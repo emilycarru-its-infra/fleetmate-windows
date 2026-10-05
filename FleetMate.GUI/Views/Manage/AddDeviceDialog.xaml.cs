@@ -72,6 +72,22 @@ public partial class AddDeviceDialog : Window
         BrowsePanel.Visibility = BrowseMode.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         ManualPanel.Visibility = ManualMode.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         ImportPanel.Visibility = ImportMode.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        AddToViewButton.Visibility = ManualMode.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        AddToViewButton.IsEnabled = _vm.HasSelection;
+    }
+
+    /// <summary>Put the machine on screen without saving it to a group (macOS parity).</summary>
+    private void OnAddToCurrentView(object sender, RoutedEventArgs e)
+    {
+        var host = ManualHost.Text.Trim();
+        var ip = ManualIp.Text.Trim();
+        if (ip.Length == 0)
+        {
+            StatusText.Text = "Enter an address to add it to the current view.";
+            return;
+        }
+        if (_vm.AddAdhocComputer(host, ip)) { DialogResult = true; Close(); }
+        else StatusText.Text = _vm.HasSelection ? "That machine is already on screen." : "Select a lab or group first.";
     }
 
     private void OnBrowseSearchChanged(object sender, TextChangedEventArgs e)
