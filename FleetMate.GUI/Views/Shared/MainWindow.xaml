@@ -43,7 +43,7 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <Border Grid.Column="1" CornerRadius="9"
+                <Border x:Name="TabBarBorder" Grid.Column="1" CornerRadius="9"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True"
                         BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
                         BorderThickness="1" Padding="2">
@@ -103,8 +103,11 @@
 
                 <!-- Auth status + settings live in the chrome so they are reachable
                      from any tab, matching the macOS toolbar. -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right"
-                            Margin="0,0,116,0">
+                <!-- The right margin clears the three 46-wide caption buttons (138)
+                     less the bar's 12 padding, plus a 6 gap, so search ends
+                     just before Minimize. -->
+                <StackPanel x:Name="ToolbarRight" Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right"
+                            Margin="0,0,132,0">
                     <!-- Elevation session status. The per-user session container
                          takes a while to boot and lives for its TTL, so the chrome
                          says whether the next elevated action will wait on it.
@@ -159,7 +162,8 @@
                         <ui:FontIcon Glyph="&#xE713;" FontFamily="Segoe Fluent Icons" FontSize="14" />
                     </RadioButton>
                     <!-- Global search: last in the toolbar on every tab. Ctrl+K
-                         focuses it, Enter opens the first hit, Esc clears. -->
+                         focuses it, Enter opens the first hit, Esc clears. It keeps
+                         its full width on every window size. -->
                     <Grid Width="260" Height="28" Margin="8,0,0,0" VerticalAlignment="Center"
                           shell:WindowChrome.IsHitTestVisibleInChrome="True">
                         <TextBox x:Name="SearchBox" AutomationProperties.AutomationId="ToolbarSearchBox"

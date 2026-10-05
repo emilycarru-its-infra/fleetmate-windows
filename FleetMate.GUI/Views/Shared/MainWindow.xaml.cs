@@ -45,6 +45,7 @@ public partial class MainWindow : Window
         Terminal.HideRequested += (_, _) => SetTerminalVisible(false);
         Terminal.FullWindowRequested += (_, _) => ToggleFullWindow();
         Closed += (_, _) => Terminal.DisposeAll();
+        Loaded += (_, _) => InitToolbarFit();
         // An agent session started at launch must not take the keyboard.
         if (Application.Current is App { Config.Terminal.AgentAutoStart: true })
             Loaded += (_, _) =>
