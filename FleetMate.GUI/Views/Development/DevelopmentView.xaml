@@ -171,7 +171,7 @@
                                  VerticalAlignment="Center" Visibility="Collapsed" />
                 <StackPanel Orientation="Horizontal">
                     <!-- Inbox leads and appears only while it has unread notifications.
-                         The unread count is on the Development tab itself. -->
+                         It never shows a count, and neither does the Development tab. -->
                     <RadioButton x:Name="InboxSegment" Content="Inbox" GroupName="DevelopmentSegment"
                                  Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}"
                                  Visibility="Collapsed" />
