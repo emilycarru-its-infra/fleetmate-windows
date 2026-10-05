@@ -94,6 +94,21 @@ public sealed class DevelopmentInbox
         return result;
     }
 
+    /// <summary>Done: GitHub drops the thread from the inbox, so it leaves the list now.</summary>
+    public async Task<PullRequestActionResult> MarkDoneAsync(GitHubNotification notification)
+    {
+        using var service = _serviceFactory();
+        if (service == null) return PullRequestActionResult.Failed("GitHub is not configured");
+
+        var result = await service.MarkDoneAsync(notification.Id);
+        if (result.Success)
+        {
+            Notifications = Notifications.Where(n => n.Id != notification.Id).ToList();
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+        return result;
+    }
+
     public async Task<PullRequestActionResult> MarkAllReadAsync()
     {
         using var service = _serviceFactory();

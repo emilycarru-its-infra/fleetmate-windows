@@ -74,6 +74,16 @@ public class DevelopmentSectionTests
         Assert.Null(n.SubjectNumber);
     }
 
+    [Fact]
+    public void Inbox_UnreadOnlyUnlessAll()
+    {
+        var read = new GitHubNotification { Id = "1", Unread = false };
+        var unread = new GitHubNotification { Id = "2", Unread = true };
+
+        Assert.Equal(new[] { "2" }, DevelopmentFilter.Inbox(new[] { read, unread }, showRead: false).Select(n => n.Id));
+        Assert.Equal(2, DevelopmentFilter.Inbox(new[] { read, unread }, showRead: true).Count);
+    }
+
     [Theory]
     [InlineData("review_requested", "Review requested")]
     [InlineData("mention", "Mentioned")]
