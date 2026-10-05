@@ -37,6 +37,7 @@ public static class EntraCommand
         command.AddCommand(CreateDeviceCommand(graphService));
         command.AddCommand(CreateDeleteDeviceCommand(graphService));
         command.AddCommand(CreateAuditCommand(graphService));
+        command.AddCommand(EntraSearchGroupsCommand.Create(graphService));
 
         return command;
     }
