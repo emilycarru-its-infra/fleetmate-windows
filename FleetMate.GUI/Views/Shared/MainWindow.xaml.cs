@@ -29,7 +29,6 @@ public partial class MainWindow : Window
 
         if (Application.Current is App app)
         {
-            app.Inbox.Changed += (_, _) => Dispatcher.Invoke(() => UpdateDevelopmentCount(app.Inbox.UnreadCount));
             app.AppErrorChanged += (_, _) => Dispatcher.Invoke(UpdateAppError);
             BindElevationMonitor(app);
             app.ServicesReloaded += () => Dispatcher.Invoke(() => BindElevationMonitor(app));
@@ -103,13 +102,6 @@ public partial class MainWindow : Window
         try { await monitor.PrewarmAsync(); }
         catch (Exception ex) { Serilog.Log.Warning(ex, "Elevation check failed"); }
         UpdateElevationStatus();
-    }
-
-    private void UpdateDevelopmentCount(int unread)
-    {
-        DevelopmentCount.Visibility = unread > 0 ? Visibility.Visible : Visibility.Collapsed;
-        DevelopmentCount.Text = unread > 99 ? "99+" : unread.ToString();
-        TabDevelopment.ToolTip = unread > 0 ? $"{unread} unread GitHub notification{(unread == 1 ? "" : "s")}" : null;
     }
 
     // ── Terminal panel ───────────────────────────────────────────────────

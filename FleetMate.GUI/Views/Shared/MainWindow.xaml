@@ -52,13 +52,8 @@
                                      Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xE943;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
+                                <!-- No count here: tabs and segments never carry a number. -->
                                 <TextBlock Text="Development" VerticalAlignment="Center" />
-                                <!-- Unread GitHub notifications as a plain orange count (never
-                                     red, never a badge), so a review request is seen without
-                                     opening the tab. -->
-                                <TextBlock x:Name="DevelopmentCount" Visibility="Collapsed" Margin="6,0,0,0"
-                                           VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"
-                                           Foreground="#E07A1F" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabBoards" Tag="Projects" GroupName="MainTabs"
