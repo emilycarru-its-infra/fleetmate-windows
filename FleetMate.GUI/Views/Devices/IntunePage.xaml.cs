@@ -60,6 +60,7 @@ public partial class IntunePage : Page
         }
 
         DevicesDataGrid.ItemsSource = _rows;
+        InitializeLifecycleControls();
         DevicesDataGrid.PreviewMouseRightButtonUp += OnGridRightClick;
         RestoreColumns();
 
@@ -448,6 +449,7 @@ public partial class IntunePage : Page
         AutopilotActionsHeader.Visibility = Show(anyAutopilot);
         IntuneActionsHeader.Visibility = Show((anyAutopilot || anyApple) && allEnrolled);
         NoActionsText.Visibility = Show(!allEnrolled && !anyAutopilot && !anyApple);
+        UpdateLifecycleSections(selected);
     }
 
     private async Task ShowDeviceDetailAsync(DeviceListRow row)
@@ -694,23 +696,22 @@ public partial class IntunePage : Page
     {
         if (_graphService == null) return;
 
-        var deviceIds = GetSelectedDeviceIds().ToList();
-        var keepEnrollment = WipeKeepEnrollmentCheckBox.IsChecked == true;
-        var keepUserData = WipeKeepUserDataCheckBox.IsChecked == true;
+        // Wipe takes device records, not bare ids, so each body is built for its own platform.
+        var devices = SelectedRows().Where(r => r.Intune != null).Select(r => r.Intune!).ToList();
+        var options = CurrentWipeOptions();
         var result = MessageBox.Show(
-            $"This will factory-reset {deviceIds.Count} device(s){(keepUserData ? ", keeping user data where the platform allows" : ", erasing all data")}. This cannot be undone.",
+            $"This will factory-reset {devices.Count} device(s){(options.KeepUserData ? ", keeping user data where the platform allows" : ", erasing all data")}. This cannot be undone.",
             "Confirm Wipe",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
 
         if (result != MessageBoxResult.Yes) return;
 
-        ShowActionMessage($"Wiping {deviceIds.Count} device(s)...", isLoading: true);
+        ShowActionMessage($"Wiping {devices.Count} device(s)...", isLoading: true);
 
         try
         {
-            var results = await _graphService.WipeDevicesAsync(deviceIds,
-                keepEnrollmentData: keepEnrollment, keepUserData: keepUserData, confirmed: true);
+            var results = await _graphService.WipeDevicesAsync(devices, options, confirmed: true);
             var successful = results.Count(r => r.Success);
             var failed = results.Count - successful;
 
