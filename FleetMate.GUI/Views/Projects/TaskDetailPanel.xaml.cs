@@ -45,7 +45,7 @@ public partial class TaskDetailPanel : UserControl
                 LoadWorkItemSidebar(task);
                 break;
             case "github":
-                RenderGitHubDetail(task);
+                LoadIssueSidebar(task);
                 break;
             case "gitea":
                 RenderGiteaDetail(task);
