@@ -22,13 +22,16 @@ public interface IRemoteRunner
     Task<SecureShellResult> RunAsync(string ip, string command, Action<string>? onChunk, CancellationToken cancellationToken, string? username = null, string? deviceName = null);
 }
 
-public class SecureShellRemoteRunner : IRemoteRunner
+public class SecureShellRemoteRunner : IRemoteRunner, IRemoteFileCopier
 {
     private readonly SecureShellService _ssh;
     public SecureShellRemoteRunner(SecureShellService ssh) => _ssh = ssh;
 
     public Task<SecureShellResult> RunAsync(string ip, string command, Action<string>? onChunk, CancellationToken cancellationToken, string? username = null, string? deviceName = null) =>
         _ssh.ExecuteStreamingAsync(ip, command, onChunk, cancellationToken, username, deviceName);
+
+    public Task<SecureShellResult> UploadAsync(string ip, string localPath, string remotePath, CancellationToken cancellationToken, string? username = null, string? deviceName = null) =>
+        _ssh.UploadFileAsync(ip, localPath, remotePath, cancellationToken, username, deviceName);
 }
 
 /// <summary>
