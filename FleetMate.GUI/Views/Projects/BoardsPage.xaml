@@ -7,6 +7,48 @@
       Loaded="Page_Loaded"
       xmlns:widgets="clr-namespace:FleetMate.GUI.Views.Shared.Widgets">
 
+    <Page.Resources>
+        <!-- One menu for board cards and Mine/Recent rows (macOS taskContextMenu).
+             Items tagged "azdo" apply to Azure DevOps work items only; the
+             submenus tagged with a key fill themselves when first opened. -->
+        <ContextMenu x:Key="TaskCardMenu" x:Shared="False" Opened="OnTaskMenuOpened">
+            <MenuItem Header="Open in Browser" Click="OnTaskOpenInBrowser" />
+            <MenuItem Header="Copy Link" Click="OnTaskCopyLink" />
+            <MenuItem Header="Copy ID" Click="OnTaskCopyId" />
+            <Separator Tag="azdo" />
+            <MenuItem Header="Set State" Tag="azdo:state" SubmenuOpened="OnTaskSubmenuOpened">
+                <MenuItem Header="Loading…" IsEnabled="False" />
+            </MenuItem>
+            <MenuItem Header="Set Priority" Tag="azdo">
+                <MenuItem Header="Critical" Click="OnTaskSetPriority" />
+                <MenuItem Header="High" Click="OnTaskSetPriority" />
+                <MenuItem Header="Medium" Click="OnTaskSetPriority" />
+                <MenuItem Header="Low" Click="OnTaskSetPriority" />
+            </MenuItem>
+            <MenuItem Header="Assign To" Tag="azdo:assign" SubmenuOpened="OnTaskSubmenuOpened">
+                <MenuItem Header="Loading…" IsEnabled="False" />
+            </MenuItem>
+            <MenuItem Header="Set Area Path" Tag="azdo:area" SubmenuOpened="OnTaskSubmenuOpened">
+                <MenuItem Header="Loading…" IsEnabled="False" />
+            </MenuItem>
+            <MenuItem Header="Set Iteration" Tag="azdo:iteration" SubmenuOpened="OnTaskSubmenuOpened">
+                <MenuItem Header="Loading…" IsEnabled="False" />
+            </MenuItem>
+            <MenuItem Header="Set Type" Tag="azdo:type" SubmenuOpened="OnTaskSubmenuOpened">
+                <MenuItem Header="Loading…" IsEnabled="False" />
+            </MenuItem>
+            <MenuItem Header="Reschedule" Tag="azdo">
+                <MenuItem Header="Tomorrow" Tag="tomorrow" Click="OnTaskReschedule" />
+                <MenuItem Header="Next Monday" Tag="monday" Click="OnTaskReschedule" />
+                <MenuItem Header="End of Month" Tag="month" Click="OnTaskReschedule" />
+            </MenuItem>
+            <Separator Tag="azdo" />
+            <MenuItem Header="Create Branch…" Tag="azdo:branch" SubmenuOpened="OnTaskSubmenuOpened">
+                <MenuItem Header="Loading…" IsEnabled="False" />
+            </MenuItem>
+        </ContextMenu>
+    </Page.Resources>
+
     <!-- Widgets sit above the page; the DockPanel keeps the page's own grid untouched. -->
     <DockPanel>
     <widgets:WidgetsSection DockPanel.Dock="Top" Tab="Projects" Margin="16,14,16,0" />
@@ -60,15 +102,16 @@
             </ui:SimpleStackPanel>
         </Grid>
 
-        <!-- Board / List / Projects toggle (separate row, left-aligned) -->
+        <!-- Mine | Queries | Recent | Board (macOS BoardsViewMode). Queries
+             opens first: every Shared Query expanded. -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
+            <RadioButton x:Name="MineModeRadio" Content="Mine"
+                         GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
+            <RadioButton x:Name="ListModeRadio" Content="Queries" IsChecked="True"
+                         GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
+            <RadioButton x:Name="RecentModeRadio" Content="Recent"
+                         GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
             <RadioButton x:Name="BoardModeRadio" Content="Board"
-                         GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
-            <!-- List first: the List mode renders every Shared Query expanded — that,
-                 not the kanban board, is the view Projects opens into (macOS parity). -->
-            <RadioButton x:Name="ListModeRadio" Content="List" IsChecked="True"
-                         GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
-            <RadioButton x:Name="ProjectsModeRadio" Content="Projects" 
                          GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
         </StackPanel>
 
@@ -95,6 +138,12 @@
                           ui:ControlHelper.PlaceholderText="Bucket"
                           SelectionChanged="BucketFilter_SelectionChanged" />
 
+                <ComboBox x:Name="BoardSourceCombo" Grid.Column="1" Width="150" Margin="8,0,0,0"
+                          Visibility="Collapsed" SelectedIndex="0" SelectionChanged="OnBoardSourceChanged"
+                          ToolTip="Which board to show">
+                    <ComboBoxItem Content="Azure DevOps" Tag="azdo" />
+                    <ComboBoxItem Content="GitHub Project" Tag="github" />
+                </ComboBox>
                 <ComboBox x:Name="GroupByCombo"
                           Grid.Column="2"
                           Width="130"
@@ -224,26 +273,7 @@
                                                         MouseLeftButtonUp="OnTaskCardClick"
                                                         PreviewMouseLeftButtonDown="OnTaskCardPreviewMouseDown"
                                                         MouseMove="OnTaskCardMouseMove"
-                                                        Tag="{Binding}">
-                                                    <Border.ContextMenu>
-                                                        <ContextMenu>
-                                                            <MenuItem Header="Open in Browser" Click="OnTaskOpenInBrowser" />
-                                                            <MenuItem Header="Copy Link" Click="OnTaskCopyLink" />
-                                                            <Separator />
-                                                            <MenuItem Header="Set State">
-                                                                <MenuItem Header="New" Click="OnTaskSetState" />
-                                                                <MenuItem Header="Active" Click="OnTaskSetState" />
-                                                                <MenuItem Header="Resolved" Click="OnTaskSetState" />
-                                                                <MenuItem Header="Closed" Click="OnTaskSetState" />
-                                                            </MenuItem>
-                                                            <MenuItem Header="Set Priority">
-                                                                <MenuItem Header="Critical" Click="OnTaskSetPriority" />
-                                                                <MenuItem Header="High" Click="OnTaskSetPriority" />
-                                                                <MenuItem Header="Medium" Click="OnTaskSetPriority" />
-                                                                <MenuItem Header="Low" Click="OnTaskSetPriority" />
-                                                            </MenuItem>
-                                                        </ContextMenu>
-                                                    </Border.ContextMenu>
+                                                        Tag="{Binding}" ContextMenu="{StaticResource TaskCardMenu}">
                                                     <StackPanel>
                                                         <TextBlock Text="{Binding Title}" FontWeight="Medium" TextWrapping="Wrap" MaxHeight="56" />
                                                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
@@ -278,6 +308,33 @@
         <!-- Stored queries (List mode, DevOps configured): every Shared Query
              expanded like the Azure DevOps results grid. -->
         <local:QueriesListControl x:Name="QueriesList" Margin="0,16,0,0" Visibility="Collapsed" />
+        <!-- Mine and Recent: one flat list, newest change first. -->
+        <Grid x:Name="FlatTasks" Margin="0,16,0,0" Visibility="Collapsed">
+            <ListView x:Name="FlatTaskList" BorderThickness="0" SelectionMode="Single"
+                      ItemContainerStyle="{StaticResource FleetListViewItemStyle}"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                      SelectionChanged="OnFlatTaskSelected">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Border Padding="4,5" Background="Transparent" Tag="{Binding}"
+                                ContextMenu="{StaticResource TaskCardMenu}">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding UpdatedLabel}" FontSize="10"
+                                           Opacity="0.6" Margin="8,0,0,0" VerticalAlignment="Top" />
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold"
+                                               TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
+                                    <TextBlock Text="{Binding RowDetail}" FontSize="10" Opacity="0.7"
+                                               TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+            <TextBlock x:Name="FlatTasksEmpty" Visibility="Collapsed" HorizontalAlignment="Center"
+                       VerticalAlignment="Center" Opacity="0.6" />
+        </Grid>
         <!-- Work Items List (List mode legacy fallback when DevOps is not configured) -->
         <Border x:Name="WorkItemsList" Margin="0,16,0,0" Visibility="Collapsed">
             <ListView x:Name="WorkItemsListView" 
