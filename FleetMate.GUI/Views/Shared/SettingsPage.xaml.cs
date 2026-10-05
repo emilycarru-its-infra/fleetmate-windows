@@ -15,6 +15,17 @@ public partial class SettingsPage : Page
     private const string RegistryPath = @"SOFTWARE\FleetMate";
     private bool _isLoadingSettings;
     private IReadOnlyList<string> _repoDefaults = Array.Empty<string>();
+    private FleetMate.Core.Config.TerminalSettings? _terminal;
+
+    private void OnAgentCommandPickerChanged(object sender, SelectionChangedEventArgs e) =>
+        AgentCustomCommandTextBox.Visibility = AgentCommandPicker.SelectedValue as string == FleetMate.Core.Config.AgentCommandPicker.Custom
+            ? Visibility.Visible : Visibility.Collapsed;
+
+    private static void ShowPolicySource(TextBlock text, bool fromPolicy)
+    {
+        text.Text = "Set by your organization. Changing it here overrides that for you.";
+        text.Visibility = fromPolicy ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     private void OnResetReposClicked(object sender, RoutedEventArgs e) =>
         ReposTextBox.Text = string.Join(Environment.NewLine, _repoDefaults);
@@ -70,9 +81,15 @@ public partial class SettingsPage : Page
 
         // Terminal. Repos starts from the managed defaults until the operator saves their own.
         var terminal = config.Terminal;
-        AgentCommandComboBox.ItemsSource = FleetMate.Core.Services.Terminal.AgentCommands.Choices;
-        AgentCommandComboBox.Text = terminal.AgentCommand;
+        _terminal = terminal;
+        AgentCommandPicker.ItemsSource = FleetMate.Core.Config.AgentCommandPicker.Choices
+            .Select(c => new { c.Key, c.Label }).ToList();
+        var (pickerKey, customCommand) = FleetMate.Core.Config.AgentCommandPicker.FromSetting(terminal.AgentCommand);
+        AgentCustomCommandTextBox.Text = customCommand;
+        AgentCommandPicker.SelectedValue = pickerKey;
         AgentAutoStartCheckBox.IsChecked = terminal.AgentAutoStart;
+        ShowPolicySource(AgentCommandSourceText, terminal.AgentCommandFromPolicy);
+        ShowPolicySource(AgentAutoStartSourceText, terminal.AgentAutoStartFromPolicy);
         ReposTextBox.Text = string.Join(Environment.NewLine, terminal.EffectiveRepos);
         _repoDefaults = terminal.RepoDefaults;
         RepoDefaultsText.Text = terminal.RepoDefaults.Count > 0
@@ -154,8 +171,20 @@ public partial class SettingsPage : Page
             key.DeleteValue("SnipeApiKey", throwOnMissingValue: false);
 
             // Terminal. An empty repo list is removed so the managed defaults seed it again.
-            SetOrDeleteReg(key, "AgentCommand", AgentCommandComboBox.Text);
-            key.SetValue("AgentAutoStart", AgentAutoStartCheckBox.IsChecked == true ? "1" : "0");
+            // Your own value is written only when it differs from what you
+            // would otherwise get (policy, then the default), so a managed
+            // default keeps applying until you choose something else.
+            var agentCommand = FleetMate.Core.Config.AgentCommandPicker.ToSetting(
+                AgentCommandPicker.SelectedValue as string ?? "", AgentCustomCommandTextBox.Text);
+            if (_terminal != null && string.Equals(agentCommand, _terminal.AgentCommandFallback, StringComparison.OrdinalIgnoreCase))
+                key.DeleteValue("AgentCommand", throwOnMissingValue: false);
+            else
+                key.SetValue("AgentCommand", agentCommand);
+            var autoStart = AgentAutoStartCheckBox.IsChecked == true;
+            if (_terminal != null && autoStart == _terminal.AgentAutoStartFallback)
+                key.DeleteValue("AgentAutoStart", throwOnMissingValue: false);
+            else
+                key.SetValue("AgentAutoStart", autoStart ? "1" : "0");
             var repos = FleetMate.Core.Config.TerminalSettings.ParseList(ReposTextBox.Text);
             if (repos.Count == 0 || repos.SequenceEqual(_repoDefaults, StringComparer.OrdinalIgnoreCase))
                 key.DeleteValue("Repos", throwOnMissingValue: false);
