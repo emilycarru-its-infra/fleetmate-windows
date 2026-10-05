@@ -4,6 +4,7 @@
         xmlns:ui="http://schemas.modernwpf.com/2019"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:vm="clr-namespace:FleetMate.GUI.ViewModels"
+        xmlns:term="clr-namespace:FleetMate.GUI.Views.Terminal"
         ui:WindowHelper.UseModernWindowStyle="True"
         ui:TitleBar.ExtendViewIntoTitleBar="True"
         Title="FleetMate"
@@ -12,7 +13,8 @@
         Width="1400"
         MinHeight="600"
         MinWidth="900"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        PreviewKeyDown="OnWindowPreviewKeyDown">
 
     <Window.DataContext>
         <vm:MainViewModel />
@@ -21,11 +23,13 @@
     <!-- TextElement.Foreground: a bare WPF TextBlock defaults to black no matter
          the theme, so in dark mode every TextBlock without an explicit Foreground
          disappears. Setting the inherited foreground here fixes all of them. -->
-    <Grid Background="{DynamicResource AppBackgroundBrush}"
+    <Grid x:Name="RootGrid" Background="{DynamicResource AppBackgroundBrush}"
           TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="48" />
-            <RowDefinition Height="*" />
+            <RowDefinition x:Name="ContentRow" Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition x:Name="TerminalRow" Height="0" />
         </Grid.RowDefinitions>
 
         <!-- Centered, segmented top navigation. The equal outer columns keep it
@@ -126,6 +130,13 @@
                                        VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
+                    <ToggleButton x:Name="TerminalToggleButton" ToolTip="Terminal (Ctrl+`)" Click="OnTerminalToggleClicked"
+                                  AutomationProperties.AutomationId="TerminalToggleButton"
+                                  AutomationProperties.Name="Terminal"
+                                  shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                                  Background="Transparent" BorderThickness="0" Padding="8,5" Margin="0,0,4,0">
+                        <ui:FontIcon Glyph="&#xE756;" FontFamily="Segoe Fluent Icons" FontSize="14" />
+                    </ToggleButton>
                     <Button x:Name="AuthButton" ToolTip="Authentication status" Click="OnAuthClicked"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
                             Style="{StaticResource ChromeIconButtonStyle}">
@@ -154,5 +165,20 @@
 
         <!-- Content Frame -->
         <Frame Grid.Row="1" x:Name="ContentFrame" NavigationUIVisibility="Hidden" Background="Transparent" />
+
+        <!-- Agent terminal: reachable from every tab, resized by dragging the splitter. -->
+        <!-- The divider is a Thumb, not a GridSplitter: its height comes from
+             the pointer's position in the window, so it tracks smoothly, and
+             dragging it near the top switches to full-window mode. -->
+        <Thumb x:Name="TerminalDivider" Grid.Row="2" Height="5" Cursor="SizeNS" Visibility="Collapsed"
+               AutomationProperties.AutomationId="TerminalDivider"
+               DragStarted="OnDividerDragStarted" DragDelta="OnDividerDragDelta">
+            <Thumb.Template>
+                <ControlTemplate TargetType="Thumb">
+                    <Border Background="Transparent" />
+                </ControlTemplate>
+            </Thumb.Template>
+        </Thumb>
+        <term:TerminalPanel x:Name="Terminal" Grid.Row="3" Visibility="Collapsed" />
     </Grid>
 </Window>

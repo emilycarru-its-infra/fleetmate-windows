@@ -27,6 +27,7 @@ public partial class TaskDetailPanel : UserControl
 
     public void ShowTask(UnifiedTask task, ITaskProvider? provider)
     {
+        FleetMate.GUI.Views.Terminal.ContextPublisher.WorkItem(task);
         _task = task;
         _provider = provider;
 

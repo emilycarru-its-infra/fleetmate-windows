@@ -38,6 +38,19 @@ public partial class MainWindow : Window
         _elevationTick = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
         _elevationTick.Tick += (_, _) => UpdateElevationStatus();
         _elevationTick.Start();
+
+        // The terminal panel: hide on request, end every session with the
+        // window, and with AgentAutoStart (on by default) open a session at launch.
+        Terminal.HideRequested += (_, _) => SetTerminalVisible(false);
+        Terminal.FullWindowRequested += (_, _) => ToggleFullWindow();
+        Closed += (_, _) => Terminal.DisposeAll();
+        // An agent session started at launch must not take the keyboard.
+        if (Application.Current is App { Config.Terminal.AgentAutoStart: true })
+            Loaded += (_, _) =>
+            {
+                SetTerminalVisible(true, takeFocus: false);
+                Terminal.OpenDefaultSession(takeFocus: false);
+            };
     }
 
     // ── Elevation status ──────────────────────────────────────────
@@ -97,6 +110,94 @@ public partial class MainWindow : Window
         TabDevelopment.ToolTip = unread > 0 ? $"{unread} unread GitHub notification{(unread == 1 ? "" : "s")}" : null;
     }
 
+    // ── Terminal panel ───────────────────────────────────────────────────
+
+    private readonly FleetMate.Core.Services.Terminal.TerminalLayoutState _terminalLayout = new();
+
+    private void OnWindowPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        // App-wide terminal keys. Inside a terminal the page reports them
+        // itself (WebView2 keeps keys to itself), so these cover the rest.
+        var mods = System.Windows.Input.Keyboard.Modifiers;
+        var key = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
+        const System.Windows.Input.ModifierKeys Ctrl = System.Windows.Input.ModifierKeys.Control;
+        const System.Windows.Input.ModifierKeys Shift = System.Windows.Input.ModifierKeys.Shift;
+
+        if (key == System.Windows.Input.Key.Oem3 && mods == Ctrl)
+        {
+            ToggleTerminal();
+            e.Handled = true;
+        }
+        else if (key == System.Windows.Input.Key.T && (mods == Ctrl || mods == (Ctrl | Shift)))
+        {
+            // Ctrl+T opens a new session from anywhere in the app.
+            SetTerminalVisible(true, takeFocus: false);
+            Terminal.OpenDefaultSession();
+            e.Handled = true;
+        }
+        else if (key == System.Windows.Input.Key.Enter && mods == (Ctrl | Shift))
+        {
+            ToggleFullWindow();
+            e.Handled = true;
+        }
+    }
+
+    private double AvailableHeight => Math.Max(0, RootGrid.ActualHeight - RootGrid.RowDefinitions[0].ActualHeight - TerminalDivider.ActualHeight);
+
+    private void OnDividerDragStarted(object sender, System.Windows.Controls.Primitives.DragStartedEventArgs e) =>
+        _terminalLayout.BeginDrag();
+
+    /// <summary>
+    /// The height is where the pointer is in the window, not an offset from
+    /// the moving divider, so the drag tracks the pointer without jitter.
+    /// </summary>
+    private void OnDividerDragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+    {
+        var pointer = System.Windows.Input.Mouse.GetPosition(RootGrid).Y;
+        var height = RootGrid.ActualHeight - pointer - TerminalDivider.ActualHeight / 2;
+        _terminalLayout.Drag(height, AvailableHeight);
+        ApplyTerminalLayout();
+    }
+
+    private void ToggleFullWindow()
+    {
+        if (Terminal.Visibility != Visibility.Visible) SetTerminalVisible(true);
+        _terminalLayout.Toggle(AvailableHeight);
+        ApplyTerminalLayout();
+    }
+
+    /// <summary>Full-window mode hides the tab's page behind the terminal; otherwise the panel has its height.</summary>
+    private void ApplyTerminalLayout()
+    {
+        var visible = Terminal.Visibility == Visibility.Visible;
+        var full = visible && _terminalLayout.FullWindow;
+        ContentFrame.Visibility = full ? Visibility.Hidden : Visibility.Visible;
+        ContentRow.Height = full ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        TerminalRow.Height = !visible ? new GridLength(0)
+            : full ? new GridLength(1, GridUnitType.Star)
+            : new GridLength(_terminalLayout.Height);
+    }
+
+    private void OnTerminalToggleClicked(object sender, RoutedEventArgs e) => ToggleTerminal();
+
+    public void ToggleTerminal() => SetTerminalVisible(Terminal.Visibility != Visibility.Visible);
+
+    /// <summary>
+    /// Show or hide the panel. Showing it never opens a session: sessions
+    /// open at launch, from Ctrl+T and from the New menu. The panel lives
+    /// outside the page frame, so tab changes leave it and its sessions alone.
+    /// </summary>
+    public void SetTerminalVisible(bool visible, bool takeFocus = true)
+    {
+        Terminal.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        TerminalDivider.Visibility = Terminal.Visibility;
+        TerminalToggleButton.IsChecked = visible;
+        ApplyTerminalLayout();
+        Terminal.OnVisibilityChanged();
+        if (!visible) return;
+        if (takeFocus) Terminal.FocusActive();
+    }
+
     private void OnTabChecked(object sender, RoutedEventArgs e)
     {
         if (ContentFrame == null) return; // Not yet initialized
@@ -143,6 +244,7 @@ public partial class MainWindow : Window
 
     private void NavigateToPage(string tag)
     {
+        FleetMate.GUI.Views.Terminal.ContextPublisher.Tab(tag);
         ContentFrame.Navigate(GetOrCreatePage(tag));
     }
 
