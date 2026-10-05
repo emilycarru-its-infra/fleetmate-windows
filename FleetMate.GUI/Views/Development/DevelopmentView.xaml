@@ -183,7 +183,8 @@
                     <ToggleButton x:Name="SourceGitHub" Content="GitHub" Tag="GitHub"
                                   Padding="10,2" FontSize="11" Margin="0,0,4,4" Click="OnSourceClicked" />
                 </WrapPanel>
-                <WrapPanel x:Name="RepoChipsPanel" Margin="0,2,0,0" />
+                <ComboBox x:Name="PullsRepoCombo" Margin="0,2,0,0" MinWidth="200" MaxWidth="360" HorizontalAlignment="Left"
+                          SelectionChanged="OnPullsRepoChanged" ToolTip="Filter by repository" Visibility="Collapsed" />
                 <TextBlock x:Name="PullRequestCount" FontSize="11" Margin="0,4,0,0" Opacity="0.7" />
             </StackPanel>
 
@@ -199,6 +200,8 @@
                     <ToggleButton x:Name="CommitsSourceGitHub" Content="GitHub" Tag="GitHub"
                                   Padding="10,2" FontSize="11" Margin="0,0,4,4" Click="OnCommitsSourceClicked" />
                 </WrapPanel>
+                <ComboBox x:Name="CommitsRepoCombo" Margin="0,2,0,0" MinWidth="200" MaxWidth="360" HorizontalAlignment="Left"
+                          SelectionChanged="OnCommitsRepoChanged" ToolTip="Filter by repository" Visibility="Collapsed" />
                 <TextBlock x:Name="CommitsCount" FontSize="11" Margin="0,4,0,0" Opacity="0.7" />
             </StackPanel>
 
@@ -220,6 +223,8 @@
                     <ToggleButton x:Name="RunsStatusSucceeded" Content="Succeeded" Tag="Succeeded"
                                   Padding="10,2" FontSize="11" Margin="0,0,4,4" Click="OnRunsStatusClicked" />
                 </WrapPanel>
+                <ComboBox x:Name="PipelinesRepoCombo" Margin="0,2,0,0" MinWidth="200" MaxWidth="360" HorizontalAlignment="Left"
+                          SelectionChanged="OnPipelinesRepoChanged" ToolTip="Filter by repository" Visibility="Collapsed" />
                 <TextBlock x:Name="PipelinesCount" FontSize="11" Margin="0,4,0,0" Opacity="0.7" />
             </StackPanel>
 
