@@ -4,14 +4,35 @@ namespace FleetMate.Core.Config;
 /// The agent terminal panel's settings. The names match the macOS client:
 /// AgentCommand, AgentAutoStart, Repos (the operator's own list) and
 /// RepoDefaults (the managed default list from policy).
+///
+/// AgentCommand and AgentAutoStart come in three layers: the operator's own
+/// value (HKCU\SOFTWARE\FleetMate) wins, then the managed value
+/// (SOFTWARE\Policies\FleetMate), then the built-in default (shell, on).
+/// Unlike FleetMate's other managed settings, policy here supplies a default
+/// the operator can change.
 /// </summary>
 public sealed class TerminalSettings
 {
-    /// <summary>"shell", a preset (claude, codex, claude-remote, codex-remote) or a custom binary and arguments.</summary>
-    public string AgentCommand { get; set; } = "shell";
+    public const bool DefaultAutoStart = true;
 
-    /// <summary>Open an AgentCommand session when the app starts and whenever a new terminal tab opens.</summary>
-    public bool AgentAutoStart { get; set; }
+    /// <summary>The operator's own AgentCommand; "" is an explicit choice of the shell. Null when unset.</summary>
+    public string? UserAgentCommand { get; set; }
+    public string? PolicyAgentCommand { get; set; }
+    public bool? UserAgentAutoStart { get; set; }
+    public bool? PolicyAgentAutoStart { get; set; }
+
+    /// <summary>What sessions run: "" or "shell", a preset key, or a custom command line.</summary>
+    public string AgentCommand => (UserAgentCommand ?? PolicyAgentCommand ?? "").Trim();
+
+    /// <summary>Open a session when FleetMate starts.</summary>
+    public bool AgentAutoStart => UserAgentAutoStart ?? PolicyAgentAutoStart ?? DefaultAutoStart;
+
+    /// <summary>What AgentCommand falls back to without the operator's own value.</summary>
+    public string AgentCommandFallback => (PolicyAgentCommand ?? "").Trim();
+    public bool AgentAutoStartFallback => PolicyAgentAutoStart ?? DefaultAutoStart;
+
+    public bool AgentCommandFromPolicy => UserAgentCommand == null && PolicyAgentCommand != null;
+    public bool AgentAutoStartFromPolicy => UserAgentAutoStart == null && PolicyAgentAutoStart != null;
 
     /// <summary>The operator's repos: local paths or clone URLs.</summary>
     public List<string> Repos { get; set; } = new();
@@ -30,4 +51,45 @@ public sealed class TerminalSettings
             .Select(i => i.Trim()).Where(i => i.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
         _ => new List<string>(),
     };
+
+    public static bool? ParseBool(object? value) => value?.ToString()?.Trim().ToLowerInvariant() switch
+    {
+        "1" or "true" or "yes" or "on" => true,
+        "0" or "false" or "no" or "off" => false,
+        _ => null,
+    };
+}
+
+/// <summary>
+/// Settings ▸ Terminal's "Runs" picker. Each choice stores its key in
+/// AgentCommand: "" for Shell, the preset's key, or for Custom the command
+/// line typed beside it.
+/// </summary>
+public static class AgentCommandPicker
+{
+    public const string Custom = "custom";
+
+    public static readonly IReadOnlyList<(string Key, string Label)> Choices = new[]
+    {
+        ("", "Shell"),
+        ("claude", "Claude"),
+        ("codex", "Codex"),
+        ("claude-remote", "Claude (remote)"),
+        ("codex-remote", "Codex (remote)"),
+        (Custom, "Custom…"),
+    };
+
+    /// <summary>The picker choice and custom text a stored AgentCommand shows as.</summary>
+    public static (string Key, string CustomCommand) FromSetting(string? agentCommand)
+    {
+        var value = agentCommand?.Trim() ?? "";
+        if (value.Length == 0 || value.Equals("shell", StringComparison.OrdinalIgnoreCase)) return ("", "");
+        foreach (var (key, _) in Choices)
+            if (key.Length > 0 && key != Custom && key.Equals(value, StringComparison.OrdinalIgnoreCase)) return (key, "");
+        return (Custom, value);
+    }
+
+    /// <summary>The AgentCommand a picker choice stores. Custom with nothing typed is the shell.</summary>
+    public static string ToSetting(string key, string? customCommand) =>
+        key == Custom ? (customCommand?.Trim() ?? "") : key;
 }
