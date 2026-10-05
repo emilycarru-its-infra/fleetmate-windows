@@ -42,9 +42,19 @@ public sealed partial class GitHubPullRequestService
             .ToList();
         if (ownerList.Count == 0) return new();
 
-        var sinceText = since.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ");
+        // Commits are kept between polls: ask only for what landed since the
+        // last sync (less a little skew), then merge by oid into the stored
+        // set, which keeps the window, newest first, capped per repository.
+        var key = $"commits:{perRepo}:{reposPerOwner}:{string.Join(",", ownerList.Order(StringComparer.OrdinalIgnoreCase))}";
+        var store = GitHubCommitSync.Shared;
+        var stored = store.Load(key);
+        var startedAt = GitHubSync.Now();
+        var (querySince, isFull) = GitHubCommitSync.Plan(stored, since, startedAt);
+
+        var sinceText = querySince.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ");
         var sinceDay = sinceText[..10];
 
+        var anyFailed = false;
         var batches = await Task.WhenAll(ownerList.Chunk(3).Select(async chunk =>
         {
             try
@@ -54,18 +64,28 @@ public sealed partial class GitHubPullRequestService
             catch (Exception ex)
             {
                 Log.Warning(ex, "[github] recent commits failed for {Owners}", string.Join(",", chunk));
+                anyFailed = true;
                 return new List<RepositoryCommits>();
             }
         }));
 
         // The same repo can surface under two owners (a fork the user owns and
         // the org original); keep the first.
-        var result = batches
+        var fetched = batches
             .SelectMany(b => b)
             .GroupBy(r => r.Id)
             .Select(g => g.First())
-            .OrderByDescending(r => r.LatestDate)
             .ToList();
+
+        var result = GitHubCommitSync.Merge(
+            isFull ? Enumerable.Empty<RepositoryCommits>() : stored!.Repositories, fetched, since, perRepo);
+        // A failed batch must not move the sync point past commits it never read.
+        if (!anyFailed) store.Save(key, new GitHubCommitSync.StoredCommits
+        {
+            LastSync = startedAt,
+            LastFull = isFull ? startedAt : stored!.LastFull,
+            Repositories = result,
+        });
 
         Log.Information("[github] recent commits → {Count} repositories across {Owners} owners", result.Count, ownerList.Count);
         return result;
