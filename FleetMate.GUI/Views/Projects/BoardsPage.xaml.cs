@@ -207,7 +207,8 @@ public partial class BoardsPage : Page
             var filter = new TaskFilter
             {
                 IncludeClosed = _showClosed || true, // Always fetch to populate columns
-                Limit = 100
+                // The macOS load size: Recent and the board show this many.
+                Limit = 500
             };
 
             if (!string.IsNullOrEmpty(_filterProvider))
