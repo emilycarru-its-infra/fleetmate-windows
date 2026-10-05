@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Threading;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
+using FleetMate.GUI.Views.Shared;
 using Serilog;
 
 namespace FleetMate.GUI.Views.Development;
@@ -19,6 +20,8 @@ public partial class DevelopmentView
     private DevelopmentSourceFilter _commitsSource = DevelopmentSourceFilter.All;
     private DevelopmentSourceFilter _runsSource = DevelopmentSourceFilter.All;
     private PipelineStatusFilter _runsStatus = PipelineStatusFilter.All;
+    private string? _commitsRepository;
+    private string? _runsRepository;
     private bool _loadingCommits;
     private bool _loadingRuns;
     private DispatcherTimer? _cycleTimer;
@@ -112,7 +115,10 @@ public partial class DevelopmentView
     {
         if (AppInstance?.DevelopmentCommits is not { } all) return;
 
-        var repos = CommitsAndPipelinesFilter.Commits(all, _commitsSource, CommitsSearchBox.Text);
+        _commitsRepository = RepoFilterMenu.Fill(CommitsRepoCombo,
+            CommitsAndPipelinesFilter.CommitRepositoryCounts(all, _commitsSource), _commitsRepository);
+
+        var repos = CommitsAndPipelinesFilter.Commits(all, _commitsSource, CommitsSearchBox.Text, _commitsRepository);
         CommitsList.ItemsSource = repos.Select(r => new RepositoryCommitsViewModel { Repository = r }).ToList();
         CommitsCount.Text = $"{repos.Sum(r => r.Commits.Count)} commits across {repos.Count} repositories · last 14 days";
 
@@ -133,9 +139,19 @@ public partial class DevelopmentView
         if ((sender as FrameworkElement)?.Tag is string tag && Enum.TryParse<DevelopmentSourceFilter>(tag, out var source))
             _commitsSource = source;
 
+        _commitsRepository = null;
+
         CommitsSourceAll.IsChecked = _commitsSource == DevelopmentSourceFilter.All;
         CommitsSourceDevOps.IsChecked = _commitsSource == DevelopmentSourceFilter.DevOps;
         CommitsSourceGitHub.IsChecked = _commitsSource == DevelopmentSourceFilter.GitHub;
+        RenderCommits();
+    }
+
+    private void OnCommitsRepoChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var repo = RepoFilterMenu.Picked(CommitsRepoCombo, out var changed);
+        if (!changed || repo == _commitsRepository) return;
+        _commitsRepository = repo;
         RenderCommits();
     }
 
@@ -212,7 +228,10 @@ public partial class DevelopmentView
         if (AppInstance?.DevelopmentRuns is not { } all) return;
 
         var selectedId = (PipelinesList.SelectedItem as PipelineRunRowViewModel)?.Run.Id;
-        var runs = CommitsAndPipelinesFilter.Runs(all, _runsSource, _runsStatus, PipelinesSearchBox.Text);
+        _runsRepository = RepoFilterMenu.Fill(PipelinesRepoCombo,
+            CommitsAndPipelinesFilter.RunRepositoryCounts(all, _runsSource), _runsRepository);
+
+        var runs = CommitsAndPipelinesFilter.Runs(all, _runsSource, _runsStatus, PipelinesSearchBox.Text, _runsRepository);
         var rows = runs.Select(r => new PipelineRunRowViewModel { Run = r }).ToList();
         PipelinesList.ItemsSource = rows;
         if (selectedId != null) PipelinesList.SelectedItem = rows.FirstOrDefault(r => r.Run.Id == selectedId);
@@ -238,9 +257,19 @@ public partial class DevelopmentView
         if ((sender as FrameworkElement)?.Tag is string tag && Enum.TryParse<DevelopmentSourceFilter>(tag, out var source))
             _runsSource = source;
 
+        _runsRepository = null;
+
         RunsSourceAll.IsChecked = _runsSource == DevelopmentSourceFilter.All;
         RunsSourceDevOps.IsChecked = _runsSource == DevelopmentSourceFilter.DevOps;
         RunsSourceGitHub.IsChecked = _runsSource == DevelopmentSourceFilter.GitHub;
+        RenderRuns();
+    }
+
+    private void OnPipelinesRepoChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var repo = RepoFilterMenu.Picked(PipelinesRepoCombo, out var changed);
+        if (!changed || repo == _runsRepository) return;
+        _runsRepository = repo;
         RenderRuns();
     }
 
