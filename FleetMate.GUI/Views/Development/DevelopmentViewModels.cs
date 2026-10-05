@@ -52,6 +52,10 @@ public static class DevelopmentFilter
            .OrderByDescending(pr => pr.LastActivity)
            .ToList();
 
+    /// <summary>The inbox list: unread only, or every loaded thread.</summary>
+    public static List<GitHubNotification> Inbox(IEnumerable<GitHubNotification> notifications, bool showRead) =>
+        notifications.Where(n => showRead || n.Unread).ToList();
+
     /// <summary>"owner/repo" for GitHub, "Project/Repo" for DevOps — the group header and repo-chip key.</summary>
     public static string RepositoryKey(UnifiedPullRequest pr) => $"{pr.Container}/{pr.Repository}";
 
@@ -102,6 +106,8 @@ public sealed class DevelopmentPullRequestRowViewModel
         : "";
 
     public Visibility RelationVisibility => RelationLabel.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    public string CopyIdLabel => $"Copy ID ({PullRequest.Number})";
 }
 
 /// <summary>One comment or review in the activity sidebar.</summary>
