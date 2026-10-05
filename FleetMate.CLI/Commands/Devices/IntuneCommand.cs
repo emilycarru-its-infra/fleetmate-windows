@@ -60,13 +60,14 @@ public static class IntuneCommand
         command.SetHandler(async (identifier, keepUserData, confirm) =>
         {
             if (!EnsureConfigured(graphService)) return;
+            var id = await ResolveTargetAsync(graphService!, identifier);
+            if (id == null) return;
             if (!confirm)
             {
-                AnsiConsole.MarkupLine($"[yellow]This will reset {Markup.Escape(identifier)} to OOBE, removing profiles, apps and settings. Re-run with --confirm to proceed.[/]");
+                AnsiConsole.MarkupLine("[yellow]This will reset that device to OOBE, removing profiles, apps and settings. Re-run with --confirm to proceed.[/]");
                 return;
             }
-            var id = await ResolveDeviceIdAsync(graphService!, identifier);
-            ReportAction(await graphService!.AutopilotResetDeviceAsync(id!, keepUserData: keepUserData, confirmed: true), "AutoPilot Reset");
+            ReportAction(await graphService!.AutopilotResetDeviceAsync(id, keepUserData: keepUserData, confirmed: true), "AutoPilot Reset");
         }, idArg, keepUserDataOption, confirmOption);
         return command;
     }
@@ -81,13 +82,14 @@ public static class IntuneCommand
         command.SetHandler(async (identifier, confirm) =>
         {
             if (!EnsureConfigured(graphService)) return;
+            var id = await ResolveTargetAsync(graphService!, identifier);
+            if (id == null) return;
             if (!confirm)
             {
-                AnsiConsole.MarkupLine($"[yellow]This will delete the Intune record for {Markup.Escape(identifier)}, leaving it unmanaged until it re-enrolls. Re-run with --confirm to proceed.[/]");
+                AnsiConsole.MarkupLine("[yellow]This will delete that Intune record, leaving the device unmanaged until it re-enrolls. Re-run with --confirm to proceed.[/]");
                 return;
             }
-            var id = await ResolveDeviceIdAsync(graphService!, identifier);
-            ReportAction(await graphService!.DeleteManagedDeviceAsync(id!, confirmed: true), "delete");
+            ReportAction(await graphService!.DeleteManagedDeviceAsync(id, confirmed: true), "delete");
         }, idArg, confirmOption);
         return command;
     }
@@ -281,12 +283,38 @@ public static class IntuneCommand
         return true;
     }
 
-    /// <summary>Resolve a serial to a managedDevice id; pass an id straight through.</summary>
-    private static async Task<string?> ResolveDeviceIdAsync(GraphService graph, string identifier)
+    /// <summary>
+    /// Resolve a serial or managedDevice id to exactly one Intune record and
+    /// print it, or explain why not and return null. Every device action here
+    /// goes through this, so none of them can act on a guess.
+    /// </summary>
+    internal static async Task<string?> ResolveTargetAsync(GraphService graph, string identifier)
     {
-        if (Guid.TryParse(identifier, out _)) return identifier;
-        var device = await graph.GetDeviceBySerialAsync(identifier);
-        return string.IsNullOrEmpty(device?.Id) ? identifier : device!.Id;
+        var resolution = await DestructiveTargetResolver.ResolveSingleAsync(graph, identifier);
+        return ReportResolution(resolution);
+    }
+
+    internal static string? ReportResolution(TargetResolution resolution)
+    {
+        switch (resolution)
+        {
+            case TargetResolution.Resolved r:
+                AnsiConsole.MarkupLine($"Target: [cyan]{Markup.Escape(r.Device.Name ?? "-")}[/]  serial {Markup.Escape(r.Device.Serial ?? "-")}  id [dim]{r.Device.Id}[/]");
+                return r.Device.Id;
+            case TargetResolution.NotFound n:
+                AnsiConsole.MarkupLine($"[yellow]No Intune record matches {Markup.Escape(n.Identifier)} exactly.[/] Nothing was changed.");
+                return null;
+            case TargetResolution.Ambiguous a:
+                AnsiConsole.MarkupLine($"[yellow]{a.Candidates.Count} Intune records match {Markup.Escape(a.Identifier)}.[/] Re-run with one managedDevice id:");
+                foreach (var c in a.Candidates)
+                    AnsiConsole.MarkupLine($"  [dim]{Markup.Escape(c.ToString())}[/]");
+                return null;
+            case TargetResolution.Invalid i:
+                AnsiConsole.MarkupLine($"[red]{Markup.Escape(i.Identifier)}:[/] {Markup.Escape(i.Reason)}");
+                return null;
+            default:
+                return null;
+        }
     }
 
     private static void ReportAction(GraphService.DeviceActionResult result, string action)
@@ -303,8 +331,9 @@ public static class IntuneCommand
         command.SetHandler(async (identifier) =>
         {
             if (!EnsureConfigured(graphService)) return;
-            var id = await ResolveDeviceIdAsync(graphService!, identifier);
-            ReportAction(await graphService!.SyncDeviceAsync(id!), "sync");
+            var id = await ResolveTargetAsync(graphService!, identifier);
+            if (id == null) return;
+            ReportAction(await graphService!.SyncDeviceAsync(id), "sync");
         }, idArg);
         return command;
     }
@@ -317,8 +346,9 @@ public static class IntuneCommand
         command.SetHandler(async (identifier) =>
         {
             if (!EnsureConfigured(graphService)) return;
-            var id = await ResolveDeviceIdAsync(graphService!, identifier);
-            ReportAction(await graphService!.RebootDeviceAsync(id!), "reboot");
+            var id = await ResolveTargetAsync(graphService!, identifier);
+            if (id == null) return;
+            ReportAction(await graphService!.RebootDeviceAsync(id), "reboot");
         }, idArg);
         return command;
     }
@@ -328,14 +358,22 @@ public static class IntuneCommand
         var command = new Command("lock", "Remotely lock a device");
         var idArg = new Argument<string>(name: "identifier", description: "Serial number or managedDevice id");
         var pinOption = new Option<string?>(aliases: ["--pin"], description: "Optional PIN (macOS)");
+        var confirmOption = new Option<bool>(aliases: ["--confirm"], description: "Required to actually lock");
         command.AddArgument(idArg);
         command.AddOption(pinOption);
-        command.SetHandler(async (identifier, pin) =>
+        command.AddOption(confirmOption);
+        command.SetHandler(async (identifier, pin, confirm) =>
         {
             if (!EnsureConfigured(graphService)) return;
-            var id = await ResolveDeviceIdAsync(graphService!, identifier);
-            ReportAction(await graphService!.RemoteLockDeviceAsync(id!, pin, confirmed: true), "lock");
-        }, idArg, pinOption);
+            var id = await ResolveTargetAsync(graphService!, identifier);
+            if (id == null) return;
+            if (!confirm)
+            {
+                AnsiConsole.MarkupLine("[yellow]This will lock that device. Re-run with --confirm to proceed.[/]");
+                return;
+            }
+            ReportAction(await graphService!.RemoteLockDeviceAsync(id, pin, confirmed: true), "lock");
+        }, idArg, pinOption, confirmOption);
         return command;
     }
 
@@ -351,13 +389,14 @@ public static class IntuneCommand
         command.SetHandler(async (identifier, keepUserData, confirm) =>
         {
             if (!EnsureConfigured(graphService)) return;
+            var id = await ResolveTargetAsync(graphService!, identifier);
+            if (id == null) return;
             if (!confirm)
             {
-                AnsiConsole.MarkupLine($"[yellow]This will factory-reset {Markup.Escape(identifier)}. Re-run with --confirm to proceed.[/]");
+                AnsiConsole.MarkupLine("[yellow]This will factory-reset that device. Re-run with --confirm to proceed.[/]");
                 return;
             }
-            var id = await ResolveDeviceIdAsync(graphService!, identifier);
-            ReportAction(await graphService!.WipeDeviceAsync(id!, keepUserData: keepUserData, confirmed: true), "wipe");
+            ReportAction(await graphService!.WipeDeviceAsync(id, keepUserData: keepUserData, confirmed: true), "wipe");
         }, idArg, keepUserDataOption, confirmOption);
         return command;
     }
@@ -372,13 +411,14 @@ public static class IntuneCommand
         command.SetHandler(async (identifier, confirm) =>
         {
             if (!EnsureConfigured(graphService)) return;
+            var id = await ResolveTargetAsync(graphService!, identifier);
+            if (id == null) return;
             if (!confirm)
             {
-                AnsiConsole.MarkupLine($"[yellow]This will unenroll {Markup.Escape(identifier)}. Re-run with --confirm to proceed.[/]");
+                AnsiConsole.MarkupLine("[yellow]This will unenroll that device. Re-run with --confirm to proceed.[/]");
                 return;
             }
-            var id = await ResolveDeviceIdAsync(graphService!, identifier);
-            ReportAction(await graphService!.RetireDeviceAsync(id!, confirmed: true), "retire");
+            ReportAction(await graphService!.RetireDeviceAsync(id, confirmed: true), "retire");
         }, idArg, confirmOption);
         return command;
     }
