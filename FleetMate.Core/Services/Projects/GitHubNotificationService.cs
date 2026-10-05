@@ -44,6 +44,15 @@ public sealed class GitHubNotificationService : IDisposable
             $"/notifications/threads/{Uri.EscapeDataString(threadId)}", "PATCH", ct: ct));
 
     /// <summary>
+    /// DELETE /notifications/threads/{id} — mark the thread done, which takes
+    /// it out of the inbox (GitHub answers 204). A new event on the thread
+    /// brings it back.
+    /// </summary>
+    public async Task<PullRequestActionResult> MarkDoneAsync(string threadId, CancellationToken ct = default) =>
+        await RunAsync(() => _client.ExecuteRestAsync(
+            $"/notifications/threads/{Uri.EscapeDataString(threadId)}", "DELETE", ct: ct));
+
+    /// <summary>
     /// PUT /notifications with <c>last_read_at</c> = now. GitHub may process a
     /// large backlog asynchronously (202), so callers should mark rows read
     /// locally rather than wait for the next list to agree.
