@@ -92,6 +92,17 @@ public sealed partial class GitHubPullRequestService : IDisposable
     {
         var queries = SearchQueries(includeDrafts);
 
+        // Each search asks only for what changed since its last sync, and
+        // its answer is merged into the stored rows (see GitHubSearchSync).
+        var sync = GitHubSearchSync.Shared;
+        var startedAt = GitHubSync.Now();
+        var plans = new Dictionary<string, SearchPlan>
+        {
+            ["created"] = sync.Plan($"queue:{limit}:{queries.Created}", queries.Created),
+            ["assigned"] = sync.Plan($"queue:{limit}:{queries.Assigned}", queries.Assigned),
+            ["review"] = sync.Plan($"queue:{limit}:{queries.Review}", queries.Review),
+        };
+
         // One aliased round trip rather than three: the search API is heavily
         // rate-limited, and three sequential calls is the difference between a
         // queue that paints immediately and one that visibly fills in.
@@ -107,6 +118,7 @@ public sealed partial class GitHubPullRequestService : IDisposable
               review: search(query: $review, type: ISSUE, first: $first) {
                 nodes { ...PullRequestFields }
               }
+              rateLimit { cost remaining }
             }
             """;
 
@@ -114,16 +126,18 @@ public sealed partial class GitHubPullRequestService : IDisposable
         {
             var data = await _client.ExecuteRawAsync(query, new
             {
-                created = queries.Created,
-                assigned = queries.Assigned,
-                review = queries.Review,
+                created = plans["created"].Query,
+                assigned = plans["assigned"].Query,
+                review = plans["review"].Query,
                 first = limit,
             }, ct);
 
+            LogCost(data, "PR queue", plans.Values.Count(p => !p.IsFull));
+
             var queue = new PullRequestQueue();
-            Absorb(data, "created", PullRequestRelation.CreatedByMe, queue);
-            Absorb(data, "assigned", PullRequestRelation.AssignedToMe, queue);
-            Absorb(data, "review", PullRequestRelation.AssignedToMe, queue);
+            AbsorbSynced(data, "created", plans["created"], PullRequestRelation.CreatedByMe, queue, startedAt);
+            AbsorbSynced(data, "assigned", plans["assigned"], PullRequestRelation.AssignedToMe, queue, startedAt);
+            AbsorbSynced(data, "review", plans["review"], PullRequestRelation.AssignedToMe, queue, startedAt);
 
             Log.Information("[github] PR queue → {Count} pull requests", queue.PullRequests.Count);
             return queue;
@@ -139,6 +153,29 @@ public sealed partial class GitHubPullRequestService : IDisposable
             });
             return queue;
         }
+    }
+
+    /// <summary>Merge one search's answer into its stored rows, then absorb the full set.</summary>
+    private static void AbsorbSynced(
+        JsonElement data, string alias, SearchPlan plan, PullRequestRelation relation, PullRequestQueue queue,
+        DateTimeOffset startedAt)
+    {
+        if (!data.TryGetProperty(alias, out var section)) return;
+        var merged = GitHubSearchSync.Shared.MergeAndSave(plan, section, startedAt);
+        foreach (var node in merged.GetProperty("nodes").EnumerateArray())
+            if (Map(node, relation) is { } pr) queue.Insert(pr);
+    }
+
+    /// <summary>
+    /// GraphQL's own cost for the query, at Debug, so warm (incremental) and
+    /// cold (full) polls can be compared over a working day.
+    /// </summary>
+    private static void LogCost(JsonElement data, string what, int incremental)
+    {
+        if (data.TryGetProperty("rateLimit", out var rl) && rl.ValueKind == JsonValueKind.Object)
+            Log.Debug("[github] {What} cost {Cost} point(s), {Remaining} remaining ({Incremental} incremental searches)",
+                what, rl.TryGetProperty("cost", out var c) ? c.GetInt32() : -1,
+                rl.TryGetProperty("remaining", out var r) ? r.GetInt32() : -1, incremental);
     }
 
     private static void Absorb(

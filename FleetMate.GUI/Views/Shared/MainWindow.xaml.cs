@@ -22,13 +22,15 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // Navigate to Dashboard on startup
-        ContentFrame.Navigate(GetOrCreatePage("Dashboard"));
-        TabDashboard.IsChecked = true;
+        // Development is the launch tab; there is no Dashboard.
+        ContentFrame.Navigate(GetOrCreatePage("Development"));
+        TabDevelopment.IsChecked = true;
+        UpdateGraphsButton();
 
         if (Application.Current is App app)
         {
             app.Inbox.Changed += (_, _) => Dispatcher.Invoke(() => UpdateDevelopmentCount(app.Inbox.UnreadCount));
+            app.AppErrorChanged += (_, _) => Dispatcher.Invoke(UpdateAppError);
             BindElevationMonitor(app);
             app.ServicesReloaded += () => Dispatcher.Invoke(() => BindElevationMonitor(app));
         }
@@ -38,6 +40,19 @@ public partial class MainWindow : Window
         _elevationTick = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
         _elevationTick.Tick += (_, _) => UpdateElevationStatus();
         _elevationTick.Start();
+
+        // The terminal panel: hide on request, end every session with the
+        // window, and with AgentAutoStart (on by default) open a session at launch.
+        Terminal.HideRequested += (_, _) => SetTerminalVisible(false);
+        Terminal.FullWindowRequested += (_, _) => ToggleFullWindow();
+        Closed += (_, _) => Terminal.DisposeAll();
+        // An agent session started at launch must not take the keyboard.
+        if (Application.Current is App { Config.Terminal.AgentAutoStart: true })
+            Loaded += (_, _) =>
+            {
+                SetTerminalVisible(true, takeFocus: false);
+                Terminal.OpenDefaultSession(takeFocus: false);
+            };
     }
 
     // ── Elevation status ──────────────────────────────────────────
@@ -97,18 +112,139 @@ public partial class MainWindow : Window
         TabDevelopment.ToolTip = unread > 0 ? $"{unread} unread GitHub notification{(unread == 1 ? "" : "s")}" : null;
     }
 
+    // ── Terminal panel ───────────────────────────────────────────────────
+
+    private readonly FleetMate.Core.Services.Terminal.TerminalLayoutState _terminalLayout = new();
+
+    private void OnWindowPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        // App-wide terminal keys. Inside a terminal the page reports them
+        // itself (WebView2 keeps keys to itself), so these cover the rest.
+        var mods = System.Windows.Input.Keyboard.Modifiers;
+        var key = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
+        const System.Windows.Input.ModifierKeys Ctrl = System.Windows.Input.ModifierKeys.Control;
+        const System.Windows.Input.ModifierKeys Shift = System.Windows.Input.ModifierKeys.Shift;
+
+        if (key == System.Windows.Input.Key.Oem3 && mods == Ctrl)
+        {
+            ToggleTerminal();
+            e.Handled = true;
+        }
+        else if (key == System.Windows.Input.Key.T && (mods == Ctrl || mods == (Ctrl | Shift)))
+        {
+            // Ctrl+T opens a new session from anywhere in the app.
+            SetTerminalVisible(true, takeFocus: false);
+            Terminal.OpenDefaultSession();
+            e.Handled = true;
+        }
+        else if (key == System.Windows.Input.Key.Enter && mods == (Ctrl | Shift))
+        {
+            ToggleFullWindow();
+            e.Handled = true;
+        }
+        else if (key == System.Windows.Input.Key.G && mods == (Ctrl | System.Windows.Input.ModifierKeys.Alt))
+        {
+            ToggleGraphs();
+            e.Handled = true;
+        }
+        else if (HandleSearchShortcut(key, mods))
+        {
+            e.Handled = true;
+        }
+        else if (mods == Ctrl && TabShortcut(key) is { } tab)
+        {
+            // Ctrl+1–7 switch tabs, in tab-bar order.
+            NavigateToTab(tab);
+            e.Handled = true;
+        }
+    }
+
+    private double AvailableHeight => Math.Max(0, RootGrid.ActualHeight - RootGrid.RowDefinitions[0].ActualHeight - TerminalDivider.ActualHeight);
+
+    private void OnDividerDragStarted(object sender, System.Windows.Controls.Primitives.DragStartedEventArgs e) =>
+        _terminalLayout.BeginDrag();
+
+    /// <summary>
+    /// The height is where the pointer is in the window, not an offset from
+    /// the moving divider, so the drag tracks the pointer without jitter.
+    /// </summary>
+    private void OnDividerDragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+    {
+        var pointer = System.Windows.Input.Mouse.GetPosition(RootGrid).Y;
+        var height = RootGrid.ActualHeight - pointer - TerminalDivider.ActualHeight / 2;
+        _terminalLayout.Drag(height, AvailableHeight);
+        ApplyTerminalLayout();
+    }
+
+    private void ToggleFullWindow()
+    {
+        if (Terminal.Visibility != Visibility.Visible) SetTerminalVisible(true);
+        _terminalLayout.Toggle(AvailableHeight);
+        ApplyTerminalLayout();
+    }
+
+    /// <summary>Full-window mode hides the tab's page behind the terminal; otherwise the panel has its height.</summary>
+    private void ApplyTerminalLayout()
+    {
+        var visible = Terminal.Visibility == Visibility.Visible;
+        var full = visible && _terminalLayout.FullWindow;
+        ContentFrame.Visibility = full ? Visibility.Hidden : Visibility.Visible;
+        ContentRow.Height = full ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+        TerminalRow.Height = !visible ? new GridLength(0)
+            : full ? new GridLength(1, GridUnitType.Star)
+            : new GridLength(_terminalLayout.Height);
+    }
+
+    private void OnTerminalToggleClicked(object sender, RoutedEventArgs e) => ToggleTerminal();
+
+    public void ToggleTerminal() => SetTerminalVisible(Terminal.Visibility != Visibility.Visible);
+
+    /// <summary>
+    /// Show or hide the panel. Showing it never opens a session: sessions
+    /// open at launch, from Ctrl+T and from the New menu. The panel lives
+    /// outside the page frame, so tab changes leave it and its sessions alone.
+    /// </summary>
+    public void SetTerminalVisible(bool visible, bool takeFocus = true)
+    {
+        Terminal.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        TerminalDivider.Visibility = Terminal.Visibility;
+        TerminalToggleButton.IsChecked = visible;
+        ApplyTerminalLayout();
+        Terminal.OnVisibilityChanged();
+        if (!visible) return;
+        if (takeFocus) Terminal.FocusActive();
+    }
+
     private void OnTabChecked(object sender, RoutedEventArgs e)
     {
         if (ContentFrame == null) return; // Not yet initialized
         if (sender is RadioButton radio && radio.Tag is string tag)
         {
             NavigateToPage(tag);
+            UpdateGraphsButton();
         }
     }
 
-    /// <summary>
-    /// Navigate to a tab by tag name. Called from Dashboard for drill-down navigation.
-    /// </summary>
+    /// <summary>Tab-bar order: Ctrl+1 is the first, Ctrl+7 the last.</summary>
+    internal static readonly string[] TabOrder =
+        { "Development", "Projects", "Devices", "Manage", "Inventory", "Identity", "Tickets" };
+
+    internal static string? TabShortcut(System.Windows.Input.Key key)
+    {
+        var index = key switch
+        {
+            >= System.Windows.Input.Key.D1 and <= System.Windows.Input.Key.D7 => key - System.Windows.Input.Key.D1,
+            >= System.Windows.Input.Key.NumPad1 and <= System.Windows.Input.Key.NumPad7 => key - System.Windows.Input.Key.NumPad1,
+            _ => -1,
+        };
+        return index >= 0 ? TabOrder[index] : null;
+    }
+
+    /// <summary>The tag of the tab showing now.</summary>
+    public string CurrentTab =>
+        TabBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag as string ?? "Development";
+
+    /// <summary>Navigate to a tab by tag name — deep links and Ctrl+1–7.</summary>
     public void NavigateToTab(string tag)
     {
         foreach (var child in TabBar.Children)
@@ -130,7 +266,6 @@ public partial class MainWindow : Window
 
     private static Page CreatePage(string tag) => tag switch
     {
-        "Dashboard" => new DashboardPage(),
         "Devices" => new IntunePage(),
         "Manage" => new ManagePage(),
         "Inventory" => new AssetsPage(),
@@ -138,11 +273,12 @@ public partial class MainWindow : Window
         "Projects" => new BoardsPage(),
         "Development" => new FleetMate.GUI.Views.Development.DevelopmentPage(),
         "Identity" => new IdentityPage(),
-        _ => new DashboardPage()
+        _ => new FleetMate.GUI.Views.Development.DevelopmentPage()
     };
 
     private void NavigateToPage(string tag)
     {
+        FleetMate.GUI.Views.Terminal.ContextPublisher.Tab(tag);
         ContentFrame.Navigate(GetOrCreatePage(tag));
     }
 
