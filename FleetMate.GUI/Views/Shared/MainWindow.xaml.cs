@@ -41,13 +41,17 @@ public partial class MainWindow : Window
         _elevationTick.Start();
 
         // The terminal panel: hide on request, end every session with the
-        // window, and with AgentAutoStart open an agent session at launch.
+        // window, and with AgentAutoStart (on by default) open a session at launch.
         Terminal.HideRequested += (_, _) => SetTerminalVisible(false);
         Terminal.FullWindowRequested += (_, _) => ToggleFullWindow();
         Closed += (_, _) => Terminal.DisposeAll();
         // An agent session started at launch must not take the keyboard.
         if (Application.Current is App { Config.Terminal.AgentAutoStart: true })
-            Loaded += (_, _) => SetTerminalVisible(true, takeFocus: false);
+            Loaded += (_, _) =>
+            {
+                SetTerminalVisible(true, takeFocus: false);
+                Terminal.OpenDefaultSession(takeFocus: false);
+            };
     }
 
     // ── Elevation status ──────────────────────────────────────────
@@ -128,7 +132,7 @@ public partial class MainWindow : Window
         else if (key == System.Windows.Input.Key.T && (mods == Ctrl || mods == (Ctrl | Shift)))
         {
             // Ctrl+T opens a new session from anywhere in the app.
-            SetTerminalVisible(true, openIfEmpty: false);
+            SetTerminalVisible(true, takeFocus: false);
             Terminal.OpenDefaultSession();
             e.Handled = true;
         }
@@ -190,10 +194,11 @@ public partial class MainWindow : Window
     public void ToggleTerminal() => SetTerminalVisible(Terminal.Visibility != Visibility.Visible);
 
     /// <summary>
-    /// Show or hide the panel. A session opened here because the panel was
-    /// empty takes focus only when the person opened the panel, not at launch.
+    /// Show or hide the panel. Showing it never opens a session: sessions
+    /// open at launch, from Ctrl+T and from the New menu. The panel lives
+    /// outside the page frame, so tab changes leave it and its sessions alone.
     /// </summary>
-    public void SetTerminalVisible(bool visible, bool openIfEmpty = true, bool takeFocus = true)
+    public void SetTerminalVisible(bool visible, bool takeFocus = true)
     {
         Terminal.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         TerminalDivider.Visibility = Terminal.Visibility;
@@ -201,8 +206,7 @@ public partial class MainWindow : Window
         ApplyTerminalLayout();
         Terminal.OnVisibilityChanged();
         if (!visible) return;
-        if (!Terminal.HasSessions) { if (openIfEmpty) Terminal.OpenDefaultSession(takeFocus); }
-        else if (takeFocus) Terminal.FocusActive();
+        if (takeFocus) Terminal.FocusActive();
     }
 
     private void OnTabChecked(object sender, RoutedEventArgs e)
