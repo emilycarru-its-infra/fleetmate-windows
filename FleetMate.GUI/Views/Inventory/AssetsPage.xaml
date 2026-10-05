@@ -31,6 +31,13 @@
             </StackPanel>
 
             <ui:SimpleStackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <Button Click="OnColumnsClicked" ToolTip="Show or hide columns"
+                        AutomationProperties.AutomationId="InventoryColumnsButton">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8A9;" FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center" />
+                        <TextBlock Text="Columns" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
                 <Button Click="OnRefreshClicked" ToolTip="Refresh">
                     <ui:SymbolIcon Symbol="Refresh" />
                 </Button>
@@ -94,6 +101,11 @@
                     <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
                         <TextBlock Text="Area:" VerticalAlignment="Center" Margin="0,0,4,0" />
                         <ComboBox x:Name="AreaFilterComboBox" MinWidth="120" SelectionChanged="OnFilterChanged" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+                        <TextBlock Text="Location:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <ComboBox x:Name="LocationFilterComboBox" MinWidth="140" SelectionChanged="OnFilterChanged"
+                                  AutomationProperties.AutomationId="LocationFilterComboBox" />
                     </StackPanel>
                     <Button Content="Clear Filters" Click="OnClearFiltersClicked" 
                             BorderBrush="Orange" BorderThickness="1" Background="Transparent" Padding="8,4" />
