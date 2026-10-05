@@ -57,6 +57,7 @@ public partial class DeviceDetailPanel : UserControl
         // The Intune sections follow, the first titled for what Intune is
         // here: the device management service.
         RenderEnrollment(device);
+        RenderRecovery(device);
         var groupsHost = Section("Group Membership", "");
         RenderHardware(device);
         var complianceHost = RenderCompliance(device);
