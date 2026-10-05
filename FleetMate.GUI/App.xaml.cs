@@ -686,6 +686,13 @@ public partial class App : Application
         mainWindow.Show();
         StartLinks(startupLink);
         Inbox.Start();
+
+        // The toolbar search field asks the global search engine; each hit
+        // opens through its fleetmate:// link.
+        FleetMate.GUI.Views.Shared.ToolbarSearch.Provider = async (text, ct) =>
+            (await FleetMate.GUI.Search.SearchAdapter.QueryAsync(text, ct))
+                .Select(r => new FleetMate.GUI.Views.Shared.ToolbarSearchResult(r.Category, r.Title, r.Detail, r.Open))
+                .ToList();
         ElevationMonitor?.Start();
 
         // Give the broker a window to parent to. Only consulted if the silent
