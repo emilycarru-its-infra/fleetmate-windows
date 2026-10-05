@@ -22,7 +22,7 @@ public interface IRunObserver
 /// remote shell never matters. Cancellation marks every unfinished machine
 /// as cancelled and stops opening new connections.
 /// </summary>
-public class CommandRunner
+public partial class CommandRunner
 {
     private readonly IRemoteRunner _runner;
 
