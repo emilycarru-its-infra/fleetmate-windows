@@ -969,10 +969,23 @@ public partial class BoardsPage : Page
         };
         card.Child = cardPanel;
 
-        // Click to open URL
+        // Issues open in the sidebar, as on the Mac; pull requests and drafts
+        // open in the browser.
+        System.Windows.Automation.AutomationProperties.SetName(card, title);
         card.MouseLeftButtonUp += (_, _) =>
         {
             var url = item.Content?.Url;
+            if (item.Type == "ISSUE" && TaskDetailPanel.ParseIssueUrl(url) is { } issue)
+            {
+                DetailPanel.ShowTask(new UnifiedTask
+                {
+                    Id = issue.Number.ToString(), Provider = "github", Title = title, ExternalUrl = url,
+                    Assignees = item.Content?.Assignees.ToList() ?? new(), Labels = item.Content?.Labels.ToList() ?? new(),
+                }, _registry?.GetProvider("github"));
+                DetailPanel.Visibility = Visibility.Visible;
+                DetailColumn.Width = new GridLength(2, GridUnitType.Star);
+                return;
+            }
             if (!string.IsNullOrEmpty(url))
             {
                 try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); }
