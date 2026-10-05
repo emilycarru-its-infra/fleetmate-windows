@@ -62,13 +62,6 @@ public class FleetMateConfig
     [Obsolete("ReportMate uses Entra SSO (reportmate_oidc_audience). Shared passphrases are being retired.")]
     public string? ReportMatePassphrase { get; set; }
 
-    // MunkiReport has no API: the CLI reads its database over SSH. Nothing is
-    // assumed about the host; leave it unset and munkireport says so.
-    public string? MunkiReportSshHost { get; set; }
-    public string? MunkiReportSshUser { get; set; }
-    public string? MunkiReportSshKeyPath { get; set; }
-    public string? MunkiReportDbPath { get; set; }
-
     // Snipe-IT API settings
     public string? SnipeUrl { get; set; }
 
@@ -305,19 +298,6 @@ public class FleetMateConfig
         if (!string.IsNullOrEmpty(snipeApiKey))
             config.SnipeApiKey = snipeApiKey;
 #pragma warning restore CS0618
-
-        // MunkiReport over SSH
-        foreach (var (name, apply) in new (string, Action<string>)[]
-        {
-            ("MUNKIREPORT_SSH_HOST", v => config.MunkiReportSshHost = v),
-            ("MUNKIREPORT_SSH_USER", v => config.MunkiReportSshUser = v),
-            ("MUNKIREPORT_SSH_KEY", v => config.MunkiReportSshKeyPath = v),
-            ("MUNKIREPORT_DB_PATH", v => config.MunkiReportDbPath = v),
-        })
-        {
-            var value = Environment.GetEnvironmentVariable(name);
-            if (!string.IsNullOrEmpty(value)) apply(value);
-        }
 
         // Entra SSO audiences
         var rmAudience = Environment.GetEnvironmentVariable("REPORTMATE_OIDC_AUDIENCE");
