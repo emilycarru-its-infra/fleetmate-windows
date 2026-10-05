@@ -82,7 +82,13 @@ public partial class BoardsPage : Page
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
     {
-        if (_isInitialLoadDone) return;
+        // The page is cached across tab switches, so a deep link that arrives
+        // after the first visit is handled here.
+        if (_isInitialLoadDone)
+        {
+            await ShowPendingWorkItemAsync();
+            return;
+        }
         _isInitialLoadDone = true;
 
         // Initialize AzDO service for list mode
@@ -109,7 +115,30 @@ public partial class BoardsPage : Page
         await LoadBucketsAsync();
         await LoadTasksAsync();
 
-        // A lightbox's "Open in Projects" handed us a work item to show.
+        await ShowPendingWorkItemAsync();
+    }
+
+    /// <summary>
+    /// A lightbox's "Open in Projects", or a fleetmate: link, handed us a work
+    /// item or GitHub issue to show.
+    /// </summary>
+    private async Task ShowPendingWorkItemAsync()
+    {
+        if (_app?.PendingNavigateGitHubIssue is { } issue)
+        {
+            _app.PendingNavigateGitHubIssue = null;
+            DetailPanel.ShowTask(new UnifiedTask
+            {
+                Id = issue.Number.ToString(),
+                Provider = "github",
+                Title = $"{issue.Owner}/{issue.Repo}#{issue.Number}",
+                ExternalUrl = $"https://github.com/{issue.Owner}/{issue.Repo}/issues/{issue.Number}"
+            }, _registry?.GetProvider("github"));
+            DetailPanel.Visibility = Visibility.Visible;
+            DetailColumn.Width = new GridLength(2, GridUnitType.Star);
+            return;
+        }
+
         if (_app?.PendingNavigateWorkItemId is { } pendingId)
         {
             _app.PendingNavigateWorkItemId = null;

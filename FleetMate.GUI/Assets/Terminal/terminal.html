@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="xterm.css">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body { background: var(--bg); }
+  #term { position: absolute; inset: 4px 0 0 8px; }
+  .xterm-viewport::-webkit-scrollbar { width: 10px; }
+  .xterm-viewport::-webkit-scrollbar-thumb { background: rgba(128,128,128,.4); border-radius: 5px; }
+</style>
+</head>
+<body>
+<div id="term"></div>
+<script src="xterm.js"></script>
+<script src="addon-fit.js"></script>
+<script>
+  // The host passes the theme in the query string: ?theme=dark|light
+  const dark = new URLSearchParams(location.search).get('theme') !== 'light';
+  const theme = dark
+    ? { background: '#1e1e1e', foreground: '#d4d4d4', cursor: '#d4d4d4', selectionBackground: '#264f78' }
+    : { background: '#ffffff', foreground: '#1e1e1e', cursor: '#1e1e1e', selectionBackground: '#add6ff' };
+  document.documentElement.style.setProperty('--bg', theme.background);
+
+  const term = new Terminal({
+    fontFamily: "'Cascadia Mono', 'Cascadia Code', Consolas, monospace",
+    fontSize: 13,
+    cursorBlink: true,
+    scrollback: 10000,
+    allowProposedApi: true,
+    theme
+  });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(document.getElementById('term'));
+
+  const post = (m) => window.chrome.webview.postMessage(m);
+  const sendSize = () => {
+    try { fit.fit(); } catch (e) { }
+    post({ type: 'resize', cols: term.cols, rows: term.rows });
+  };
+
+  term.onData(data => post({ type: 'input', data }));
+  // Panel chords (new, close, split, clear, select, cycle, full window) come
+  // from the host as "ctrl shift alt:code" and go back to it; every other
+  // key, plain Ctrl+D/W/K included, reaches the program.
+  let chords = new Set();
+  const chord = e => `${e.ctrlKey ? 1 : 0}${e.shiftKey ? 1 : 0}${e.altKey ? 1 : 0}:${e.code}`;
+  // Ctrl+C copies when there is a selection; otherwise it reaches the program.
+  term.attachCustomKeyEventHandler(e => {
+    if (chords.has(chord(e))) {
+      if (e.type === 'keydown') post({ type: 'key', code: e.code, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey });
+      e.preventDefault();
+      return false;
+    }
+    if (e.type === 'keydown' && e.ctrlKey && e.key === 'c' && term.hasSelection()) {
+      navigator.clipboard.writeText(term.getSelection()); term.clearSelection(); return false;
+    }
+    if (e.type === 'keydown' && e.ctrlKey && e.key === 'v') {
+      navigator.clipboard.readText().then(t => post({ type: 'input', data: t })); return false;
+    }
+    // Ctrl+` belongs to the app: it toggles the panel.
+    if (e.ctrlKey && e.key === '`') { if (e.type === 'keydown') post({ type: 'toggle' }); return false; }
+    return true;
+  });
+
+  window.chrome.webview.addEventListener('message', ev => {
+    const m = ev.data;
+    if (m.type === 'output') term.write(m.data);
+    else if (m.type === 'config') chords = new Set(m.chords);
+    else if (m.type === 'clear') term.clear();
+    else if (m.type === 'focus') term.focus();
+    else if (m.type === 'exit') term.write(`\r\n\x1b[90m[process exited with code ${m.code}]\x1b[0m\r\n`);
+  });
+
+  new ResizeObserver(sendSize).observe(document.getElementById('term'));
+  post({ type: 'ready' });
+  sendSize();
+  // Focus is the host's call: a session started at launch must not take it.
+</script>
+</body>
+</html>
