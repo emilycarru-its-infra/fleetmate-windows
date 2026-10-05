@@ -39,7 +39,7 @@ public partial class IntunePage : Page
         Enum.GetValues<DeviceFacet>().ToDictionary(f => f, _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
     private static readonly string[] OptionalColumns =
-        { "Model", "Manufacturer", "Ownership", "Migration", "Purchase Source", "Added" };
+        { "Model", "Manufacturer", "Ownership", "Migration", "Purchase Source", "Added", "Activation Lock" };
 
     private static string ColumnsStatePath => System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -122,6 +122,7 @@ public partial class IntunePage : Page
         NotConfiguredText.Visibility = Visibility.Collapsed;
 
         var autopilotTask = _autopilot.Count == 0 ? LoadAutopilotAsync() : Task.CompletedTask;
+        var appleTask = _appleOrgs.Count == 0 ? LoadAppleOrgsAsync() : Task.CompletedTask;
 
         _intuneReady = false;
         if (!(_app.IsDevicesCacheValid && _app.CachedDevices.Count > 0))
@@ -143,7 +144,7 @@ public partial class IntunePage : Page
 
         _intuneReady = true;
         RebuildRows();
-        await autopilotTask;
+        await Task.WhenAll(autopilotTask, appleTask);
     }
 
     private async Task LoadAutopilotAsync()
@@ -169,7 +170,7 @@ public partial class IntunePage : Page
     private void RebuildRows()
     {
         var selectedIds = new HashSet<string>(SelectedRows().Select(r => r.Id));
-        _allRows = DeviceListJoin.Merge(_allDevices, _autopilot);
+        _allRows = AppleOrgJoin.Enrich(DeviceListJoin.Merge(_allDevices, _autopilot), _appleOrgs);
         RebuildFilters();
         ApplyFilters();
         foreach (var row in _rows.Where(r => selectedIds.Contains(r.Id) && !DevicesDataGrid.SelectedItems.Contains(r)))
@@ -356,6 +357,7 @@ public partial class IntunePage : Page
         // Invalidate caches to force reload
         _app?.CachedDevices.Clear();
         _autopilot = new();
+        _appleOrgs = new();
         await LoadDevicesAsync();
     }
 
@@ -373,6 +375,7 @@ public partial class IntunePage : Page
     {
         var selected = SelectedRows();
         var selectedCount = selected.Count;
+        Terminal.ContextPublisher.Devices(selected.Where(r => r.Intune != null).Select(r => r.Intune!));
         var hasSelection = selectedCount > 0;
 
         ActionsButton.IsEnabled = hasSelection;
@@ -442,9 +445,10 @@ public partial class IntunePage : Page
         AutopilotDeleteSection.Visibility = Show(AutopilotAction.Delete.IsAvailable(identities));
 
         var anyAutopilot = AutopilotAction.Sync.IsAvailable(identities);
+        var anyApple = UpdateAppleSections(selected);
         AutopilotActionsHeader.Visibility = Show(anyAutopilot);
-        IntuneActionsHeader.Visibility = Show(anyAutopilot && allEnrolled);
-        NoActionsText.Visibility = Show(!allEnrolled && !anyAutopilot);
+        IntuneActionsHeader.Visibility = Show((anyAutopilot || anyApple) && allEnrolled);
+        NoActionsText.Visibility = Show(!allEnrolled && !anyAutopilot && !anyApple);
         UpdateLifecycleSections(selected);
     }
 
@@ -452,8 +456,11 @@ public partial class IntunePage : Page
     {
         DeviceDetail.Visibility = Visibility.Visible;
         DetailPanelColumn.Width = new GridLength(520);
+        var apple = AppleContext(row);
         if (row.Intune is { } device)
-            await DeviceDetail.ShowDeviceAsync(device, _graphService, row.Autopilot);
+            await DeviceDetail.ShowDeviceAsync(device, _graphService, row.Autopilot, apple);
+        else if (apple != null)
+            await DeviceDetail.ShowAppleOnlyAsync(apple);
         else if (row.Autopilot is { } identity)
             DeviceDetail.ShowAutopilotOnly(identity);
     }
