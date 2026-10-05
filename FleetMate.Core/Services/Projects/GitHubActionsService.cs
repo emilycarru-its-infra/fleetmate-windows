@@ -55,6 +55,22 @@ public sealed class GitHubActionsService : IDisposable
         return runs;
     }
 
+    /// <summary>One workflow run by id, for a fleetmate: link to a run not already loaded.</summary>
+    public async Task<PipelineRun?> GetPipelineRunAsync(string owner, string repo, long runId, CancellationToken ct = default)
+    {
+        try
+        {
+            var raw = await _client.ExecuteRestAsync($"{RepoPath(owner, repo)}/actions/runs/{runId}", ct: ct);
+            using var doc = JsonDocument.Parse($"{{\"workflow_runs\":[{raw}]}}");
+            return ParseRuns(doc.RootElement, owner, repo).FirstOrDefault();
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[github] run {Owner}/{Repo}#{Id} unavailable", owner, repo, runId);
+            return null;
+        }
+    }
+
     internal static List<PipelineRun> ParseRuns(JsonElement root, string owner, string repository)
     {
         var result = new List<PipelineRun>();

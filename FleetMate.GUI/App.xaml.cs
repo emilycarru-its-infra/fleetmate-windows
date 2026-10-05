@@ -77,13 +77,28 @@ public partial class App : Application
     public FleetMate.Core.Models.Projects.PullRequestQueue? PullRequestQueue { get; set; }
 
     /// <summary>The Development tab's PR list (involves me + organization), cached like the queue.</summary>
-    public FleetMate.Core.Models.Projects.PullRequestQueue? DevelopmentPullRequests { get; set; }
+    public FleetMate.Core.Models.Projects.PullRequestQueue? DevelopmentPullRequests
+    {
+        get => _developmentPullRequests;
+        set { _developmentPullRequests = value; NotifyCacheChanged("PullRequests"); }
+    }
+    private FleetMate.Core.Models.Projects.PullRequestQueue? _developmentPullRequests;
 
     /// <summary>Development › Commits: repositories with recent commits, cached across tab switches.</summary>
-    public List<FleetMate.Core.Models.Projects.RepositoryCommits>? DevelopmentCommits { get; set; }
+    public List<FleetMate.Core.Models.Projects.RepositoryCommits>? DevelopmentCommits
+    {
+        get => _developmentCommits;
+        set { _developmentCommits = value; NotifyCacheChanged("Commits"); }
+    }
+    private List<FleetMate.Core.Models.Projects.RepositoryCommits>? _developmentCommits;
 
     /// <summary>Development › Pipelines: recent runs, cached across tab switches.</summary>
-    public List<FleetMate.Core.Models.Projects.PipelineRun>? DevelopmentRuns { get; set; }
+    public List<FleetMate.Core.Models.Projects.PipelineRun>? DevelopmentRuns
+    {
+        get => _developmentRuns;
+        set { _developmentRuns = value; NotifyCacheChanged("Runs"); }
+    }
+    private List<FleetMate.Core.Models.Projects.PipelineRun>? _developmentRuns;
 
     /// <summary>GitHub notifications, polled from startup so the Development tab count is live.</summary>
     public FleetMate.GUI.Views.Development.DevelopmentInbox Inbox { get; }
@@ -107,6 +122,29 @@ public partial class App : Application
     public string? PendingNavigateDeviceId { get; set; }
     public int? PendingNavigateTicketId { get; set; }
     public int? PendingNavigateWorkItemId { get; set; }
+    public int? PendingNavigateAssetId { get; set; }
+
+    // MARK: - App-level error
+    // Shown at the top of the Recent Activity popover, with an orange dot on
+    // its toolbar icon while one is set.
+    public string? AppError { get; private set; }
+    public event EventHandler? AppErrorChanged;
+
+    public void ReportAppError(string message)
+    {
+        AppError = message;
+        AppErrorChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void ClearAppError()
+    {
+        AppError = null;
+        AppErrorChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>The FLEETMATE_CONTEXT file every terminal session points at.</summary>
+    public FleetMate.Core.Services.Terminal.AppContextFile Context { get; } =
+        new(FleetMate.Core.Services.Terminal.AppContextFile.DefaultPath);
     
     // MARK: - Cached Data
     // Data caches with timestamps to avoid reloading on tab switches
@@ -116,8 +154,32 @@ public partial class App : Application
     public List<TdxTicket> CachedTickets { get; set; } = new();
     public List<EntraUser> CachedUsers { get; set; } = new();
     public List<EntraGroup> CachedGroups { get; set; } = new();
-    public List<WorkItem> CachedWorkItems { get; set; } = new();
-    public List<Sprint> CachedSprints { get; set; } = new();
+    public List<WorkItem> CachedWorkItems
+    {
+        get => _cachedWorkItems;
+        set { _cachedWorkItems = value; NotifyCacheChanged("WorkItems"); }
+    }
+    private List<WorkItem> _cachedWorkItems = new();
+
+    public List<Sprint> CachedSprints
+    {
+        get => _cachedSprints;
+        set { _cachedSprints = value; NotifyCacheChanged("Sprints"); }
+    }
+    private List<Sprint> _cachedSprints = new();
+
+    /// <summary>
+    /// Raised on the UI thread when a shared cache changes, with its key:
+    /// Devices, Assets, Tickets, WorkItems, Sprints, Issues, PullRequests,
+    /// Commits, Runs. The tab Widgets sections redraw from it.
+    /// </summary>
+    public event Action<string>? CacheChanged;
+
+    public void NotifyCacheChanged(string key)
+    {
+        if (Dispatcher.CheckAccess()) CacheChanged?.Invoke(key);
+        else Dispatcher.BeginInvoke(() => CacheChanged?.Invoke(key));
+    }
     
     // Cache timestamps
     private DateTime? _devicesCacheTime;
@@ -154,6 +216,7 @@ public partial class App : Application
     {
         CachedDevices = devices;
         _devicesCacheTime = DateTime.Now;
+        NotifyCacheChanged("Devices");
     }
     
     /// <summary>Update assets cache</summary>
@@ -161,6 +224,7 @@ public partial class App : Application
     {
         CachedAssets = assets;
         _assetsCacheTime = DateTime.Now;
+        NotifyCacheChanged("Assets");
     }
     
     /// <summary>Update tickets cache</summary>
@@ -168,6 +232,7 @@ public partial class App : Application
     {
         CachedTickets = tickets;
         _ticketsCacheTime = DateTime.Now;
+        NotifyCacheChanged("Tickets");
     }
     
     /// <summary>Update users cache</summary>
@@ -187,6 +252,8 @@ public partial class App : Application
     /// <summary>Invalidate all caches</summary>
     public void InvalidateAllCaches()
     {
+        // Refresh means fresh: GitHub data is rebuilt in full, not incrementally.
+        FleetMate.Core.Services.Projects.GitHubSync.RequestFullResync();
         _devicesCacheTime = null;
         _assetsCacheTime = null;
         _ticketsCacheTime = null;
@@ -564,10 +631,22 @@ public partial class App : Application
         {
             Log.Error(args.Exception, "Unobserved task exception");
             args.SetObserved();
+            Current?.Dispatcher.BeginInvoke(() =>
+                ReportAppError(args.Exception.InnerException?.Message ?? args.Exception.Message));
         };
         Log.Information("FleetMate GUI starting (pid {Pid}, version {Version})",
             Environment.ProcessId,
             typeof(App).Assembly.GetName().Version);
+
+        // One FleetMate per person: a second launch (a fleetmate: link opened
+        // from a browser or chat) hands its link to the first and exits.
+        var startupLink = Links.LinkHost.LinkFromArgs(e.Args);
+        var headless = e.Args.Contains("--headless-tdx-sso", StringComparer.OrdinalIgnoreCase);
+        if (!headless && !Links.LinkHost.TryBecomePrimary(startupLink))
+        {
+            Shutdown();
+            return;
+        }
 
         // Load configuration
         Config = LoadDesktopConfiguration();
@@ -605,6 +684,7 @@ public partial class App : Application
 
         var mainWindow = new MainWindow();
         mainWindow.Show();
+        StartLinks(startupLink);
         Inbox.Start();
         ElevationMonitor?.Start();
 
@@ -941,6 +1021,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        Links.LinkHost.Stop();
         GraphService?.Dispose();
         SnipeService?.Dispose();
         TdxService?.Dispose();
