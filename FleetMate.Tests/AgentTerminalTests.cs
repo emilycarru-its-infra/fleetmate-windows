@@ -92,6 +92,59 @@ public class AgentTerminalTests
         Assert.True(config.Terminal.AgentAutoStart);
     }
 
+    [Theory]
+    [InlineData("", "", "")]
+    [InlineData("claude", "claude", "")]
+    [InlineData("codex-remote", "codex-remote", "")]
+    [InlineData("my-agent --fast", "custom", "my-agent --fast")]
+    public void Picker_RoundTripsAgentCommand(string stored, string key, string custom)
+    {
+        Assert.Equal((key, custom), AgentCommandPicker.FromSetting(stored));
+        Assert.Equal(stored, AgentCommandPicker.ToSetting(key, custom));
+    }
+
+    [Fact]
+    public void Picker_ReadsLegacyShellAndCaseAsTheirChoice()
+    {
+        Assert.Equal(("", ""), AgentCommandPicker.FromSetting("shell"));
+        Assert.Equal(("claude", ""), AgentCommandPicker.FromSetting("Claude"));
+        Assert.Equal("", AgentCommandPicker.ToSetting(AgentCommandPicker.Custom, "  "));
+    }
+
+    [Fact]
+    public void Defaults_AreShellAndAutoStartOn()
+    {
+        var terminal = new FleetMateConfig().Terminal;
+        Assert.Equal("", terminal.AgentCommand);
+        Assert.True(terminal.AgentAutoStart);
+        Assert.False(terminal.AgentCommandFromPolicy);
+    }
+
+    [Fact]
+    public void Policy_SetsTheDefault_AndTheOperatorsValueWins()
+    {
+        // Real load order: the operator's key first, then policy.
+        var config = new FleetMateConfig();
+        FleetMateConfig.ApplyRegistryValues(_ => null, config, fromPolicy: false);
+        FleetMateConfig.ApplyRegistryValues(name => name switch { "AgentCommand" => "claude", "AgentAutoStart" => "0", _ => null },
+            config, fromPolicy: true);
+        Assert.Equal("claude", config.Terminal.AgentCommand);
+        Assert.False(config.Terminal.AgentAutoStart);
+        Assert.True(config.Terminal.AgentCommandFromPolicy);
+        Assert.True(config.Terminal.AgentAutoStartFromPolicy);
+
+        var overridden = new FleetMateConfig();
+        FleetMateConfig.ApplyRegistryValues(name => name switch { "AgentCommand" => "", "AgentAutoStart" => "1", _ => null },
+            overridden, fromPolicy: false);
+        FleetMateConfig.ApplyRegistryValues(name => name switch { "AgentCommand" => "claude", "AgentAutoStart" => "0", _ => null },
+            overridden, fromPolicy: true);
+        // An empty value of the operator's own is a choice of the shell, not an absence.
+        Assert.Equal("", overridden.Terminal.AgentCommand);
+        Assert.True(overridden.Terminal.AgentAutoStart);
+        Assert.False(overridden.Terminal.AgentCommandFromPolicy);
+        Assert.Equal("claude", overridden.Terminal.AgentCommandFallback);
+    }
+
     [Fact]
     public void CloneUrls_MapUnderTheReposRoot()
     {

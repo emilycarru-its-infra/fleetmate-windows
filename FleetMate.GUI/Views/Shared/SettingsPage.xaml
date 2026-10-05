@@ -240,14 +240,22 @@
 
                         <Border Style="{StaticResource CardStyle}">
                             <StackPanel>
-                                <TextBlock Text="Agent command" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
-                                <TextBlock Text="shell, claude, codex, claude-remote, codex-remote, or any program followed by its arguments."
-                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" TextWrapping="Wrap" />
-                                <ComboBox x:Name="AgentCommandComboBox" IsEditable="True" Margin="0,6,0,10" MinWidth="360"
-                                          HorizontalAlignment="Left"
-                                          AutomationProperties.AutomationId="AgentCommandComboBox" />
+                                <TextBlock Text="Sessions" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <TextBlock Text="Runs" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <ComboBox x:Name="AgentCommandPicker" Margin="0,4,0,0" MinWidth="240" HorizontalAlignment="Left"
+                                          DisplayMemberPath="Label" SelectedValuePath="Key"
+                                          SelectionChanged="OnAgentCommandPickerChanged"
+                                          AutomationProperties.AutomationId="AgentCommandPicker" />
+                                <TextBox x:Name="AgentCustomCommandTextBox" Margin="0,6,0,0" MinWidth="360" HorizontalAlignment="Left"
+                                         Visibility="Collapsed" FontFamily="Cascadia Mono, Consolas"
+                                         ui:ControlHelper.PlaceholderText="Program and arguments, e.g. my-agent --model fast"
+                                         AutomationProperties.AutomationId="AgentCustomCommandTextBox" />
+                                <TextBlock x:Name="AgentCommandSourceText" FontSize="11" Margin="0,4,0,10" Visibility="Collapsed"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                 <CheckBox x:Name="AgentAutoStartCheckBox" AutomationProperties.AutomationId="AgentAutoStartCheckBox"
-                                          Content="Open an agent session when FleetMate starts and whenever a new terminal tab opens" />
+                                          Content="Open a session when FleetMate starts" Margin="0,6,0,0" />
+                                <TextBlock x:Name="AgentAutoStartSourceText" FontSize="11" Margin="28,2,0,0" Visibility="Collapsed"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                             </StackPanel>
                         </Border>
 
