@@ -667,6 +667,7 @@ private bool _isInitialLoadDone;
             if (ticket != null)
             {
                 _selectedTicket = ticket;
+                FleetMate.GUI.Views.Terminal.ContextPublisher.Ticket(ticket);
 
                 // Show detail panel
                 if (!_detailPanelVisible)
