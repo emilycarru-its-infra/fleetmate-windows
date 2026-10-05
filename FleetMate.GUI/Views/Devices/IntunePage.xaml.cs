@@ -372,6 +372,7 @@ public partial class IntunePage : Page
     {
         var selected = SelectedRows();
         var selectedCount = selected.Count;
+        Terminal.ContextPublisher.Devices(selected.Where(r => r.Intune != null).Select(r => r.Intune!));
         var hasSelection = selectedCount > 0;
 
         ActionsButton.IsEnabled = hasSelection;
