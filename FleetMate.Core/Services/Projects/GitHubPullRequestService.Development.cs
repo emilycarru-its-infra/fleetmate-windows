@@ -114,7 +114,17 @@ public sealed partial class GitHubPullRequestService
                 Log.Debug(ex, "[github] viewer lookup failed");
             }
 
-            var searches = DevelopmentSearches(allOwners);
+            // Each search asks only for what changed since its last sync; the
+            // answers merge into the stored rows by alias below.
+            var startedAt = GitHubSync.Now();
+            var plans = new Dictionary<string, SearchPlan>();
+            var searches = DevelopmentSearches(allOwners).Select(s =>
+            {
+                var cap = s.Relation == PullRequestRelation.Organization ? ownerLimit : limit;
+                var plan = GitHubSearchSync.Shared.Plan($"dev:{cap}:{s.Query}", s.Query);
+                plans[s.Alias] = plan;
+                return (s.Alias, plan.Query, s.Relation);
+            }).ToList();
             var batches = Batch(searches);
 
             // A single aliased query with a search per organization blows
@@ -136,7 +146,7 @@ public sealed partial class GitHubPullRequestService
                 if (error == null)
                 {
                     foreach (var (part, d) in parts)
-                    foreach (var s in part) Absorb(d, s.Alias, s.Relation, queue);
+                    foreach (var s in part) AbsorbSynced(d, s.Alias, plans[s.Alias], s.Relation, queue, startedAt);
                 }
                 else
                 {
