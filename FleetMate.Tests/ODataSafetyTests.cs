@@ -176,7 +176,7 @@ public class DestructiveTargetResolverTests
 public class DestructiveCommandShapeTests
 {
     private static System.CommandLine.Command Sub(System.CommandLine.Command parent, string name) =>
-        parent.Subcommands.Single(c => c.Name == name);
+        parent.Subcommands.Single(c => c.Name == name || c.Aliases.Contains(name));
 
     [Fact]
     public void EntraDeleteDevice_TakesOneIdAndHasNoAllFlag()
@@ -194,6 +194,7 @@ public class DestructiveCommandShapeTests
     [InlineData("wipe")]
     [InlineData("retire")]
     [InlineData("delete")]
+    [InlineData("delete-record")]
     [InlineData("autopilot-reset")]
     public void IntuneDestructiveCommands_RequireConfirm(string name)
     {
