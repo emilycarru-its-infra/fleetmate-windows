@@ -22,13 +22,14 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // Navigate to Dashboard on startup
-        ContentFrame.Navigate(GetOrCreatePage("Dashboard"));
-        TabDashboard.IsChecked = true;
+        // Development is the launch tab; there is no Dashboard.
+        ContentFrame.Navigate(GetOrCreatePage("Development"));
+        TabDevelopment.IsChecked = true;
 
         if (Application.Current is App app)
         {
             app.Inbox.Changed += (_, _) => Dispatcher.Invoke(() => UpdateDevelopmentCount(app.Inbox.UnreadCount));
+            app.AppErrorChanged += (_, _) => Dispatcher.Invoke(UpdateAppError);
             BindElevationMonitor(app);
             app.ServicesReloaded += () => Dispatcher.Invoke(() => BindElevationMonitor(app));
         }
@@ -140,6 +141,16 @@ public partial class MainWindow : Window
             ToggleFullWindow();
             e.Handled = true;
         }
+        else if (HandleSearchShortcut(key, mods))
+        {
+            e.Handled = true;
+        }
+        else if (mods == Ctrl && TabShortcut(key) is { } tab)
+        {
+            // Ctrl+1–7 switch tabs, in tab-bar order.
+            NavigateToTab(tab);
+            e.Handled = true;
+        }
     }
 
     private double AvailableHeight => Math.Max(0, RootGrid.ActualHeight - RootGrid.RowDefinitions[0].ActualHeight - TerminalDivider.ActualHeight);
@@ -207,9 +218,26 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>
-    /// Navigate to a tab by tag name. Called from Dashboard for drill-down navigation.
-    /// </summary>
+    /// <summary>Tab-bar order: Ctrl+1 is the first, Ctrl+7 the last.</summary>
+    internal static readonly string[] TabOrder =
+        { "Development", "Projects", "Devices", "Manage", "Inventory", "Identity", "Tickets" };
+
+    internal static string? TabShortcut(System.Windows.Input.Key key)
+    {
+        var index = key switch
+        {
+            >= System.Windows.Input.Key.D1 and <= System.Windows.Input.Key.D7 => key - System.Windows.Input.Key.D1,
+            >= System.Windows.Input.Key.NumPad1 and <= System.Windows.Input.Key.NumPad7 => key - System.Windows.Input.Key.NumPad1,
+            _ => -1,
+        };
+        return index >= 0 ? TabOrder[index] : null;
+    }
+
+    /// <summary>The tag of the tab showing now.</summary>
+    public string CurrentTab =>
+        TabBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag as string ?? "Development";
+
+    /// <summary>Navigate to a tab by tag name — deep links and Ctrl+1–7.</summary>
     public void NavigateToTab(string tag)
     {
         foreach (var child in TabBar.Children)
@@ -231,7 +259,6 @@ public partial class MainWindow : Window
 
     private static Page CreatePage(string tag) => tag switch
     {
-        "Dashboard" => new DashboardPage(),
         "Devices" => new IntunePage(),
         "Manage" => new ManagePage(),
         "Inventory" => new AssetsPage(),
@@ -239,7 +266,7 @@ public partial class MainWindow : Window
         "Projects" => new BoardsPage(),
         "Development" => new FleetMate.GUI.Views.Development.DevelopmentPage(),
         "Identity" => new IdentityPage(),
-        _ => new DashboardPage()
+        _ => new FleetMate.GUI.Views.Development.DevelopmentPage()
     };
 
     private void NavigateToPage(string tag)
