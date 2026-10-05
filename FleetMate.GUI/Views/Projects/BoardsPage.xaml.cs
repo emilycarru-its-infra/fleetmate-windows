@@ -95,6 +95,7 @@ public partial class BoardsPage : Page
         if (_config.AzureDevOps != null && !string.IsNullOrEmpty(_config.AzureDevOps.Organization))
         {
             _devOpsService = _app?.DevOpsService ?? new AzureDevOpsService(_config.AzureDevOps);
+            DetailPanel.DevOpsService = _devOpsService;
         }
 
         // Show SSO button if ClientId + TenantId are configured
