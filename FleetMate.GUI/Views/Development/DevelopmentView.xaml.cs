@@ -20,8 +20,6 @@ namespace FleetMate.GUI.Views.Development;
 /// </summary>
 public partial class DevelopmentView : UserControl
 {
-    private const int RepoChipLimit = 12;
-
     private DevelopmentSourceFilter _source = DevelopmentSourceFilter.All;
     private DevelopmentScope _scope = DevelopmentScope.Everything;
     private string? _repository;
@@ -36,6 +34,7 @@ public partial class DevelopmentView : UserControl
         DetailView.StateChanged += async (_, _) => await RefreshAsync();
         RunView.RunChanged += async (_, _) => await LoadRunsAsync();
         StartTimers();
+        HookLinks();
     }
 
     private static App? AppInstance => Application.Current as App;
@@ -55,7 +54,6 @@ public partial class DevelopmentView : UserControl
         if (app.DevelopmentPullRequests is { } cached)
         {
             RenderPullRequests(cached);
-            RenderActivity();
         }
         else
         {
@@ -115,7 +113,6 @@ public partial class DevelopmentView : UserControl
 
             app.DevelopmentPullRequests = queue;
             RenderPullRequests(queue);
-            RenderActivity();
         }
         catch (Exception ex)
         {
@@ -135,7 +132,8 @@ public partial class DevelopmentView : UserControl
             .Where(pr => DevelopmentFilter.MatchesSource(pr, _source) && DevelopmentFilter.MatchesScope(pr, _scope))
             .ToList();
 
-        RenderRepoChips(scoped);
+        _repository = RepoFilterMenu.Fill(PullsRepoCombo,
+            RepoFilterMenu.Counts(scoped, DevelopmentFilter.RepositoryKey), _repository);
 
         var visible = DevelopmentFilter.Apply(queue.PullRequests, _source, _scope, _repository, SearchBox.Text);
         var rows = visible.Select(pr => new DevelopmentPullRequestRowViewModel { PullRequest = pr }).ToList();
@@ -166,42 +164,27 @@ public partial class DevelopmentView : UserControl
         }
     }
 
-    private void RenderRepoChips(List<UnifiedPullRequest> scoped)
-    {
-        var counts = DevelopmentFilter.RepositoryCounts(scoped);
-
-        // A repository that vanished (refresh, scope change) must not keep filtering.
-        if (_repository != null && counts.All(c => c.Repository != _repository)) _repository = null;
-
-        RepoChipsPanel.Children.Clear();
-        if (counts.Count < 2) return;
-
-        foreach (var (repo, count) in counts.Take(RepoChipLimit))
-        {
-            var chip = new ToggleButton
-            {
-                Content = $"{repo.Split('/').Last()} {count}",
-                ToolTip = repo,
-                Tag = repo,
-                IsChecked = repo == _repository,
-                Padding = new Thickness(8, 1, 8, 1),
-                FontSize = 10,
-                Margin = new Thickness(0, 0, 4, 4),
-            };
-            chip.Click += OnRepoChipClicked;
-            RepoChipsPanel.Children.Add(chip);
-        }
-    }
-
     private void Rerender()
     {
         if (AppInstance?.DevelopmentPullRequests is { } queue) RenderPullRequests(queue);
     }
 
-    private void OnRepoChipClicked(object sender, RoutedEventArgs e)
+    /// <summary>Show Pulls filtered to one repository — the Development widget's bar click.</summary>
+    public void ShowRepository(string repository)
     {
-        var repo = (sender as ToggleButton)?.Tag as string;
-        _repository = _repository == repo ? null : repo;
+        _source = DevelopmentSourceFilter.All;
+        SourceAll.IsChecked = true;
+        SourceDevOps.IsChecked = SourceGitHub.IsChecked = false;
+        _repository = repository;
+        PullRequestsSegment.IsChecked = true;
+        Rerender();
+    }
+
+    private void OnPullsRepoChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var repo = RepoFilterMenu.Picked(PullsRepoCombo, out var changed);
+        if (!changed || repo == _repository) return;
+        _repository = repo;
         Rerender();
     }
 
@@ -211,6 +194,9 @@ public partial class DevelopmentView : UserControl
     {
         if ((sender as FrameworkElement)?.Tag is string tag && Enum.TryParse<DevelopmentSourceFilter>(tag, out var source))
             _source = source;
+
+        // A repository picked under the old source means nothing under the new one.
+        _repository = null;
 
         SourceAll.IsChecked = _source == DevelopmentSourceFilter.All;
         SourceDevOps.IsChecked = _source == DevelopmentSourceFilter.DevOps;
@@ -247,40 +233,24 @@ public partial class DevelopmentView : UserControl
             pane.Visibility = pane == visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    // MARK: - Activity
-
-    /// <summary>Show or collapse the activity sidebar; the page toolbar owns the toggle.</summary>
-    public void ShowActivity(bool visible)
+    /// <summary>
+    /// Open one pull request in Pulls — a Recent Activity comment row's deep
+    /// link. Filters are cleared so the row is in the list to select.
+    /// </summary>
+    public async void ShowPullRequest(UnifiedPullRequest pr)
     {
-        ActivityPanel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        ActivitySplitter.Visibility = ActivityPanel.Visibility;
-        ActivitySplitterColumn.Width = new GridLength(visible ? 6 : 0);
-        ActivityColumn.Width = visible ? new GridLength(320) : new GridLength(0);
-    }
-
-    private void RenderActivity()
-    {
-        if (AppInstance?.DevelopmentPullRequests is not { } queue) return;
-
-        var rows = DevelopmentFilter.Activity(queue.PullRequests, queue.ViewerNames, HideMineCheck.IsChecked == true);
-        ActivityList.ItemsSource = rows;
-        ActivityEmpty.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private void OnHideMineChanged(object sender, RoutedEventArgs e)
-    {
-        if (IsInitialized) RenderActivity();
-    }
-
-    /// <summary>A comment opens its pull request in the centre, switching back to Pulls.</summary>
-    private async void OnActivitySelected(object sender, SelectionChangedEventArgs e)
-    {
-        if (ActivityList.SelectedItem is not DevelopmentActivityRowViewModel row) return;
-
+        _source = DevelopmentSourceFilter.All;
+        _scope = DevelopmentScope.Everything;
+        _repository = null;
+        SourceAll.IsChecked = ScopeEverything.IsChecked = true;
+        SourceDevOps.IsChecked = SourceGitHub.IsChecked = ScopeMine.IsChecked = false;
+        SearchBox.Text = "";
         PullRequestsSegment.IsChecked = true;
+        Rerender();
+
         var match = (PullRequestList.ItemsSource as System.Collections.IEnumerable)?
             .OfType<DevelopmentPullRequestRowViewModel>()
-            .FirstOrDefault(r => r.PullRequest.Id == row.PullRequest.Id);
+            .FirstOrDefault(r => r.PullRequest.Id == pr.Id);
 
         if (match != null)
         {
@@ -289,8 +259,7 @@ public partial class DevelopmentView : UserControl
         }
         else
         {
-            // Filtered out of the list; show it anyway.
-            await ShowPullRequestAsync(row.PullRequest);
+            await ShowPullRequestAsync(pr);
         }
     }
 
@@ -338,23 +307,28 @@ public partial class DevelopmentView : UserControl
         var inbox = app.Inbox;
 
         var unread = inbox.UnreadCount;
-        InboxSegment.Content = unread > 0 ? $"Inbox {unread}" : "Inbox";
+
+        // Shown only while there is something unread — and kept while it is
+        // the open segment, so marking everything read does not yank the page.
+        InboxSegment.Visibility = unread > 0 || InboxSegment.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        MarkAllReadButton.IsEnabled = unread > 0;
 
         var selectedId = _selectedNotification?.Id;
-        var rows = inbox.Notifications.Select(n => new DevelopmentNotificationRowViewModel { Notification = n }).ToList();
+        var rows = DevelopmentFilter.Inbox(inbox.Notifications, _showReadNotifications)
+            .Select(n => new DevelopmentNotificationRowViewModel { Notification = n }).ToList();
         InboxList.ItemsSource = rows;
         if (selectedId != null) InboxList.SelectedItem = rows.FirstOrDefault(r => r.Notification.Id == selectedId);
 
         InboxStatus.Text = inbox.LastError is { } error && inbox.Notifications.Count == 0
             ? $"GitHub inbox unavailable — {error}"
-            : $"{unread} unread of {rows.Count}"
-              + (inbox.LastRefreshed is { } at ? $" · updated {at:HH:mm}" : "")
+            : (inbox.LastRefreshed is { } at ? $"Checked {at:HH:mm}" : "")
               + (inbox.LastError != null ? " · last refresh failed" : "");
 
         if (InboxSegment.IsChecked == true)
         {
             EmptyText.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            EmptyText.Text = inbox.LastError != null ? "Could not reach GitHub notifications." : "Inbox zero.";
+            EmptyText.Text = inbox.LastError != null ? "Could not reach GitHub notifications."
+                : _showReadNotifications ? "No notifications." : "Inbox zero.";
         }
     }
 
@@ -407,14 +381,14 @@ public partial class DevelopmentView : UserControl
 
     private async void OnMarkReadClicked(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is not DevelopmentNotificationRowViewModel row || AppInstance is not { } app) return;
+        if (RowOf<DevelopmentNotificationRowViewModel>(sender) is not { } row || AppInstance is not { } app) return;
         var result = await app.Inbox.MarkReadAsync(row.Notification);
         if (!result.Success) InboxStatus.Text = $"Mark read failed — {result.Error}";
     }
 
     private async void OnUnsubscribeClicked(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.Tag is not DevelopmentNotificationRowViewModel row || AppInstance is not { } app) return;
+        if (RowOf<DevelopmentNotificationRowViewModel>(sender) is not { } row || AppInstance is not { } app) return;
         var result = await app.Inbox.UnsubscribeAsync(row.Notification);
         if (!result.Success) InboxStatus.Text = $"Unsubscribe failed — {result.Error}";
     }

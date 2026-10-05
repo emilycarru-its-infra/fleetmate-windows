@@ -4,8 +4,12 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.modernwpf.com/2019"
       xmlns:local="clr-namespace:FleetMate.GUI.Views.Inventory"
-      Loaded="Page_Loaded">
+      Loaded="Page_Loaded"
+      xmlns:widgets="clr-namespace:FleetMate.GUI.Views.Shared.Widgets">
 
+    <!-- Widgets sit above the page; the DockPanel keeps the page's own grid untouched. -->
+    <DockPanel>
+    <widgets:WidgetsSection DockPanel.Dock="Top" Tab="Inventory" Margin="16,14,16,0" />
     <Grid Margin="16,14,16,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -225,4 +229,5 @@
             </StackPanel>
         </Border>
     </Grid>
+    </DockPanel>
 </Page>
