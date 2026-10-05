@@ -25,15 +25,8 @@
                            Style="{StaticResource SubtitleTextStyle}" />
             </StackPanel>
 
-            <!-- Activity and Refresh share one toolbar group, as on macOS. -->
+            <!-- Activity moved to the toolbar Recent Activity popover. -->
             <ui:SimpleStackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                <ToggleButton x:Name="ActivityToggle" IsChecked="True" Click="OnActivityToggled"
-                              ToolTip="Show or hide recent comments across every pull request">
-                    <ui:SimpleStackPanel Orientation="Horizontal" Spacing="6">
-                        <ui:FontIcon Glyph="&#xE8BD;" FontSize="13" />
-                        <TextBlock Text="Activity" />
-                    </ui:SimpleStackPanel>
-                </ToggleButton>
                 <Button Click="OnRefreshClicked" ToolTip="Refresh pull requests, inbox, commits and pipelines">
                     <ui:SymbolIcon Symbol="Refresh" />
                 </Button>

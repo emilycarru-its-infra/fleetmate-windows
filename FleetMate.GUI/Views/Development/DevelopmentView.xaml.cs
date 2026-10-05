@@ -53,7 +53,6 @@ public partial class DevelopmentView : UserControl
         if (app.DevelopmentPullRequests is { } cached)
         {
             RenderPullRequests(cached);
-            RenderActivity();
         }
         else
         {
@@ -113,7 +112,6 @@ public partial class DevelopmentView : UserControl
 
             app.DevelopmentPullRequests = queue;
             RenderPullRequests(queue);
-            RenderActivity();
         }
         catch (Exception ex)
         {
@@ -234,40 +232,24 @@ public partial class DevelopmentView : UserControl
             pane.Visibility = pane == visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    // MARK: - Activity
-
-    /// <summary>Show or collapse the activity sidebar; the page toolbar owns the toggle.</summary>
-    public void ShowActivity(bool visible)
+    /// <summary>
+    /// Open one pull request in Pulls — a Recent Activity comment row's deep
+    /// link. Filters are cleared so the row is in the list to select.
+    /// </summary>
+    public async void ShowPullRequest(UnifiedPullRequest pr)
     {
-        ActivityPanel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        ActivitySplitter.Visibility = ActivityPanel.Visibility;
-        ActivitySplitterColumn.Width = new GridLength(visible ? 6 : 0);
-        ActivityColumn.Width = visible ? new GridLength(320) : new GridLength(0);
-    }
-
-    private void RenderActivity()
-    {
-        if (AppInstance?.DevelopmentPullRequests is not { } queue) return;
-
-        var rows = DevelopmentFilter.Activity(queue.PullRequests, queue.ViewerNames, HideMineCheck.IsChecked == true);
-        ActivityList.ItemsSource = rows;
-        ActivityEmpty.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private void OnHideMineChanged(object sender, RoutedEventArgs e)
-    {
-        if (IsInitialized) RenderActivity();
-    }
-
-    /// <summary>A comment opens its pull request in the centre, switching back to Pulls.</summary>
-    private async void OnActivitySelected(object sender, SelectionChangedEventArgs e)
-    {
-        if (ActivityList.SelectedItem is not DevelopmentActivityRowViewModel row) return;
-
+        _source = DevelopmentSourceFilter.All;
+        _scope = DevelopmentScope.Everything;
+        _repository = null;
+        SourceAll.IsChecked = ScopeEverything.IsChecked = true;
+        SourceDevOps.IsChecked = SourceGitHub.IsChecked = ScopeMine.IsChecked = false;
+        SearchBox.Text = "";
         PullRequestsSegment.IsChecked = true;
+        Rerender();
+
         var match = (PullRequestList.ItemsSource as System.Collections.IEnumerable)?
             .OfType<DevelopmentPullRequestRowViewModel>()
-            .FirstOrDefault(r => r.PullRequest.Id == row.PullRequest.Id);
+            .FirstOrDefault(r => r.PullRequest.Id == pr.Id);
 
         if (match != null)
         {
@@ -276,8 +258,7 @@ public partial class DevelopmentView : UserControl
         }
         else
         {
-            // Filtered out of the list; show it anyway.
-            await ShowPullRequestAsync(row.PullRequest);
+            await ShowPullRequestAsync(pr);
         }
     }
 
