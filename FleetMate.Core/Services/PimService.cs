@@ -101,7 +101,7 @@ public sealed class PimService
     private async Task<List<PimRole>> ReadRolesAsync(string resource, string what, CancellationToken ct)
     {
         var me = await GetMyIdAsync(ct);
-        var path = $"roleManagement/directory/{resource}?$filter=principalId eq '{me}'&$expand=roleDefinition";
+        var path = $"roleManagement/directory/{resource}?$filter={Uri.EscapeDataString($"principalId eq {ODataFilter.Guid(me)}")}&$expand=roleDefinition";
 
         using var req = await RequestAsync(HttpMethod.Get, path, ReadScope, ct);
         using var resp = await _http.SendAsync(req, ct);
