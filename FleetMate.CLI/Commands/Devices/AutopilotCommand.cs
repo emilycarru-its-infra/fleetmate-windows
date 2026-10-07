@@ -114,11 +114,19 @@ public static class AutopilotCommand
                     $"This will release the Autopilot registration for {identifier}. Re-run with --confirm to proceed, or --dry-run to see what would be sent."))
                 return;
             if (!Configured(graph, context)) return;
-            if (await ResolveIdAsync(graph!, identifier, context) is not { } autopilotId) return;
+            if (await ResolveRegistrationAsync(graph!, identifier, context) is not { } registration) return;
+            var autopilotId = registration.Id;
+
+            if (await new AutopilotDeleteGuard(graph!).CheckAsync(registration) is { } refusal)
+            {
+                Fail(context, refusal);
+                return;
+            }
 
             if (isDryRun)
             {
                 AnsiConsole.MarkupLine($"\n[bold]Dry run[/] — Autopilot {Esc(identifier)}");
+                AnsiConsole.WriteLine("  No Intune record found for this device.");
                 AnsiConsole.WriteLine($"  DELETE windowsAutopilotDeviceIdentities/{autopilotId}");
                 AnsiConsole.MarkupLine("\n[cyan]Dry run — nothing was sent.[/]");
                 return;
@@ -130,6 +138,7 @@ public static class AutopilotCommand
                 return;
             }
             AnsiConsole.MarkupLine($"[green]Deleted Autopilot registration {Esc(autopilotId)}[/]");
+            AnsiConsole.WriteLine(AutopilotDeleteGuard.AsyncNote);
         });
         return command;
     }
@@ -174,6 +183,24 @@ public static class AutopilotCommand
     }
 
     /// <summary>Autopilot ids are GUIDs; anything else is looked up as an exact serial.</summary>
+    /// <summary>
+    /// The registration a delete acts on, read in full so its serial and bound
+    /// Intune id can be checked: by id when given a GUID, otherwise by exact,
+    /// unique serial.
+    /// </summary>
+    private static async Task<AutopilotDevice?> ResolveRegistrationAsync(GraphService graph, string identifier, InvocationContext context)
+    {
+        if (CliTargets.IsGuid(identifier))
+        {
+            var (device, error) = await graph.GetAutopilotRegistrationAsync(identifier);
+            if (error != null) Fail(context, $"Autopilot lookup for {identifier} failed: {error}");
+            else if (device == null) Fail(context, $"No Autopilot registration with id {identifier}");
+            else AnsiConsole.MarkupLine($"[bold]Target:[/] Autopilot {Esc(device.Id)}  serial {Esc(device.SerialNumber ?? "-")}  {Esc(device.Model ?? "")}");
+            return error == null ? device : null;
+        }
+        return await ResolveBySerialAsync(graph, identifier, context);
+    }
+
     private static async Task<string?> ResolveIdAsync(GraphService graph, string identifier, InvocationContext context)
     {
         if (CliTargets.IsGuid(identifier)) return identifier.Trim();
@@ -182,11 +209,16 @@ public static class AutopilotCommand
             Fail(context, $"Refusing {identifier}: give an Autopilot id (a GUID) or a serial number (letters, digits and hyphens only).");
             return null;
         }
+        return (await ResolveBySerialAsync(graph, identifier, context))?.Id;
+    }
+
+    private static async Task<AutopilotDevice?> ResolveBySerialAsync(GraphService graph, string identifier, InvocationContext context)
+    {
         var matches = await graph.FindAutopilotRegistrationsAsync(identifier);
         if (matches.Count == 1)
         {
             AnsiConsole.MarkupLine($"[bold]Target:[/] Autopilot {Esc(matches[0].Id)}  serial {Esc(matches[0].SerialNumber ?? "-")}  {Esc(matches[0].Model ?? "")}");
-            return matches[0].Id;
+            return matches[0];
         }
         if (matches.Count == 0)
         {
