@@ -56,8 +56,13 @@ jobs:
         shell: pwsh
         run: |
           $before = git -C $env:SUBMODULE rev-parse HEAD
-          git submodule update --remote --init --recursive $env:SUBMODULE
+          # Only ReportMate itself follows main. Its own submodule stays at the
+          # commit ReportMate pins: --remote with --recursive would move that to
+          # its main too, building a combination ReportMate never tested.
+          git submodule update --remote --init $env:SUBMODULE
           if ($LASTEXITCODE -ne 0) { throw "submodule update failed" }
+          git -C $env:SUBMODULE submodule update --init --recursive
+          if ($LASTEXITCODE -ne 0) { throw "nested submodule update failed" }
           $after = git -C $env:SUBMODULE rev-parse HEAD
           "before=$before" >> $env:GITHUB_OUTPUT
           "after=$after" >> $env:GITHUB_OUTPUT
