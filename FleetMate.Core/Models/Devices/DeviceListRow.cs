@@ -17,6 +17,9 @@ public sealed class DeviceListRow
     public const string AutopilotOnlyPrefix = "autopilot:";
     /// <summary>Apple-organization-only rows carry this prefix, for the same reason.</summary>
     public const string OrgOnlyPrefix = "apple-org:";
+    /// <summary>A looked-up serial no system knows; no action of any kind applies to it.</summary>
+    public const string UnknownPrefix = "unknown:";
+    public const string NotFound = "Not Found";
 
     public IntuneDevice? Intune { get; }
     public AutopilotDevice? Autopilot { get; }
@@ -28,6 +31,19 @@ public sealed class DeviceListRow
     public string? ServerName { get; }
     /// <summary>The organization holding the device, as <see cref="AppleOrgProfile.Labels"/> names it.</summary>
     public string? OrgName { get; }
+    /// <summary>Set only on a row standing in for a looked-up serial that no system knows.</summary>
+    public string? UnknownSerial { get; private init; }
+    public bool IsUnknown => UnknownSerial != null;
+
+    /// <summary>
+    /// What disagrees between the device's sources, as <see cref="DeviceDiscrepancies"/>
+    /// works it out; empty when they agree or nothing has been compared yet.
+    /// </summary>
+    public IReadOnlyList<string> Discrepancies { get; set; } = Array.Empty<string>();
+
+    /// <summary>A row for a serial that a pasted or imported list names and no system knows.</summary>
+    public static DeviceListRow Unknown(string serial) =>
+        new(null, null) { UnknownSerial = serial, Discrepancies = new[] { DeviceDiscrepancies.Unknown } };
 
     public DeviceListRow(IntuneDevice? intune, AutopilotDevice? autopilot, AutopilotRegistration? registration = null,
         AppleOrgDevice? apple = null, string? serverName = null, string? orgName = null)
@@ -46,9 +62,10 @@ public sealed class DeviceListRow
 
     /// <summary>Enrolled rows keep the Intune ID; every MDM action is keyed on it.</summary>
     public string Id => Intune?.Id
+        ?? (UnknownSerial != null ? UnknownPrefix + UnknownSerial : null)
         ?? (Apple != null ? OrgOnlyPrefix + Apple.SerialNumber : AutopilotOnlyPrefix + (Autopilot?.Id ?? ""));
     public bool IsEnrolled => Intune != null;
-    public string? SerialNumber => Blank(Intune?.SerialNumber) ?? Blank(Apple?.SerialNumber) ?? Blank(Autopilot?.SerialNumber);
+    public string? SerialNumber => Blank(Intune?.SerialNumber) ?? Blank(Apple?.SerialNumber) ?? Blank(Autopilot?.SerialNumber) ?? UnknownSerial;
 
     /// <summary>
     /// Intune's operating system; for a row Intune lacks, the platform its
@@ -71,7 +88,7 @@ public sealed class DeviceListRow
 
     // ── Column values ────────────────────────────────────────────────────
 
-    public string NameText => Blank(Intune?.DeviceName) ?? Blank(Autopilot?.DisplayName) ?? Missing;
+    public string NameText => Blank(Intune?.DeviceName) ?? Blank(Autopilot?.DisplayName) ?? (IsUnknown ? NotFound : Missing);
     public string SerialText => SerialNumber ?? Missing;
     public string PlatformText => PlatformLabel ?? Missing;
     public string OsText
@@ -83,7 +100,7 @@ public sealed class DeviceListRow
         }
     }
     public string UserText => Blank(Intune?.UserDisplayName) ?? Blank(Intune?.UserPrincipalName) ?? Missing;
-    public string ComplianceText => Intune == null ? "Not Enrolled" : Capitalize(Blank(Intune.ComplianceState) ?? "unknown");
+    public string ComplianceText => IsUnknown ? Missing : Intune == null ? "Not Enrolled" : Capitalize(Blank(Intune.ComplianceState) ?? "unknown");
     /// <summary>Drives the compliance dot: compliant, attention (orange) or neutral.</summary>
     public string ComplianceTone => Intune?.ComplianceState?.ToLowerInvariant() switch
     {
@@ -117,7 +134,7 @@ public sealed class DeviceListRow
     public string ActivationLockText => Apple != null && ActivationLockCache.Get(Apple.SerialNumber) is { } l ? l.ColumnText() : Missing;
     public bool ActivationLockIsLocked => Apple != null && ActivationLockCache.Get(Apple.SerialNumber)?.IsLocked() == true;
 
-    public string EnrollmentLabel => IsEnrolled ? "Enrolled" : "Not Enrolled";
+    public string EnrollmentLabel => IsEnrolled ? "Enrolled" : IsUnknown ? NotFound : "Not Enrolled";
 
     /// <summary>
     /// The value a Devices filter reads for this row. Every facet answers for
@@ -140,8 +157,16 @@ public sealed class DeviceListRow
         DeviceFacet.Ownership => Blank(Intune?.ManagedDeviceOwnerType) is { } o ? Capitalize(o) : "Unknown",
         DeviceFacet.Migration => Apple?.MigrationLabel() ?? "None",
         DeviceFacet.Enrollment => EnrollmentLabel,
+        DeviceFacet.Discrepancy => Discrepancies.Count > 0 ? Discrepancies[0] : DeviceDiscrepancies.None,
         _ => "Unknown",
     };
+
+    /// <summary>
+    /// Every value a facet reads for this row. Only Discrepancy can carry
+    /// several: a device can be missing from more than one system.
+    /// </summary>
+    public IEnumerable<string> Values(DeviceFacet facet) =>
+        facet == DeviceFacet.Discrepancy && Discrepancies.Count > 0 ? Discrepancies : new[] { Value(facet) };
 
     /// <summary>
     /// Autopilot facet values: the identity's own, "Not Registered" for a
@@ -179,12 +204,15 @@ public enum DeviceFacet
     Ownership,
     Migration,
     Enrollment,
+    /// <summary>Last: it compares the sources the categories above describe.</summary>
+    Discrepancy,
 }
 
 public static class DeviceFacets
 {
     public static string Title(this DeviceFacet facet) => facet switch
     {
+        DeviceFacet.Discrepancy => "Discrepancies",
         DeviceFacet.ManagementService => "Device Management Service",
         DeviceFacet.OrgStatus => "Organization Status",
         DeviceFacet.AppleOrganization => "Apple Organization",
@@ -198,9 +226,13 @@ public static class DeviceFacets
     public static readonly IReadOnlySet<DeviceFacet> AutopilotOnly =
         new HashSet<DeviceFacet> { DeviceFacet.GroupTag, DeviceFacet.DeploymentProfile, DeviceFacet.AutopilotEnrollment };
 
-    /// <summary>Each value of a facet across the rows, with how many rows carry it, most common first.</summary>
+    /// <summary>
+    /// Each value of a facet across the rows, with how many rows carry it,
+    /// most common first. Only values present in the rows are offered.
+    /// </summary>
     public static List<(string Value, int Count)> Counts(IEnumerable<DeviceListRow> rows, DeviceFacet facet) =>
-        rows.GroupBy(r => r.Value(facet), StringComparer.OrdinalIgnoreCase)
+        rows.SelectMany(r => r.Values(facet).Distinct(StringComparer.OrdinalIgnoreCase))
+            .GroupBy(v => v, StringComparer.OrdinalIgnoreCase)
             .Select(g => (g.Key, g.Count()))
             .OrderByDescending(v => v.Item2).ThenBy(v => v.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -211,7 +243,7 @@ public static class DeviceFacets
     /// </summary>
     public static IEnumerable<DeviceListRow> Apply(IEnumerable<DeviceListRow> rows,
         IReadOnlyDictionary<DeviceFacet, HashSet<string>> selected) =>
-        rows.Where(r => selected.All(s => s.Value.Count == 0 || s.Value.Contains(r.Value(s.Key))));
+        rows.Where(r => selected.All(s => s.Value.Count == 0 || r.Values(s.Key).Any(s.Value.Contains)));
 }
 
 public static class DeviceListJoin

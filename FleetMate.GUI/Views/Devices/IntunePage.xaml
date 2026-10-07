@@ -58,6 +58,36 @@
                     </DockPanel>
                 </Border>
             </Popup>
+            <!-- Look up a list of serials: typed, pasted, or imported from a text or CSV file. -->
+            <Button x:Name="SerialsButton" Margin="0,0,8,0" Click="OnSerialsClicked"
+                    ToolTip="Show only the devices on a list of serial numbers">
+                <StackPanel Orientation="Horizontal">
+                    <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xEA37;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                    <TextBlock x:Name="SerialsButtonText" Text="Serials" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+            <Popup x:Name="SerialsPopup" PlacementTarget="{Binding ElementName=SerialsButton}" Placement="Bottom"
+                   StaysOpen="False" AllowsTransparency="True" VerticalOffset="4">
+                <Border Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource CardBorderBrush}"
+                        BorderThickness="1" CornerRadius="8" Padding="10" Width="340">
+                    <StackPanel>
+                        <TextBlock Text="Look Up Serials" FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <TextBlock Text="Type or paste serial numbers, one per line or separated by commas, or import a text or CSV file."
+                                   TextWrapping="Wrap" FontSize="12" Margin="0,0,0,8"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBox x:Name="SerialsInput" AcceptsReturn="True" TextWrapping="NoWrap" Height="160"
+                                 VerticalScrollBarVisibility="Auto" FontFamily="Consolas" TextChanged="OnSerialsInputChanged" />
+                        <TextBlock x:Name="SerialsParsedText" FontSize="12" Margin="0,6,0,0"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <DockPanel Margin="0,8,0,0" LastChildFill="False">
+                            <Button DockPanel.Dock="Left" Content="Import File…" Click="OnImportSerialsClicked" />
+                            <Button DockPanel.Dock="Right" x:Name="SerialsShowButton" Content="Show" Margin="8,0,0,0"
+                                    Style="{DynamicResource AccentButtonStyle}" Click="OnShowSerialsClicked" IsEnabled="False" />
+                            <Button DockPanel.Dock="Right" x:Name="SerialsClearButton" Content="Clear" Click="OnClearSerialsClicked" />
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+            </Popup>
             <Button x:Name="ImportHashesButton" Margin="0,0,8,0" Click="OnImportHashesClicked"
                     ToolTip="Register devices with Windows Autopilot from a hardware hash CSV">
                 <StackPanel Orientation="Horizontal">
