@@ -4,13 +4,17 @@ name: ReportMate sync
 # own source, kept here as the external/reportmate-app-csharp submodule. This
 # keeps it on that repository's main branch: every hour it moves the submodule
 # to main's newest commit, builds FleetMate against it -- the same gate ci.yml
-# applies -- and when that passes, opens a pull request for the bump and merges it. A failing build leaves
-# the pull request open with the failure, so a ReportMate change that breaks the
-# tab is fixed on this side and never pushed back to ReportMate.
+# applies -- and when that passes, opens a pull request for the bump and merges it.
+# A failing build leaves the pull request open with a comment, so a ReportMate
+# change that breaks the tab is fixed on this side and never pushed back.
 #
-# The build runs here rather than in ci.yml because a pull request
-# opened with GITHUB_TOKEN does not start other workflows. Its checks would never
-# report, so this job verifies the bump itself before merging.
+# Two jobs, because building runs ReportMate's code (its MSBuild targets can run
+# anything). The build job has a read-only token that is not left in .git/config.
+# The publish job holds the write token, never builds or runs ReportMate code,
+# and records exactly the commit the build job tested.
+#
+# The build runs here rather than in ci.yml because a pull request opened with
+# GITHUB_TOKEN does not start other workflows, so its checks would never report.
 
 on:
   schedule:
@@ -22,23 +26,30 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 env:
   DOTNET_VERSION: '10.0.x'
-  BRANCH: chore/reportmate-sync
   SUBMODULE: external/reportmate-app-csharp
 
 jobs:
-  sync:
+  build:
     runs-on: windows-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.bump.outputs.changed }}
+      before: ${{ steps.bump.outputs.before }}
+      after: ${{ steps.bump.outputs.after }}
+      # Set by the runner, not by anything the build can write.
+      result: ${{ steps.build.outcome }}
 
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: recursive
+          persist-credentials: false
 
       - name: Move ReportMate to its main branch
         id: bump
@@ -48,23 +59,10 @@ jobs:
           git submodule update --remote --init --recursive $env:SUBMODULE
           if ($LASTEXITCODE -ne 0) { throw "submodule update failed" }
           $after = git -C $env:SUBMODULE rev-parse HEAD
-          if ($before -eq $after) {
-            Write-Host "Already on ReportMate $after"
-            "changed=false" >> $env:GITHUB_OUTPUT
-            exit 0
-          }
-          $log = git -C $env:SUBMODULE log --oneline --no-merges "$before..$after" | Select-Object -First 30
-          "changed=true" >> $env:GITHUB_OUTPUT
+          "before=$before" >> $env:GITHUB_OUTPUT
           "after=$after" >> $env:GITHUB_OUTPUT
-          "short=$($after.Substring(0,7))" >> $env:GITHUB_OUTPUT
-          $body = @(
-            "Moves the Reporting tab to ReportMate ``$($after.Substring(0,7))``.",
-            "",
-            "Changes since ``$($before.Substring(0,7))``:",
-            "",
-            '```'
-          ) + $log + @('```')
-          Set-Content -Path "$env:RUNNER_TEMP\body.md" -Value $body
+          "changed=$(($before -ne $after).ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          Write-Host "ReportMate $before -> $after"
 
       - name: Setup .NET
         if: steps.bump.outputs.changed == 'true'
@@ -72,6 +70,7 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      # Last step of the job, so nothing the build leaves behind runs after it.
       - name: Build
         id: build
         if: steps.bump.outputs.changed == 'true'
@@ -81,43 +80,68 @@ jobs:
           dotnet build FleetMate.sln --configuration Release --verbosity minimal
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      - name: Open the pull request
-        id: pr
-        if: steps.bump.outputs.changed == 'true'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  publish:
+    needs: build
+    if: always() && needs.build.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BRANCH: chore/reportmate-sync
+      BEFORE: ${{ needs.build.outputs.before }}
+      AFTER: ${{ needs.build.outputs.after }}
+      RESULT: ${{ needs.build.outputs.result }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+    steps:
+      # No submodules: this job only records a commit id, it never fetches the code.
+      - uses: actions/checkout@v6
+
+      - name: Record the tested ReportMate commit
+        shell: bash
         run: |
+          set -euo pipefail
+          for sha in "$BEFORE" "$AFTER"; do
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "not a commit id: $sha"; exit 1; }
+          done
+          url=$(git config -f .gitmodules "submodule.$SUBMODULE.url")
+          repo=${url#https://github.com/}; repo=${repo%.git}
+          # Only a commit already on ReportMate's main branch is recorded.
+          status=$(gh api "repos/$repo/compare/$AFTER...main" --jq .status)
+          [[ "$status" == identical || "$status" == ahead ]] || { echo "$AFTER is not on $repo main ($status)"; exit 1; }
+          short=${AFTER:0:7}
+          {
+            echo "Moves the Reporting tab to ReportMate \`$short\`."
+            echo
+            echo "Changes since \`${BEFORE:0:7}\`:"
+            echo
+            echo '```'
+            gh api "repos/$repo/compare/$BEFORE...$AFTER" --jq '.commits[] | select(.parents | length == 1) | .sha[0:7] + " " + (.commit.message | split("\n")[0])' | head -30
+            echo '```'
+          } > "$RUNNER_TEMP/body.md"
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B $env:BRANCH
-          git add $env:SUBMODULE
-          git commit -m "Move the Reporting tab to ReportMate ${{ steps.bump.outputs.short }}"
-          git push --force origin $env:BRANCH
-          $existing = gh pr list --head $env:BRANCH --state open --json number --jq '.[0].number'
-          if ($existing) {
-            gh pr edit $existing --body-file "$env:RUNNER_TEMP\body.md"
-            $number = $existing
-          } else {
-            $url = gh pr create --base main --head $env:BRANCH `
-              --title "Move the Reporting tab to the latest ReportMate" `
-              --body-file "$env:RUNNER_TEMP\body.md"
-            $number = ($url -split '/')[-1]
-          }
-          "number=$number" >> $env:GITHUB_OUTPUT
+          git checkout -B "$BRANCH"
+          git update-index --cacheinfo "160000,$AFTER,$SUBMODULE"
+          git commit -m "Move the Reporting tab to ReportMate $short"
+          git push --force origin "$BRANCH"
 
-      - name: Merge when the build passed
-        if: steps.bump.outputs.changed == 'true' && steps.build.outcome == 'success'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr merge ${{ steps.pr.outputs.number }} --squash --delete-branch
+          number=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [[ -n "$number" ]]; then
+            gh pr edit "$number" --body-file "$RUNNER_TEMP/body.md"
+          else
+            number=$(gh pr create --base main --head "$BRANCH" \
+              --title "Move the Reporting tab to the latest ReportMate" \
+              --body-file "$RUNNER_TEMP/body.md" | sed 's#.*/##')
+          fi
 
-      - name: Report a failing build
-        if: steps.bump.outputs.changed == 'true' && steps.build.outcome != 'success'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr comment ${{ steps.pr.outputs.number }} --body "FleetMate does not build against ReportMate ${{ steps.bump.outputs.short }}. See $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID. Fix it on the FleetMate side; this pull request stays open until then."
-          exit 1
+          if [[ "$RESULT" == success ]]; then
+            gh pr merge "$number" --squash --delete-branch
+          else
+            gh pr comment "$number" --body "FleetMate does not build against ReportMate $short. See $RUN_URL. Fix it on the FleetMate side; this pull request stays open until then."
+            exit 1
+          fi
