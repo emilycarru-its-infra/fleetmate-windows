@@ -38,6 +38,9 @@ public partial class IntunePage : Page
     private readonly Dictionary<DeviceFacet, HashSet<string>> _facetSelection =
         Enum.GetValues<DeviceFacet>().ToDictionary(f => f, _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
+    /// <summary>The looked-up serials narrowing the list; null shows every device.</summary>
+    private List<string>? _lookupSerials;
+
     private static readonly string[] OptionalColumns =
         { "Model", "Manufacturer", "Ownership", "Migration", "Purchase Source", "Added", "Activation Lock" };
 
@@ -65,6 +68,10 @@ public partial class IntunePage : Page
         RestoreColumns();
 
         DeviceDetail.CloseRequested += (_, _) => HideDeviceDetail();
+        DevicesDataGrid.ColumnReordered += (_, _) => SaveColumns();
+        // Inventory arriving later lets the "Missing from Inventory" check speak.
+        if (_app != null)
+            _app.CacheChanged += key => { if (key == "Assets" && _intuneReady) RebuildRows(); };
 
         Loaded += async (s, e) =>
         {
@@ -171,6 +178,10 @@ public partial class IntunePage : Page
     {
         var selectedIds = new HashSet<string>(SelectedRows().Select(r => r.Id));
         _allRows = AppleOrgJoin.Enrich(DeviceListJoin.Merge(_allDevices, _autopilot), _appleOrgs);
+        DeviceDiscrepancies.Apply(_allRows, new DeviceDiscrepancies.Sources(
+            AutopilotRead: _autopilot.Count > 0,
+            AppleOrgsRead: _appleOrgs.Count > 0,
+            InventorySerials: InventorySerials()));
         RebuildFilters();
         ApplyFilters();
         foreach (var row in _rows.Where(r => selectedIds.Contains(r.Id) && !DevicesDataGrid.SelectedItems.Contains(r)))
@@ -266,7 +277,15 @@ public partial class IntunePage : Page
         // Guard: don't run during XAML initialization before controls exist
         if (!IsLoaded && _allRows.Count == 0) return;
 
-        var filtered = DeviceFacets.Apply(_allRows, _facetSelection);
+        IReadOnlyList<DeviceListRow> source = _allRows;
+        SerialLookup.Result? lookup = null;
+        if (_lookupSerials != null)
+        {
+            lookup = SerialLookup.Apply(_allRows, _lookupSerials);
+            source = lookup.Rows;
+        }
+
+        var filtered = DeviceFacets.Apply(source, _facetSelection);
         var searchText = SearchBox.Text?.Trim();
         if (!string.IsNullOrEmpty(searchText))
             filtered = filtered.Where(r => r.Matches(searchText));
@@ -281,9 +300,90 @@ public partial class IntunePage : Page
         foreach (var row in _rows.Where(r => keep.Contains(r.Id)))
             DevicesDataGrid.SelectedItems.Add(row);
 
-        DeviceCountText.Text = visible.Count == _allRows.Count
-            ? $"{_allRows.Count} devices"
-            : $"{visible.Count} of {_allRows.Count} devices";
+        DeviceCountText.Text = lookup != null
+            ? $"{lookup.Matched} of {_lookupSerials!.Count} looked-up serials found"
+              + (lookup.Unknown.Count > 0 ? $", {lookup.Unknown.Count} unknown" : "")
+            : visible.Count == _allRows.Count
+                ? $"{_allRows.Count} devices"
+                : $"{visible.Count} of {_allRows.Count} devices";
+    }
+
+    /// <summary>Serials the asset inventory holds, once it has been read; null until then.</summary>
+    private IReadOnlySet<string>? InventorySerials()
+    {
+        var assets = _app?.CachedAssets;
+        if (assets is not { Count: > 0 }) return null;
+        return assets.Select(a => a.Serial).Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => DeviceListJoin.Normalize(s!)).ToHashSet();
+    }
+
+    // ── Serial lookup ────────────────────────────────────────────────────
+
+    private void OnSerialsClicked(object sender, RoutedEventArgs e)
+    {
+        SerialsPopup.IsOpen = !SerialsPopup.IsOpen;
+        if (SerialsPopup.IsOpen) SerialsInput.Focus();
+    }
+
+    private void OnSerialsInputChanged(object sender, TextChangedEventArgs e)
+    {
+        var count = SerialListParser.Parse(SerialsInput.Text).Count;
+        SerialsParsedText.Text = count == 0 ? "" : count == 1 ? "1 serial" : $"{count} serials";
+        SerialsShowButton.IsEnabled = count > 0;
+    }
+
+    private async void OnImportSerialsClicked(object sender, RoutedEventArgs e)
+    {
+        var picker = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Import serial numbers",
+            Filter = "Serial lists (*.txt;*.csv)|*.txt;*.csv|All files (*.*)|*.*"
+        };
+        // The file dialog takes focus; keep the popup open behind it.
+        SerialsPopup.StaysOpen = true;
+        try
+        {
+            if (picker.ShowDialog() != true) return;
+            var text = await System.IO.File.ReadAllTextAsync(picker.FileName);
+            var serials = SerialListParser.Parse(text);
+            if (serials.Count == 0)
+            {
+                SerialsParsedText.Text = $"No serial numbers found in {System.IO.Path.GetFileName(picker.FileName)}.";
+                return;
+            }
+            SerialsInput.Text = string.Join(Environment.NewLine, serials);
+        }
+        catch (Exception ex)
+        {
+            SerialsParsedText.Text = $"Could not read the file: {ex.Message}";
+        }
+        finally
+        {
+            SerialsPopup.StaysOpen = false;
+        }
+    }
+
+    private void OnShowSerialsClicked(object sender, RoutedEventArgs e)
+    {
+        var serials = SerialListParser.Parse(SerialsInput.Text);
+        if (serials.Count == 0) return;
+        SetSerialLookup(serials);
+        SerialsPopup.IsOpen = false;
+    }
+
+    private void OnClearSerialsClicked(object sender, RoutedEventArgs e)
+    {
+        SerialsInput.Text = "";
+        SetSerialLookup(null);
+        SerialsPopup.IsOpen = false;
+    }
+
+    /// <summary>Narrow the list to these serials, or show every device again with null.</summary>
+    public void SetSerialLookup(IReadOnlyList<string>? serials)
+    {
+        _lookupSerials = serials is { Count: > 0 } ? serials.ToList() : null;
+        SerialsButtonText.Text = _lookupSerials == null ? "Serials" : $"Serials ({_lookupSerials.Count})";
+        ApplyFilters();
     }
 
     private void OnSearchChanged(object sender, TextChangedEventArgs e)
@@ -302,7 +402,10 @@ public partial class IntunePage : Page
         if (source == null) return;
 
         var menu = new ContextMenu();
-        foreach (var column in DevicesDataGrid.Columns.Where(c => OptionalColumns.Contains(c.Header as string)))
+        foreach (var column in DevicesDataGrid.Columns
+                     .Where(c => OptionalColumns.Contains(c.Header as string))
+                     .Where(c => c.Visibility == Visibility.Visible || CanFill((string)c.Header))
+                     .OrderBy(c => c.DisplayIndex))
         {
             var item = new MenuItem { Header = column.Header, IsCheckable = true, IsChecked = column.Visibility == Visibility.Visible };
             var target = column;
@@ -317,14 +420,22 @@ public partial class IntunePage : Page
         e.Handled = true;
     }
 
+    /// <summary>The default column order, as the XAML declares it, before any saved layout moves it.</summary>
+    private List<string>? _defaultColumnOrder;
+
     private void RestoreColumns()
     {
+        _defaultColumnOrder = DevicesDataGrid.Columns.Select(c => (string)c.Header).ToList();
         try
         {
             if (!System.IO.File.Exists(ColumnsStatePath)) return;
-            var shown = System.Text.Json.JsonSerializer.Deserialize<List<string>>(System.IO.File.ReadAllText(ColumnsStatePath)) ?? new();
+            var layout = DeviceColumnLayout.Parse(System.IO.File.ReadAllText(ColumnsStatePath));
             foreach (var column in DevicesDataGrid.Columns.Where(c => OptionalColumns.Contains(c.Header as string)))
-                column.Visibility = shown.Contains((string)column.Header) ? Visibility.Visible : Visibility.Collapsed;
+                column.Visibility = layout.Shown.Contains((string)column.Header) ? Visibility.Visible : Visibility.Collapsed;
+
+            var order = layout.Arrange(_defaultColumnOrder);
+            foreach (var column in DevicesDataGrid.Columns)
+                column.DisplayIndex = order.IndexOf((string)column.Header);
         }
         catch (Exception ex)
         {
@@ -336,16 +447,42 @@ public partial class IntunePage : Page
     {
         try
         {
-            var shown = DevicesDataGrid.Columns
-                .Where(c => OptionalColumns.Contains(c.Header as string) && c.Visibility == Visibility.Visible)
-                .Select(c => (string)c.Header).ToList();
+            var layout = new DeviceColumnLayout
+            {
+                Shown = DevicesDataGrid.Columns
+                    .Where(c => OptionalColumns.Contains(c.Header as string) && c.Visibility == Visibility.Visible)
+                    .Select(c => (string)c.Header).ToList(),
+                Order = DevicesDataGrid.Columns.OrderBy(c => c.DisplayIndex).Select(c => (string)c.Header).ToList(),
+            };
             System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(ColumnsStatePath)!);
-            System.IO.File.WriteAllText(ColumnsStatePath, System.Text.Json.JsonSerializer.Serialize(shown));
+            System.IO.File.WriteAllText(ColumnsStatePath, layout.Serialize());
         }
         catch (Exception ex)
         {
             Serilog.Log.Debug(ex, "Devices: could not save column layout");
         }
+    }
+
+    /// <summary>
+    /// Whether the connected services fill an optional column for any device,
+    /// so the header menu offers only columns that would show something.
+    /// </summary>
+    private bool CanFill(string header)
+    {
+        if (_allRows.Count == 0) return true;
+        Func<DeviceListRow, bool> filled = header switch
+        {
+            "Model" => r => r.ModelText != DeviceListRow.Missing,
+            "Manufacturer" => r => r.ManufacturerText != DeviceListRow.Missing,
+            "Ownership" => r => r.OwnershipText != DeviceListRow.Missing,
+            "Migration" => r => r.Apple != null,
+            "Purchase Source" => r => r.PurchaseSourceText != DeviceListRow.Missing,
+            "Added" => r => r.AddedText != DeviceListRow.Missing,
+            // Read per device on selection, so any Apple organization device can fill it.
+            "Activation Lock" => r => r.Apple != null,
+            _ => _ => true,
+        };
+        return _allRows.Any(filled);
     }
 
     // ── Selection ────────────────────────────────────────────────────────
@@ -454,6 +591,12 @@ public partial class IntunePage : Page
 
     private async Task ShowDeviceDetailAsync(DeviceListRow row)
     {
+        // A serial no system knows has nothing to show.
+        if (row.IsUnknown)
+        {
+            HideDeviceDetail();
+            return;
+        }
         DeviceDetail.Visibility = Visibility.Visible;
         DetailPanelColumn.Width = new GridLength(520);
         var apple = AppleContext(row);
