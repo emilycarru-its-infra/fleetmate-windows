@@ -42,7 +42,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="LiveChartsCore.SkiaSharpView.WPF" Version="2.0.0-rc3.3" />
     <PackageReference Include="ModernWpfUI" Version="0.9.6" />
     <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.122" />
@@ -57,6 +57,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FleetMate.Core\FleetMate.Core.csproj" />
+    <!-- The Reporting tab is the ReportMate dashboard itself, built from the
+         ReportMate app's own source (external/, a submodule kept on its main
+         branch by .github/workflows/reportmate-sync.yml). -->
+    <ProjectReference Include="..\external\reportmate-app-csharp\src\ReportMate.UI.csproj" />
   </ItemGroup>
 
 </Project>

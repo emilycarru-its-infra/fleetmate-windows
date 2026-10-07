@@ -104,11 +104,12 @@ public class RecentActivityTests
     [InlineData(Key.D1, "Development")]
     [InlineData(Key.D2, "Projects")]
     [InlineData(Key.D3, "Devices")]
-    [InlineData(Key.D4, "Manage")]
-    [InlineData(Key.D5, "Inventory")]
-    [InlineData(Key.D6, "Identity")]
-    [InlineData(Key.NumPad7, "Tickets")]
-    [InlineData(Key.D8, null)]
+    [InlineData(Key.D4, "Reporting")]
+    [InlineData(Key.D5, "Manage")]
+    [InlineData(Key.D6, "Inventory")]
+    [InlineData(Key.D7, "Identity")]
+    [InlineData(Key.NumPad8, "Tickets")]
+    [InlineData(Key.D9, null)]
     public void CtrlNumberSwitchesTabsInBarOrder(Key key, string? tab) =>
         Assert.Equal(tab, MainWindow.TabShortcut(key));
 

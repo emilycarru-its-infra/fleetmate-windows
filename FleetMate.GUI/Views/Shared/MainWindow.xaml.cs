@@ -146,7 +146,7 @@ public partial class MainWindow : Window
         }
         else if (mods == Ctrl && TabShortcut(key) is { } tab)
         {
-            // Ctrl+1–7 switch tabs, in tab-bar order.
+            // Ctrl+1–8 switch tabs, in tab-bar order.
             NavigateToTab(tab);
             e.Handled = true;
         }
@@ -218,16 +218,16 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>Tab-bar order: Ctrl+1 is the first, Ctrl+7 the last.</summary>
+    /// <summary>Tab-bar order: Ctrl+1 is the first, Ctrl+8 the last.</summary>
     internal static readonly string[] TabOrder =
-        { "Development", "Projects", "Devices", "Manage", "Inventory", "Identity", "Tickets" };
+        { "Development", "Projects", "Devices", "Reporting", "Manage", "Inventory", "Identity", "Tickets" };
 
     internal static string? TabShortcut(System.Windows.Input.Key key)
     {
         var index = key switch
         {
-            >= System.Windows.Input.Key.D1 and <= System.Windows.Input.Key.D7 => key - System.Windows.Input.Key.D1,
-            >= System.Windows.Input.Key.NumPad1 and <= System.Windows.Input.Key.NumPad7 => key - System.Windows.Input.Key.NumPad1,
+            >= System.Windows.Input.Key.D1 and <= System.Windows.Input.Key.D8 => key - System.Windows.Input.Key.D1,
+            >= System.Windows.Input.Key.NumPad1 and <= System.Windows.Input.Key.NumPad8 => key - System.Windows.Input.Key.NumPad1,
             _ => -1,
         };
         return index >= 0 ? TabOrder[index] : null;
@@ -237,7 +237,7 @@ public partial class MainWindow : Window
     public string CurrentTab =>
         TabBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag as string ?? "Development";
 
-    /// <summary>Navigate to a tab by tag name — deep links and Ctrl+1–7.</summary>
+    /// <summary>Navigate to a tab by tag name — deep links and Ctrl+1–8.</summary>
     public void NavigateToTab(string tag)
     {
         foreach (var child in TabBar.Children)
@@ -266,6 +266,7 @@ public partial class MainWindow : Window
         "Projects" => new BoardsPage(),
         "Development" => new FleetMate.GUI.Views.Development.DevelopmentPage(),
         "Identity" => new IdentityPage(),
+        "Reporting" => new FleetMate.GUI.Views.Reporting.ReportingPage(),
         _ => new FleetMate.GUI.Views.Development.DevelopmentPage()
     };
 

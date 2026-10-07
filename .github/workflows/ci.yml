@@ -24,6 +24,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          # The Reporting tab builds from the ReportMate app's source, which
+          # carries a submodule of its own.
+          submodules: recursive
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
