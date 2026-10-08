@@ -26,6 +26,7 @@ public partial class MainWindow : Window
         ContentFrame.Navigate(GetOrCreatePage("Development"));
         TabDevelopment.IsChecked = true;
         UpdateGraphsButton();
+        InitShortcuts();
 
         if (Application.Current is App app)
         {
@@ -150,6 +151,10 @@ public partial class MainWindow : Window
             NavigateToTab(tab);
             e.Handled = true;
         }
+        else if (HandleAppShortcut(key, mods))
+        {
+            e.Handled = true;
+        }
     }
 
     private double AvailableHeight => Math.Max(0, RootGrid.ActualHeight - RootGrid.RowDefinitions[0].ActualHeight - TerminalDivider.ActualHeight);
@@ -213,6 +218,7 @@ public partial class MainWindow : Window
         if (ContentFrame == null) return; // Not yet initialized
         if (sender is RadioButton radio && radio.Tag is string tag)
         {
+            RecordTabVisit(tag);
             NavigateToPage(tag);
             UpdateGraphsButton();
         }
