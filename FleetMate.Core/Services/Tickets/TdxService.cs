@@ -427,7 +427,12 @@ public class TdxService : IDisposable
     /// <summary>
     /// Create a new ticket
     /// </summary>
-    public async Task<TdxTicket?> CreateTicketAsync(CreateTicketRequest request)
+    /// <remarks>
+    /// TDX takes the notification choices as query parameters, not body fields;
+    /// in the payload they silently notify nobody.
+    /// </remarks>
+    public async Task<TdxTicket?> CreateTicketAsync(
+        CreateTicketRequest request, bool notifyRequestor = false, bool notifyResponsible = false)
     {
         if (!await SetAuthorizationAsync())
         {
@@ -449,7 +454,10 @@ public class TdxService : IDisposable
                 return null;
             }
 
-            var url = _config.GetTicketsUrl();
+            var url = _config.GetTicketsUrl()
+                + $"?NotifyRequestor={(notifyRequestor ? "true" : "false")}"
+                + $"&NotifyResponsible={(notifyResponsible ? "true" : "false")}"
+                + "&AllowRequestorCreation=false";
             var content = new StringContent(JsonSerializer.Serialize(request, _jsonOptions), Encoding.UTF8, "application/json");
 
             var response = await _client.PostAsync(url, content);
@@ -552,6 +560,75 @@ public class TdxService : IDisposable
         {
             Log.Error(ex, "Failed to update ticket {Id}", ticketId);
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Set a ticket's parent. TDX takes the parent only through the full
+    /// update, which replaces the ticket, so the current ticket is fetched and
+    /// echoed back with the new ParentID. Pass null to clear the parent.
+    /// </summary>
+    public async Task<TdxTicket?> SetParentAsync(int ticketId, int? parentId)
+    {
+        if (!await SetAuthorizationAsync()) return null;
+
+        try
+        {
+            var url = _config.GetTicketsUrl(ticketId.ToString());
+            using var current = await _client.GetAsync(url);
+            if (!current.IsSuccessStatusCode)
+            {
+                Log.Warning("Set parent: could not read ticket {Id}: {Status}", ticketId, current.StatusCode);
+                return null;
+            }
+            using var doc = JsonDocument.Parse(await current.Content.ReadAsStringAsync());
+            var body = TdxFullUpdate.Build(doc.RootElement, new Dictionary<string, object?> { ["ParentID"] = parentId });
+
+            var content = new StringContent(JsonSerializer.Serialize(body, _jsonOptions), Encoding.UTF8, "application/json");
+            var response = await _client.PostAsync(url, content);
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Warning("Failed to set parent of ticket {Id}: {Status} - {Error}", ticketId, response.StatusCode, error);
+                return null;
+            }
+            return await response.Content.ReadFromJsonAsync<TdxTicket>(_jsonOptions);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to set parent of ticket {Id}", ticketId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Attach a file to a ticket: <c>POST /api/{appId}/tickets/{id}/attachments</c>,
+    /// with the file as multipart form data. Returns false when TDX refuses it.
+    /// </summary>
+    public async Task<bool> UploadAttachmentAsync(int ticketId, string fileName, byte[] content)
+    {
+        if (!await SetAuthorizationAsync()) return false;
+
+        try
+        {
+            using var form = new MultipartFormDataContent();
+            var file = new ByteArrayContent(content);
+            file.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+            form.Add(file, "file", fileName);
+
+            var response = await _client.PostAsync(_config.GetTicketsUrl($"{ticketId}/attachments"), form);
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Warning("Failed to attach a file to ticket {Id}: {Status} - {Error}", ticketId, response.StatusCode, error);
+                return false;
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to attach a file to ticket {Id}", ticketId);
+            return false;
         }
     }
 
@@ -789,7 +866,7 @@ public class TdxService : IDisposable
 
         try
         {
-            var url = $"api/{_config.AppId}/tickets/statuses";
+            var url = _config.GetTicketsUrl("statuses");
             var response = await _client.GetAsync(url);
 
             if (response.IsSuccessStatusCode)
@@ -828,7 +905,7 @@ public class TdxService : IDisposable
 
         try
         {
-            var url = $"api/{_config.AppId}/tickets/types";
+            var url = _config.GetTicketsUrl("types");
             var response = await _client.GetAsync(url);
 
             if (response.IsSuccessStatusCode)
@@ -866,7 +943,7 @@ public class TdxService : IDisposable
 
         try
         {
-            var url = $"api/{_config.AppId}/tickets/priorities";
+            var url = _config.GetTicketsUrl("priorities");
             var response = await _client.GetAsync(url);
 
             if (response.IsSuccessStatusCode)
