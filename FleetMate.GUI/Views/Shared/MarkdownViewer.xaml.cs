@@ -25,6 +25,27 @@ public partial class MarkdownViewer : UserControl
         set => SetValue(MarkdownTextProperty, value);
     }
 
+    /// <summary>
+    /// Content from a repository many people edit (Handbook pages, skills).
+    /// Raw HTML in the Markdown is shown as text, never rendered; the page
+    /// carries a Content-Security-Policy that loads nothing but inline styles
+    /// and images from <see cref="ImageOrigin"/>; and script is off. Set it
+    /// before the content.
+    /// </summary>
+    public bool Untrusted { get; set; }
+
+    /// <summary>With <see cref="Untrusted"/>, the one origin images may load from (the Handbook site), besides inline data.</summary>
+    public string? ImageOrigin { get; set; }
+
+    /// <summary>
+    /// A link in the content was clicked. The viewer never navigates itself:
+    /// with no handler, only an http(s) link opens, in the browser.
+    /// </summary>
+    public event Action<string>? LinkClicked;
+
+    /// <summary>Set just before showing content, so only that navigation is let through.</summary>
+    private bool _expectingContent;
+
     public MarkdownViewer()
     {
         InitializeComponent();
@@ -41,6 +62,12 @@ public partial class MarkdownViewer : UserControl
             WebView.CoreWebView2.Settings.IsZoomControlEnabled = false;
             WebView.CoreWebView2.Settings.AreDevToolsEnabled = false;
             WebView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+            WebView.CoreWebView2.Settings.AreHostObjectsAllowed = false;
+            WebView.CoreWebView2.Settings.IsWebMessageEnabled = false;
+            if (Untrusted) WebView.CoreWebView2.Settings.IsScriptEnabled = false;
+            // Links never navigate the viewer or open a window of their own.
+            WebView.CoreWebView2.NavigationStarting += OnNavigationStarting;
+            WebView.CoreWebView2.NewWindowRequested += OnNewWindowRequested;
             _isInitialized = true;
             WebView.Visibility = Visibility.Visible;
 
@@ -76,9 +103,56 @@ public partial class MarkdownViewer : UserControl
             return;
         }
 
-        var html = IsHtml(text) ? text : ConvertMarkdownToHtml(text);
-        var fullHtml = WrapInHtmlPage(html);
+        var html = !Untrusted && IsHtml(text) ? text : ConvertMarkdownToHtml(text, Untrusted);
+        var fullHtml = WrapInHtmlPage(html, Untrusted ? ContentSecurityPolicy(ImageOrigin) : null);
+        _expectingContent = true;
         WebView.NavigateToString(fullHtml);
+    }
+
+    private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
+    {
+        if (_expectingContent && !e.IsUserInitiated)
+        {
+            _expectingContent = false;
+            return;
+        }
+        e.Cancel = true;
+        FollowLink(e.Uri);
+    }
+
+    private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
+    {
+        e.Handled = true;
+        FollowLink(e.Uri);
+    }
+
+    private void FollowLink(string? uri)
+    {
+        if (string.IsNullOrEmpty(uri)) return;
+        if (LinkClicked != null)
+        {
+            LinkClicked(uri);
+            return;
+        }
+        if (FleetMate.Core.Knowledge.HandbookLinks.External(uri) is { } url)
+            OpenInBrowser(url);
+    }
+
+    /// <summary>Open an http(s) address in the browser. Anything else is refused.</summary>
+    public static void OpenInBrowser(Uri url)
+    {
+        if (!FleetMate.Core.Knowledge.HandbookLinks.IsWeb(url)) return;
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url.AbsoluteUri) { UseShellExecute = true }); }
+        catch (Exception ex) { Log.Warning(ex, "Could not open {Url}", url.AbsoluteUri); }
+    }
+
+    /// <summary>Nothing loads but inline styles and images from <paramref name="imageOrigin"/> or inline data.</summary>
+    internal static string ContentSecurityPolicy(string? imageOrigin)
+    {
+        var images = "data:";
+        if (Uri.TryCreate(imageOrigin, UriKind.Absolute, out var origin) && FleetMate.Core.Knowledge.HandbookLinks.IsWeb(origin))
+            images += " " + origin.GetLeftPart(UriPartial.Authority);
+        return $"default-src 'none'; img-src {images}; style-src 'unsafe-inline'";
     }
 
     private static bool IsHtml(string text)
@@ -88,19 +162,20 @@ public partial class MarkdownViewer : UserControl
                (trimmed.Contains("</") || trimmed.Contains("/>"));
     }
 
-    private static string ConvertMarkdownToHtml(string markdown)
+    internal static string ConvertMarkdownToHtml(string markdown, bool untrusted = false)
     {
-        var pipeline = new MarkdownPipelineBuilder()
-            .UseAdvancedExtensions()
-            .Build();
-        return Markdown.ToHtml(markdown, pipeline);
+        var builder = new MarkdownPipelineBuilder().UseAdvancedExtensions();
+        // Raw HTML in untrusted text is shown as text: no script, iframe or on* handler can render.
+        if (untrusted) builder.DisableHtml();
+        return Markdown.ToHtml(markdown, builder.Build());
     }
 
-    private static string WrapInHtmlPage(string bodyHtml) => $$"""
+    private static string WrapInHtmlPage(string bodyHtml, string? contentSecurityPolicy) => $$"""
         <!DOCTYPE html>
         <html>
         <head>
         <meta charset="utf-8">
+        {{(contentSecurityPolicy == null ? "" : $"<meta http-equiv=\"Content-Security-Policy\" content=\"{contentSecurityPolicy}\">")}}
         <style>
             body {
                 font-family: 'Segoe UI', sans-serif;

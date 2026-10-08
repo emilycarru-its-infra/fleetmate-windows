@@ -384,7 +384,8 @@
                              Background="Transparent" Padding="0" Margin="0,6,0,0" />
                     <Separator Margin="0,10,0,0" />
                 </StackPanel>
-                <shared:MarkdownViewer x:Name="SkillBody" />
+                <!-- Skill text comes from a shared repository: raw HTML is shown as text, script is off. -->
+                <shared:MarkdownViewer x:Name="SkillBody" Untrusted="True" />
             </DockPanel>
         </Grid>
 
