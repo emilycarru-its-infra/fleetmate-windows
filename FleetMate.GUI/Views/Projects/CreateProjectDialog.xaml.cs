@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using FleetMate.Core.Config;
+using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
 using Serilog;
 
@@ -43,8 +44,11 @@ public partial class CreateProjectDialog : Window
                 return;
             }
 
+            // createProjectV2 takes the owner's node id, not its login.
+            var ownerId = await _projectsService.GetOwnerIdAsync(
+                owner, scope == "user" ? ProjectScope.User : ProjectScope.Organization);
             var project = await _projectsService.CreateProjectAsync(
-                owner,
+                ownerId,
                 TitleBox.Text.Trim());
 
             if (project != null)
