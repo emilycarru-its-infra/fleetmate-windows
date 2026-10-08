@@ -68,6 +68,10 @@ public partial class SettingsPage : Page
 
         ReportMateUrlTextBox.Text = config.ReportMateUrl ?? "";
 
+        HandbookRepoUrlTextBox.Text = config.HandbookRepoUrl ?? "";
+        HandbookSiteUrlTextBox.Text = config.HandbookSiteUrl ?? "";
+        AgentsHubRepoUrlTextBox.Text = config.AgentsHubRepoUrl ?? "";
+
         // Manage tab
         var manage = config.Manage ?? new ManageConfig();
         ManageRosterPathTextBox.Text = manage.RosterPath;
@@ -159,6 +163,11 @@ public partial class SettingsPage : Page
 
             SetReg(key, "ReportMateUrl", ReportMateUrlTextBox.Text);
             key.DeleteValue("ReportMatePassphrase", throwOnMissingValue: false);
+
+            // Handbook and skills. Empty values are removed so a managed value applies.
+            SetOrDeleteReg(key, "HandbookRepoUrl", HandbookRepoUrlTextBox.Text);
+            SetOrDeleteReg(key, "HandbookSiteUrl", HandbookSiteUrlTextBox.Text);
+            SetOrDeleteReg(key, "AgentsHubRepoUrl", AgentsHubRepoUrlTextBox.Text);
 
             // Manage tab. Empty values are removed so the defaults apply again.
             SetOrDeleteReg(key, "ManageRosterPath", ManageRosterPathTextBox.Text);

@@ -172,6 +172,27 @@
                             </StackPanel>
                         </Border>
 
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Handbook and Skills" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <TextBlock Text="Handbook repository" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <TextBox x:Name="HandbookRepoUrlTextBox" Margin="0,4,0,0"
+                                         ui:ControlHelper.PlaceholderText="Git clone URL of the Handbook repository"
+                                         AutomationProperties.Name="Handbook repository" />
+                                <TextBlock Text="Handbook site" Margin="0,8,0,0" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <TextBox x:Name="HandbookSiteUrlTextBox" Margin="0,4,0,0"
+                                         ui:ControlHelper.PlaceholderText="Address of the published Handbook, for its links and images"
+                                         AutomationProperties.Name="Handbook site" />
+                                <TextBlock Text="Skills repository" Margin="0,8,0,0" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <TextBox x:Name="AgentsHubRepoUrlTextBox" Margin="0,4,0,0"
+                                         ui:ControlHelper.PlaceholderText="Git clone URL of the shared agent skills"
+                                         AutomationProperties.Name="Skills repository" />
+                                <TextBlock Text="The Handbook reader, its search results and cards, and the shared skills appear once these are set. Leave one empty to use the managed value."
+                                           TextWrapping="Wrap" Margin="0,8,0,0" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            </StackPanel>
+                        </Border>
+
                         <Button Content="Save Settings" HorizontalAlignment="Right" Margin="0,2,0,18"
                                 Style="{StaticResource AccentButtonStyle}" Padding="22,7" Click="OnSaveClicked" />
 
