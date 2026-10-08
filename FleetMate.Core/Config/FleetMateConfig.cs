@@ -72,6 +72,9 @@ public class FleetMateConfig
     /// <summary>Where staff read the published Handbook, for opening a page on the site.</summary>
     public string? HandbookSiteUrl { get; set; }
 
+    /// <summary>Clone URL of the agents hub repository, whose <c>agents/</c> folder is the Development › Skills segment.</summary>
+    public string? AgentsHubRepoUrl { get; set; }
+
     /// <summary>
     /// Legacy shared-secret auth. Deprecated in favour of Entra SSO — see
     /// <see cref="SnipeOidcAudience"/>. Ignored whenever an audience is set.
@@ -506,6 +509,10 @@ public class FleetMateConfig
             if (!string.IsNullOrEmpty(handbookSiteUrl))
                 config.HandbookSiteUrl = handbookSiteUrl;
 
+            var agentsHubRepoUrl = key.GetValue("AgentsHubRepoUrl") as string;
+            if (!string.IsNullOrEmpty(agentsHubRepoUrl))
+                config.AgentsHubRepoUrl = agentsHubRepoUrl;
+
 #pragma warning disable CS0618
             var snipeApiKey = key.GetValue("SnipeApiKey") as string;
             if (!string.IsNullOrEmpty(snipeApiKey))
@@ -711,7 +718,7 @@ public class FleetMateConfig
         {
             "GraphTenantId", "GraphClientId", "SnipeUrl", "SnipeOidcAudience",
             "TdxBaseUrl", "TdxTicketingAppId", "DevOpsBaseUrl", "DevOpsOrganization", "DevOpsProject",
-            "ReportMateUrl", "HandbookRepoUrl", "HandbookSiteUrl",
+            "ReportMateUrl", "HandbookRepoUrl", "HandbookSiteUrl", "AgentsHubRepoUrl",
             "ManageRosterPath", "ManageRosterRepoProject", "ManageRosterRepo", "ManageRosterRepoPath",
             "ManageCommandsPath", "ManageTerminalProfile", "ManageRdpUser",
             "ManageIncludeRetired", "ManageIncludeProvisioning", "SecureShellKeyPath", "SecureShellUser"
