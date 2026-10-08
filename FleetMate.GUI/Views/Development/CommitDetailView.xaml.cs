@@ -98,6 +98,13 @@ public partial class CommitDetailView : UserControl
         catch (Exception ex) { Log.Warning(ex, "[commits] Could not open {Url}", _commit.Url); }
     }
 
+    private void OnCopyShaClicked(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_commit?.Id)) return;
+        try { Clipboard.SetText(_commit.Id); }
+        catch (Exception ex) { Log.Warning(ex, "[commits] Clipboard unavailable"); }
+    }
+
     private void OnCopyLinkClicked(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrWhiteSpace(_commit?.Url)) return;

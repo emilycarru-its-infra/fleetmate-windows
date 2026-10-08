@@ -391,17 +391,17 @@ public partial class ManagePage : Page
     /// The Curriculum header's picker: choose several labs (grouped by area)
     /// and work on their machines as one selection.
     /// </summary>
+    /// <summary>The labs last applied from the picker, so it reopens with them ticked.</summary>
+    private HashSet<string> _pickedLabIds = new();
+
     private async void OnOpenLabPicker(object sender, RoutedEventArgs e)
     {
         if (_vm.Roster.Labs.Count == 0) return;
-        var dialog = new LabPickerDialog(_vm.Roster.Labs) { Owner = Window.GetWindow(this) };
+        var dialog = new LabPickerDialog(_vm.Roster.Labs, _pickedLabIds) { Owner = Window.GetWindow(this) };
         if (dialog.ShowDialog() != true || dialog.SelectedRooms.Count == 0) return;
 
-        var computers = dialog.SelectedRooms
-            .SelectMany(r => r.Computers)
-            .GroupBy(c => c.Serial)
-            .Select(g => g.First())
-            .ToList();
+        _pickedLabIds = dialog.SelectedRooms.Select(r => r.Id).ToHashSet();
+        var computers = LabPicker.Computers(dialog.SelectedRooms);
         ClearOtherSidebarSelections(SearchList);
         HideDetail();
         var label = dialog.SelectedRooms.Count == 1
@@ -644,6 +644,36 @@ public partial class ManagePage : Page
     private void OnQuickLogOut(object sender, RoutedEventArgs e) => _ = RunQuickActionAsync(QuickActions.LogOutUser);
     private void OnQuickSleep(object sender, RoutedEventArgs e) => _ = RunQuickActionAsync(QuickActions.Sleep);
     private void OnQuickLock(object sender, RoutedEventArgs e) => _ = RunQuickActionAsync(QuickActions.LockScreen);
+
+    /// <summary>
+    /// Copy a package to the checked online machines and install it silently
+    /// (macOS parity: the Mac copies a .pkg and runs the system installer).
+    /// </summary>
+    private async void OnInstallPackage(object sender, RoutedEventArgs e)
+    {
+        var owner = Window.GetWindow(this);
+        if (!_vm.CanInstallPackages)
+        {
+            MessageBox.Show(owner, "Installing packages needs SSH configured in Settings.", "Install Package", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var targets = _vm.OnlineSelectedRows.ToList();
+        if (targets.Count == 0)
+        {
+            MessageBox.Show(owner, "Check at least one online machine first.", "Install Package", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var picker = new Microsoft.Win32.OpenFileDialog { Title = "Choose a package to install", Filter = PackageInstall.PickerFilter };
+        if (picker.ShowDialog(owner) != true) return;
+
+        var name = System.IO.Path.GetFileName(picker.FileName);
+        var answer = MessageBox.Show(owner,
+            "The package is copied to each machine and installed silently as an administrator.",
+            $"Install {name} on {targets.Count} machine{(targets.Count == 1 ? "" : "s")}?",
+            MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+        if (answer != MessageBoxResult.OK) return;
+        await _vm.InstallPackageAsync(picker.FileName, targets);
+    }
 
     private async Task RunQuickActionAsync(QuickActions.QuickAction action)
     {
@@ -1025,93 +1055,215 @@ public class SidebarRoomVm : System.ComponentModel.INotifyPropertyChanged
 }
 
 /// <summary>
-/// The Curriculum header's lab picker: labs grouped by area, each with a
-/// checkbox, and an area-level checkbox that toggles the whole group — the
-/// macOS picker's multi-select, with checkboxes standing in for its drag
-/// and drop.
+/// The Curriculum header's lab picker (macOS parity): labs grouped by area
+/// on the left with a filter, the selection on the right. Tick a lab, press
+/// an area's + to add every lab in it, or drag a lab or a whole area across.
+/// All, Visible and Clear work on the whole list or the filtered one.
 /// </summary>
 public class LabPickerDialog : Window
 {
-    private readonly List<(CheckBox Box, RosterRoom Room)> _labBoxes = new();
+    private readonly IReadOnlyList<RosterRoom> _labs;
+    private readonly List<LabArea> _areas;
+    private readonly HashSet<string> _selectedIds;
+    private readonly TextBox _filter = new() { Margin = new Thickness(0, 0, 0, 8) };
+    private readonly StackPanel _areaHost = new();
+    private readonly StackPanel _selectedHost = new();
+    private readonly TextBlock _summary = new() { VerticalAlignment = VerticalAlignment.Center, FontSize = 11 };
+    private readonly Border _dropZone;
+    private Point _dragStart;
 
     public List<RosterRoom> SelectedRooms { get; } = new();
 
-    public LabPickerDialog(IReadOnlyList<RosterRoom> labs)
+    public LabPickerDialog(IReadOnlyList<RosterRoom> labs, IEnumerable<string>? initiallySelected = null)
     {
+        _labs = labs;
+        _areas = LabPicker.Group(labs);
+        _selectedIds = new HashSet<string>((initiallySelected ?? Array.Empty<string>()).Where(id => labs.Any(l => l.Id == id)));
+
         Title = "Select labs";
-        Width = 420;
-        Height = 560;
+        Width = 720;
+        Height = 600;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        SetResourceReference(BackgroundProperty, "SystemControlBackgroundAltHighBrush");
+        SetResourceReference(ForegroundProperty, "SystemControlForegroundBaseHighBrush");
 
-        var root = new DockPanel { Margin = new Thickness(16) };
+        ModernWpf.Controls.Primitives.ControlHelper.SetPlaceholderText(_filter, "Filter areas or labs");
+        _filter.TextChanged += (_, _) => RenderAreas();
 
-        var buttons = new StackPanel
+        var toolbar = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+        DockPanel.SetDock(_summary, Dock.Right);
+        toolbar.Children.Add(_summary);
+        var tools = new StackPanel { Orientation = Orientation.Horizontal };
+        tools.Children.Add(SmallButton("All", () => { _selectedIds.UnionWith(_labs.Select(l => l.Id)); Refresh(); }));
+        tools.Children.Add(SmallButton("Visible", () =>
         {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(0, 12, 0, 0)
+            _selectedIds.UnionWith(LabPicker.Filter(_areas, _filter.Text).SelectMany(a => a.Rooms).Select(r => r.Id));
+            Refresh();
+        }));
+        tools.Children.Add(SmallButton("Clear", () => { _selectedIds.Clear(); Refresh(); }));
+        toolbar.Children.Add(tools);
+
+        var left = new ScrollViewer { Content = _areaHost, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        _dropZone = new Border
+        {
+            AllowDrop = true,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(2),
+            BorderBrush = Brushes.Transparent,
+            CornerRadius = new CornerRadius(6),
+            Child = new ScrollViewer { Content = _selectedHost, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }
         };
-        var cancel = new Button { Content = "Cancel", Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(14, 4, 14, 4) };
-        cancel.Click += (_, _) => { DialogResult = false; Close(); };
-        var ok = new Button { Content = "Use selected", Padding = new Thickness(14, 4, 14, 4) };
-        ok.Click += (_, _) =>
+        _dropZone.DragEnter += (_, e) => SetDropHighlight(e, true);
+        _dropZone.DragOver += (_, e) => SetDropHighlight(e, true);
+        _dropZone.DragLeave += (_, _) => _dropZone.BorderBrush = Brushes.Transparent;
+        _dropZone.Drop += OnDrop;
+
+        var panes = new Grid();
+        panes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.2, GridUnitType.Star) });
+        panes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
+        panes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        panes.Children.Add(left);
+        Grid.SetColumn(_dropZone, 2);
+        panes.Children.Add(_dropZone);
+
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 12, 0, 0) };
+        var cancel = new Button { Content = "Cancel", Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(14, 4, 14, 4), IsCancel = true };
+        var apply = new Button { Content = "Apply", Padding = new Thickness(14, 4, 14, 4), IsDefault = true };
+        apply.Click += (_, _) =>
         {
-            SelectedRooms.AddRange(_labBoxes.Where(e => e.Box.IsChecked == true).Select(e => e.Room));
+            SelectedRooms.AddRange(LabPicker.Selected(_labs, _selectedIds));
             DialogResult = true;
             Close();
         };
         buttons.Children.Add(cancel);
-        buttons.Children.Add(ok);
+        buttons.Children.Add(apply);
+
+        var root = new DockPanel { Margin = new Thickness(16) };
+        DockPanel.SetDock(_filter, Dock.Top);
+        DockPanel.SetDock(toolbar, Dock.Top);
         DockPanel.SetDock(buttons, Dock.Bottom);
+        root.Children.Add(_filter);
+        root.Children.Add(toolbar);
         root.Children.Add(buttons);
-
-        var host = new StackPanel();
-        foreach (var areaGroup in labs
-            .GroupBy(r => DominantArea(r) ?? "Other")
-            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
-        {
-            var members = new List<CheckBox>();
-            var areaBox = new CheckBox
-            {
-                Content = areaGroup.Key,
-                FontWeight = FontWeights.SemiBold,
-                Margin = new Thickness(0, 10, 0, 2)
-            };
-            areaBox.Click += (_, _) =>
-            {
-                foreach (var member in members) member.IsChecked = areaBox.IsChecked == true;
-            };
-            host.Children.Add(areaBox);
-
-            foreach (var room in areaGroup.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase))
-            {
-                var label = room.DisplayName is { Length: > 0 } fleet ? fleet : room.Number;
-                var box = new CheckBox
-                {
-                    Content = $"{label}  ({room.Count})",
-                    Margin = new Thickness(20, 2, 0, 2)
-                };
-                box.Click += (_, _) =>
-                {
-                    areaBox.IsChecked = members.All(m => m.IsChecked == true)
-                        ? true
-                        : members.Any(m => m.IsChecked == true) ? null : false;
-                };
-                members.Add(box);
-                _labBoxes.Add((box, room));
-                host.Children.Add(box);
-            }
-        }
-
-        root.Children.Add(new ScrollViewer { Content = host, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        root.Children.Add(panes);
         Content = root;
+
+        Refresh();
     }
 
-    private static string? DominantArea(RosterRoom room) =>
-        room.Computers
-            .Select(c => c.Area)
-            .Where(a => !string.IsNullOrWhiteSpace(a))
-            .GroupBy(a => a)
-            .OrderByDescending(g => g.Count())
-            .FirstOrDefault()?.Key;
+    private void Refresh()
+    {
+        RenderAreas();
+        RenderSelected();
+    }
+
+    private void RenderAreas()
+    {
+        _areaHost.Children.Clear();
+        foreach (var area in LabPicker.Filter(_areas, _filter.Text))
+        {
+            var header = new DockPanel { Margin = new Thickness(0, 10, 0, 2), Background = Brushes.Transparent };
+            var add = new Button { Content = "+", Padding = new Thickness(6, 0, 6, 0), Margin = new Thickness(0, 0, 8, 0), ToolTip = "Add every lab in this area" };
+            var areaForAdd = area;
+            add.Click += (_, _) => { _selectedIds.UnionWith(areaForAdd.Rooms.Select(r => r.Id)); Refresh(); };
+            DockPanel.SetDock(add, Dock.Left);
+            header.Children.Add(add);
+            var count = new TextBlock { Text = area.ComputerCount.ToString(), FontSize = 11, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(count, Dock.Right);
+            header.Children.Add(count);
+            header.Children.Add(new TextBlock
+            {
+                Text = $"{area.Name}  ({area.Rooms.Count} labs)",
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            MakeDraggable(header, LabPicker.AreaPayload(area));
+            _areaHost.Children.Add(header);
+
+            foreach (var room in area.Rooms)
+            {
+                var box = new CheckBox
+                {
+                    Content = $"{room.Name}  ({room.Count})",
+                    Margin = new Thickness(28, 2, 0, 2),
+                    IsChecked = _selectedIds.Contains(room.Id)
+                };
+                var roomForBox = room;
+                box.Click += (_, _) =>
+                {
+                    if (box.IsChecked == true) _selectedIds.Add(roomForBox.Id); else _selectedIds.Remove(roomForBox.Id);
+                    RenderSelected();
+                };
+                MakeDraggable(box, LabPicker.RoomPayload(room));
+                _areaHost.Children.Add(box);
+            }
+        }
+    }
+
+    private void RenderSelected()
+    {
+        var selected = LabPicker.Selected(_labs, _selectedIds);
+        _summary.Text = LabPicker.Summary(selected);
+        _selectedHost.Children.Clear();
+        if (selected.Count == 0)
+        {
+            _selectedHost.Children.Add(new TextBlock
+            {
+                Text = "No labs selected\nDrag areas or labs here",
+                TextAlignment = TextAlignment.Center,
+                Opacity = 0.6,
+                Margin = new Thickness(0, 40, 0, 0)
+            });
+            return;
+        }
+        foreach (var room in selected)
+        {
+            var row = new DockPanel { Margin = new Thickness(6, 3, 6, 3) };
+            var remove = new Button { Content = "−", Padding = new Thickness(6, 0, 6, 0), ToolTip = "Remove" };
+            var roomForRemove = room;
+            remove.Click += (_, _) => { _selectedIds.Remove(roomForRemove.Id); Refresh(); };
+            DockPanel.SetDock(remove, Dock.Right);
+            row.Children.Add(remove);
+            var count = new TextBlock { Text = room.Count.ToString(), FontSize = 11, Opacity = 0.7, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(count, Dock.Right);
+            row.Children.Add(count);
+            row.Children.Add(new TextBlock { Text = room.Name, VerticalAlignment = VerticalAlignment.Center });
+            _selectedHost.Children.Add(row);
+        }
+    }
+
+    private void MakeDraggable(FrameworkElement element, string payload)
+    {
+        element.PreviewMouseLeftButtonDown += (_, e) => _dragStart = e.GetPosition(this);
+        element.PreviewMouseMove += (_, e) =>
+        {
+            if (e.LeftButton != MouseButtonState.Pressed) return;
+            var delta = e.GetPosition(this) - _dragStart;
+            if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance
+                && Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+            DragDrop.DoDragDrop(element, new DataObject(DataFormats.UnicodeText, payload), DragDropEffects.Copy);
+        };
+    }
+
+    private void SetDropHighlight(DragEventArgs e, bool on)
+    {
+        var ours = e.Data.GetData(DataFormats.UnicodeText) is string s && s.StartsWith(LabPicker.DragPrefix, StringComparison.Ordinal);
+        e.Effects = ours ? DragDropEffects.Copy : DragDropEffects.None;
+        if (ours && on) _dropZone.SetResourceReference(Border.BorderBrushProperty, "SystemControlForegroundAccentBrush");
+        e.Handled = true;
+    }
+
+    private void OnDrop(object sender, DragEventArgs e)
+    {
+        _dropZone.BorderBrush = Brushes.Transparent;
+        if (LabPicker.ApplyDrop(_selectedIds, e.Data.GetData(DataFormats.UnicodeText) as string, _areas)) Refresh();
+        e.Handled = true;
+    }
+
+    private static Button SmallButton(string text, Action onClick)
+    {
+        var b = new Button { Content = text, Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(0, 0, 6, 0), FontSize = 11 };
+        b.Click += (_, _) => onClick();
+        return b;
+    }
 }
