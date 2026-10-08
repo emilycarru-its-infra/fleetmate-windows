@@ -670,3 +670,27 @@ public class CreateFeedEntryRequest
     [JsonPropertyName("Notify")]
     public List<Guid>? Notify { get; set; }
 }
+
+public static class ParentTicketRequest
+{
+    /// <summary>
+    /// A new ticket to sit above <paramref name="child"/>, carrying the child's type, form,
+    /// account, service, priority, requestor and owners so it lands in the same queue.
+    /// TeamDynamix has no "create parent" route: the caller creates this ticket, then sets
+    /// it as the child's parent.
+    /// </summary>
+    public static CreateTicketRequest For(TdxTicket child, string title) => new()
+    {
+        TypeId = child.TypeId,
+        Title = title.Trim(),
+        Description = $"Parent of ticket {child.Id}.",
+        FormId = child.FormId,
+        AccountId = child.AccountId,
+        PriorityId = child.PriorityId,
+        SourceId = child.SourceId,
+        ServiceId = child.ServiceId,
+        RequestorUid = child.RequestorUid,
+        ResponsibleUid = child.ResponsibleUid,
+        ResponsibleGroupId = child.ResponsibleGroupId,
+    };
+}
