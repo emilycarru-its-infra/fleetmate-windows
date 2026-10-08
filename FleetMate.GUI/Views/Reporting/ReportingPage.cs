@@ -41,7 +41,7 @@ public sealed class ReportingPage : Page
     /// ReportMate configuration, the dashboard's settings and policy still win:
     /// these only fill what the device has not set.
     /// </summary>
-    private static void Connect(FleetMateConfig config)
+    internal static void Connect(FleetMateConfig config)
     {
         var url = config.ReportMateUrl;
         // A placeholder URL means ReportMate is not really configured here.

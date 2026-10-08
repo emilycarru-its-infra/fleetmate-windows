@@ -9,6 +9,7 @@ public partial class App
     public SearchSources BuildSearchSources() => new()
     {
         Devices = CachedDevices.ToList(),
+        ReportingDevices = FleetMate.GUI.Views.Reporting.ReportingDeviceList.Devices,
         Assets = CachedAssets.ToList(),
         Tickets = CachedTickets.ToList(),
         WorkItems = CachedWorkItems.ToList(),
