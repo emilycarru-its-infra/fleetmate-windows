@@ -3,7 +3,9 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 using Markdig;
-using Markdig.Extensions.Tables;
+using MdTable = Markdig.Extensions.Tables.Table;
+using MdTableRow = Markdig.Extensions.Tables.TableRow;
+using MdTableCell = Markdig.Extensions.Tables.TableCell;
 using Markdig.Extensions.TaskLists;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
@@ -108,7 +110,7 @@ public static class MarkdownDocument
         ListBlock l => ListOf(l, size),
         FencedCodeBlock or CodeBlock => Code((LeafBlock)block, size),
         ThematicBreakBlock => Rule(),
-        Table t => TableOf(t, size),
+        MdTable t => TableOf(t, size),
         HtmlBlock html => Literal(html.Lines.ToString(), size),
         LeafBlock leaf => Literal(leaf.Lines.ToString(), size),
         ContainerBlock container => Section(container, size),
@@ -196,14 +198,14 @@ public static class MarkdownDocument
         return p;
     }
 
-    private static System.Windows.Documents.Table TableOf(Markdig.Extensions.Tables.Table table, double size)
+    private static System.Windows.Documents.Table TableOf(MdTable table, double size)
     {
         var wpf = new System.Windows.Documents.Table { CellSpacing = 0, Margin = new Thickness(0, 0, 0, 8) };
         var group = new TableRowGroup();
-        foreach (var row in table.OfType<TableRow>())
+        foreach (var row in table.OfType<MdTableRow>())
         {
             var wpfRow = new System.Windows.Documents.TableRow();
-            foreach (var cell in row.OfType<TableCell>())
+            foreach (var cell in row.OfType<MdTableCell>())
             {
                 var wpfCell = new System.Windows.Documents.TableCell { Padding = new Thickness(6, 2, 6, 2), BorderThickness = new Thickness(0, 0, 0, 1) };
                 wpfCell.SetResourceReference(System.Windows.Documents.TableCell.BorderBrushProperty, "SystemControlForegroundBaseLowBrush");
