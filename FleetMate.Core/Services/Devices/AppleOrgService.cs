@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FleetMate.Core.Models.Devices;
 using Serilog;
+using FleetMate.Core.Services.Activity;
 
 namespace FleetMate.Core.Services.Devices;
 
@@ -44,7 +45,7 @@ public sealed class AppleOrgService : IDisposable
     {
         Profile = profile;
         _secret = secret;
-        _http = handler == null ? new HttpClient() : new HttpClient(handler);
+        _http = new HttpClient(new ActivityLogHandler("Apple", handler));
         _http.BaseAddress = new Uri($"https://{profile.ApiHost}/");
         _http.Timeout = TimeSpan.FromSeconds(120);
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));

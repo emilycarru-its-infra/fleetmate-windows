@@ -7,6 +7,7 @@ using FleetMate.Core.Converters;
 using FleetMate.Core.Models.Tickets;
 using FleetMate.Core.Services;
 using Serilog;
+using FleetMate.Core.Services.Activity;
 
 namespace FleetMate.Core.Services.Tickets;
 
@@ -69,7 +70,7 @@ public class TdxService : IDisposable
         var baseUrl = ServiceUri.Normalize(config.BaseUrl);
         if (!baseUrl.EndsWith("/TDWebApi", StringComparison.OrdinalIgnoreCase))
             baseUrl += "/TDWebApi";
-        _client = new HttpClient
+        _client = new HttpClient(new ActivityLogHandler("Tickets"))
         {
             BaseAddress = new Uri(baseUrl + "/"),
             Timeout = TimeSpan.FromSeconds(60)

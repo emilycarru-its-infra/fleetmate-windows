@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using FleetMate.Core.Config;
 using FleetMate.Core.Models.Projects;
 using Serilog;
+using FleetMate.Core.Services.Activity;
 
 namespace FleetMate.Core.Services.Projects.Tasks;
 
@@ -37,7 +38,7 @@ public class GiteaTaskProvider : ITaskProvider, IDisposable
         // No configured URL means the provider is disabled (IsEnabled guards all
         // use) — constructing a Uri from the bare relative path would throw and,
         // because this runs in a page Loaded handler, take down the whole app.
-        _client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        _client = new HttpClient(new ActivityLogHandler("Gitea")) { Timeout = TimeSpan.FromSeconds(30) };
         if (!string.IsNullOrEmpty(baseUrl) && Uri.TryCreate($"{baseUrl}/api/v1/", UriKind.Absolute, out var baseAddress))
         {
             _client.BaseAddress = baseAddress;
