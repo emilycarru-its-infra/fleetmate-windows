@@ -85,6 +85,7 @@ public partial class ActivityLogWindow : Window
         var dialog = new SaveFileDialog
         {
             FileName = "FleetMate Activity Log.txt",
+            InitialDirectory = KnownFolders.Downloads,
             Filter = "Text files (*.txt)|*.txt",
         };
         if (dialog.ShowDialog(this) == true)
