@@ -72,6 +72,8 @@
             <ComboBox x:Name="SortComboBox" Width="110" Margin="0,0,8,0" SelectionChanged="OnSortChanged">
                 <ComboBoxItem Content="Modified" IsSelected="True" />
                 <ComboBoxItem Content="Created" />
+                <ComboBoxItem Content="ID" />
+                <ComboBoxItem Content="Age" />
                 <ComboBoxItem Content="Title" />
                 <ComboBoxItem Content="Status" />
                 <ComboBoxItem Content="Priority" />
@@ -80,6 +82,7 @@
             </ComboBox>
             <Button x:Name="SortDirectionButton" Content="↓" Width="32" Margin="0,0,8,0" Click="OnSortDirectionClicked" ToolTip="Toggle sort direction" />
             <Button x:Name="DetailPanelButton" Margin="0,0,8,0" Click="OnToggleDetailPanel"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE89F;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="Details" VerticalAlignment="Center" /></StackPanel></Button>
+            <Button x:Name="NewTicketButton" Margin="0,0,8,0" Click="OnNewTicketClicked" ToolTip="Create a ticket"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE710;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="New Ticket" VerticalAlignment="Center" /></StackPanel></Button>
             <Button x:Name="RefreshButton" Click="OnRefreshClicked"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="Refresh" VerticalAlignment="Center" /></StackPanel></Button>
         </StackPanel>
 
@@ -428,6 +431,12 @@
                                     <TextBlock Text="Unassign" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>
+                            <Button x:Name="SetParentButton" Click="OnSetParentClicked" ToolTip="Set or clear this ticket's parent">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE74A;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
+                                    <TextBlock Text="Set Parent" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                             <Button Click="OnRefreshDetailClicked" ToolTip="Refresh this ticket">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:FontIcon Glyph="&#xE72C;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
@@ -471,6 +480,31 @@
                                 </StackPanel>
                             </Border>
                         </Popup>
+
+                        <!-- Set Parent popover: a ticket number, or empty to clear. -->
+                        <Popup x:Name="SetParentPopup" PlacementTarget="{Binding ElementName=SetParentButton}"
+                               Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
+                               Opened="OnSetParentPopupOpened">
+                            <Border Background="{DynamicResource CardBackgroundBrush}"
+                                    BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1"
+                                    CornerRadius="8" Padding="12" Width="260" Margin="0,4,8,8"
+                                    TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.25" />
+                                </Border.Effect>
+                                <StackPanel>
+                                    <TextBlock Text="Parent ticket" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8" />
+                                    <TextBox x:Name="ParentIdBox" ui:ControlHelper.PlaceholderText="Ticket number, or empty to clear"
+                                             PreviewKeyDown="OnParentIdKeyDown" />
+                                    <DockPanel Margin="0,8,0,0">
+                                        <Button DockPanel.Dock="Right" Content="Set Parent" Click="OnSetParentConfirmed"
+                                                Style="{StaticResource AccentButtonStyle}" />
+                                        <TextBlock x:Name="SetParentHintText" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    </DockPanel>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
                     </StackPanel>
 
                     <!-- Detail Content -->
@@ -489,6 +523,32 @@
                                     <TextBlock x:Name="DetailPriorityText" FontSize="12" />
                                 </Border>
                             </StackPanel>
+
+                            <!-- Status, Priority and Classification change the ticket as soon
+                                 as a new value is picked, like Reallocate. -->
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="Status:" FontSize="13" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <ComboBox Grid.Row="0" Grid.Column="1" x:Name="DetailStatusCombo" HorizontalAlignment="Stretch"
+                                          DisplayMemberPath="Value" SelectedValuePath="Key" SelectionChanged="OnDetailFieldChanged" Tag="StatusID" />
+                                <TextBlock Grid.Row="1" Text="Priority:" FontSize="13" VerticalAlignment="Center" Margin="0,4,0,0"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <ComboBox Grid.Row="1" Grid.Column="1" x:Name="DetailPriorityCombo" HorizontalAlignment="Stretch" Margin="0,4,0,0"
+                                          DisplayMemberPath="Value" SelectedValuePath="Key" SelectionChanged="OnDetailFieldChanged" Tag="PriorityID" />
+                                <TextBlock Grid.Row="2" Text="Class:" FontSize="13" VerticalAlignment="Center" Margin="0,4,0,0"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <ComboBox Grid.Row="2" Grid.Column="1" x:Name="DetailClassificationCombo" HorizontalAlignment="Stretch" Margin="0,4,0,0"
+                                          DisplayMemberPath="Value" SelectedValuePath="Key" SelectionChanged="OnDetailFieldChanged" Tag="Classification" />
+                            </Grid>
 
                             <Separator Margin="0,0,0,12" />
 
