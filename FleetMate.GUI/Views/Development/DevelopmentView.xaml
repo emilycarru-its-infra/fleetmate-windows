@@ -270,7 +270,7 @@
 
             <Border Grid.Row="2" Style="{StaticResource CardStyle}" Padding="0">
                 <Grid>
-                    <ListView x:Name="PullRequestList" BorderThickness="0" SelectionMode="Single"
+                    <ListView x:Name="PullRequestList" BorderThickness="0" SelectionMode="Single" IsSynchronizedWithCurrentItem="False"
                               ItemTemplate="{StaticResource PullRequestRowTemplate}"
                               ItemContainerStyle="{StaticResource FleetListViewItemStyle}"
                               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -314,7 +314,7 @@
                               ItemContainerStyle="{StaticResource FleetListViewItemStyle}"
                               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                               VirtualizingPanel.IsVirtualizingWhenGrouping="True"
-                              SelectionChanged="OnSkillSelected">
+                              SelectionChanged="OnSkillSelected" IsSynchronizedWithCurrentItem="False">
                         <ListView.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="4,3">
