@@ -15,14 +15,19 @@ public class ManageConfig
     /// local override, and the fallback when the repository fetch fails.</summary>
     public string RosterPath { get; set; } = "";
 
-    /// <summary>Azure DevOps project holding the roster repository.</summary>
-    public string RosterRepoProject { get; set; } = "Devices";
+    /// <summary>Azure DevOps project holding the roster repository. Empty, with
+    /// <see cref="RosterRepo"/>, turns the fetch off.</summary>
+    public string RosterRepoProject { get; set; } = "";
 
-    /// <summary>Repository holding the roster (the Windows deployment repo).</summary>
-    public string RosterRepo { get; set; } = "Cimian";
+    /// <summary>Repository holding the roster. Empty turns the fetch off.</summary>
+    public string RosterRepo { get; set; } = "";
 
     /// <summary>Path of the roster file inside the repository.</summary>
-    public string RosterRepoPath { get; set; } = "/deployment/enroll/computers.csv";
+    public string RosterRepoPath { get; set; } = "/computers.csv";
+
+    /// <summary>The roster is fetched only when a project and repository are named.</summary>
+    public bool FetchesRoster =>
+        !string.IsNullOrWhiteSpace(RosterRepoProject) && !string.IsNullOrWhiteSpace(RosterRepo);
 
     /// <summary>Path to the YAML command library; empty means the per-user default.</summary>
     public string CommandsPath { get; set; } = "";

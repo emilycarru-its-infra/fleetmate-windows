@@ -120,6 +120,12 @@ public partial class ManagePage : Page
         {
             var app = Application.Current as App;
             var manage = app?.Config.Manage ?? new Core.Config.ManageConfig();
+            if (!manage.FetchesRoster)
+            {
+                _rosterProvenance = "local file";
+                Dispatcher.Invoke(UpdateRosterFooter);
+                return;
+            }
             var adoConfig = app?.Config.AzureDevOps;
             if (adoConfig == null || string.IsNullOrWhiteSpace(adoConfig.Organization))
             {
