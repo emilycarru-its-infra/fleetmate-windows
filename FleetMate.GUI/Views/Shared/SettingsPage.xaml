@@ -20,8 +20,32 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
                     <StackPanel Margin="2" MaxWidth="860">
                         <TextBlock Text="General" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" />
-                        <TextBlock Text="Configuration storage and application information."
+                        <TextBlock Text="Setup, the tabs FleetMate shows, configuration storage and application information."
                                    Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,14" />
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,8">
+                            <DockPanel>
+                                <Button Content="Setup Wizard" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                        Padding="16,6" Click="OnSetupWizardClicked"
+                                        AutomationProperties.AutomationId="SettingsSetupWizardButton" />
+                                <StackPanel Margin="0,0,20,0">
+                                    <TextBlock Text="Setup" FontWeight="SemiBold" FontSize="15" />
+                                    <TextBlock Text="Walk through choosing modules, entering endpoints and signing in to az and gh."
+                                               TextWrapping="Wrap" Margin="0,3,0,0"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,8">
+                            <StackPanel>
+                                <TextBlock Text="Enabled Modules" FontWeight="SemiBold" FontSize="15" />
+                                <TextBlock Text="A module switched off leaves the tab bar. Its endpoints and sign-in are kept, so switching it back on needs no setup."
+                                           TextWrapping="Wrap" Margin="0,3,0,10"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <StackPanel x:Name="ModulesPanel" AutomationProperties.AutomationId="SettingsModulesPanel" />
+                            </StackPanel>
+                        </Border>
 
                         <Border Style="{StaticResource CardStyle}">
                             <StackPanel>
@@ -342,6 +366,27 @@
                                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,3,0,0" />
                                 </StackPanel>
                             </DockPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,8,0,0">
+                            <StackPanel>
+                                <DockPanel>
+                                    <Button x:Name="TextSizeResetButton" Content="Reset" DockPanel.Dock="Right"
+                                            VerticalAlignment="Center" Click="OnTextSizeResetClicked" />
+                                    <TextBlock x:Name="TextSizeLabel" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                               Margin="0,0,12,0" FontFamily="Consolas" Text="100%" />
+                                    <StackPanel Margin="0,0,20,0">
+                                        <TextBlock Text="Text size" FontWeight="SemiBold" FontSize="15" />
+                                        <TextBlock Text="Scales the text in every tab. The toolbar and terminal keep their size."
+                                                   TextWrapping="Wrap" Margin="0,3,0,0"
+                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    </StackPanel>
+                                </DockPanel>
+                                <Slider x:Name="TextSizeSlider" Margin="0,12,0,0" Minimum="0.9" Maximum="1.6"
+                                        TickFrequency="0.05" IsSnapToTickEnabled="True" TickPlacement="BottomRight"
+                                        ValueChanged="OnTextSizeChanged"
+                                        AutomationProperties.AutomationId="SettingsTextSizeSlider" />
+                            </StackPanel>
                         </Border>
 
                         <Border Style="{StaticResource CardStyle}" Margin="0,8,0,10">

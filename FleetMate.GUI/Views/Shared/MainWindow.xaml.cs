@@ -47,6 +47,7 @@ public partial class MainWindow : Window
         Terminal.FullWindowRequested += (_, _) => ToggleFullWindow();
         Closed += (_, _) => Terminal.DisposeAll();
         Loaded += (_, _) => InitToolbarFit();
+        InitPreferences();
         // An agent session started at launch must not take the keyboard.
         if (Application.Current is App { Config.Terminal.AgentAutoStart: true })
             Loaded += (_, _) =>
@@ -145,9 +146,9 @@ public partial class MainWindow : Window
         {
             e.Handled = true;
         }
-        else if (mods == Ctrl && TabShortcut(key) is { } tab)
+        else if (mods == Ctrl && VisibleTabShortcut(key) is { } tab)
         {
-            // Ctrl+1–8 switch tabs, in tab-bar order.
+            // Ctrl+1–8 switch tabs, in the order of the tabs showing.
             NavigateToTab(tab);
             e.Handled = true;
         }
