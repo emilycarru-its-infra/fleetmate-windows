@@ -4,6 +4,7 @@ using FleetMate.Core.Config;
 using FleetMate.Core.Services;
 using RmConfig = ReportMate.App.Services.ConfigManager;
 using RmApi = ReportMate.App.Services.FleetApiClient;
+using RmSetup = ReportMate.App.Services.FleetSetupHints;
 using RmDashboard = ReportMate.App.Views.Shared.DashboardView;
 using RmLink = ReportMate.App.Services.DeepLink;
 
@@ -58,6 +59,27 @@ public sealed class ReportingPage : Page
             catch (EntraTokenException) { return null; }
         };
 
+        // FleetMate supplies the sign-in, so the setting a fleet page is missing
+        // is one of FleetMate's, not the dashboard's read passphrase.
+        RmSetup.HostHint = hasUrl => SetupHint(hasUrl, audience);
+
         RmConfig.Instance.ReloadSettings();
+
+        // One address for ReportMate: whatever the dashboard resolved, from the
+        // device's own configuration or from FleetMate's, is what FleetMate's
+        // settings show and its other ReportMate calls use.
+        var resolved = RmConfig.Instance.Config.ApiUrl;
+        if (!string.IsNullOrWhiteSpace(resolved)) config.ReportMateUrl = resolved;
+    }
+
+    /// <summary>The FleetMate setting a fleet page needs, in the words Settings uses.</summary>
+    internal static string SetupHint(bool hasUrl, string? audience)
+    {
+        if (!hasUrl)
+            return "Set the ReportMate API URL in FleetMate Settings, or ReportMateUrl in managed settings, "
+                 + "and ReportMateOidcAudience in managed settings so FleetMate can sign in to it.";
+        return audience is null
+            ? "Set ReportMateOidcAudience in managed settings so FleetMate can sign in to ReportMate."
+            : "FleetMate could not get a ReportMate sign-in token. Check the ReportMate card under Settings › Authentication Status.";
     }
 }
