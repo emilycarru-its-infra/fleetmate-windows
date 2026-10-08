@@ -10,7 +10,7 @@ namespace FleetMate.GUI.Views.Shared;
 /// <summary>
 /// What FleetMate asked each service to do, and each HTTP request made for it.
 /// Copy and export mask serials, UDIDs and hardware addresses so the result can
-/// go into a bug report. Opened with Ctrl+Alt+L or from Recent activity.
+/// go into a bug report. Opened with Ctrl+Shift+L or from Recent activity.
 /// </summary>
 public partial class ActivityLogWindow : Window
 {

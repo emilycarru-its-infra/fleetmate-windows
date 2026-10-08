@@ -59,6 +59,9 @@ public partial class MainWindow
             case AppShortcut.ZoomOut:
                 SetZoom(UserPreferences.TextScale - AppTextScale.Step);
                 return true;
+            case AppShortcut.ActivityLog:
+                ActivityLogWindow.ShowSingle(this);
+                return true;
             case AppShortcut.ActualSize:
                 SetZoom(AppTextScale.Default);
                 return true;
