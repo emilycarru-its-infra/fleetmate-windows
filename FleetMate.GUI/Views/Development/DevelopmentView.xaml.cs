@@ -229,7 +229,7 @@ public partial class DevelopmentView : UserControl
     /// <summary>One thing in the centre pane at a time.</summary>
     private void ShowDetail(FrameworkElement visible)
     {
-        foreach (var pane in new FrameworkElement[] { DetailPlaceholder, NonPullRequestPanel, DetailView, CommitView, RunView })
+        foreach (var pane in new FrameworkElement[] { DetailPlaceholder, NonPullRequestPanel, DetailView, CommitView, RunView, SkillDetail })
             pane.Visibility = pane == visible ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -273,6 +273,7 @@ public partial class DevelopmentView : UserControl
         var inbox = InboxSegment.IsChecked == true;
         var commits = CommitsSegment.IsChecked == true;
         var pipelines = PipelinesSegment.IsChecked == true;
+        var skills = SkillsSegment.IsChecked == true;
 
         static Visibility Show(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
         PullRequestFilters.Visibility = Show(pulls);
@@ -283,6 +284,8 @@ public partial class DevelopmentView : UserControl
         CommitsScroller.Visibility = Show(commits);
         PipelinesFilters.Visibility = Show(pipelines);
         PipelinesList.Visibility = Show(pipelines);
+        SkillsFilters.Visibility = Show(skills);
+        SkillsList.Visibility = Show(skills);
         EmptyText.Visibility = Visibility.Collapsed;
 
         if (inbox) RenderInbox();
@@ -297,6 +300,7 @@ public partial class DevelopmentView : UserControl
             if (AppInstance?.DevelopmentRuns is null) await LoadRunsAsync();
             else RenderRuns();
         }
+        else if (skills) RenderSkills();
     }
 
     // MARK: - Inbox

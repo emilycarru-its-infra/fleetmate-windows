@@ -65,6 +65,16 @@ public class FleetMateConfig
     // Snipe-IT API settings
     public string? SnipeUrl { get; set; }
 
+    // Knowledge sources FleetMate keeps its own up-to-date copy of (macOS parity).
+    /// <summary>Clone URL of the Handbook repository (a Hugo site). Unset hides every Handbook feature.</summary>
+    public string? HandbookRepoUrl { get; set; }
+
+    /// <summary>Where staff read the published Handbook, for opening a page on the site.</summary>
+    public string? HandbookSiteUrl { get; set; }
+
+    /// <summary>Clone URL of the agents hub repository, whose <c>agents/</c> folder is the Development › Skills segment.</summary>
+    public string? AgentsHubRepoUrl { get; set; }
+
     /// <summary>
     /// Legacy shared-secret auth. Deprecated in favour of Entra SSO — see
     /// <see cref="SnipeOidcAudience"/>. Ignored whenever an audience is set.
@@ -490,6 +500,19 @@ public class FleetMateConfig
             if (!string.IsNullOrEmpty(snipeUrl))
                 config.SnipeUrl = snipeUrl;
 
+            // Handbook: addresses, not secrets, so policy may set them.
+            var handbookRepoUrl = key.GetValue("HandbookRepoUrl") as string;
+            if (!string.IsNullOrEmpty(handbookRepoUrl))
+                config.HandbookRepoUrl = handbookRepoUrl;
+
+            var handbookSiteUrl = key.GetValue("HandbookSiteUrl") as string;
+            if (!string.IsNullOrEmpty(handbookSiteUrl))
+                config.HandbookSiteUrl = handbookSiteUrl;
+
+            var agentsHubRepoUrl = key.GetValue("AgentsHubRepoUrl") as string;
+            if (!string.IsNullOrEmpty(agentsHubRepoUrl))
+                config.AgentsHubRepoUrl = agentsHubRepoUrl;
+
 #pragma warning disable CS0618
             var snipeApiKey = key.GetValue("SnipeApiKey") as string;
             if (!string.IsNullOrEmpty(snipeApiKey))
@@ -695,7 +718,7 @@ public class FleetMateConfig
         {
             "GraphTenantId", "GraphClientId", "SnipeUrl", "SnipeOidcAudience",
             "TdxBaseUrl", "TdxTicketingAppId", "DevOpsBaseUrl", "DevOpsOrganization", "DevOpsProject",
-            "ReportMateUrl",
+            "ReportMateUrl", "HandbookRepoUrl", "HandbookSiteUrl", "AgentsHubRepoUrl",
             "ManageRosterPath", "ManageRosterRepoProject", "ManageRosterRepo", "ManageRosterRepoPath",
             "ManageCommandsPath", "ManageTerminalProfile", "ManageRdpUser",
             "ManageIncludeRetired", "ManageIncludeProvisioning", "SecureShellKeyPath", "SecureShellUser"
