@@ -95,6 +95,8 @@ public static class LockCommand
         if (state.LookupFailed)
             return Fail(json, "lookup-failed",
                 $"Could not read the device records, so nothing was changed. {state.LookupError ?? "reason unavailable"}");
+        if (state.TargetRefusal is { } ambiguity)
+            return Fail(json, "ambiguous-target", ambiguity + " Nothing was changed.");
 
         var entra = TargetEntraDevice(state, out var refusal);
         if (entra == null)

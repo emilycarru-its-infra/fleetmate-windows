@@ -334,6 +334,7 @@
                         <Button.ContextMenu>
                             <ContextMenu x:Name="ActionsMenu">
                                 <MenuItem Header="Open SSH tabs..." Click="OnOpenSshTabs" />
+                                <MenuItem Header="Install Package…" Click="OnInstallPackage" />
                                 <Separator />
                                 <MenuItem Header="Restart selected..." Click="OnQuickRestart" />
                                 <MenuItem Header="Log out user on selected..." Click="OnQuickLogOut" />
@@ -439,6 +440,7 @@
                             <Separator />
                             <MenuItem Header="Rescan" Click="OnRescanRow" />
                             <MenuItem Header="Fetch details" Click="OnProbeRow" />
+                            <MenuItem Header="Install Package…" Click="OnInstallPackage" />
                             <MenuItem Header="Show details panel" Click="OnShowDetailRow" />
                             <Separator />
                             <MenuItem Header="Copy hostname" Click="OnCopyHostname" />

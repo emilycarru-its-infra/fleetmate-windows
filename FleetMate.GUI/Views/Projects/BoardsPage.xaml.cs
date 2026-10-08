@@ -82,13 +82,20 @@ public partial class BoardsPage : Page
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
     {
-        if (_isInitialLoadDone) return;
+        // The page is cached across tab switches, so a deep link that arrives
+        // after the first visit is handled here.
+        if (_isInitialLoadDone)
+        {
+            await ShowPendingWorkItemAsync();
+            return;
+        }
         _isInitialLoadDone = true;
 
         // Initialize AzDO service for list mode
         if (_config.AzureDevOps != null && !string.IsNullOrEmpty(_config.AzureDevOps.Organization))
         {
             _devOpsService = _app?.DevOpsService ?? new AzureDevOpsService(_config.AzureDevOps);
+            DetailPanel.DevOpsService = _devOpsService;
         }
 
         // Show SSO button if ClientId + TenantId are configured
@@ -109,7 +116,30 @@ public partial class BoardsPage : Page
         await LoadBucketsAsync();
         await LoadTasksAsync();
 
-        // A lightbox's "Open in Projects" handed us a work item to show.
+        await ShowPendingWorkItemAsync();
+    }
+
+    /// <summary>
+    /// A lightbox's "Open in Projects", or a fleetmate: link, handed us a work
+    /// item or GitHub issue to show.
+    /// </summary>
+    private async Task ShowPendingWorkItemAsync()
+    {
+        if (_app?.PendingNavigateGitHubIssue is { } issue)
+        {
+            _app.PendingNavigateGitHubIssue = null;
+            DetailPanel.ShowTask(new UnifiedTask
+            {
+                Id = issue.Number.ToString(),
+                Provider = "github",
+                Title = $"{issue.Owner}/{issue.Repo}#{issue.Number}",
+                ExternalUrl = $"https://github.com/{issue.Owner}/{issue.Repo}/issues/{issue.Number}"
+            }, _registry?.GetProvider("github"));
+            DetailPanel.Visibility = Visibility.Visible;
+            DetailColumn.Width = new GridLength(2, GridUnitType.Star);
+            return;
+        }
+
         if (_app?.PendingNavigateWorkItemId is { } pendingId)
         {
             _app.PendingNavigateWorkItemId = null;
@@ -178,7 +208,8 @@ public partial class BoardsPage : Page
             var filter = new TaskFilter
             {
                 IncludeClosed = _showClosed || true, // Always fetch to populate columns
-                Limit = 100
+                // The macOS load size: Recent and the board show this many.
+                Limit = 500
             };
 
             if (!string.IsNullOrEmpty(_filterProvider))
@@ -204,7 +235,22 @@ public partial class BoardsPage : Page
 
     private void UpdateDisplay()
     {
-        var filtered = _allTasks.AsEnumerable();
+        var tasks = FilterTasks(_allTasks);
+
+        if (CurrentView is ProjectsView.Mine or ProjectsView.Recent)
+        {
+            RenderFlatTasks(tasks);
+            return;
+        }
+
+        TaskBoardColumnsControl.ItemsSource = BuildTaskColumns(tasks);
+        TaskCountLabel.Text = $"{tasks.Count} tasks";
+    }
+
+    /// <summary>Search, bucket and closed filters shared by the board and the Mine/Recent list.</summary>
+    private List<UnifiedTask> FilterTasks(IEnumerable<UnifiedTask> source)
+    {
+        var filtered = source;
 
         // Apply search filter
         if (!string.IsNullOrWhiteSpace(_searchText))
@@ -222,15 +268,15 @@ public partial class BoardsPage : Page
         }
 
         // State columns handle closed visibility themselves; every other
-        // dimension drops closed tasks entirely, like the Mac board.
-        if (!_showClosed && _groupBy != "State")
+        // dimension, and the Mine/Recent list, drops closed tasks entirely,
+        // like the Mac board.
+        var flat = IsInitialized && CurrentView is ProjectsView.Mine or ProjectsView.Recent;
+        if (!_showClosed && (_groupBy != "State" || flat))
         {
             filtered = filtered.Where(t => t.State != TaskState.Closed);
         }
 
-        var tasks = filtered.ToList();
-        TaskBoardColumnsControl.ItemsSource = BuildTaskColumns(tasks);
-        TaskCountLabel.Text = $"{tasks.Count} tasks";
+        return filtered.ToList();
     }
 
     private static readonly string[] ClosedStateNames = { "closed", "done", "removed", "completed", "resolved" };
@@ -521,13 +567,6 @@ public partial class BoardsPage : Page
         try { Clipboard.SetText(url); } catch { }
     }
 
-    private async void OnTaskSetState(object sender, RoutedEventArgs e)
-    {
-        if (VmFromMenuItem(sender) is not { } vm || (sender as MenuItem)?.Header is not string state) return;
-        if (vm.Task.Provider != "azdevops" || !int.TryParse(vm.Task.Id, out var id)) return;
-        await ApplyWorkItemUpdateAsync(vm.Task, id, new UpdateWorkItemRequest { State = state });
-    }
-
     private async void OnTaskSetPriority(object sender, RoutedEventArgs e)
     {
         if (VmFromMenuItem(sender) is not { } vm || (sender as MenuItem)?.Header is not string label) return;
@@ -547,36 +586,7 @@ public partial class BoardsPage : Page
         // the whole app down.
         if (!IsInitialized) return;
 
-        var isBoardMode = BoardModeRadio.IsChecked == true;
-        var isListMode = ListModeRadio.IsChecked == true;
-        var isProjectsMode = ProjectsModeRadio.IsChecked == true;
-
-        // The stored-queries view carries the List mode whenever Azure DevOps
-        // is configured; without it the legacy flat list remains.
-        var useQueries = _config.AzureDevOps != null && !string.IsNullOrEmpty(_config.AzureDevOps.Organization);
-
-        // Toggle visibility
-        BoardFilters.Visibility = isBoardMode ? Visibility.Visible : Visibility.Collapsed;
-        ListFilters.Visibility = isListMode ? Visibility.Visible : Visibility.Collapsed;
-        ProjectsFilters.Visibility = isProjectsMode ? Visibility.Visible : Visibility.Collapsed;
-        KanbanBoard.Visibility = isBoardMode ? Visibility.Visible : Visibility.Collapsed;
-        QueriesList.Visibility = isListMode && useQueries ? Visibility.Visible : Visibility.Collapsed;
-        WorkItemsList.Visibility = isListMode && !useQueries ? Visibility.Visible : Visibility.Collapsed;
-        ProjectsBoard.Visibility = isProjectsMode ? Visibility.Visible : Visibility.Collapsed;
-
-        if (isListMode && useQueries)
-        {
-            await LoadQueriesAsync();
-        }
-        else if (isListMode && _allWorkItems.Count == 0)
-        {
-            await LoadWorkItemsAsync();
-        }
-
-        if (isProjectsMode && _projectItems.Count == 0)
-        {
-            await LoadProjectsBoardAsync();
-        }
+        await ApplyViewAsync();
     }
 
     // MARK: - Stored Queries (List mode, macOS parity)
@@ -959,10 +969,23 @@ public partial class BoardsPage : Page
         };
         card.Child = cardPanel;
 
-        // Click to open URL
+        // Issues open in the sidebar, as on the Mac; pull requests and drafts
+        // open in the browser.
+        System.Windows.Automation.AutomationProperties.SetName(card, title);
         card.MouseLeftButtonUp += (_, _) =>
         {
             var url = item.Content?.Url;
+            if (item.Type == "ISSUE" && TaskDetailPanel.ParseIssueUrl(url) is { } issue)
+            {
+                DetailPanel.ShowTask(new UnifiedTask
+                {
+                    Id = issue.Number.ToString(), Provider = "github", Title = title, ExternalUrl = url,
+                    Assignees = item.Content?.Assignees.ToList() ?? new(), Labels = item.Content?.Labels.ToList() ?? new(),
+                }, _registry?.GetProvider("github"));
+                DetailPanel.Visibility = Visibility.Visible;
+                DetailColumn.Width = new GridLength(2, GridUnitType.Star);
+                return;
+            }
             if (!string.IsNullOrEmpty(url))
             {
                 try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); }
@@ -1077,6 +1100,19 @@ public sealed class TaskCardVm
     public Visibility IterationVisibility => Vis(Iteration);
 
     public string AssigneesLabel => Task.Assignees.Count > 0 ? "@ " + string.Join(", ", Task.Assignees) : "";
+
+    /// <summary>Mine/Recent row second line: "#123 · Bug · Active · Projects › Devices".</summary>
+    public string RowDetail => string.Join(" · ", new[]
+    {
+        Task.Provider == "azdevops" ? $"#{Task.Id}" : ProviderName,
+        TypeName,
+        Meta("state"),
+        AreaPath.Replace("\\", " › "),
+    }.Where(x => !string.IsNullOrEmpty(x)));
+
+    public string UpdatedLabel => Task.UpdatedAt == DateTime.MinValue
+        ? ""
+        : FleetMate.GUI.Views.Shared.ActivityItem.Relative(Task.UpdatedAt, DateTime.UtcNow);
     public Visibility AssigneesVisibility => Vis(AssigneesLabel);
 
     private string Meta(string key) => Task.Metadata.TryGetValue(key, out var value) ? value : "";

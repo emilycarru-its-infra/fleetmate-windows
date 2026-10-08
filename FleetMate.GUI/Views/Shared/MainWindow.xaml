@@ -4,6 +4,7 @@
         xmlns:ui="http://schemas.modernwpf.com/2019"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:vm="clr-namespace:FleetMate.GUI.ViewModels"
+        xmlns:term="clr-namespace:FleetMate.GUI.Views.Terminal"
         ui:WindowHelper.UseModernWindowStyle="True"
         ui:TitleBar.ExtendViewIntoTitleBar="True"
         Title="FleetMate"
@@ -12,7 +13,8 @@
         Width="1400"
         MinHeight="600"
         MinWidth="900"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        PreviewKeyDown="OnWindowPreviewKeyDown">
 
     <Window.DataContext>
         <vm:MainViewModel />
@@ -21,11 +23,13 @@
     <!-- TextElement.Foreground: a bare WPF TextBlock defaults to black no matter
          the theme, so in dark mode every TextBlock without an explicit Foreground
          disappears. Setting the inherited foreground here fixes all of them. -->
-    <Grid Background="{DynamicResource AppBackgroundBrush}"
+    <Grid x:Name="RootGrid" Background="{DynamicResource AppBackgroundBrush}"
           TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="48" />
-            <RowDefinition Height="*" />
+            <RowDefinition x:Name="ContentRow" Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition x:Name="TerminalRow" Height="0" />
         </Grid.RowDefinitions>
 
         <!-- Centered, segmented top navigation. The equal outer columns keep it
@@ -39,16 +43,24 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <Border Grid.Column="1" CornerRadius="9"
+                <Border x:Name="TabBarBorder" Grid.Column="1" CornerRadius="9"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True"
                         BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
                         BorderThickness="1" Padding="2">
                     <StackPanel Orientation="Horizontal" x:Name="TabBar">
-                        <RadioButton x:Name="TabDashboard" Tag="Dashboard" GroupName="MainTabs"
-                                     IsChecked="True" Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                        <RadioButton x:Name="TabDevelopment" Tag="Development" GroupName="MainTabs" IsChecked="True"
+                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
-                                <ui:FontIcon Glyph="&#xE8A9;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
-                                <TextBlock Text="Dashboard" VerticalAlignment="Center" />
+                                <ui:FontIcon Glyph="&#xE943;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
+                                <!-- No count here: tabs and segments never carry a number. -->
+                                <TextBlock Text="Development" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="TabBoards" Tag="Projects" GroupName="MainTabs"
+                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon Glyph="&#xF0E3;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Projects" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabDevices" Tag="Devices" GroupName="MainTabs"
@@ -56,6 +68,13 @@
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xE7F8;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Devices" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="TabReporting" Tag="Reporting" GroupName="MainTabs"
+                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon Glyph="&#xE9F9;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Reporting" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabManage" Tag="Manage" GroupName="MainTabs"
@@ -70,25 +89,6 @@
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xF158;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Inventory" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </RadioButton>
-                        <RadioButton x:Name="TabDevelopment" Tag="Development" GroupName="MainTabs"
-                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
-                            <StackPanel Orientation="Horizontal">
-                                <ui:FontIcon Glyph="&#xE943;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
-                                <TextBlock Text="Development" VerticalAlignment="Center" />
-                                <!-- Unread GitHub notifications as a plain count, so a review
-                                     request is seen without opening the tab to look. -->
-                                <TextBlock x:Name="DevelopmentCount" Visibility="Collapsed" Margin="6,0,0,0"
-                                           VerticalAlignment="Center" FontSize="12"
-                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                            </StackPanel>
-                        </RadioButton>
-                        <RadioButton x:Name="TabBoards" Tag="Projects" GroupName="MainTabs"
-                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
-                            <StackPanel Orientation="Horizontal">
-                                <ui:FontIcon Glyph="&#xF0E3;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
-                                <TextBlock Text="Projects" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabIdentity" Tag="Identity" GroupName="MainTabs"
@@ -110,8 +110,11 @@
 
                 <!-- Auth status + settings live in the chrome so they are reachable
                      from any tab, matching the macOS toolbar. -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right"
-                            Margin="0,0,116,0">
+                <!-- The right margin clears the three 46-wide caption buttons (138)
+                     less the bar's 12 padding, plus a 6 gap, so search ends
+                     just before Minimize. -->
+                <StackPanel x:Name="ToolbarRight" Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right"
+                            Margin="0,0,132,0">
                     <!-- Elevation session status. The per-user session container
                          takes a while to boot and lives for its TTL, so the chrome
                          says whether the next elevated action will wait on it.
@@ -126,6 +129,34 @@
                                        VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
+                    <ToggleButton x:Name="TerminalToggleButton" ToolTip="Terminal (Ctrl+`)" Click="OnTerminalToggleClicked"
+                                  AutomationProperties.AutomationId="TerminalToggleButton"
+                                  AutomationProperties.Name="Terminal"
+                                  shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                                  Background="Transparent" BorderThickness="0" Padding="8,5" Margin="0,0,4,0">
+                        <ui:FontIcon Glyph="&#xE756;" FontFamily="Segoe Fluent Icons" FontSize="14" />
+                    </ToggleButton>
+                    <!-- Graphs: shows or hides this tab's widget strip (Ctrl+Alt+G).
+                         Accent while shown, secondary while hidden; absent on tabs
+                         with no widgets. -->
+                    <Button x:Name="GraphsButton" Click="OnGraphsClicked" Visibility="Collapsed"
+                            AutomationProperties.AutomationId="GraphsButton" AutomationProperties.Name="Graphs"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Style="{StaticResource ChromeIconButtonStyle}" Margin="0,0,4,0">
+                        <ui:FontIcon x:Name="GraphsIcon" Glyph="&#xE9D2;" FontFamily="Segoe Fluent Icons" FontSize="14" />
+                    </Button>
+                    <!-- Recent Activity: what changed on this tab, from any tab. The
+                         orange dot marks an app-level error, shown at the popover's top. -->
+                    <Button x:Name="RecentActivityButton" ToolTip="Recent activity" Click="OnRecentActivityClicked"
+                            AutomationProperties.AutomationId="RecentActivityButton"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Style="{StaticResource ChromeIconButtonStyle}" Margin="0,0,4,0">
+                        <Grid>
+                            <ui:FontIcon Glyph="&#xE81C;" FontFamily="Segoe Fluent Icons" FontSize="14" />
+                            <Ellipse x:Name="AppErrorDot" Width="7" Height="7" Fill="#E07A1F" Visibility="Collapsed"
+                                     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-3,0" />
+                        </Grid>
+                    </Button>
                     <Button x:Name="AuthButton" ToolTip="Authentication status" Click="OnAuthClicked"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
                             Style="{StaticResource ChromeIconButtonStyle}">
@@ -137,6 +168,70 @@
                                  Style="{StaticResource NavigationTabStyle}">
                         <ui:FontIcon Glyph="&#xE713;" FontFamily="Segoe Fluent Icons" FontSize="14" />
                     </RadioButton>
+                    <!-- Global search: last in the toolbar on every tab. Ctrl+K
+                         focuses it, Enter opens the first hit, Esc clears. It keeps
+                         its full width on every window size. -->
+                    <Grid Width="260" Height="28" Margin="8,0,0,0" VerticalAlignment="Center"
+                          shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                        <TextBox x:Name="SearchBox" AutomationProperties.AutomationId="ToolbarSearchBox"
+                                 AutomationProperties.Name="Search" MinHeight="28" Height="28" FontSize="12"
+                                 Padding="28,4,60,0" VerticalContentAlignment="Center"
+                                 BorderThickness="1"
+                                 BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                                 Background="{DynamicResource CardBackgroundBrush}"
+                                 ui:ControlHelper.PlaceholderText="Search"
+                                 ui:ControlHelper.PlaceholderForeground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                 TextChanged="OnSearchTextChanged" PreviewKeyDown="OnSearchKeyDown" />
+                        <ui:FontIcon Glyph="&#xE721;" FontFamily="Segoe Fluent Icons" FontSize="13"
+                                     HorizontalAlignment="Left" VerticalAlignment="Center" Margin="9,0,0,0"
+                                     IsHitTestVisible="False"
+                                     Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <Border x:Name="SearchHint" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                Margin="0,0,6,0" Padding="5,0" CornerRadius="3" IsHitTestVisible="False"
+                                BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                            <TextBlock Text="Ctrl+K" FontSize="10"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        </Border>
+                        <Popup x:Name="SearchPopup" PlacementTarget="{Binding ElementName=SearchBox}"
+                               Placement="Bottom" HorizontalOffset="-300" StaysOpen="False" AllowsTransparency="True">
+                            <Border Background="{DynamicResource CardBackgroundBrush}"
+                                    BorderBrush="{DynamicResource CardBorderBrush}"
+                                    BorderThickness="1" CornerRadius="8" Width="560" MaxHeight="620"
+                                    TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="600">
+                                    <StackPanel x:Name="SearchResults" Margin="8" />
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <Popup x:Name="RecentActivityPopup" PlacementTarget="{Binding ElementName=RecentActivityButton}"
+                           Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
+                        <Border Background="{DynamicResource CardBackgroundBrush}"
+                                BorderBrush="{DynamicResource CardBorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Width="480" MaxHeight="600"
+                                TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
+                            <DockPanel Margin="16">
+                                <Border x:Name="AppErrorBanner" DockPanel.Dock="Top" Visibility="Collapsed"
+                                        Background="#33E07A1F" CornerRadius="6" Padding="10,6" Margin="0,0,0,10">
+                                    <DockPanel>
+                                        <Button DockPanel.Dock="Right" Content="Dismiss" FontSize="11" Padding="8,1"
+                                                Click="OnDismissAppErrorClicked" VerticalAlignment="Top" />
+                                        <TextBlock x:Name="AppErrorText" FontSize="12" TextWrapping="Wrap" Margin="0,0,8,0" />
+                                    </DockPanel>
+                                </Border>
+                                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                                    <CheckBox x:Name="RecentActivityHideMine" DockPanel.Dock="Right" Content="Hide mine"
+                                              FontSize="11" MinWidth="0" Visibility="Collapsed"
+                                              Checked="OnRecentActivityHideMineChanged" Unchecked="OnRecentActivityHideMineChanged" />
+                                    <TextBlock x:Name="RecentActivityHeader" FontWeight="SemiBold" FontSize="14"
+                                               VerticalAlignment="Center" />
+                                </DockPanel>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="500">
+                                    <StackPanel x:Name="RecentActivityList" />
+                                </ScrollViewer>
+                            </DockPanel>
+                        </Border>
+                    </Popup>
                     <Popup x:Name="AuthPopup" PlacementTarget="{Binding ElementName=AuthButton}"
                            Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
                         <Border Background="{DynamicResource CardBackgroundBrush}"
@@ -154,5 +249,20 @@
 
         <!-- Content Frame -->
         <Frame Grid.Row="1" x:Name="ContentFrame" NavigationUIVisibility="Hidden" Background="Transparent" />
+
+        <!-- Agent terminal: reachable from every tab, resized by dragging the splitter. -->
+        <!-- The divider is a Thumb, not a GridSplitter: its height comes from
+             the pointer's position in the window, so it tracks smoothly, and
+             dragging it near the top switches to full-window mode. -->
+        <Thumb x:Name="TerminalDivider" Grid.Row="2" Height="5" Cursor="SizeNS" Visibility="Collapsed"
+               AutomationProperties.AutomationId="TerminalDivider"
+               DragStarted="OnDividerDragStarted" DragDelta="OnDividerDragDelta">
+            <Thumb.Template>
+                <ControlTemplate TargetType="Thumb">
+                    <Border Background="Transparent" />
+                </ControlTemplate>
+            </Thumb.Template>
+        </Thumb>
+        <term:TerminalPanel x:Name="Terminal" Grid.Row="3" Visibility="Collapsed" />
     </Grid>
 </Window>

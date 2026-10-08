@@ -29,6 +29,7 @@ public partial class AssetsPage : Page
     public AssetsPage()
     {
         InitializeComponent();
+        InitColumns();
         AssetListView.AddHandler(System.Windows.Controls.Primitives.ButtonBase.ClickEvent,
             new RoutedEventHandler(OnColumnHeaderClicked));
         _config = Application.Current is App currentApp ? currentApp.Config : FleetMateConfig.Load();
@@ -184,6 +185,9 @@ public partial class AssetsPage : Page
         if (!string.IsNullOrEmpty(areaFilter) && areaFilter != "All")
             filtered = filtered.Where(a => a.Area == areaFilter);
 
+        var locationFilter = LocationFilterComboBox.SelectedItem?.ToString();
+        filtered = filtered.Where(a => AssetLocationFilter.Matches(a, locationFilter));
+
         var list = ApplySort(filtered).ToList();
         AssetListView.ItemsSource = list;
         AssetCountLabel.Text = $"{list.Count} assets";
@@ -251,6 +255,7 @@ public partial class AssetsPage : Page
         UsageFilterComboBox.SelectedIndex = 0;
         CatalogFilterComboBox.SelectedIndex = 0;
         AreaFilterComboBox.SelectedIndex = 0;
+        LocationFilterComboBox.SelectedIndex = 0;
         UpdateDisplay();
     }
 
@@ -285,6 +290,8 @@ public partial class AssetsPage : Page
         SetFilterItems(UsageFilterComboBox, usages);
         SetFilterItems(CatalogFilterComboBox, catalogs);
         SetFilterItems(AreaFilterComboBox, areas);
+        LocationFilterComboBox.ItemsSource = AssetLocationFilter.Options(_allAssets);
+        LocationFilterComboBox.SelectedIndex = 0;
     }
 
     private static void SetFilterItems(ComboBox comboBox, HashSet<string> items)
@@ -302,6 +309,7 @@ public partial class AssetsPage : Page
 
     private void AssetListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        FleetMate.GUI.Views.Terminal.ContextPublisher.Asset(AssetListView.SelectedItem as SnipeAsset);
         if (AssetListView.SelectedItem is SnipeAsset asset)
         {
             // A stray click right after a deep link: put the linked asset back.

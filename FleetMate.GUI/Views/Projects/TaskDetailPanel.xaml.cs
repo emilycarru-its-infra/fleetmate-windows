@@ -27,6 +27,7 @@ public partial class TaskDetailPanel : UserControl
 
     public void ShowTask(UnifiedTask task, ITaskProvider? provider)
     {
+        FleetMate.GUI.Views.Terminal.ContextPublisher.WorkItem(task);
         _task = task;
         _provider = provider;
 
@@ -35,14 +36,16 @@ public partial class TaskDetailPanel : UserControl
         TaskId.Text = $"#{task.Id}";
 
         ContentPanel.Children.Clear();
+        _loadToken++;
+        _detail = null;
 
         switch (task.Provider.ToLowerInvariant())
         {
             case "azdevops":
-                RenderAzDoDetail(task);
+                LoadWorkItemSidebar(task);
                 break;
             case "github":
-                RenderGitHubDetail(task);
+                LoadIssueSidebar(task);
                 break;
             case "gitea":
                 RenderGiteaDetail(task);

@@ -168,6 +168,29 @@ public static class WipeCommand
                 return;
             }
 
+            // A serial that matches several records, or isn't a serial at all,
+            // is refused outright: choosing one is a guess.
+            var refused = states.Where(s => s.TargetRefusal != null).ToList();
+            if (refused.Count > 0)
+            {
+                if (json)
+                {
+                    Console.WriteLine(JsonSerializer.Serialize(new
+                    {
+                        Error = "ambiguous-target",
+                        Message = "Some targets do not resolve to exactly one record; nothing was changed.",
+                        Targets = refused.Select(s => new { s.Serial, Reason = s.TargetRefusal }),
+                    }, JsonOptions));
+                    context.ExitCode = 1;
+                    return;
+                }
+                foreach (var s in refused)
+                    AnsiConsole.MarkupLine($"[red]Refused[/] {Markup.Escape(s.TargetRefusal!)}");
+                AnsiConsole.MarkupLine("[yellow]Nothing was changed.[/]");
+                context.ExitCode = 1;
+                return;
+            }
+
             if (!confirm)
             {
                 if (json)
