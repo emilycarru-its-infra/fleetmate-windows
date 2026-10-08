@@ -59,7 +59,7 @@ public class ConfigTests
     {
         var ado = new AzureDevOpsConfig { Organization = "contoso" };
 
-        Assert.Equal("https://azure-devops.example.com/contoso", ado.BaseUrl);
+        Assert.Equal($"{AzureDevOpsConfig.DefaultHostUrl}/contoso", ado.BaseUrl);
     }
 
     [Fact]
@@ -94,7 +94,7 @@ public class ConfigTests
         // existing config that still carries it must load, not throw.
         Assert.NotNull(config.AzureDevOps);
         Assert.Equal("contoso", config.AzureDevOps!.Organization);
-        Assert.Equal("https://azure-devops.example.com/contoso", config.AzureDevOps.BaseUrl);
+        Assert.Equal($"{AzureDevOpsConfig.DefaultHostUrl}/contoso", config.AzureDevOps.BaseUrl);
     }
 
     /// <summary>
