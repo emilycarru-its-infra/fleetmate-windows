@@ -40,22 +40,23 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           $version = $tag -replace '^v',''
+          if ($version -notmatch '^\d{4}\.\d{2}\.\d{2}\.\d{4}$') { throw "Tag $tag is not vYYYY.MM.DD.HHMM" }
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Publish CLI + GUI (unsigned)
         shell: pwsh
-        run: .\build.ps1 -Publish -GUI -NoSign
+        run: .\build.ps1 -Publish -GUI -NoSign -BuildVersion '${{ steps.version.outputs.version }}'
 
       - name: Build .pkg packages
         shell: pwsh
-        run: .\build.ps1 -PkgOnly
+        run: .\build.ps1 -PkgOnly -BuildVersion '${{ steps.version.outputs.version }}'
 
       - name: Build MSI packages (x64 + arm64)
         shell: pwsh
         # Unsigned MSIs land in release\FleetMate-<arch>-<version>.msi. The
         # deployment-pipeline pipeline fetches these, signs them with the
         # enterprise cert, repacks, and deploys as an Intune Win32 LOB.
-        run: .\build.ps1 -MsiOnly
+        run: .\build.ps1 -MsiOnly -BuildVersion '${{ steps.version.outputs.version }}'
 
       - name: Collect release artifacts
         shell: pwsh

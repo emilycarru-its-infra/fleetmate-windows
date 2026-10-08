@@ -3,6 +3,9 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  # reportmate-sync starts this run on its branch, because a pull request it
+  # opens with GITHUB_TOKEN does not trigger pull_request workflows.
+  workflow_dispatch:
   push:
     branches: [main]
 
@@ -19,6 +22,7 @@ env:
 
 jobs:
   build:
+    name: Build and test
     runs-on: windows-latest
     timeout-minutes: 30
 
@@ -28,6 +32,7 @@ jobs:
           # The Reporting tab builds from the ReportMate app's source, which
           # carries a submodule of its own.
           submodules: recursive
+          persist-credentials: false
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
@@ -47,3 +52,6 @@ jobs:
 
       - name: Build
         run: dotnet build FleetMate.sln --configuration Release --no-restore --verbosity minimal
+
+      - name: Test
+        run: dotnet test FleetMate.Tests/FleetMate.Tests.csproj --configuration Release --no-build --verbosity minimal
