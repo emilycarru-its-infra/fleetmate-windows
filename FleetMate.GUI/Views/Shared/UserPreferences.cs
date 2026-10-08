@@ -33,6 +33,9 @@ public static class UserPreferences
 
     public static double TextScale => AppTextScale.Parse(Read("TextScale"));
 
+    /// <summary>Whether a text size other than the default has been saved.</summary>
+    public static bool HasTextScale => Read("TextScale") != null;
+
     public static void SetTextScale(double scale) =>
         Write("TextScale", AppTextScale.IsDefault(scale) ? null : AppTextScale.Format(scale));
 
