@@ -27,6 +27,14 @@ public sealed class PullRequestDetail
 
     /// <summary>Comments that are actual conversation, not vote/status noise.</summary>
     public IEnumerable<PullRequestComment> Conversation => Comments.Where(c => !c.IsSystem);
+
+    /// <summary>"1 comment", "3 comments", or empty with none.</summary>
+    public static string CommentCountLabel(int count) => count switch
+    {
+        <= 0 => "",
+        1 => "1 comment",
+        _ => $"{count} comments"
+    };
 }
 
 public sealed class PullRequestCommit
