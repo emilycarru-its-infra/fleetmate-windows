@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
+using FleetMate.GUI.Views.Shared;
 using Microsoft.Web.WebView2.Core;
 using Serilog;
 
@@ -49,7 +50,7 @@ public partial class DevOpsSsoLoginWindow : Window
         try
         {
             StatusText.Text = "Initializing WebView2...";
-            await WebView.EnsureCoreWebView2Async();
+            await WebView.EnsureCoreWebView2Async(await WebViewEnvironments.SignIn());
 
             WebView.CoreWebView2.Settings.IsStatusBarEnabled = false;
             WebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
