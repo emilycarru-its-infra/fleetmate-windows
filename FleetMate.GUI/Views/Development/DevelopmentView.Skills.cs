@@ -40,7 +40,7 @@ public partial class DevelopmentView
             : store.SyncError is { } error ? $"Shared agents unavailable: {error}"
             : store.SyncedAt is { } at ? $"Up to date with main · {at:t}"
             : store.IsHubConfigured ? "Fetching the shared agents…"
-            : "Showing this PC's skills. Set AgentsHubRepoUrl to add the shared ones.";
+            : "Showing this PC's skills. Set the Skills repository in Settings › Authentication to add the shared ones.";
 
         EmptyText.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         EmptyText.Text = store.Entries.Count == 0 ? "No skills yet. They appear once the first fetch finishes." : "Nothing matches this filter.";

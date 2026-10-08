@@ -947,6 +947,10 @@ public partial class App : Application
         AuthManager = new AuthManager(Config);
         InitializeServices();
         ElevationMonitor?.Start();
+        // The Handbook and skills repositories can change in Settings too.
+        Handbook?.Stop();
+        Skills?.Stop();
+        StartHandbook();
         ServicesReloaded?.Invoke();
 
         if (Current.MainWindow is MainWindow mainWindow)
