@@ -2154,9 +2154,15 @@ if ($svc -and $svc.Status -ne 'Running') {
         /// </summary>
         public bool IsOrphaned => Intune == null && EntraDevices.Count > 0;
 
-        /// <summary>True when the AutoPilot identity points at a managedDevice that no longer exists.</summary>
+        /// <summary>
+        /// True when the AutoPilot identity points at a managedDevice that no
+        /// longer exists. Graph reports an identity that was never bound with an
+        /// all-zero managedDeviceId rather than an empty one, and that is not a
+        /// pointer to anything.
+        /// </summary>
         public bool HasDanglingManagedDeviceId =>
-            Autopilot != null && !string.IsNullOrEmpty(Autopilot.ManagedDeviceId) && Intune == null;
+            Autopilot != null && Intune == null
+            && FleetMate.Core.Services.Devices.AutopilotDeleteGuard.BoundManagedDeviceId(Autopilot.ManagedDeviceId) != null;
 
         /// <summary>
         /// True when at least one of the lookups behind this state never reached
@@ -2247,6 +2253,9 @@ if ($svc -and $svc.Status -ne 'Running') {
         /// <summary>The AutoPilot identity, always retained — reported so the caller can prove it survived.</summary>
         public string? RetainedAutopilotId { get; set; }
 
+        /// <summary>Entra objects kept because the AutoPilot identity is registered to them.</summary>
+        public List<string> RetainedEntraDeviceIds { get; set; } = new();
+
         /// <summary>
         /// True when the records could not be read, so nothing was attempted. A
         /// null RetainedAutopilotId means "no AutoPilot identity" only when this
@@ -2288,6 +2297,42 @@ if ($svc -and $svc.Status -ne 'Running') {
         return state.EntraDevices
             .Where(d => string.IsNullOrEmpty(d.DeviceId) || !bound.Contains(d.DeviceId!))
             .ToList();
+    }
+
+    /// <summary>
+    /// The deviceId of the Entra object the AutoPilot identity is registered to,
+    /// or null when there is no identity or it points at nothing (empty or the
+    /// all-zero GUID).
+    /// </summary>
+    public static string? AutopilotBoundEntraDeviceId(DeviceRecordState state) =>
+        FleetMate.Core.Services.Devices.AutopilotDeleteGuard.BoundManagedDeviceId(state.Autopilot?.AzureActiveDirectoryDeviceId);
+
+    /// <summary>
+    /// Split a machine's Entra objects into the ones a record cleanup deletes and
+    /// the one it keeps: the object the AutoPilot identity is registered to.
+    ///
+    /// AutoPilot registration pre-creates that object, and OOBE looks it up by
+    /// the identity's azureActiveDirectoryDeviceId. Enrollment does not create a
+    /// replacement, so once it is deleted the next OOBE fails at "Registering
+    /// your device for mobile management" with 0x801c03f3, and the only recovery
+    /// is to delete the AutoPilot identity and re-register the hardware hash.
+    /// <paramref name="includeAutopilotBound"/> deletes it anyway, for an operator
+    /// who is doing exactly that.
+    /// </summary>
+    public static (List<EntraDevice> Delete, List<EntraDevice> Keep) EntraCleanupPlan(
+        DeviceRecordState state, bool includeAutopilotBound = false)
+    {
+        var bound = includeAutopilotBound ? null : AutopilotBoundEntraDeviceId(state);
+        var delete = new List<EntraDevice>();
+        var keep = new List<EntraDevice>();
+        foreach (var device in state.EntraDevices)
+        {
+            if (bound != null && string.Equals(device.DeviceId?.Trim(), bound, StringComparison.OrdinalIgnoreCase))
+                keep.Add(device);
+            else
+                delete.Add(device);
+        }
+        return (delete, keep);
     }
 
     /// <summary>
@@ -2336,15 +2381,24 @@ if ($svc -and $svc.Status -ne 'Running') {
 
     /// <summary>
     /// Remove the stale directory records that block a machine from re-enrolling:
-    /// the Intune managedDevice and every Entra device object bound to it.
+    /// the Intune managedDevice and the Entra device objects found for it, except
+    /// the one the AutoPilot identity is registered to.
     ///
     /// The AutoPilot identity is deliberately retained — it holds the hardware
-    /// hash, and both deleted records are re-created by the next enrollment.
-    /// Deleting only the Intune record (the hand runbook) leaves the Entra object
-    /// behind, which re-binds by ZTDID at the next OOBE and fails enrollment one
-    /// ESP phase later; that is the whole reason this is one operation.
+    /// hash. So is the Entra object it points at: AutoPilot registration created
+    /// that object, and the next enrollment does not. Deleting it leaves the
+    /// identity pointing at nothing, and OOBE fails at "Registering your device
+    /// for mobile management" with 0x801c03f3 until the hardware hash is
+    /// re-registered. The Intune record and any other Entra objects (hybrid and
+    /// registered leftovers, duplicates from earlier joins) are re-created or not
+    /// needed, so they go.
+    ///
+    /// <paramref name="includeAutopilotEntraObject"/> deletes the AutoPilot-bound
+    /// object as well, for a machine whose AutoPilot identity is about to be
+    /// deleted and its hash re-registered.
     /// </summary>
-    public async Task<RecordCleanupResult> CleanDeviceRecordsAsync(string serialNumber, bool confirmed = false)
+    public async Task<RecordCleanupResult> CleanDeviceRecordsAsync(
+        string serialNumber, bool confirmed = false, bool includeAutopilotEntraObject = false)
     {
         var result = new RecordCleanupResult { Serial = serialNumber };
 
@@ -2390,12 +2444,26 @@ if ($svc -and $svc.Status -ne 'Running') {
             result.Skipped.Add("Intune managedDevice: no record");
         }
 
-        foreach (var entra in state.EntraDevices)
+        var (toDelete, toKeep) = EntraCleanupPlan(state, includeAutopilotEntraObject);
+
+        foreach (var kept in toKeep)
+        {
+            result.RetainedEntraDeviceIds.Add(kept.Id);
+            result.Skipped.Add(
+                $"Entra device {kept.Id} ({kept.DisplayName}): kept, because AutoPilot identity {state.Autopilot?.Id} is registered to it " +
+                "and the next OOBE needs it");
+        }
+
+        var boundDeviceId = AutopilotBoundEntraDeviceId(state);
+        foreach (var entra in toDelete)
         {
             var deleted = await DeleteEntraDeviceAsync(entra.Id, confirmed: true);
             if (deleted.Success)
             {
-                result.Deleted.Add($"Entra device {entra.Id} ({entra.DisplayName}, {entra.TrustType ?? "unknown trust"})");
+                var autopilotBound = boundDeviceId != null &&
+                    string.Equals(entra.DeviceId?.Trim(), boundDeviceId, StringComparison.OrdinalIgnoreCase);
+                result.Deleted.Add($"Entra device {entra.Id} ({entra.DisplayName}, {entra.TrustType ?? "unknown trust"})" +
+                    (autopilotBound ? " — AutoPilot-bound: delete the AutoPilot identity and re-register the hardware hash before the next OOBE" : ""));
                 if (string.Equals(entra.TrustType, "ServerAd", StringComparison.OrdinalIgnoreCase))
                     result.ResyncRisk.Add(entra.DisplayName ?? entra.Id);
             }

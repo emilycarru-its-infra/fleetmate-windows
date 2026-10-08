@@ -124,15 +124,19 @@ public static class IntuneCommand
             "Delete the stale Intune and Entra records blocking re-enrollment (keeps the AutoPilot identity)");
         var serialArg = new Argument<string>(name: "serial", description: "Device serial number");
         var confirmOption = new Option<bool>(aliases: ["--confirm"], description: "Required to actually delete");
+        var includeAutopilotEntraOption = new Option<bool>(aliases: ["--include-autopilot-entra"],
+            description: "Also delete the Entra object the AutoPilot identity is registered to. OOBE then fails until the hardware hash is re-registered");
         var jsonOption = new Option<bool>(aliases: ["--json"], description: "Output as JSON");
         command.AddArgument(serialArg);
         command.AddOption(confirmOption);
+        command.AddOption(includeAutopilotEntraOption);
         command.AddOption(jsonOption);
         // Context handler so a refusal exits non-zero; see CreateAutopilotCommand.
         command.SetHandler(async (context) =>
         {
             var serial = context.ParseResult.GetValueForArgument(serialArg);
             var confirm = context.ParseResult.GetValueForOption(confirmOption);
+            var includeAutopilotEntra = context.ParseResult.GetValueForOption(includeAutopilotEntraOption);
             var json = context.ParseResult.GetValueForOption(jsonOption);
 
             if (!EnsureConfigured(graphService))
@@ -158,7 +162,9 @@ public static class IntuneCommand
                     return;
                 }
                 AnsiConsole.WriteLine();
-                AnsiConsole.MarkupLine("[yellow]Dry run.[/] Re-run with [cyan]--confirm[/] to delete the Intune and Entra records above. The AutoPilot identity is kept.");
+                AnsiConsole.MarkupLine(includeAutopilotEntra
+                    ? "[yellow]Dry run.[/] Re-run with [cyan]--confirm[/] to delete the Intune and Entra records above, including the AutoPilot-bound Entra object. The AutoPilot identity is kept."
+                    : "[yellow]Dry run.[/] Re-run with [cyan]--confirm[/] to delete the Intune and Entra records above. The AutoPilot identity and the Entra object it is registered to are kept.");
                 return;
             }
 
@@ -167,7 +173,8 @@ public static class IntuneCommand
                 .Spinner(Spinner.Known.Dots)
                 .StartAsync($"Cleaning records for {serial}...", async ctx =>
                 {
-                    result = await graphService!.CleanDeviceRecordsAsync(serial, confirmed: true);
+                    result = await graphService!.CleanDeviceRecordsAsync(serial, confirmed: true,
+                        includeAutopilotEntraObject: includeAutopilotEntra);
                 });
 
             if (json)
@@ -244,11 +251,13 @@ public static class IntuneCommand
         }
         else
         {
+            var autopilotBound = GraphService.EntraCleanupPlan(state).Keep.Select(d => d.Id).ToHashSet();
             foreach (var e in state.EntraDevices)
                 table.AddRow(
                     "Entra device object",
                     "[green]present[/]",
-                    Markup.Escape($"{e.Id}  {e.DisplayName}  trust={e.TrustType}  managed={e.IsManaged}"));
+                    Markup.Escape($"{e.Id}  {e.DisplayName}  trust={e.TrustType}  managed={e.IsManaged}") +
+                    (autopilotBound.Contains(e.Id) ? "  [dim](AutoPilot-bound, kept by cleanup)[/]" : ""));
         }
 
         AnsiConsole.Write(table);

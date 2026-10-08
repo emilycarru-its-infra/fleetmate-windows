@@ -69,6 +69,8 @@ public static class WipeCommand
 
         var recordsOnlyOption = new Option<bool>(aliases: ["--records-only"],
             description: "Skip the reset; only clean directory records for the resolved targets");
+        var includeAutopilotEntraOption = new Option<bool>(aliases: ["--include-autopilot-entra"],
+            description: "Also delete the Entra object each AutoPilot identity is registered to. OOBE then fails until the hardware hash is re-registered");
 
         var maxOption = new Option<int>(aliases: ["--max"],
             getDefaultValue: () => DefaultMaxTargets,
@@ -79,7 +81,7 @@ public static class WipeCommand
 
         command.AddArgument(serialsArg);
         foreach (var o in new Option[] { locationOption, modelOption, fileOption, modeOption,
-                                         keepUserDataOption, recordsOnlyOption,
+                                         keepUserDataOption, recordsOnlyOption, includeAutopilotEntraOption,
                                          maxOption, confirmOption, jsonOption })
             command.AddOption(o);
 
@@ -92,6 +94,7 @@ public static class WipeCommand
             var modeText = context.ParseResult.GetValueForOption(modeOption)!;
             var keepUserData = context.ParseResult.GetValueForOption(keepUserDataOption);
             var recordsOnly = context.ParseResult.GetValueForOption(recordsOnlyOption);
+            var includeAutopilotEntra = context.ParseResult.GetValueForOption(includeAutopilotEntraOption);
             var max = context.ParseResult.GetValueForOption(maxOption);
             var confirm = context.ParseResult.GetValueForOption(confirmOption);
             var json = context.ParseResult.GetValueForOption(jsonOption);
@@ -274,7 +277,8 @@ public static class WipeCommand
                 }
                 else
                 {
-                    cleaned = await graphService.CleanDeviceRecordsAsync(serial, confirmed: true);
+                    cleaned = await graphService.CleanDeviceRecordsAsync(serial, confirmed: true,
+                        includeAutopilotEntraObject: includeAutopilotEntra);
                 }
 
                 if (cleaned != null)
@@ -290,6 +294,11 @@ public static class WipeCommand
                         failures++;
                         actions.Add($"cleanup FAILED: {e}");
                         AnsiConsole.MarkupLine($"[red]{serial}[/] {Markup.Escape(e)}");
+                    }
+                    foreach (var kept in cleaned.RetainedEntraDeviceIds)
+                    {
+                        actions.Add($"kept AutoPilot-bound Entra device {kept}");
+                        AnsiConsole.MarkupLine($"[dim]{serial} kept Entra device {Markup.Escape(kept)}: the AutoPilot identity is registered to it[/]");
                     }
                     if (cleaned.Deleted.Count == 0 && cleaned.Errors.Count == 0)
                         AnsiConsole.MarkupLine($"[dim]{serial} no stale records to remove[/]");
