@@ -57,7 +57,7 @@ public partial class MarkdownViewer : UserControl
         if (_isInitialized) return;
         try
         {
-            await WebView.EnsureCoreWebView2Async();
+            await WebView.EnsureCoreWebView2Async(await WebViewEnvironments.Content());
             WebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
             WebView.CoreWebView2.Settings.IsZoomControlEnabled = false;
             WebView.CoreWebView2.Settings.AreDevToolsEnabled = false;
