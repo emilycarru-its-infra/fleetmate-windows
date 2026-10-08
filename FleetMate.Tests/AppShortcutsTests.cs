@@ -1,4 +1,5 @@
 using System.Windows.Input;
+using FleetMate.Core.Config;
 using FleetMate.GUI.Views.Shared;
 using Xunit;
 
@@ -60,6 +61,15 @@ public class AppShortcutsTests
     {
         Assert.Equal(1.6, ZoomScale.Clamp(3));
         Assert.Equal(0.9, ZoomScale.Clamp(0.5));
-        Assert.Equal(1.1, ZoomScale.Clamp(1.0 + ZoomScale.Step));
+    }
+
+    // The zoom keys and the Text size slider move in the same 5% steps.
+    [Fact]
+    public void ZoomStepsMatchTheTextSizeSlider()
+    {
+        Assert.Equal(0.05, AppTextScale.Step);
+        Assert.Equal(1.05, AppTextScale.Clamp(AppTextScale.Default + AppTextScale.Step), 3);
+        Assert.Equal(1.6, AppTextScale.Clamp(1.6 + AppTextScale.Step), 3);
+        Assert.Equal(0.9, AppTextScale.Clamp(0.9 - AppTextScale.Step), 3);
     }
 }

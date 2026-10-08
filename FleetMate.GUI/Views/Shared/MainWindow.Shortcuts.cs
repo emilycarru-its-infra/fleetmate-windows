@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using FleetMate.Core.Config;
 
 namespace FleetMate.GUI.Views.Shared;
 
@@ -53,13 +54,13 @@ public partial class MainWindow
                 CycleTab(-1);
                 return true;
             case AppShortcut.ZoomIn:
-                SetZoom(UserPreferences.TextScale + ZoomScale.Step);
+                SetZoom(UserPreferences.TextScale + AppTextScale.Step);
                 return true;
             case AppShortcut.ZoomOut:
-                SetZoom(UserPreferences.TextScale - ZoomScale.Step);
+                SetZoom(UserPreferences.TextScale - AppTextScale.Step);
                 return true;
             case AppShortcut.ActualSize:
-                SetZoom(ZoomScale.Default);
+                SetZoom(AppTextScale.Default);
                 return true;
             default:
                 // Refresh, list or board, and filters belong to the page showing.
@@ -97,5 +98,6 @@ public partial class MainWindow
     /// Scale the page area; the toolbar and terminal keep their size, as on
     /// Mac. The value is the Text size setting, which applies it.
     /// </summary>
-    private static void SetZoom(double value) => UserPreferences.SetTextScale(ZoomScale.Clamp(value));
+    // The keys move in the slider's own 5% steps, so the two always agree.
+    private static void SetZoom(double value) => UserPreferences.SetTextScale(AppTextScale.Clamp(value));
 }

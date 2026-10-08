@@ -37,7 +37,9 @@ public partial class SettingsPage : Page
         {
             LoadSettings();
             _ = RefreshAuthCardsAsync();
+            UserPreferences.Changed += OnPreferencesChanged;
         };
+        Unloaded += (_, _) => UserPreferences.Changed -= OnPreferencesChanged;
     }
 
     // ── Load ────────────────────────────────────────────────────────────────
