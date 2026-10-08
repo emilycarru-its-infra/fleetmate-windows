@@ -684,6 +684,11 @@ public partial class App : Application
 
         var mainWindow = new MainWindow();
         mainWindow.Show();
+        // A first launch with nothing set up opens the setup wizard over the window.
+        if (FleetMate.GUI.Views.Shared.SetupWizardWindow.NeededAtLaunch(Config))
+            mainWindow.Dispatcher.BeginInvoke(() =>
+                new FleetMate.GUI.Views.Shared.SetupWizardWindow { Owner = mainWindow }.ShowDialog(),
+                System.Windows.Threading.DispatcherPriority.ApplicationIdle);
         StartLinks(startupLink);
         Inbox.Start();
 
