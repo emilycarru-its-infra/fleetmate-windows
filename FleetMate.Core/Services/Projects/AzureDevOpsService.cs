@@ -7,6 +7,7 @@ using FleetMate.Core.Config;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Shared;
 using Serilog;
+using FleetMate.Core.Services.Activity;
 
 namespace FleetMate.Core.Services.Projects;
 
@@ -80,7 +81,7 @@ public partial class AzureDevOpsService : IDisposable
         _config = config;
         _cacheDuration = TimeSpan.FromMinutes(config.CacheMinutes);
 
-        _client = new HttpClient
+        _client = new HttpClient(new ActivityLogHandler("Azure DevOps"))
         {
             BaseAddress = new Uri($"{config.BaseUrl}/"),
             Timeout = TimeSpan.FromSeconds(60)

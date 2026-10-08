@@ -226,6 +226,9 @@
                                     <TextBlock x:Name="RecentActivityHeader" FontWeight="SemiBold" FontSize="14"
                                                VerticalAlignment="Center" />
                                 </DockPanel>
+                                <Button DockPanel.Dock="Bottom" Content="Activity Log" HorizontalAlignment="Left"
+                                        Margin="0,10,0,0" Click="OnActivityLogClicked" ToolTip="Activity Log (Ctrl+Alt+L)"
+                                        AutomationProperties.AutomationId="ActivityLogButton" />
                                 <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="500">
                                     <StackPanel x:Name="RecentActivityList" />
                                 </ScrollViewer>

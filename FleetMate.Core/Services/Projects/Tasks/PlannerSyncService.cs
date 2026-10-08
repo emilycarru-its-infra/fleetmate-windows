@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using FleetMate.Core.Config;
 using FleetMate.Core.Models.Projects;
 using Serilog;
+using FleetMate.Core.Services.Activity;
 
 namespace FleetMate.Core.Services.Projects.Tasks;
 
@@ -28,7 +29,7 @@ public class PlannerSyncService : IDisposable
     {
         _config = config.Tasks?.PlannerSync ?? new PlannerSyncConfig();
         
-        _client = new HttpClient
+        _client = new HttpClient(new ActivityLogHandler("Planner"))
         {
             BaseAddress = new Uri("https://graph.microsoft.com/v1.0/"),
             Timeout = TimeSpan.FromSeconds(30)

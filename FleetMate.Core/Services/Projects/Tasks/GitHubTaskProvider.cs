@@ -7,6 +7,7 @@ using FleetMate.Core.Config;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
 using Serilog;
+using FleetMate.Core.Services.Activity;
 
 namespace FleetMate.Core.Services.Projects.Tasks;
 
@@ -37,7 +38,7 @@ public class GitHubTaskProvider : ITaskProvider, IDisposable
         _tokenSource = new GitHubTokenSource(_config) { DeviceFlowPrompt = deviceFlowPrompt };
         
         // Shares the process-wide rate-limit gates and ETag cache.
-        _client = new HttpClient(new GitHubHttpHandler())
+        _client = new HttpClient(new ActivityLogHandler("GitHub", new GitHubHttpHandler()))
         {
             BaseAddress = new Uri("https://api.github.com/"),
             Timeout = TimeSpan.FromSeconds(30)
