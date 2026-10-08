@@ -437,6 +437,12 @@
                                     <TextBlock Text="Set Parent" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>
+                            <Button x:Name="CreateParentButton" Click="OnCreateParentClicked" ToolTip="Create a new ticket and make it this ticket's parent">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:FontIcon Glyph="&#xE710;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
+                                    <TextBlock Text="Create Parent" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                             <Button Click="OnRefreshDetailClicked" ToolTip="Refresh this ticket">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:FontIcon Glyph="&#xE72C;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
@@ -477,6 +483,34 @@
                                             </DataTemplate>
                                         </ListBox.ItemTemplate>
                                     </ListBox>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+
+                        <!-- Create Parent popover: a title; the new ticket copies this one's queue fields. -->
+                        <Popup x:Name="CreateParentPopup" PlacementTarget="{Binding ElementName=CreateParentButton}"
+                               Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
+                               Opened="OnCreateParentPopupOpened">
+                            <Border Background="{DynamicResource CardBackgroundBrush}"
+                                    BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1"
+                                    CornerRadius="8" Padding="12" Width="320" Margin="0,4,8,8"
+                                    TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.25" />
+                                </Border.Effect>
+                                <StackPanel>
+                                    <TextBlock Text="Create Parent Ticket" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,4" />
+                                    <TextBlock Text="A new ticket with this one's type, account, requestor and owners, set as its parent."
+                                               FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    <TextBox x:Name="ParentTitleBox" ui:ControlHelper.PlaceholderText="Parent title"
+                                             PreviewKeyDown="OnParentTitleKeyDown" />
+                                    <DockPanel Margin="0,8,0,0">
+                                        <Button DockPanel.Dock="Right" Content="Create Parent" Click="OnCreateParentConfirmed"
+                                                Style="{StaticResource AccentButtonStyle}" />
+                                        <TextBlock x:Name="CreateParentHintText" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    </DockPanel>
                                 </StackPanel>
                             </Border>
                         </Popup>

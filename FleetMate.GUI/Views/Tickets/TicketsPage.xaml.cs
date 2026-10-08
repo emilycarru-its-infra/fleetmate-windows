@@ -1145,6 +1145,73 @@ private bool _isInitialLoadDone;
         ShowActionMessage(parentId == null ? "Parent cleared" : $"Parent set to #{parentId}");
     }
 
+    // Create Parent ------------------------------------------------------------
+
+    private void OnCreateParentClicked(object sender, RoutedEventArgs e)
+    {
+        if (_selectedTicket == null) return;
+        CreateParentPopup.IsOpen = true;
+    }
+
+    private void OnCreateParentPopupOpened(object? sender, EventArgs e)
+    {
+        ParentTitleBox.Text = _selectedTicket?.Title ?? "";
+        CreateParentHintText.Text = "";
+        ParentTitleBox.Focus();
+        ParentTitleBox.SelectAll();
+    }
+
+    private async void OnParentTitleKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            e.Handled = true;
+            await CreateParentAsync();
+        }
+        else if (e.Key == Key.Escape)
+        {
+            CreateParentPopup.IsOpen = false;
+        }
+    }
+
+    private async void OnCreateParentConfirmed(object sender, RoutedEventArgs e) => await CreateParentAsync();
+
+    /// <summary>
+    /// TeamDynamix has no route that creates a parent: create the ticket, then make it
+    /// this one's parent the same way Set Parent does.
+    /// </summary>
+    private async Task CreateParentAsync()
+    {
+        if (_selectedTicket == null || _tdxService == null || _app == null) return;
+        var title = ParentTitleBox.Text.Trim();
+        if (title.Length == 0)
+        {
+            CreateParentHintText.Text = "Enter a title.";
+            return;
+        }
+
+        var child = _selectedTicket;
+        CreateParentPopup.IsOpen = false;
+        ShowActionMessage("Creating the parent ticket…", isLoading: true);
+        var parent = await _tdxService.CreateTicketAsync(ParentTicketRequest.For(child, title));
+        if (parent == null)
+        {
+            ShowActionMessage("TeamDynamix did not create the parent. See the log for the response.", isError: true);
+            return;
+        }
+        _app.CachedTickets.Insert(0, parent);
+
+        var updated = await _tdxService.SetParentAsync(child.Id, parent.Id);
+        if (updated == null)
+        {
+            ApplyFiltersAndSort();
+            ShowActionMessage($"Created #{parent.Id}, but could not set it as the parent.", isError: true);
+            return;
+        }
+        ReplaceCachedTicket(updated);
+        ShowActionMessage($"Created parent #{parent.Id}");
+    }
+
     // New Ticket ---------------------------------------------------------------
 
     private async void OnNewTicketClicked(object sender, RoutedEventArgs e) => await ShowNewTicketDialogAsync();
