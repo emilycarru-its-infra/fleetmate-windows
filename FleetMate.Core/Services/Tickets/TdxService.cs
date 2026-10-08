@@ -672,6 +672,9 @@ public class TdxService : IDisposable
         Directory.CreateDirectory(folder);
         var path = Path.Combine(folder, TicketAttachments.SafeFileName(attachment));
         await File.WriteAllBytesAsync(path, bytes, ct);
+        // Marked as downloaded, so Windows treats it as it would a browser
+        // download: SmartScreen, Protected View and the open prompt all apply.
+        MarkOfTheWeb.Apply(path, _config.BaseUrl);
         return path;
     }
 

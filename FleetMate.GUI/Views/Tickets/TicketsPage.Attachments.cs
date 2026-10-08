@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using FleetMate.Core.Models.Tickets;
+using FleetMate.Core.Services;
 using Microsoft.Win32;
 using Serilog;
 
@@ -49,9 +50,17 @@ public partial class TicketsPage
         var path = await StageAsync(row);
         if (path == null) return;
 
+        // Opened only with the downloaded mark in place, so Windows applies the
+        // same checks it would to a browser download. Nothing is ever run.
+        if (!MarkOfTheWeb.IsMarked(path))
+        {
+            ShowActionMessage($"{row.Name} could not be marked as downloaded, so it was not opened. Save it instead.", isError: true);
+            return;
+        }
+
         try
         {
-            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true, Verb = "open" });
         }
         catch (Exception ex)
         {
@@ -78,6 +87,7 @@ public partial class TicketsPage
         try
         {
             File.Copy(path, dialog.FileName, overwrite: true);
+            MarkOfTheWeb.Apply(dialog.FileName, _app?.Config.Tdx?.BaseUrl);
             ShowActionMessage($"Saved {row.Name}", isError: false);
         }
         catch (Exception ex)
