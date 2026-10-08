@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -17,8 +16,9 @@ public sealed class HandbookReaderWindow : Window
     private readonly TextBlock _breadcrumb = new() { FontSize = 11, Margin = new Thickness(0, 2, 0, 0) };
     private readonly TextBlock _modified = new() { FontSize = 11, Margin = new Thickness(0, 0, 0, 8) };
     private readonly Button _openOnSite = new() { Content = "Open on Site", Padding = new Thickness(12, 4, 12, 4), Margin = new Thickness(0, 0, 8, 0) };
-    private readonly MarkdownViewer _viewer = new();
+    private readonly MarkdownViewer _viewer = new() { Untrusted = true };
     private Uri? _siteUrl;
+    private HandbookPage? _page;
 
     public HandbookReaderWindow()
     {
@@ -34,8 +34,11 @@ public sealed class HandbookReaderWindow : Window
         _modified.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
         _openOnSite.Click += (_, _) =>
         {
-            if (_siteUrl != null) Process.Start(new ProcessStartInfo(_siteUrl.ToString()) { UseShellExecute = true });
+            if (_siteUrl != null) MarkdownViewer.OpenInBrowser(_siteUrl);
         };
+        var siteRoot = HandbookSite.Root((Application.Current as App)?.Config.HandbookSiteUrl);
+        _viewer.ImageOrigin = siteRoot?.AbsoluteUri;
+        _viewer.LinkClicked += OnLinkClicked;
         var close = new Button { Content = "Close", Padding = new Thickness(12, 4, 12, 4), IsCancel = true };
         close.Click += (_, _) => Close();
 
@@ -66,9 +69,29 @@ public sealed class HandbookReaderWindow : Window
         Content = root;
     }
 
+    /// <summary>
+    /// A link in the page: another Handbook page opens here, an http(s) link
+    /// opens in the browser, and anything else is dropped (see <see cref="HandbookLinks"/>).
+    /// </summary>
+    private void OnLinkClicked(string href)
+    {
+        if (Application.Current is not App app) return;
+        var action = HandbookLinks.Classify(href, _page, app.Handbook?.Index, app.Config.HandbookSiteUrl);
+        switch (action.Kind)
+        {
+            case HandbookLinkKind.OpenPage when action.Page != null:
+                app.OpenHandbookPage(action.Page);
+                break;
+            case HandbookLinkKind.OpenInBrowser when action.Url != null:
+                MarkdownViewer.OpenInBrowser(action.Url);
+                break;
+        }
+    }
+
     /// <summary>Show <paramref name="page"/>, bringing the window forward.</summary>
     public void Show(HandbookPage page, Uri? siteUrl)
     {
+        _page = page;
         _siteUrl = siteUrl;
         Title = $"{page.Title} · Handbook";
         _title.Text = page.Title;

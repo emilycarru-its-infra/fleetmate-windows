@@ -100,7 +100,7 @@ public sealed partial class HandbookIndex
             .Select(p => new HandbookPage(
                 p.Path!, p.Title!,
                 (p.Section ?? "").Split('/', StringSplitOptions.RemoveEmptyEntries),
-                p.Url ?? "/",
+                SafeSitePath(p.Url, p.Path!),
                 p.Headings ?? new List<string>(),
                 // Searchable text until the page is opened.
                 string.Join("\n", new[] { p.Summary ?? "" }.Concat(p.Keywords ?? new List<string>())),
@@ -109,6 +109,23 @@ public sealed partial class HandbookIndex
             { IsSummary = true })
             .ToList();
         return new HandbookIndex(pages);
+    }
+
+    /// <summary>
+    /// The catalog's site path when it is a plain path on the site; otherwise
+    /// the path the page's file implies. A value like "javascript:…" or
+    /// "//elsewhere/" never becomes a page's address.
+    /// </summary>
+    internal static string SafeSitePath(string? url, string relativePath)
+    {
+        if (url is { Length: > 0 } && url.StartsWith('/') && !url.StartsWith("//") && !url.Contains(':') && !url.Contains('\\'))
+            return url;
+        var parts = relativePath.Split('/', StringSplitOptions.RemoveEmptyEntries).ToList();
+        if (parts.Count == 0) return "/";
+        var file = parts[^1];
+        parts.RemoveAt(parts.Count - 1);
+        if (file is not ("_index.md" or "index.md")) parts.Add(file.EndsWith(".md") ? file[..^3] : file);
+        return parts.Count == 0 ? "/" : "/" + string.Join("/", parts) + "/";
     }
 
     /// <summary>The full page, parsed from its Markdown file; null when it is not on disk.</summary>
@@ -121,6 +138,13 @@ public sealed partial class HandbookIndex
             return null;
         try { return File.Exists(file) ? Page(relativePath, File.ReadAllText(file)) : null; }
         catch (IOException) { return null; }
+    }
+
+    /// <summary>The page published at <paramref name="sitePath"/>, trailing slash or not.</summary>
+    public HandbookPage? BySitePath(string sitePath)
+    {
+        var wanted = "/" + Uri.UnescapeDataString(sitePath).Trim('/');
+        return Pages.FirstOrDefault(p => ("/" + p.SitePath.Trim('/')).Equals(wanted, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -296,11 +320,79 @@ public static class HandbookAssetFacets
 /// <summary>Where a page is published, when the site address is configured.</summary>
 public static class HandbookSite
 {
+    /// <summary>
+    /// The page's address on the site. Null unless the result is an http(s)
+    /// address on the configured site's own host: a catalog or front-matter
+    /// value such as "javascript:…", "file:…" or "//elsewhere" never becomes a
+    /// link FleetMate opens.
+    /// </summary>
     public static Uri? PageUrl(string? siteUrl, HandbookPage page)
     {
-        if (string.IsNullOrWhiteSpace(siteUrl) || !Uri.TryCreate(siteUrl.TrimEnd('/') + "/", UriKind.Absolute, out var root))
-            return null;
-        if (root.Scheme != Uri.UriSchemeHttps && root.Scheme != Uri.UriSchemeHttp) return null;
-        return new Uri(root, page.SitePath.TrimStart('/'));
+        if (Root(siteUrl) is not { } root) return null;
+        var path = page.SitePath.TrimStart('/');
+        if (path.StartsWith('/') || path.Contains(':') || path.Contains('\\')) return null;
+        return Uri.TryCreate(root, path, out var url) && HandbookLinks.IsWeb(url)
+               && url.Host.Equals(root.Host, StringComparison.OrdinalIgnoreCase)
+            ? url
+            : null;
     }
+
+    /// <summary>The configured site as an absolute http(s) root ending in "/", or null.</summary>
+    public static Uri? Root(string? siteUrl) =>
+        !string.IsNullOrWhiteSpace(siteUrl) && Uri.TryCreate(siteUrl.Trim().TrimEnd('/') + "/", UriKind.Absolute, out var root)
+        && HandbookLinks.IsWeb(root)
+            ? root
+            : null;
+}
+
+/// <summary>What a link inside Handbook or skill text does when clicked.</summary>
+public enum HandbookLinkKind { Ignore, OpenPage, OpenInBrowser }
+
+public sealed record HandbookLinkAction(HandbookLinkKind Kind, HandbookPage? Page = null, Uri? Url = null);
+
+/// <summary>
+/// The allow-list for links in Handbook and skill text. Content comes from a
+/// repository many people edit, so a link is never handed to the shell as
+/// written: only http and https open, a link to another Handbook page opens
+/// in FleetMate's reader, and everything else (file:, UNC paths, ms-*:,
+/// javascript:, data:, bare paths) is dropped.
+/// </summary>
+public static class HandbookLinks
+{
+    /// <summary>Stands in for the site when no address is configured, so relative links still resolve to pages.</summary>
+    private static readonly Uri PlaceholderSite = new("https://handbook.invalid/");
+
+    public static bool IsWeb(Uri url) =>
+        url.IsAbsoluteUri && (url.Scheme == Uri.UriSchemeHttps || url.Scheme == Uri.UriSchemeHttp)
+        && !url.IsUnc && !string.IsNullOrEmpty(url.Host);
+
+    /// <summary>
+    /// What clicking <paramref name="href"/> on <paramref name="from"/> does.
+    /// Relative links resolve against the page's place on the site.
+    /// </summary>
+    public static HandbookLinkAction Classify(string? href, HandbookPage? from, HandbookIndex? index, string? siteUrl)
+    {
+        var text = href?.Trim();
+        if (string.IsNullOrEmpty(text) || text.StartsWith('#')) return new(HandbookLinkKind.Ignore);
+        // A Windows path or UNC share is never a link, whatever it resolves to.
+        if (text.StartsWith(@"\\") || text.StartsWith("//") || (text.Length > 1 && text[1] == ':' && char.IsLetter(text[0])))
+            return new(HandbookLinkKind.Ignore);
+
+        var site = HandbookSite.Root(siteUrl);
+        var root = site ?? PlaceholderSite;
+        var pageBase = from != null && Uri.TryCreate(root, from.SitePath.TrimStart('/'), out var b) && IsWeb(b) ? b : root;
+        if (!Uri.TryCreate(pageBase, text, out var url) || !IsWeb(url)) return new(HandbookLinkKind.Ignore);
+
+        if (url.Host.Equals(root.Host, StringComparison.OrdinalIgnoreCase))
+        {
+            if (index?.BySitePath(url.AbsolutePath) is { } page) return new(HandbookLinkKind.OpenPage, page);
+            // A site page FleetMate's copy doesn't have: the site itself, when there is one.
+            return site != null ? new(HandbookLinkKind.OpenInBrowser, Url: url) : new(HandbookLinkKind.Ignore);
+        }
+        return new(HandbookLinkKind.OpenInBrowser, Url: url);
+    }
+
+    /// <summary>For text that is not a Handbook page (a skill): only http(s) opens, in the browser.</summary>
+    public static Uri? External(string? href) =>
+        Uri.TryCreate(href?.Trim(), UriKind.Absolute, out var url) && IsWeb(url) ? url : null;
 }
