@@ -3,12 +3,17 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.modernwpf.com/2019"
+        xmlns:shared="clr-namespace:FleetMate.GUI.Views.Shared"
         ui:WindowHelper.UseModernWindowStyle="True"
-        Title="Create GitHub Issue"
-        Height="520" Width="520"
+        Title="New Issue"
+        Height="680" Width="700"
         WindowStartupLocation="CenterOwner"
-        ResizeMode="NoResize">
+        ResizeMode="CanResize"
+        Loaded="OnLoaded">
 
+    <!-- macOS CreateIssueView: repository, title, Markdown body with a preview,
+         then assignees, labels, milestone and project status picked from the
+         repository's own lists. -->
     <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -16,43 +21,97 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <TextBlock Grid.Row="0" Text="New GitHub Issue" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,16" />
+        <TextBlock Grid.Row="0" Text="New Issue" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,16" />
 
-        <!-- Form -->
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <StackPanel>
-                <!-- Repository -->
-                <TextBlock Text="Repository (owner/repo)" FontWeight="SemiBold" Margin="0,0,0,4" />
-                <TextBox x:Name="RepoBox" Margin="0,0,0,12" />
+                <TextBlock x:Name="LoadingText" Text="Loading repository metadata…" Margin="0,0,0,12" Visibility="Collapsed"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
 
-                <!-- Title -->
+                <StackPanel x:Name="RepoPanel" Visibility="Collapsed">
+                    <TextBlock Text="Repository" FontWeight="SemiBold" Margin="0,0,0,4" />
+                    <ComboBox x:Name="RepoCombo" HorizontalAlignment="Stretch" Margin="0,0,0,12"
+                              ui:ControlHelper.PlaceholderText="Select a repository…" SelectionChanged="OnRepoChanged" />
+                </StackPanel>
+
                 <TextBlock Text="Title" FontWeight="SemiBold" Margin="0,0,0,4" />
-                <TextBox x:Name="TitleBox" Margin="0,0,0,12" />
+                <TextBox x:Name="TitleBox" Margin="0,0,0,12" ui:ControlHelper.PlaceholderText="Issue title"
+                         TextChanged="OnTitleChanged" />
 
-                <!-- Body (Markdown) -->
-                <TextBlock Text="Body (Markdown)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <DockPanel Margin="0,0,0,4">
+                    <TextBlock Text="Description" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <RadioButton x:Name="WriteRadio" Content="Write" GroupName="BodyMode" IsChecked="True"
+                                     Checked="OnBodyModeChanged" Style="{StaticResource NavigationTabStyle}" />
+                        <RadioButton x:Name="PreviewRadio" Content="Preview" GroupName="BodyMode"
+                                     Checked="OnBodyModeChanged" Style="{StaticResource NavigationTabStyle}" />
+                    </StackPanel>
+                </DockPanel>
                 <TextBox x:Name="BodyBox" AcceptsReturn="True" TextWrapping="Wrap"
-                         MinHeight="120" MaxHeight="200" VerticalScrollBarVisibility="Auto"
-                         FontFamily="Cascadia Code, Consolas" FontSize="12" Margin="0,0,0,12" />
+                         MinHeight="150" MaxHeight="250" VerticalScrollBarVisibility="Auto"
+                         FontFamily="Cascadia Code, Consolas" FontSize="12" />
+                <Border x:Name="PreviewBorder" Height="220" Visibility="Collapsed" CornerRadius="6"
+                        BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                    <shared:MarkdownViewer x:Name="PreviewViewer" />
+                </Border>
+                <TextBlock Text="Supports Markdown: **bold**, *italic*, `code`, [links](url), lists, headers"
+                           FontSize="11" Margin="0,2,0,12"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
 
-                <!-- Labels -->
-                <TextBlock Text="Labels (comma-separated)" FontWeight="SemiBold" Margin="0,0,0,4" />
-                <TextBox x:Name="LabelsBox" Margin="0,0,0,12" />
+                <Separator Margin="0,0,0,12" />
 
-                <!-- Assignees -->
-                <TextBlock Text="Assignees (comma-separated usernames)" FontWeight="SemiBold" Margin="0,0,0,4" />
-                <TextBox x:Name="AssigneesBox" Margin="0,0,0,12" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,16">
+                        <TextBlock Text="Assignees" FontWeight="SemiBold" Margin="0,0,0,6"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBlock x:Name="NoAssigneesText" Text="No assignable users" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <ScrollViewer MaxHeight="160" VerticalScrollBarVisibility="Auto">
+                            <StackPanel x:Name="AssigneesPanel" />
+                        </ScrollViewer>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="0" Grid.Column="2" Margin="0,0,0,16">
+                        <TextBlock Text="Labels" FontWeight="SemiBold" Margin="0,0,0,6"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <TextBlock x:Name="NoLabelsText" Text="No labels" FontSize="11"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <WrapPanel x:Name="LabelsPanel" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,0,16">
+                        <TextBlock Text="Milestone" FontWeight="SemiBold" Margin="0,0,0,6"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <ComboBox x:Name="MilestoneCombo" HorizontalAlignment="Stretch" />
+                    </StackPanel>
+
+                    <StackPanel x:Name="StatusPanel" Grid.Row="1" Grid.Column="2" Margin="0,0,0,16" Visibility="Collapsed">
+                        <TextBlock Text="Status" FontWeight="SemiBold" Margin="0,0,0,6"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <ComboBox x:Name="StatusCombo" HorizontalAlignment="Stretch" />
+                    </StackPanel>
+                </Grid>
+
+                <CheckBox x:Name="AddToProjectCheck" Content="Add to current project" IsChecked="True" Visibility="Collapsed" />
             </StackPanel>
         </ScrollViewer>
 
-        <!-- Actions -->
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-            <TextBlock x:Name="StatusText" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                       VerticalAlignment="Center" Margin="0,0,16,0" />
-            <Button Content="Cancel" Click="OnCancel" Margin="0,0,8,0" MinWidth="80" />
-            <Button x:Name="CreateButton" Content="Create Issue" Click="OnCreate"
-                    Style="{StaticResource AccentButtonStyle}" MinWidth="100" />
-        </StackPanel>
+        <DockPanel Grid.Row="2" Margin="0,16,0,0" LastChildFill="False">
+            <TextBlock DockPanel.Dock="Left" x:Name="StatusText" Foreground="Orange" TextWrapping="Wrap" MaxWidth="380"
+                       VerticalAlignment="Center" />
+            <Button DockPanel.Dock="Right" x:Name="CreateButton" Content="Create Issue" Click="OnCreate"
+                    Style="{StaticResource AccentButtonStyle}" MinWidth="100" IsEnabled="False" IsDefault="True" />
+            <Button DockPanel.Dock="Right" Content="Cancel" Click="OnCancel" Margin="0,0,8,0" MinWidth="80" IsCancel="True" />
+        </DockPanel>
     </Grid>
 </Window>

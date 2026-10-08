@@ -46,6 +46,7 @@
             <MenuItem Header="Create Branch…" Tag="azdo:branch" SubmenuOpened="OnTaskSubmenuOpened">
                 <MenuItem Header="Loading…" IsEnabled="False" />
             </MenuItem>
+            <MenuItem Header="Create New Alike…" Tag="azdo" Click="OnTaskCreateAlike" />
         </ContextMenu>
     </Page.Resources>
 
@@ -82,6 +83,22 @@
                     <ComboBoxItem Content="GitHub" Tag="github" />
                     <ComboBoxItem Content="Gitea" Tag="gitea" />
                 </ComboBox>
+
+                <!-- macOS Projects toolbar "New" menu: the item types this setup can create. -->
+                <Button x:Name="NewButton" Click="OnNewButtonClick" ToolTip="New item">
+                    <ui:SimpleStackPanel Orientation="Horizontal" Spacing="6">
+                        <ui:SymbolIcon Symbol="Add" />
+                        <TextBlock Text="New" VerticalAlignment="Center" />
+                    </ui:SimpleStackPanel>
+                    <Button.ContextMenu>
+                        <ContextMenu x:Name="NewMenu">
+                            <MenuItem x:Name="NewWorkItemMenu" Header="DevOps Work Item…" Click="OnNewWorkItem" />
+                            <MenuItem x:Name="NewIssueMenu" Header="GitHub Issue…" Click="OnNewIssue" />
+                            <Separator />
+                            <MenuItem x:Name="NewProjectMenu" Header="GitHub Project…" Click="OnNewProject" />
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                </Button>
 
                 <Button x:Name="RefreshButton" Click="RefreshButton_Click" ToolTip="Refresh">
                     <ui:SymbolIcon Symbol="Refresh" />
