@@ -111,14 +111,23 @@ public partial class MarkdownViewer : UserControl
 
     private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
-        if (_expectingContent && !e.IsUserInitiated)
+        // Content this viewer set itself arrives as a data: page. A one-shot
+        // flag used to stand in for that check, and a second render before the
+        // first had started cancelled the second, leaving the viewer blank.
+        if (!e.IsUserInitiated && IsOwnContent(e.Uri))
         {
             _expectingContent = false;
             return;
         }
         e.Cancel = true;
-        FollowLink(e.Uri);
+        if (e.IsUserInitiated) FollowLink(e.Uri);
+        else Log.Debug("[markdown] Blocked a navigation the viewer did not start");
     }
+
+    /// <summary>A page set with NavigateToString: data: or the blank page.</summary>
+    internal static bool IsOwnContent(string? uri) =>
+        uri != null && (uri.StartsWith("data:text/html", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(uri, "about:blank", StringComparison.OrdinalIgnoreCase));
 
     private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
     {

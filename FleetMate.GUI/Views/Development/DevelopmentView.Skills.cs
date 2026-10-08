@@ -3,6 +3,8 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using FleetMate.Core.Knowledge;
 
+using FleetMate.GUI.Views.Shared;
+
 namespace FleetMate.GUI.Views.Development;
 
 /// <summary>
@@ -65,6 +67,6 @@ public partial class DevelopmentView
         SkillFiles.Visibility = entry.Files.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         SkillInvocation.Text = $"In an agent session: /{entry.Name}";
         SkillInvocation.Visibility = entry.Kind == SkillKind.Skill ? Visibility.Visible : Visibility.Collapsed;
-        SkillBody.MarkdownText = entry.Body;
+        SkillBody.Content = MarkdownDocument.Viewer(entry.Body, fontSize: 13);
     }
 }

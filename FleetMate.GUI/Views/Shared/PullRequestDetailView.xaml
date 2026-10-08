@@ -153,7 +153,8 @@
                         <TextBlock Text="Description" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,4"
                                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                         <Border Style="{StaticResource CardStyle}">
-                            <TextBlock x:Name="DescriptionText" TextWrapping="Wrap" FontSize="12" />
+                            <!-- Written by whoever opened the pull request: drawn natively, never in a browser. -->
+                            <ContentControl x:Name="DescriptionHost" />
                         </Border>
                     </StackPanel>
 
