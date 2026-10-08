@@ -634,6 +634,51 @@ public class TdxService : IDisposable
     }
 
     /// <summary>
+    /// The bytes of one attachment: <c>GET /api/attachments/{id}/content</c>.
+    /// Null when TDX refuses it or the session is not signed in.
+    /// </summary>
+    public async Task<byte[]?> DownloadAttachmentAsync(Guid attachmentId, CancellationToken ct = default)
+    {
+        if (!await SetAuthorizationAsync()) return null;
+
+        try
+        {
+            var response = await _client.GetAsync(_config.GetApiUrl($"attachments/{attachmentId}/content"), ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Warning("Failed to download attachment {Id}: {Status}", attachmentId, response.StatusCode);
+                return null;
+            }
+            return await response.Content.ReadAsByteArrayAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.Error(ex, "Failed to download attachment {Id}", attachmentId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Download an attachment into its own temporary folder, keeping the file
+    /// name so the right app opens it. Each attachment gets a folder of its own
+    /// so two files with the same name never overwrite each other.
+    /// </summary>
+    public async Task<string?> StageAttachmentAsync(TdxAttachment attachment, CancellationToken ct = default)
+    {
+        var bytes = await DownloadAttachmentAsync(attachment.Id, ct);
+        if (bytes == null) return null;
+
+        var folder = Path.Combine(Path.GetTempPath(), "FleetMate-Attachments", attachment.Id.ToString("N"));
+        Directory.CreateDirectory(folder);
+        var path = Path.Combine(folder, TicketAttachments.SafeFileName(attachment));
+        await File.WriteAllBytesAsync(path, bytes, ct);
+        // Marked as downloaded, so Windows treats it as it would a browser
+        // download: SmartScreen, Protected View and the open prompt all apply.
+        MarkOfTheWeb.Apply(path, _config.BaseUrl);
+        return path;
+    }
+
+    /// <summary>
     /// Get feed entries (comments) for a ticket.
     /// </summary>
     /// <param name="includeReplies">
