@@ -92,9 +92,25 @@ public partial class SettingsPage
         _ = RefreshAuthCardsAsync();
     }
 
+    /// <summary>
+    /// Ctrl+Plus and Ctrl+Minus change the same setting from anywhere, so an
+    /// open Settings page follows them instead of showing the old size.
+    /// </summary>
+    private void OnPreferencesChanged() => Dispatcher.InvokeAsync(() =>
+    {
+        var scale = UserPreferences.TextScale;
+        if (Math.Abs(TextSizeSlider.Value - scale) < 0.001) return;
+        _syncingTextSize = true;
+        try { TextSizeSlider.Value = scale; }
+        finally { _syncingTextSize = false; }
+        ShowTextSize(scale);
+    });
+
+    private bool _syncingTextSize;
+
     private void OnTextSizeChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        if (_isLoadingSettings || !IsLoaded) return;
+        if (_isLoadingSettings || _syncingTextSize || !IsLoaded) return;
         ShowTextSize(e.NewValue);
         UserPreferences.SetTextScale(e.NewValue);
     }
