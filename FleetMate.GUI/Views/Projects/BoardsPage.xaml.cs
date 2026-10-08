@@ -783,6 +783,7 @@ public partial class BoardsPage : Page
                 return;
             }
 
+            _gitHubProjectId = projectId;
             _statusField = await _projectsService.GetStatusFieldAsync(projectId);
             _projectItems = await _projectsService.ListProjectItemsAsync(projectId, 100);
 
