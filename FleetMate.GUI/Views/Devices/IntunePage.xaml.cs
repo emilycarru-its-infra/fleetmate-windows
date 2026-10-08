@@ -18,12 +18,36 @@ public partial class IntunePage : Page
 {
     private readonly App? _app;
     private readonly GraphService? _graphService;
-    private ObservableCollection<IntuneDevice> _filteredDevices = new();
+    /// <summary>One list for every device: Intune records joined to their Autopilot identities.</summary>
+    private readonly ObservableCollection<DeviceListRow> _rows = new();
+    private List<DeviceListRow> _allRows = new();
     private List<MobileApp> _mobileApps = new();
-    private bool _sortAscending = true;
-    private string _sortField = "Serial";
     private bool _isInitialLoadDone;
-    
+    /// <summary>The load in flight, so a second visit joins it instead of fetching again.</summary>
+    private Task? _loading;
+    /// <summary>
+    /// Set once Intune's devices are in. Autopilot is joined only after that:
+    /// joined to an empty list, every identity would read as not enrolled.
+    /// </summary>
+    private bool _intuneReady;
+
+    /// <summary>Autopilot identities, kept with the page like the Intune cache is kept on the app.</summary>
+    private static List<AutopilotDevice> _autopilot = new();
+
+    /// <summary>The values ticked in each filter category; empty means no filter on it.</summary>
+    private readonly Dictionary<DeviceFacet, HashSet<string>> _facetSelection =
+        Enum.GetValues<DeviceFacet>().ToDictionary(f => f, _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+    /// <summary>The looked-up serials narrowing the list; null shows every device.</summary>
+    private List<string>? _lookupSerials;
+
+    private static readonly string[] OptionalColumns =
+        { "Model", "Manufacturer", "Ownership", "Migration", "Purchase Source", "Added", "Activation Lock" };
+
+    private static string ColumnsStatePath => System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "FleetMate", "devices-columns.json");
+
     // Use cached devices from App
     private List<IntuneDevice> _allDevices => _app?.CachedDevices ?? new();
 
@@ -38,16 +62,23 @@ public partial class IntunePage : Page
             _graphService = app.GraphService;
         }
 
-        DevicesDataGrid.ItemsSource = _filteredDevices;
+        DevicesDataGrid.ItemsSource = _rows;
+        InitializeLifecycleControls();
+        DevicesDataGrid.PreviewMouseRightButtonUp += OnGridRightClick;
+        RestoreColumns();
 
         DeviceDetail.CloseRequested += (_, _) => HideDeviceDetail();
+        DevicesDataGrid.ColumnReordered += (_, _) => SaveColumns();
+        // Inventory arriving later lets the "Missing from Inventory" check speak.
+        if (_app != null)
+            _app.CacheChanged += key => { if (key == "Assets" && _intuneReady) RebuildRows(); };
 
         Loaded += async (s, e) =>
         {
             // Retry on every visit while the list is empty: the page is cached
             // across tab switches, so a failed first load (elevation hiccup,
             // service starting up) must not leave it dead forever.
-            if (!_isInitialLoadDone || _filteredDevices.Count == 0)
+            if (!_isInitialLoadDone || _rows.Count == 0)
             {
                 _isInitialLoadDone = true;
                 await LoadDevicesAsync();
@@ -56,17 +87,36 @@ public partial class IntunePage : Page
             if (_app?.PendingNavigateDeviceId is { } deviceId)
             {
                 _app.PendingNavigateDeviceId = null;
-                var device = _filteredDevices.FirstOrDefault(d => d.Id == deviceId);
-                if (device != null)
+                var row = _rows.FirstOrDefault(r => r.Id == deviceId)
+                          ?? _allRows.FirstOrDefault(r => r.Id == deviceId);
+                if (row != null)
                 {
-                    DevicesDataGrid.SelectedItem = device;
-                    DevicesDataGrid.ScrollIntoView(device);
+                    if (!_rows.Contains(row))
+                    {
+                        // A filter or search hid it: clear them so the link lands.
+                        ClearFacetSelection();
+                        SearchBox.Text = "";
+                        ApplyFilters();
+                    }
+                    DevicesDataGrid.SelectedItem = row;
+                    DevicesDataGrid.ScrollIntoView(row);
                 }
             }
         };
     }
 
-    private async Task LoadDevicesAsync()
+    /// <summary>
+    /// Show Intune's devices as soon as they arrive, then merge Autopilot in
+    /// when it lands: its identity listing is slow, and the list never waits
+    /// on it.
+    /// </summary>
+    private Task LoadDevicesAsync()
+    {
+        if (_loading is { IsCompleted: false }) return _loading;
+        return _loading = LoadDevicesCoreAsync();
+    }
+
+    private async Task LoadDevicesCoreAsync()
     {
         if (_graphService == null || _app == null)
         {
@@ -76,143 +126,375 @@ public partial class IntunePage : Page
         }
 
         DevicesDataGrid.Visibility = Visibility.Visible;
-        
-        // Use cache if valid
-        if (_app.IsDevicesCacheValid && _app.CachedDevices.Count > 0)
-        {
-            PopulatePlatformFilter();
-            ApplyFiltersAndSort();
-            return;
-        }
-
-        LoadingPanel.Visibility = Visibility.Visible;
         NotConfiguredText.Visibility = Visibility.Collapsed;
 
-        try
-        {
-            var devices = await _graphService.GetManagedDevicesAsync(limit: 10000);
-            _app.UpdateDevicesCache(devices);
-            PopulatePlatformFilter();
-            ApplyFiltersAndSort();
-        }
-        catch (Exception ex)
-        {
-            ShowActionMessage($"Error: {ex.Message}", isError: true);
-        }
-        finally
-        {
-            LoadingPanel.Visibility = Visibility.Collapsed;
-        }
-    }
+        var autopilotTask = _autopilot.Count == 0 ? LoadAutopilotAsync() : Task.CompletedTask;
+        var appleTask = _appleOrgs.Count == 0 ? LoadAppleOrgsAsync() : Task.CompletedTask;
 
-    private void PopulatePlatformFilter()
-    {
-        var platforms = _allDevices
-            .Select(d => d.OperatingSystem)
-            .Where(os => !string.IsNullOrEmpty(os))
-            .Distinct()
-            .OrderBy(os => os)
-            .ToList();
-
-        PlatformFilterComboBox.Items.Clear();
-        PlatformFilterComboBox.Items.Add(new ComboBoxItem { Content = "All", IsSelected = true });
-        foreach (var platform in platforms)
+        _intuneReady = false;
+        if (!(_app.IsDevicesCacheValid && _app.CachedDevices.Count > 0))
         {
-            PlatformFilterComboBox.Items.Add(new ComboBoxItem { Content = platform });
-        }
-        PlatformFilterComboBox.SelectedIndex = 0;
-    }
-
-    private void ApplyFiltersAndSort()
-    {
-        // Guard: don't run during XAML initialization before controls exist
-        if (!IsLoaded || _allDevices == null) return;
-
-        var filtered = _allDevices.AsEnumerable();
-
-        // Filter by non-compliant
-        if (NonCompliantOnlyCheckBox.IsChecked == true)
-        {
-            filtered = filtered.Where(d => d.ComplianceState?.Equals("noncompliant", StringComparison.OrdinalIgnoreCase) == true);
-        }
-
-        // Filter by platform
-        if (PlatformFilterComboBox.SelectedItem is ComboBoxItem platformItem)
-        {
-            var platform = platformItem.Content?.ToString();
-            if (!string.IsNullOrEmpty(platform) && platform != "All")
+            LoadingPanel.Visibility = Visibility.Visible;
+            try
             {
-                filtered = filtered.Where(d =>
-                    d.OperatingSystem?.Contains(platform, StringComparison.OrdinalIgnoreCase) == true);
+                _app.UpdateDevicesCache(await _graphService.GetManagedDevicesAsync(limit: 10000));
+            }
+            catch (Exception ex)
+            {
+                ShowActionMessage($"Error: {ex.Message}", isError: true);
+            }
+            finally
+            {
+                LoadingPanel.Visibility = Visibility.Collapsed;
             }
         }
 
-        // Filter by search text
-        var searchText = SearchBox.Text?.Trim();
-        if (!string.IsNullOrEmpty(searchText))
+        _intuneReady = true;
+        RebuildRows();
+        await Task.WhenAll(autopilotTask, appleTask);
+    }
+
+    private async Task LoadAutopilotAsync()
+    {
+        if (_graphService == null) return;
+        AutopilotLoadingText.Visibility = Visibility.Visible;
+        try
         {
-            filtered = filtered.Where(d =>
-                (d.DeviceName?.Contains(searchText, StringComparison.OrdinalIgnoreCase) == true) ||
-                (d.SerialNumber?.Contains(searchText, StringComparison.OrdinalIgnoreCase) == true) ||
-                (d.UserPrincipalName?.Contains(searchText, StringComparison.OrdinalIgnoreCase) == true));
+            _autopilot = await _graphService.GetAutopilotDevicesAsync(limit: 20000);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Devices: failed to read Autopilot identities");
+        }
+        finally
+        {
+            AutopilotLoadingText.Visibility = Visibility.Collapsed;
+        }
+        if (_intuneReady) RebuildRows();
+    }
+
+    /// <summary>Re-join Intune and Autopilot, keeping the selection and filters.</summary>
+    private void RebuildRows()
+    {
+        var selectedIds = new HashSet<string>(SelectedRows().Select(r => r.Id));
+        _allRows = AppleOrgJoin.Enrich(DeviceListJoin.Merge(_allDevices, _autopilot), _appleOrgs);
+        DeviceDiscrepancies.Apply(_allRows, new DeviceDiscrepancies.Sources(
+            AutopilotRead: _autopilot.Count > 0,
+            AppleOrgsRead: _appleOrgs.Count > 0,
+            InventorySerials: InventorySerials()));
+        RebuildFilters();
+        ApplyFilters();
+        foreach (var row in _rows.Where(r => selectedIds.Contains(r.Id) && !DevicesDataGrid.SelectedItems.Contains(r)))
+            DevicesDataGrid.SelectedItems.Add(row);
+    }
+
+    // ── Filters ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The Filters panel: every category, Apple organization's first (macOS
+    /// parity), each value with how many devices carry it.
+    /// </summary>
+    private void RebuildFilters()
+    {
+        FiltersHost.Children.Clear();
+        foreach (var facet in Enum.GetValues<DeviceFacet>())
+        {
+            // The Autopilot categories appear once its identities are read.
+            if (_autopilot.Count == 0 && DeviceFacets.AutopilotOnly.Contains(facet)) continue;
+            FiltersHost.Children.Add(new TextBlock
+            {
+                Text = facet.Title(),
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 12,
+                Margin = new Thickness(0, 8, 0, 2)
+            });
+            foreach (var (value, count) in DeviceFacets.Counts(_allRows, facet))
+            {
+                var box = new CheckBox
+                {
+                    Content = $"{value} ({count})",
+                    Tag = (facet, value),
+                    FontSize = 12,
+                    MinHeight = 24,
+                    IsChecked = _facetSelection[facet].Contains(value)
+                };
+                box.Checked += OnFacetToggled;
+                box.Unchecked += OnFacetToggled;
+                FiltersHost.Children.Add(box);
+            }
+        }
+        UpdateFiltersButton();
+    }
+
+    private void OnFacetToggled(object sender, RoutedEventArgs e)
+    {
+        if (sender is not CheckBox { Tag: (DeviceFacet facet, string value) } box) return;
+        if (box.IsChecked == true) _facetSelection[facet].Add(value);
+        else _facetSelection[facet].Remove(value);
+        UpdateFiltersButton();
+        ApplyFilters();
+    }
+
+    private void OnFiltersClicked(object sender, RoutedEventArgs e) => FiltersPopup.IsOpen = !FiltersPopup.IsOpen;
+
+    private void OnClearFiltersClicked(object sender, RoutedEventArgs e)
+    {
+        ClearFacetSelection();
+        ApplyFilters();
+    }
+
+    /// <summary>
+    /// Show only devices whose <paramref name="facet"/> is one of
+    /// <paramref name="values"/> (none clears that category). This is the
+    /// entry point for widgets and links that filter the list from outside.
+    /// </summary>
+    public void SetFacetFilter(DeviceFacet facet, params string[] values)
+    {
+        _facetSelection[facet].Clear();
+        _facetSelection[facet].UnionWith(values);
+        foreach (var box in FiltersHost.Children.OfType<CheckBox>())
+            if (box.Tag is (DeviceFacet f, string v) && f == facet)
+                box.IsChecked = _facetSelection[facet].Contains(v);
+        UpdateFiltersButton();
+        ApplyFilters();
+    }
+
+    private void ClearFacetSelection()
+    {
+        foreach (var set in _facetSelection.Values) set.Clear();
+        foreach (var box in FiltersHost.Children.OfType<CheckBox>()) box.IsChecked = false;
+        UpdateFiltersButton();
+    }
+
+    private void UpdateFiltersButton()
+    {
+        var active = _facetSelection.Values.Sum(v => v.Count);
+        FiltersButtonText.Text = active == 0 ? "Filters" : $"Filters ({active})";
+    }
+
+    private void ApplyFilters()
+    {
+        // Guard: don't run during XAML initialization before controls exist
+        if (!IsLoaded && _allRows.Count == 0) return;
+
+        IReadOnlyList<DeviceListRow> source = _allRows;
+        SerialLookup.Result? lookup = null;
+        if (_lookupSerials != null)
+        {
+            lookup = SerialLookup.Apply(_allRows, _lookupSerials);
+            source = lookup.Rows;
         }
 
-        // Sort
-        filtered = _sortField switch
-        {
-            "Name" => _sortAscending ? filtered.OrderBy(d => d.DeviceName) : filtered.OrderByDescending(d => d.DeviceName),
-            "Compliance" => _sortAscending ? filtered.OrderBy(d => d.ComplianceState) : filtered.OrderByDescending(d => d.ComplianceState),
-            "OS" => _sortAscending ? filtered.OrderBy(d => d.OperatingSystem) : filtered.OrderByDescending(d => d.OperatingSystem),
-            "User" => _sortAscending ? filtered.OrderBy(d => d.UserDisplayName) : filtered.OrderByDescending(d => d.UserDisplayName),
-            "Last Sync" => _sortAscending ? filtered.OrderBy(d => d.LastSyncDateTime) : filtered.OrderByDescending(d => d.LastSyncDateTime),
-            _ => _sortAscending ? filtered.OrderBy(d => d.SerialNumber) : filtered.OrderByDescending(d => d.SerialNumber)
-        };
+        var filtered = DeviceFacets.Apply(source, _facetSelection);
+        var searchText = SearchBox.Text?.Trim();
+        if (!string.IsNullOrEmpty(searchText))
+            filtered = filtered.Where(r => r.Matches(searchText));
 
-        _filteredDevices.Clear();
-        foreach (var device in filtered)
+        var visible = filtered.ToList();
+        var keep = new HashSet<string>(DevicesDataGrid.SelectedItems.Cast<DeviceListRow>()
+            .Where(visible.Contains).Select(r => r.Id));
+
+        // Hiding a row also deselects it.
+        _rows.Clear();
+        foreach (var row in visible) _rows.Add(row);
+        foreach (var row in _rows.Where(r => keep.Contains(r.Id)))
+            DevicesDataGrid.SelectedItems.Add(row);
+
+        DeviceCountText.Text = lookup != null
+            ? $"{lookup.Matched} of {_lookupSerials!.Count} looked-up serials found"
+              + (lookup.Unknown.Count > 0 ? $", {lookup.Unknown.Count} unknown" : "")
+            : visible.Count == _allRows.Count
+                ? $"{_allRows.Count} devices"
+                : $"{visible.Count} of {_allRows.Count} devices";
+    }
+
+    /// <summary>Serials the asset inventory holds, once it has been read; null until then.</summary>
+    private IReadOnlySet<string>? InventorySerials()
+    {
+        var assets = _app?.CachedAssets;
+        if (assets is not { Count: > 0 }) return null;
+        return assets.Select(a => a.Serial).Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => DeviceListJoin.Normalize(s!)).ToHashSet();
+    }
+
+    // ── Serial lookup ────────────────────────────────────────────────────
+
+    private void OnSerialsClicked(object sender, RoutedEventArgs e)
+    {
+        SerialsPopup.IsOpen = !SerialsPopup.IsOpen;
+        if (SerialsPopup.IsOpen) SerialsInput.Focus();
+    }
+
+    private void OnSerialsInputChanged(object sender, TextChangedEventArgs e)
+    {
+        var count = SerialListParser.Parse(SerialsInput.Text).Count;
+        SerialsParsedText.Text = count == 0 ? "" : count == 1 ? "1 serial" : $"{count} serials";
+        SerialsShowButton.IsEnabled = count > 0;
+    }
+
+    private async void OnImportSerialsClicked(object sender, RoutedEventArgs e)
+    {
+        var picker = new Microsoft.Win32.OpenFileDialog
         {
-            _filteredDevices.Add(device);
+            Title = "Import serial numbers",
+            Filter = "Serial lists (*.txt;*.csv)|*.txt;*.csv|All files (*.*)|*.*"
+        };
+        // The file dialog takes focus; keep the popup open behind it.
+        SerialsPopup.StaysOpen = true;
+        try
+        {
+            if (picker.ShowDialog() != true) return;
+            var text = await System.IO.File.ReadAllTextAsync(picker.FileName);
+            var serials = SerialListParser.Parse(text);
+            if (serials.Count == 0)
+            {
+                SerialsParsedText.Text = $"No serial numbers found in {System.IO.Path.GetFileName(picker.FileName)}.";
+                return;
+            }
+            SerialsInput.Text = string.Join(Environment.NewLine, serials);
+        }
+        catch (Exception ex)
+        {
+            SerialsParsedText.Text = $"Could not read the file: {ex.Message}";
+        }
+        finally
+        {
+            SerialsPopup.StaysOpen = false;
         }
     }
 
-    private void OnFilterChanged(object sender, RoutedEventArgs e)
+    private void OnShowSerialsClicked(object sender, RoutedEventArgs e)
     {
-        ApplyFiltersAndSort();
+        var serials = SerialListParser.Parse(SerialsInput.Text);
+        if (serials.Count == 0) return;
+        SetSerialLookup(serials);
+        SerialsPopup.IsOpen = false;
+    }
+
+    private void OnClearSerialsClicked(object sender, RoutedEventArgs e)
+    {
+        SerialsInput.Text = "";
+        SetSerialLookup(null);
+        SerialsPopup.IsOpen = false;
+    }
+
+    /// <summary>Narrow the list to these serials, or show every device again with null.</summary>
+    public void SetSerialLookup(IReadOnlyList<string>? serials)
+    {
+        _lookupSerials = serials is { Count: > 0 } ? serials.ToList() : null;
+        SerialsButtonText.Text = _lookupSerials == null ? "Serials" : $"Serials ({_lookupSerials.Count})";
+        ApplyFilters();
     }
 
     private void OnSearchChanged(object sender, TextChangedEventArgs e)
     {
-        ApplyFiltersAndSort();
+        ApplyFilters();
     }
 
-    private void OnPlatformFilterChanged(object sender, SelectionChangedEventArgs e)
-    {
-        ApplyFiltersAndSort();
-    }
+    // ── Columns ──────────────────────────────────────────────────────────
 
-    private void OnSortChanged(object sender, SelectionChangedEventArgs e)
+    /// <summary>Right-click a column header to show or hide the optional columns.</summary>
+    private void OnGridRightClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (SortComboBox.SelectedItem is ComboBoxItem item)
+        var source = e.OriginalSource as DependencyObject;
+        while (source != null && source is not System.Windows.Controls.Primitives.DataGridColumnHeader)
+            source = VisualTreeHelper.GetParent(source);
+        if (source == null) return;
+
+        var menu = new ContextMenu();
+        foreach (var column in DevicesDataGrid.Columns
+                     .Where(c => OptionalColumns.Contains(c.Header as string))
+                     .Where(c => c.Visibility == Visibility.Visible || CanFill((string)c.Header))
+                     .OrderBy(c => c.DisplayIndex))
         {
-            _sortField = item.Content?.ToString() ?? "Serial";
-            ApplyFiltersAndSort();
+            var item = new MenuItem { Header = column.Header, IsCheckable = true, IsChecked = column.Visibility == Visibility.Visible };
+            var target = column;
+            item.Click += (_, _) =>
+            {
+                target.Visibility = item.IsChecked ? Visibility.Visible : Visibility.Collapsed;
+                SaveColumns();
+            };
+            menu.Items.Add(item);
+        }
+        menu.IsOpen = true;
+        e.Handled = true;
+    }
+
+    /// <summary>The default column order, as the XAML declares it, before any saved layout moves it.</summary>
+    private List<string>? _defaultColumnOrder;
+
+    private void RestoreColumns()
+    {
+        _defaultColumnOrder = DevicesDataGrid.Columns.Select(c => (string)c.Header).ToList();
+        try
+        {
+            if (!System.IO.File.Exists(ColumnsStatePath)) return;
+            var layout = DeviceColumnLayout.Parse(System.IO.File.ReadAllText(ColumnsStatePath));
+            foreach (var column in DevicesDataGrid.Columns.Where(c => OptionalColumns.Contains(c.Header as string)))
+                column.Visibility = layout.Shown.Contains((string)column.Header) ? Visibility.Visible : Visibility.Collapsed;
+
+            var order = layout.Arrange(_defaultColumnOrder);
+            foreach (var column in DevicesDataGrid.Columns)
+                column.DisplayIndex = order.IndexOf((string)column.Header);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Debug(ex, "Devices: could not restore column layout");
         }
     }
 
-    private void OnSortDirectionClicked(object sender, RoutedEventArgs e)
+    private void SaveColumns()
     {
-        _sortAscending = !_sortAscending;
-        SortDirectionButton.Content = _sortAscending ? "↑" : "↓";
-        ApplyFiltersAndSort();
+        try
+        {
+            var layout = new DeviceColumnLayout
+            {
+                Shown = DevicesDataGrid.Columns
+                    .Where(c => OptionalColumns.Contains(c.Header as string) && c.Visibility == Visibility.Visible)
+                    .Select(c => (string)c.Header).ToList(),
+                Order = DevicesDataGrid.Columns.OrderBy(c => c.DisplayIndex).Select(c => (string)c.Header).ToList(),
+            };
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(ColumnsStatePath)!);
+            System.IO.File.WriteAllText(ColumnsStatePath, layout.Serialize());
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Debug(ex, "Devices: could not save column layout");
+        }
     }
+
+    /// <summary>
+    /// Whether the connected services fill an optional column for any device,
+    /// so the header menu offers only columns that would show something.
+    /// </summary>
+    private bool CanFill(string header)
+    {
+        if (_allRows.Count == 0) return true;
+        Func<DeviceListRow, bool> filled = header switch
+        {
+            "Model" => r => r.ModelText != DeviceListRow.Missing,
+            "Manufacturer" => r => r.ManufacturerText != DeviceListRow.Missing,
+            "Ownership" => r => r.OwnershipText != DeviceListRow.Missing,
+            "Migration" => r => r.Apple != null,
+            "Purchase Source" => r => r.PurchaseSourceText != DeviceListRow.Missing,
+            "Added" => r => r.AddedText != DeviceListRow.Missing,
+            // Read per device on selection, so any Apple organization device can fill it.
+            "Activation Lock" => r => r.Apple != null,
+            _ => _ => true,
+        };
+        return _allRows.Any(filled);
+    }
+
+    // ── Selection ────────────────────────────────────────────────────────
+
+    private List<DeviceListRow> SelectedRows() => DevicesDataGrid.SelectedItems.Cast<DeviceListRow>().ToList();
 
     private async void OnRefreshClicked(object sender, RoutedEventArgs e)
     {
-        // Invalidate cache to force reload
-        if (_app != null)
-        {
-            _app.CachedDevices.Clear();
-        }
+        // Invalidate caches to force reload
+        _app?.CachedDevices.Clear();
+        _autopilot = new();
+        _appleOrgs = new();
         await LoadDevicesAsync();
     }
 
@@ -228,7 +510,9 @@ public partial class IntunePage : Page
 
     private void OnDeviceSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        var selectedCount = DevicesDataGrid.SelectedItems.Count;
+        var selected = SelectedRows();
+        var selectedCount = selected.Count;
+        Terminal.ContextPublisher.Devices(selected.Where(r => r.Intune != null).Select(r => r.Intune!));
         var hasSelection = selectedCount > 0;
 
         ActionsButton.IsEnabled = hasSelection;
@@ -238,23 +522,24 @@ public partial class IntunePage : Page
         if (hasSelection)
         {
             SelectedDevicesText.Text = $"{selectedCount} device(s) selected";
-            var selectedDevices = DevicesDataGrid.SelectedItems.Cast<IntuneDevice>().ToList();
             if (selectedCount <= 3)
             {
-                SelectedDeviceNamesText.Text = string.Join(", ", selectedDevices.Select(d => d.DeviceName ?? d.SerialNumber ?? "Unknown"));
+                SelectedDeviceNamesText.Text = string.Join(", ", selected.Select(Label));
             }
             else
             {
-                var first2 = string.Join(", ", selectedDevices.Take(2).Select(d => d.DeviceName ?? d.SerialNumber ?? "Unknown"));
+                var first2 = string.Join(", ", selected.Take(2).Select(Label));
                 SelectedDeviceNamesText.Text = $"{first2} and {selectedCount - 2} more...";
             }
+
+            UpdateActionSections(selected);
 
             // Mac parity: any selection opens the actions panel; a single
             // selection also opens the detail panel beside it.
             ShowActionsPanel();
             if (selectedCount == 1)
             {
-                _ = ShowDeviceDetailAsync(selectedDevices[0]);
+                _ = ShowDeviceDetailAsync(selected[0]);
             }
             else
             {
@@ -268,11 +553,59 @@ public partial class IntunePage : Page
         }
     }
 
-    private async Task ShowDeviceDetailAsync(IntuneDevice device)
+    /// <summary>A device's name, or its serial when it has none yet.</summary>
+    private static string Label(DeviceListRow r) => r.NameText != DeviceListRow.Missing ? r.NameText : r.SerialText;
+
+    /// <summary>
+    /// Offer only the actions valid for every selected device: Intune's need
+    /// every device enrolled; Fresh Start, Autopilot Reset and Cimian need
+    /// every device to be Windows; Autopilot's need every device registered.
+    /// </summary>
+    private void UpdateActionSections(List<DeviceListRow> selected)
     {
+        var allEnrolled = selected.All(r => r.IsEnrolled);
+        var allWindows = selected.All(r => r.IsWindows);
+        var identities = selected.Select(r => r.Autopilot).ToList();
+
+        static Visibility Show(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
+
+        foreach (var section in new[] { SyncSection, RestartSection, LockSection, RetireSection, WipeSection,
+                     DeleteRecordSection, ReinstallAppSection, OsUpdateSection })
+            section.Visibility = Show(allEnrolled);
+        foreach (var section in new[] { FreshStartSection, AutopilotResetSection, PushCimianSection })
+            section.Visibility = Show(allEnrolled && allWindows);
+
+        AutopilotGroupTagSection.Visibility = Show(AutopilotAction.SetGroupTag.IsAvailable(identities));
+        AutopilotAssignUserSection.Visibility = Show(AutopilotAction.AssignUser.IsAvailable(identities));
+        AutopilotUnassignUserSection.Visibility = Show(AutopilotAction.UnassignUser.IsAvailable(identities));
+        AutopilotSyncSection.Visibility = Show(AutopilotAction.Sync.IsAvailable(identities));
+        AutopilotDeleteSection.Visibility = Show(AutopilotAction.Delete.IsAvailable(identities));
+
+        var anyAutopilot = AutopilotAction.Sync.IsAvailable(identities);
+        var anyApple = UpdateAppleSections(selected);
+        AutopilotActionsHeader.Visibility = Show(anyAutopilot);
+        IntuneActionsHeader.Visibility = Show((anyAutopilot || anyApple) && allEnrolled);
+        NoActionsText.Visibility = Show(!allEnrolled && !anyAutopilot && !anyApple);
+        UpdateLifecycleSections(selected);
+    }
+
+    private async Task ShowDeviceDetailAsync(DeviceListRow row)
+    {
+        // A serial no system knows has nothing to show.
+        if (row.IsUnknown)
+        {
+            HideDeviceDetail();
+            return;
+        }
         DeviceDetail.Visibility = Visibility.Visible;
         DetailPanelColumn.Width = new GridLength(520);
-        await DeviceDetail.ShowDeviceAsync(device, _graphService);
+        var apple = AppleContext(row);
+        if (row.Intune is { } device)
+            await DeviceDetail.ShowDeviceAsync(device, _graphService, row.Autopilot, apple);
+        else if (apple != null)
+            await DeviceDetail.ShowAppleOnlyAsync(apple);
+        else if (row.Autopilot is { } identity)
+            DeviceDetail.ShowAutopilotOnly(identity);
     }
 
     private void ShowActionsPanel()
@@ -297,9 +630,10 @@ public partial class IntunePage : Page
 
     private void OnCloseActionsPanel(object sender, RoutedEventArgs e) => HideActionsPanel();
 
+    /// <summary>Intune actions only ever receive Intune IDs.</summary>
     private IEnumerable<string> GetSelectedDeviceIds()
     {
-        return DevicesDataGrid.SelectedItems.Cast<IntuneDevice>().Select(d => d.Id);
+        return SelectedRows().Where(r => r.Intune != null).Select(r => r.Intune!.Id);
     }
 
     private void ShowActionMessage(string message, bool isError = false, bool isLoading = false)
@@ -403,9 +737,9 @@ public partial class IntunePage : Page
 
         // Fresh Start is Windows-only; run against the Windows subset rather
         // than refusing a mixed selection outright.
-        var targets = DevicesDataGrid.SelectedItems.Cast<IntuneDevice>()
-            .Where(d => (d.OperatingSystem ?? "").Contains("Windows", StringComparison.OrdinalIgnoreCase))
-            .Select(d => d.Id)
+        var targets = SelectedRows()
+            .Where(r => r.Intune != null && r.IsWindows)
+            .Select(r => r.Intune!.Id)
             .ToList();
         if (targets.Count == 0)
         {
@@ -505,23 +839,22 @@ public partial class IntunePage : Page
     {
         if (_graphService == null) return;
 
-        var deviceIds = GetSelectedDeviceIds().ToList();
-        var keepEnrollment = WipeKeepEnrollmentCheckBox.IsChecked == true;
-        var keepUserData = WipeKeepUserDataCheckBox.IsChecked == true;
+        // Wipe takes device records, not bare ids, so each body is built for its own platform.
+        var devices = SelectedRows().Where(r => r.Intune != null).Select(r => r.Intune!).ToList();
+        var options = CurrentWipeOptions();
         var result = MessageBox.Show(
-            $"This will factory-reset {deviceIds.Count} device(s){(keepUserData ? ", keeping user data where the platform allows" : ", erasing all data")}. This cannot be undone.",
+            $"This will factory-reset {devices.Count} device(s){(options.KeepUserData ? ", keeping user data where the platform allows" : ", erasing all data")}. This cannot be undone.",
             "Confirm Wipe",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
 
         if (result != MessageBoxResult.Yes) return;
 
-        ShowActionMessage($"Wiping {deviceIds.Count} device(s)...", isLoading: true);
+        ShowActionMessage($"Wiping {devices.Count} device(s)...", isLoading: true);
 
         try
         {
-            var results = await _graphService.WipeDevicesAsync(deviceIds,
-                keepEnrollmentData: keepEnrollment, keepUserData: keepUserData, confirmed: true);
+            var results = await _graphService.WipeDevicesAsync(devices, options, confirmed: true);
             var successful = results.Count(r => r.Success);
             var failed = results.Count - successful;
 
@@ -655,7 +988,7 @@ public partial class IntunePage : Page
     {
         if (_graphService == null) return;
 
-        var selectedDevices = DevicesDataGrid.SelectedItems.Cast<IntuneDevice>().ToList();
+        var selectedDevices = SelectedRows().Where(r => r.Intune != null).Select(r => r.Intune!).ToList();
         if (selectedDevices.Count == 0)
         {
             ShowActionMessage("Select devices to push Cimian run", isError: true);

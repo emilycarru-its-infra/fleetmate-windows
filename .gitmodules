@@ -1,0 +1,4 @@
+[submodule "external/reportmate-app-csharp"]
+	path = external/reportmate-app-csharp
+	url = https://github.com/reportmate/reportmate-app-csharp.git
+	branch = main

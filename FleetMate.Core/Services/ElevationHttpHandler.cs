@@ -30,12 +30,17 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
 
         var sb = new StringBuilder();
         sb.Append("az rest --method ").Append(method).Append(" --uri ").Append(SingleQuote(url));
+        var headers = ForwardedHeaders(request);
+        string? body = null;
         if (request.Content != null)
         {
-            var body = await request.Content.ReadAsStringAsync(cancellationToken);
-            if (!string.IsNullOrEmpty(body))
-                sb.Append(" --headers Content-Type=application/json --body ").Append(SingleQuote(body));
+            body = await request.Content.ReadAsStringAsync(cancellationToken);
+            if (!string.IsNullOrEmpty(body)) headers.Insert(0, "Content-Type=application/json");
         }
+        if (headers.Count > 0)
+            sb.Append(" --headers ").Append(string.Join(" ", headers.Select(SingleQuote)));
+        if (!string.IsNullOrEmpty(body))
+            sb.Append(" --body ").Append(SingleQuote(body));
         sb.Append(" -o json");
 
         try
@@ -53,12 +58,7 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
                 // otherwise present "no records" for a call that never ran.
                 _status.RecordFailure($"elevated {domain.Slug()} call exited {code}: {Truncate(output)}");
             }
-            var status = code == 0 ? HttpStatusCode.OK : HttpStatusCode.BadGateway;
-            return new HttpResponseMessage(status)
-            {
-                Content = new StringContent(output, Encoding.UTF8, "application/json"),
-                RequestMessage = request,
-            };
+            return ToResponse(code, output, request);
         }
         catch (Exception ex)
         {
@@ -78,6 +78,26 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
         }
     }
 
+    /// <summary>
+    /// The response for one az rest run. az rest prints no headers, so a throttle
+    /// shows only in its error text ("Too Many Requests(...)"); that becomes a real
+    /// 429 or 503, with Retry-After when the text carries one, so the throttling
+    /// handler above can wait it out. Any other failure stays a 502.
+    /// </summary>
+    internal static HttpResponseMessage ToResponse(int code, string output, HttpRequestMessage request)
+    {
+        var status = code == 0 ? HttpStatusCode.OK
+            : GraphThrottle.StatusFromAzRestMessage(output) ?? HttpStatusCode.BadGateway;
+        var response = new HttpResponseMessage(status)
+        {
+            Content = new StringContent(output, Encoding.UTF8, "application/json"),
+            RequestMessage = request,
+        };
+        if (code != 0 && GraphThrottle.RetryAfterFromAzRestMessage(output) is { } wait)
+            response.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(wait);
+        return response;
+    }
+
     /// Intune (deviceManagement / deviceAppManagement) and the directory's own
     /// device objects (/devices) → devices; everything else (users, groups,
     /// directory roles) → identity.
@@ -91,6 +111,11 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
     {
         var lower = url.ToLowerInvariant();
         if (lower.Contains("/devicemanagement/") || lower.Contains("/deviceappmanagement/"))
+            return GraphDomain.Devices;
+        // A device's recovery secrets (BitLocker keys, Windows LAPS) belong
+        // with the device: the devices identity holds BitlockerKey.Read.All
+        // and DeviceLocalCredential.Read.All, the identity one does not.
+        if (lower.Contains("/informationprotection/bitlocker/") || lower.Contains("/directory/devicelocalcredentials"))
             return GraphDomain.Devices;
         if (IsDirectoryDeviceCall(lower))
             return GraphDomain.Devices;
@@ -116,6 +141,18 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
         }
         return false;
     }
+
+    /// <summary>
+    /// Request headers to pass through to <c>az rest --headers</c>, as
+    /// name=value. Authorization belongs to the session's own identity and
+    /// Accept is az's own business, so neither is forwarded.
+    /// </summary>
+    internal static List<string> ForwardedHeaders(HttpRequestMessage request) =>
+        request.Headers
+            .Where(h => !h.Key.Equals("Authorization", StringComparison.OrdinalIgnoreCase)
+                        && !h.Key.Equals("Accept", StringComparison.OrdinalIgnoreCase))
+            .Select(h => $"{h.Key}={string.Join(",", h.Value)}")
+            .ToList();
 
     // Single-quote so the container shell does not expand $top/$filter/$ref/etc.
     private static string SingleQuote(string s) => "'" + s.Replace("'", "'\\''") + "'";

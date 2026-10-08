@@ -265,7 +265,7 @@ public class GitHubProjectView
 public class GitHubIssueDetail
 {
     [JsonPropertyName("id")]
-    public int Id { get; set; }
+    public long Id { get; set; }
 
     [JsonPropertyName("node_id")]
     public string NodeId { get; set; } = string.Empty;
@@ -319,7 +319,7 @@ public class GitHubIssueDetail
 public class GitHubUser
 {
     [JsonPropertyName("id")]
-    public int Id { get; set; }
+    public long Id { get; set; }
 
     [JsonPropertyName("login")]
     public string Login { get; set; } = string.Empty;
@@ -334,7 +334,7 @@ public class GitHubUser
 public class GitHubMilestone
 {
     [JsonPropertyName("id")]
-    public int Id { get; set; }
+    public long Id { get; set; }
 
     [JsonPropertyName("node_id")]
     public string NodeId { get; set; } = string.Empty;
@@ -358,7 +358,7 @@ public class GitHubMilestone
 public class GitHubLabelDetail
 {
     [JsonPropertyName("id")]
-    public int Id { get; set; }
+    public long Id { get; set; }
 
     [JsonPropertyName("node_id")]
     public string NodeId { get; set; } = string.Empty;
@@ -394,7 +394,7 @@ public class GitHubPullRequestRef
 public class GitHubComment
 {
     [JsonPropertyName("id")]
-    public int Id { get; set; }
+    public long Id { get; set; }
 
     [JsonPropertyName("node_id")]
     public string NodeId { get; set; } = string.Empty;

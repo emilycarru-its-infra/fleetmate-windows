@@ -20,8 +20,6 @@ namespace FleetMate.GUI.Views.Shared;
 /// </summary>
 public partial class PullRequestQueueView : UserControl
 {
-    private const int RepoChipLimit = 14;
-
     private string _sourceFilter = "devops";
     private string? _repoFilter;
     private bool _isLoading;
@@ -103,7 +101,7 @@ public partial class PullRequestQueueView : UserControl
 
     private void Render(PullRequestQueue queue)
     {
-        RenderRepoChips(queue);
+        RenderRepoFilter(queue);
 
         var created = Filter(queue.Section(PullRequestRelation.CreatedByMe));
         var assigned = Filter(queue.Section(PullRequestRelation.AssignedToMe));
@@ -177,74 +175,25 @@ public partial class PullRequestQueueView : UserControl
         MatchesSource(pr) && (_repoFilter == null || pr.Repository == _repoFilter);
 
     /// <summary>
-    /// One chip per repository in the current source scope with its PR count,
-    /// busiest first (ties alphabetical) — the macOS secondary filter row.
-    /// Hidden unless there is more than one repository to choose between.
+    /// The repository dropdown for the current source scope, busiest first
+    /// with counts — the macOS secondary filter. Hidden unless there is more
+    /// than one repository to choose between.
     /// </summary>
-    private void RenderRepoChips(PullRequestQueue queue)
+    private void RenderRepoFilter(PullRequestQueue queue)
     {
         var sourcePrs = queue.Section(PullRequestRelation.CreatedByMe)
             .Concat(queue.Section(PullRequestRelation.AssignedToMe))
             .Where(MatchesSource)
-            .ToList();
+            .Distinct();
 
-        var counts = sourcePrs
-            .GroupBy(pr => pr.Repository)
-            .Select(g => (Repo: g.Key, Count: g.Count()))
-            .OrderByDescending(e => e.Count)
-            .ThenBy(e => e.Repo, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        // A vanished repo (source switch, refresh) must not keep filtering.
-        if (_repoFilter != null && counts.All(e => e.Repo != _repoFilter))
-            _repoFilter = null;
-
-        RepoChipsPanel.Children.Clear();
-        if (counts.Count < 2)
-        {
-            RepoChipsScroller.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        RepoChipsScroller.Visibility = Visibility.Visible;
-        foreach (var (repo, count) in counts.Take(RepoChipLimit))
-        {
-            var content = new StackPanel { Orientation = Orientation.Horizontal };
-            content.Children.Add(new ModernWpf.Controls.FontIcon
-            {
-                FontFamily = new System.Windows.Media.FontFamily("Segoe Fluent Icons"),
-                Glyph = "",
-                FontSize = 10,
-                Margin = new Thickness(0, 0, 5, 0),
-                VerticalAlignment = VerticalAlignment.Center
-            });
-            content.Children.Add(new TextBlock
-            {
-                Text = $"{repo} {count}",
-                FontSize = 11,
-                VerticalAlignment = VerticalAlignment.Center
-            });
-
-            var chip = new ToggleButton
-            {
-                Content = content,
-                Padding = new Thickness(8, 2, 8, 2),
-                Margin = new Thickness(0, 0, 4, 0),
-                IsChecked = repo == _repoFilter,
-                Tag = repo,
-                ToolTip = repo == _repoFilter ? $"Clear the {repo} filter" : $"Show only {repo}"
-            };
-            chip.Click += OnRepoChipClicked;
-            RepoChipsPanel.Children.Add(chip);
-        }
+        _repoFilter = RepoFilterMenu.Fill(RepoCombo, RepoFilterMenu.Counts(sourcePrs, pr => pr.Repository), _repoFilter);
     }
 
-    private void OnRepoChipClicked(object sender, RoutedEventArgs e)
+    private void OnRepoChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (sender is not ToggleButton { Tag: string repo }) return;
-
-        // Re-clicking the active chip clears the filter, like the macOS pills.
-        _repoFilter = _repoFilter == repo ? null : repo;
+        var repo = RepoFilterMenu.Picked(RepoCombo, out var changed);
+        if (!changed || repo == _repoFilter) return;
+        _repoFilter = repo;
 
         if (App.Current is App { PullRequestQueue: { } queue }) Render(queue);
     }
@@ -269,7 +218,11 @@ public partial class PullRequestQueueView : UserControl
         SourceFilterChanged?.Invoke(this, _sourceFilter);
     }
 
-    private async void OnRefreshClicked(object sender, RoutedEventArgs e) => await LoadAsync(forceRefresh: true);
+    private async void OnRefreshClicked(object sender, RoutedEventArgs e)
+    {
+        FleetMate.Core.Services.Projects.GitHubSync.RequestFullResync();
+        await LoadAsync(forceRefresh: true);
+    }
 
     private async void OnRowClicked(object sender, MouseButtonEventArgs e)
     {
