@@ -13,8 +13,14 @@ namespace FleetMate.GUI.Knowledge;
 /// </summary>
 public sealed class HandbookStore
 {
-    /// <summary>The Hugo content folder inside the repository; the sparse checkout takes only these.</summary>
+    /// <summary>The Hugo content folder inside the repository.</summary>
     private static readonly string[] ContentFolders = { "website/content", "content" };
+
+    /// <summary>The pipeline-built page catalog, beside the content.</summary>
+    private static readonly string[] CatalogFiles = { "website/data/catalog.json", "data/catalog.json" };
+
+    /// <summary>What the sparse checkout takes: the content and the catalog.</summary>
+    private static readonly string[] SparsePaths = { "website/content", "website/data", "content", "data" };
 
     public static readonly TimeSpan RefreshInterval = TimeSpan.FromMinutes(15);
 
@@ -41,7 +47,7 @@ public sealed class HandbookStore
         string? devOpsHost = null;
         if (config.AzureDevOps?.HostUrl is { Length: > 0 } host && Uri.TryCreate(host, UriKind.Absolute, out var hostUri))
             devOpsHost = hostUri.Host;
-        _mirror = new RepoMirror("handbook", config.HandbookRepoUrl, ContentFolders, tokenHost: devOpsHost);
+        _mirror = new RepoMirror("handbook", config.HandbookRepoUrl, SparsePaths, tokenHost: devOpsHost);
     }
 
     /// <summary>Show what is already on disk at once, then keep it current.</summary>
@@ -87,30 +93,30 @@ public sealed class HandbookStore
         }
     }
 
+    private string? ContentRoot => _mirror == null ? null
+        : ContentFolders.Select(f => Path.Combine(_mirror.LocalPath, f.Replace('/', Path.DirectorySeparatorChar)))
+            .FirstOrDefault(Directory.Exists);
+
     private void Load()
     {
-        var content = ContentFolders.Select(f => Path.Combine(_mirror!.LocalPath, f.Replace('/', Path.DirectorySeparatorChar)))
-            .FirstOrDefault(Directory.Exists);
+        var content = ContentRoot;
         if (content == null) return;
-        Index = HandbookIndex.Load(content);
+        // The pipeline's catalog loads in milliseconds; parsing every page is
+        // the fallback for a Handbook that does not publish one yet.
+        var catalog = CatalogFiles.Select(f => Path.Combine(_mirror!.LocalPath, f.Replace('/', Path.DirectorySeparatorChar)))
+            .FirstOrDefault(File.Exists);
+        Index = (catalog != null ? HandbookIndex.LoadCatalog(catalog) : null) ?? HandbookIndex.Load(content);
         Log.Information("Handbook index: {Count} pages", Index.Pages.Count);
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
-    /// Where a page opens: the published site when its address is configured,
-    /// otherwise FleetMate's local copy of the page.
+    /// The page with its full text: a catalog entry carries only a summary, so
+    /// the reader asks for the page from FleetMate's copy as it opens.
     /// </summary>
-    public string? OpenTarget(HandbookPage page)
-    {
-        if (HandbookSite.PageUrl(_siteUrl, page) is { } url) return url.ToString();
-        if (_mirror == null) return null;
-        foreach (var folder in ContentFolders)
-        {
-            var file = Path.Combine(_mirror.LocalPath, folder.Replace('/', Path.DirectorySeparatorChar),
-                page.Path.Replace('/', Path.DirectorySeparatorChar));
-            if (File.Exists(file)) return file;
-        }
-        return null;
-    }
+    public HandbookPage FullPage(HandbookPage page) =>
+        page.IsSummary && ContentRoot is { } root && HandbookIndex.FullPage(page.Path, root) is { } full ? full : page;
+
+    /// <summary>The published page, when the site address is configured.</summary>
+    public Uri? SiteUrl(HandbookPage page) => HandbookSite.PageUrl(_siteUrl, page);
 }

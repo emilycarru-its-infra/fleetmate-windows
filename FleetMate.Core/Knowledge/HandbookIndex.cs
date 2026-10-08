@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace FleetMate.Core.Knowledge;
@@ -13,6 +15,12 @@ public sealed record HandbookPage(
     string? LastModified,
     string? LastModifiedBy)
 {
+    /// <summary>
+    /// True when <see cref="Body"/> is only the catalog's summary and keywords;
+    /// the full text is read from FleetMate's copy when the page is opened.
+    /// </summary>
+    public bool IsSummary { get; init; }
+
     /// <summary>Section folders as a reader would say them: "Devices › Enrollment".</summary>
     public string Breadcrumb => string.Join(" › ", Sections.Select(Humanize));
 
@@ -45,20 +53,121 @@ public sealed partial class HandbookIndex
             p.Path.ToLowerInvariant(), p.Body.ToLowerInvariant())).ToArray();
     }
 
-    /// <summary>Read every <c>.md</c> page under <paramref name="contentRoot"/>.</summary>
+    /// <summary>Folders never indexed: retired systems, kept on the site as history (macOS parity).</summary>
+    public static readonly IReadOnlySet<string> SkippedSections = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "legacy" };
+
+    private static bool IsSkipped(string relativePath) =>
+        SkippedSections.Contains(relativePath.Split('/', 2)[0]);
+
+    /// <summary>Read every <c>.md</c> page under <paramref name="contentRoot"/>, except the skipped sections.</summary>
     public static HandbookIndex Load(string contentRoot)
     {
         if (!Directory.Exists(contentRoot)) return Empty;
         var pages = new List<HandbookPage>();
         foreach (var file in Directory.EnumerateFiles(contentRoot, "*.md", SearchOption.AllDirectories))
         {
+            var relative = System.IO.Path.GetRelativePath(contentRoot, file).Replace('\\', '/');
+            if (IsSkipped(relative)) continue;
             string text;
             try { text = File.ReadAllText(file); }
             catch (IOException) { continue; }
-            var relative = System.IO.Path.GetRelativePath(contentRoot, file).Replace('\\', '/');
             if (Page(relative, text) is { } page) pages.Add(page);
         }
         return new HandbookIndex(pages.OrderBy(p => p.Path, StringComparer.Ordinal).ToList());
+    }
+
+    /// <summary>
+    /// Read the pipeline-built catalog (<c>website/data/catalog.json</c>): one
+    /// small file instead of every page. Bodies are left out; the reader loads a
+    /// page's text from disk when it opens. Null when there is no usable catalog,
+    /// so the caller falls back to <see cref="Load"/>.
+    /// </summary>
+    public static HandbookIndex? LoadCatalog(string catalogPath)
+    {
+        CatalogFile? catalog;
+        try
+        {
+            if (!File.Exists(catalogPath)) return null;
+            catalog = JsonSerializer.Deserialize<CatalogFile>(File.ReadAllText(catalogPath));
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+        if (catalog?.Pages is not { Count: > 0 } entries) return null;
+        var pages = entries
+            .Where(p => !string.IsNullOrEmpty(p.Path) && !string.IsNullOrEmpty(p.Title) && !IsSkipped(p.Path))
+            .Select(p => new HandbookPage(
+                p.Path!, p.Title!,
+                (p.Section ?? "").Split('/', StringSplitOptions.RemoveEmptyEntries),
+                p.Url ?? "/",
+                p.Headings ?? new List<string>(),
+                // Searchable text until the page is opened.
+                string.Join("\n", new[] { p.Summary ?? "" }.Concat(p.Keywords ?? new List<string>())),
+                string.IsNullOrEmpty(p.LastModified) ? null : p.LastModified,
+                string.IsNullOrEmpty(p.LastModifiedBy) ? null : p.LastModifiedBy)
+            { IsSummary = true })
+            .ToList();
+        return new HandbookIndex(pages);
+    }
+
+    /// <summary>The full page, parsed from its Markdown file; null when it is not on disk.</summary>
+    public static HandbookPage? FullPage(string relativePath, string contentRoot)
+    {
+        var root = System.IO.Path.GetFullPath(contentRoot);
+        var file = System.IO.Path.GetFullPath(System.IO.Path.Combine(root, relativePath.Replace('/', System.IO.Path.DirectorySeparatorChar)));
+        // A catalog path never leaves the content folder.
+        if (!file.StartsWith(root.TrimEnd(System.IO.Path.DirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            return null;
+        try { return File.Exists(file) ? Page(relativePath, File.ReadAllText(file)) : null; }
+        catch (IOException) { return null; }
+    }
+
+    /// <summary>
+    /// Pages for a typed query: every word must appear somewhere; titles count
+    /// most, then headings, path and body (macOS parity).
+    /// </summary>
+    public IReadOnlyList<HandbookPage> Search(string query, int limit = 8)
+    {
+        var words = (query ?? "").ToLowerInvariant()
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => w.Length >= 2).ToList();
+        if (words.Count == 0) return Array.Empty<HandbookPage>();
+        var scored = new List<(int Index, int Score)>();
+        for (var i = 0; i < _lowered.Length; i++)
+        {
+            var l = _lowered[i];
+            var total = 0;
+            var all = true;
+            foreach (var word in words)
+            {
+                var score = (l.Title.Contains(word) ? 12 : 0) + (l.Headings.Contains(word) ? 5 : 0)
+                            + (l.Path.Contains(word) ? 3 : 0) + (l.Body.Contains(word) ? 1 : 0);
+                if (score == 0) { all = false; break; }
+                total += score;
+            }
+            if (all) scored.Add((i, total));
+        }
+        return scored.OrderByDescending(x => x.Score).ThenBy(x => x.Index)
+            .Take(limit).Select(x => Pages[x.Index]).ToList();
+    }
+
+    private sealed class CatalogFile
+    {
+        [JsonPropertyName("pages")] public List<CatalogPage>? Pages { get; set; }
+    }
+
+    private sealed class CatalogPage
+    {
+        [JsonPropertyName("path")] public string? Path { get; set; }
+        [JsonPropertyName("title")] public string? Title { get; set; }
+        [JsonPropertyName("url")] public string? Url { get; set; }
+        [JsonPropertyName("section")] public string? Section { get; set; }
+        [JsonPropertyName("headings")] public List<string>? Headings { get; set; }
+        [JsonPropertyName("summary")] public string? Summary { get; set; }
+        [JsonPropertyName("keywords")] public List<string>? Keywords { get; set; }
+        [JsonPropertyName("lastmod")] public string? LastModified { get; set; }
+        [JsonPropertyName("lastmod_by")] public string? LastModifiedBy { get; set; }
     }
 
     /// <summary>One page from its path under the content folder and its text; null for a title-less stub.</summary>

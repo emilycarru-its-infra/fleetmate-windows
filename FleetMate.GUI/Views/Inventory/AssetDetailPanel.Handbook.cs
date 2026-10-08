@@ -1,11 +1,9 @@
-using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using FleetMate.Core.Knowledge;
 using FleetMate.Core.Models.Inventory;
 using FleetMate.GUI.Knowledge;
-using Serilog;
 
 namespace FleetMate.GUI.Views.Inventory;
 
@@ -49,21 +47,10 @@ public partial class AssetDetailPanel
     private FrameworkElement PageLink(HandbookStore store, HandbookPage page)
     {
         var text = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 1, 0, 3) };
-        var target = store.OpenTarget(page);
-        if (target != null)
-        {
-            var link = new Hyperlink(new Run(page.Title)) { ToolTip = target };
-            link.Click += (_, _) =>
-            {
-                try { Process.Start(new ProcessStartInfo(target) { UseShellExecute = true }); }
-                catch (Exception ex) { Log.Warning(ex, "Could not open Handbook page {Path}", page.Path); }
-            };
-            text.Inlines.Add(link);
-        }
-        else
-        {
-            text.Inlines.Add(new Run(page.Title));
-        }
+        // Pages open in FleetMate's reader, as on macOS; it offers the site from there.
+        var link = new Hyperlink(new Run(page.Title)) { ToolTip = page.Path };
+        link.Click += (_, _) => (Application.Current as App)?.OpenHandbookPage(page);
+        text.Inlines.Add(link);
         if (page.Breadcrumb.Length > 0)
             text.Inlines.Add(new Run("  " + page.Breadcrumb) { FontSize = 11, Foreground = Secondary() });
         return text;
