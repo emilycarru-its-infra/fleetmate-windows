@@ -101,11 +101,6 @@ public class FleetMateConfig
     /// </summary>
     public string? EntraClientId { get; set; }
 
-    public const string DefaultReportMateOidcAudience = "3e8c1d2a-4b5f-4a6e-9c7d-0e1f2a3b4c5d";
-    public const string DefaultSnipeOidcAudience = "7c2e4a90-1b3d-4f5e-8a6c-0d9e8f7a6b5c";
-    public const string DefaultTenantId = "a0d1e2f3-0000-4000-8000-00000000c0de";
-    public const string DefaultReportMateUrl = "https://reportmate-api.example.com";
-
     /// <summary>True when Snipe-IT is set up to authenticate via Entra SSO.</summary>
     public bool SnipeUsesOidc => !string.IsNullOrWhiteSpace(SnipeOidcAudience);
 
@@ -379,28 +374,19 @@ public class FleetMateConfig
     }
 
     /// <summary>
-    /// Make Entra SSO the default for every resource API.
+    /// Fill in the defaults that hold for any estate, and hand the tenant to
+    /// the token broker.
     ///
-    /// An estate that has configured nothing lands on SSO rather than on a
-    /// shared secret — the secretless path has to be what you get by not
-    /// choosing, or it never becomes the norm. An explicitly configured
-    /// audience always wins; a legacy secret is only consulted when no audience
-    /// resolves at all.
+    /// The tenant, the API audiences, the ReportMate address and the elevation
+    /// resources belong to whoever deploys FleetMate, so none of them is built
+    /// in: they come from the operator's config or registry key, or from
+    /// managed settings under <see cref="PolicyRegistryPath"/>. Setting an
+    /// audience is what turns on SSO for that API; a legacy secret is only
+    /// consulted when no audience is set.
     /// </summary>
     private static void ApplySsoDefaults(FleetMateConfig config)
     {
         config.Graph ??= new GraphConfig();
-        if (string.IsNullOrWhiteSpace(config.Graph.TenantId))
-            config.Graph.TenantId = DefaultTenantId;
-
-        if (string.IsNullOrWhiteSpace(config.ReportMateOidcAudience))
-            config.ReportMateOidcAudience = DefaultReportMateOidcAudience;
-
-        if (string.IsNullOrWhiteSpace(config.SnipeOidcAudience))
-            config.SnipeOidcAudience = DefaultSnipeOidcAudience;
-
-        if (string.IsNullOrWhiteSpace(config.ReportMateUrl))
-            config.ReportMateUrl = DefaultReportMateUrl;
 
         config.Tdx ??= new TdxConfig();
         if (config.Tdx.AppId <= 0)
@@ -409,10 +395,6 @@ public class FleetMateConfig
         config.Tdx.AssetsAppId ??= 116;
 
         config.Elevation ??= new ElevationConfig();
-        config.Elevation.ResourceGroup ??= "Entra";
-        config.Elevation.AcrImage ??= "myregistry.azurecr.io/elevation-session:latest";
-        config.Elevation.TranscriptAccount ??= "transcriptstore";
-        config.Elevation.IdentityPrefix ??= "DevOps-";
 
         EntraTokenSource.Configure(config.Graph?.TenantId, config.EntraClientId);
     }
