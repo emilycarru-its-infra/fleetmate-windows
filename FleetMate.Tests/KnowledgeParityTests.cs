@@ -177,6 +177,24 @@ public class HandbookLinkTests
     }
 
     [Theory]
+    [InlineData("https://handbook.example.org@evil.example/x")]
+    [InlineData("http://user:pass@learn.example.com/")]
+    public void LinksWithAUserNameAreRefused(string href)
+    {
+        Assert.Equal(HandbookLinkKind.Ignore, HandbookLinks.Classify(href, From, Index, Site).Kind);
+        Assert.Null(HandbookLinks.External(href));
+    }
+
+    [Fact]
+    public void LookalikeHostsAreAnotherSite()
+    {
+        var action = HandbookLinks.Classify("https://handbook.example.org.evil.example/devices/wifi/", From, Index, Site);
+        Assert.Equal(HandbookLinkKind.OpenInBrowser, action.Kind);
+        Assert.Equal("handbook.example.org.evil.example", action.Url!.Host);
+        Assert.Equal(HandbookLinkKind.OpenInBrowser, HandbookLinks.Classify("HTTPS://learn.example.com/x", From, Index, Site).Kind);
+    }
+
+    [Theory]
     [InlineData("../wifi/")]
     [InlineData("/devices/wifi/")]
     [InlineData("/devices/wifi")]

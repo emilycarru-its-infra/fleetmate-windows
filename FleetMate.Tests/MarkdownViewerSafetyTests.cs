@@ -31,5 +31,7 @@ public class MarkdownViewerSafetyTests
             MarkdownViewer.ContentSecurityPolicy("file:///C:/"));
         Assert.Equal("default-src 'none'; img-src data:; style-src 'unsafe-inline'",
             MarkdownViewer.ContentSecurityPolicy(null));
+        Assert.Equal("default-src 'none'; img-src data:; style-src 'unsafe-inline'",
+            MarkdownViewer.ContentSecurityPolicy("https://x@evil.example/"));
     }
 }
