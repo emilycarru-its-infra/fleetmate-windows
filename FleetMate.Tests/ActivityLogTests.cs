@@ -114,6 +114,47 @@ public class ActivityLogTests
         Assert.Equal("Failed", action.Result);
     }
 
+    [Fact]
+    public void PathsDropEmailsAndTokensWhenRecorded()
+    {
+        var log = new ActivityLog(capacity: 10);
+        var token = "sk" + string.Concat(Enumerable.Repeat("a1B2c3D4", 5));
+        log.Record("Microsoft Graph", "GET", new Uri($"https://graph.microsoft.com/v1.0/users/someone@example.org/keys/{token}/devices"),
+            200, DateTimeOffset.Now, TimeSpan.FromMilliseconds(100));
+        Assert.Equal("/v1.0/users/[email]/keys/[token]/devices", log.Snapshot()[0].Requests[0].Path);
+    }
+
+    [Fact]
+    public void KeepsDeviceIdsInPaths() =>
+        Assert.Equal($"/managedDevices/{DeviceId}/wipe", ActivitySanitizer.Path($"/managedDevices/{DeviceId}/wipe"));
+
+    [Fact]
+    public void FailureTextLosesUrlsBodiesAndLength()
+    {
+        Assert.Equal("Request to [url] failed for [email]",
+            ActivitySanitizer.Failure("Request to https://inventory.example.org/api?key=abc failed for someone@example.org\n{\"error\": \"body\"}"));
+        Assert.True(ActivitySanitizer.Failure(string.Concat(Enumerable.Repeat("x ", 200))).Length <= 120);
+        Assert.Equal("bad [token] here", ActivitySanitizer.Failure("bad eyJhbGciOi.eyJzdWIiOi.c2lnbmF0dXJl here"));
+    }
+
+    [Fact]
+    public void QueryYieldsOnlySerials() =>
+        Assert.Equal(new[] { Serial },
+            ActivityMasker.SerialsInQuery(new Uri($"https://example.org/api/hardware?serial={Serial}&token=abcdef123456&user=someone")));
+
+    [Fact]
+    public void ExportMasksTitlesAndFailures()
+    {
+        var log = new ActivityLog(capacity: 10);
+        var action = log.Begin($"Look up {Serial}", "Inventory");
+        log.Finish(action, $"Denied for {Serial} at a4:83:e7:12:34:56");
+        var text = ActivityMasker.Export(log.Snapshot());
+        Assert.DoesNotContain(Serial, text);
+        Assert.DoesNotContain("a4:83", text);
+        Assert.Contains("Look up SERIAL-1", text);
+        Assert.Contains("MAC-1", text);
+    }
+
     private sealed class Answer(HttpStatusCode status) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>

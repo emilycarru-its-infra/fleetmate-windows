@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Diagnostics;
 
 namespace FleetMate.Core.Services.Activity;
@@ -150,7 +151,7 @@ public sealed class ActivityLog
 
     public ActivityAction Begin(string title, string service, IEnumerable<string>? serials = null)
     {
-        var action = new ActivityAction { Title = title, Service = service };
+        var action = new ActivityAction { Title = ActivitySanitizer.Failure(title), Service = service };
         if (serials != null) action.SerialList.AddRange(serials);
         lock (_lock)
         {
@@ -166,7 +167,7 @@ public sealed class ActivityLog
         lock (_lock)
         {
             action.FinishedAt = DateTimeOffset.Now;
-            action.Failure = failure;
+            action.Failure = failure == null ? null : ActivitySanitizer.Failure(failure);
         }
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -182,14 +183,15 @@ public sealed class ActivityLog
         action ??= Current.Value;
         lock (_lock)
         {
-            var path = url?.IsAbsoluteUri == true ? url.AbsolutePath : url?.OriginalString.Split('?')[0] ?? "";
+            var rawPath = url?.IsAbsoluteUri == true ? url.AbsolutePath : url?.OriginalString.Split('?')[0] ?? "";
             var serials = ActivityMasker.SerialsInQuery(url).ToList();
-            foreach (var segment in path.Split('/', StringSplitOptions.RemoveEmptyEntries))
+            foreach (var segment in rawPath.Split('/', StringSplitOptions.RemoveEmptyEntries))
             {
                 if (_deviceSerials.TryGetValue(segment, out var serial) && !serials.Contains(serial)) serials.Add(serial);
             }
             var entry = new ActivityRequest(startedAt, method.ToUpperInvariant(),
-                url?.IsAbsoluteUri == true ? url.Host : "", path, status, duration, failure, serials);
+                url?.IsAbsoluteUri == true ? url.Host : "", ActivitySanitizer.Path(rawPath), status, duration,
+                failure == null ? null : ActivitySanitizer.Failure(failure), serials);
 
             var target = action != null && _actions.Contains(action)
                 ? action
@@ -236,12 +238,69 @@ public sealed class ActivityLog
         if (_actions.Count > Capacity) _actions.RemoveRange(0, _actions.Count - Capacity);
     }
 
+    /// <summary>
+    /// A short reason for a failure: the HTTP status when there is one,
+    /// otherwise the exception's message with URLs removed. Never a response body.
+    /// </summary>
     internal static string Describe(Exception ex)
     {
         if (ex is HttpRequestException { StatusCode: { } code }) return $"HTTP {(int)code}";
-        var text = ex.Message;
-        return text.Length > 160 ? text[..160] : text;
+        if (ex is TaskCanceledException) return "Timed out";
+        return ActivitySanitizer.Failure(ex.Message);
     }
+}
+
+/// <summary>Keeps secrets and personal details out of what the activity log stores.</summary>
+public static partial class ActivitySanitizer
+{
+    [GeneratedRegex(@"[A-Za-z][A-Za-z0-9+.-]*://\S+")]
+    private static partial Regex Url();
+
+    [GeneratedRegex(@"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")]
+    private static partial Regex Email();
+
+    [GeneratedRegex(@"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?")]
+    private static partial Regex Jwt();
+
+    [GeneratedRegex(@"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$")]
+    private static partial Regex Guid();
+
+    [GeneratedRegex(@"^[A-Za-z0-9\-_.~+/=]+$")]
+    private static partial Regex KeyAlphabet();
+
+    /// <summary>
+    /// Failure text fit to keep: one line, URLs, emails and tokens removed, at
+    /// most 120 characters.
+    /// </summary>
+    public static string Failure(string text)
+    {
+        var result = text.Split('\n', '\r')[0];
+        result = Url().Replace(result, "[url]");
+        result = Jwt().Replace(result, "[token]");
+        result = Email().Replace(result, "[email]");
+        result = string.Join(' ', result.Split(' ').Select(word => IsTokenLike(word) ? "[token]" : word));
+        return result.Length > 120 ? result[..119] + "…" : result;
+    }
+
+    /// <summary>
+    /// A path fit to keep: emails and anything that looks like a key or token
+    /// are replaced where they are recorded, not only on export.
+    /// </summary>
+    public static string Path(string path) =>
+        string.Join('/', Uri.UnescapeDataString(path).Split('/').Select(segment =>
+            segment.Length == 0 ? segment
+            : Email().IsMatch(segment) ? "[email]"
+            : Jwt().IsMatch(segment) || IsTokenLike(segment) ? "[token]"
+            : segment));
+
+    /// <summary>
+    /// 32 or more characters of key-like alphabet with letters and digits mixed:
+    /// an API key, a signature or an opaque token. A GUID is a device or object
+    /// id, not a secret, and is kept.
+    /// </summary>
+    public static bool IsTokenLike(string text) =>
+        text.Length >= 32 && !Guid().IsMatch(text) && KeyAlphabet().IsMatch(text)
+        && text.Any(char.IsLetter) && text.Any(char.IsDigit);
 }
 
 /// <summary>Records every request through it in the activity log.</summary>
