@@ -40,7 +40,8 @@ public partial class MainWindow
     private void MeasureTabs()
     {
         if (_tabWidths.Count > 0 || TabBar.ActualWidth == 0) return;
-        foreach (var tab in TabBar.Children.OfType<RadioButton>())
+        // A switched-off tab is collapsed and takes no room.
+        foreach (var tab in TabBar.Children.OfType<RadioButton>().Where(t => t.Visibility == Visibility.Visible))
         {
             var label = TabLabel(tab);
             var labelWidth = label == null ? 0 : label.ActualWidth + 7; // the icon's right margin
