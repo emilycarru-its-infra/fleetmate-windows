@@ -301,9 +301,15 @@ public class AuthManager : INotifyPropertyChanged
 
         try
         {
-            await snipeService.GetAssetsAsync();
+            // Asked directly: the asset list returns nothing on a refusal,
+            // which used to read as signed in.
+            if (await snipeService.CheckAccessAsync() is { } refused)
+            {
+                Update(AuthSystemId.Snipe, AuthTokenState.Failed(refused));
+                return;
+            }
             Update(AuthSystemId.Snipe, AuthTokenState.Valid(
-                snipeService.UsesOidc ? "SSO bearer (Entra)" : _config.SnipeUrl ?? "Snipe-IT"));
+                snipeService.UsesOidc ? "SSO bearer (Entra)" : "API key"));
         }
         catch (Exception ex)
         {
