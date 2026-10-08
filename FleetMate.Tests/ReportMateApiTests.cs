@@ -175,15 +175,17 @@ public class ReportMateEndpointTests
     {
         var source = ServiceSource();
 
-        // Match the request paths, then assert none of them are unversioned.
+        // Match every request path literal, then assert none of them are
+        // unversioned. Reads go through FetchAsync with relative paths
+        // ("api/v1/..."), so the leading slash is optional.
         var calls = System.Text.RegularExpressions.Regex
-            .Matches(source, @"GetAsync\(\$?""(?<path>/api/[^""?]*)")
-            .Select(m => m.Groups["path"].Value)
+            .Matches(source, @"\$?""(?<path>/?api/[^""?]*)")
+            .Select(m => m.Groups["path"].Value.TrimStart('/'))
             .ToList();
 
         Assert.NotEmpty(calls);
 
-        var unversioned = calls.Where(p => !p.StartsWith("/api/v1/", StringComparison.Ordinal)).ToList();
+        var unversioned = calls.Where(p => !p.StartsWith("api/v1/", StringComparison.Ordinal)).ToList();
         Assert.True(unversioned.Count == 0,
             $"Unversioned ReportMate paths found: {string.Join(", ", unversioned)}. " +
             "The live API serves /api/v1/... only; the old paths 404.");
@@ -195,7 +197,7 @@ public class ReportMateEndpointTests
         // v1 moved installs off the device subresource.
         var source = ServiceSource();
 
-        Assert.Contains("/api/v1/installs", source);
-        Assert.DoesNotContain("/api/devices/installs", source);
+        Assert.Contains("api/v1/installs", source);
+        Assert.DoesNotContain("api/devices/installs", source);
     }
 }

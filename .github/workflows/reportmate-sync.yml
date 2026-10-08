@@ -4,7 +4,8 @@ name: ReportMate sync
 # own source, kept here as the external/reportmate-app-csharp submodule. This
 # keeps it on that repository's main branch: every hour it moves the submodule
 # to main's newest commit, builds FleetMate against it -- the same gate ci.yml
-# applies -- and when that passes, opens a pull request for the bump and merges it.
+# applies -- and when that passes, opens a pull request for the bump, starts
+# ci.yml on it and sets it to merge once that run passes.
 # A failing build leaves the pull request open with a comment, so a ReportMate
 # change that breaks the tab is fixed on this side and never pushed back.
 #
@@ -13,8 +14,11 @@ name: ReportMate sync
 # The publish job holds the write token, never builds or runs ReportMate code,
 # and records exactly the commit the build job tested.
 #
-# The build runs here rather than in ci.yml because a pull request opened with
-# GITHUB_TOKEN does not start other workflows, so its checks would never report.
+# A pull request opened with GITHUB_TOKEN does not start pull_request workflows,
+# but a workflow_dispatch does run. main requires ci.yml's check, so publish
+# starts ci.yml on the branch and the pull request merges only when it passes,
+# the same gate as every other pull request. The build here decides whether to
+# open the pull request at all.
 
 on:
   schedule:
@@ -91,6 +95,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      actions: write
       contents: write
       pull-requests: write
     env:
@@ -145,7 +150,8 @@ jobs:
           fi
 
           if [[ "$RESULT" == success ]]; then
-            gh pr merge "$number" --squash --delete-branch
+            gh workflow run ci.yml --ref "$BRANCH"
+            gh pr merge "$number" --auto --squash --delete-branch
           else
             gh pr comment "$number" --body "FleetMate does not build against ReportMate $short. See $RUN_URL. Fix it on the FleetMate side; this pull request stays open until then."
             exit 1
