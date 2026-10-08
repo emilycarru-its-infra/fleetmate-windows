@@ -12,11 +12,13 @@ public partial class MainWindow
     private readonly TabHistory _tabHistory = new();
     private bool _navigatingHistory;
     private string _lastTab = "Development";
-    private double _zoom = ZoomScale.Default;
 
     private void InitShortcuts()
     {
-        SetZoom(ZoomScale.Load(), save: false);
+        // Zoom and Settings › Appearance › Text size are one setting, as on
+        // Mac. A zoom saved before they were joined carries over once.
+        if (!UserPreferences.HasTextScale && ZoomScale.Load() is var legacy && Math.Abs(legacy - ZoomScale.Default) > 0.001)
+            UserPreferences.SetTextScale(legacy);
         // The mouse's back and forward buttons move through tab history too.
         PreviewMouseDown += (_, e) =>
         {
@@ -51,10 +53,10 @@ public partial class MainWindow
                 CycleTab(-1);
                 return true;
             case AppShortcut.ZoomIn:
-                SetZoom(_zoom + ZoomScale.Step);
+                SetZoom(UserPreferences.TextScale + ZoomScale.Step);
                 return true;
             case AppShortcut.ZoomOut:
-                SetZoom(_zoom - ZoomScale.Step);
+                SetZoom(UserPreferences.TextScale - ZoomScale.Step);
                 return true;
             case AppShortcut.ActualSize:
                 SetZoom(ZoomScale.Default);
@@ -91,11 +93,9 @@ public partial class MainWindow
         NavigateToTab(tabs[(current + offset + tabs.Count) % tabs.Count]);
     }
 
-    /// <summary>Scale the page area; the toolbar and terminal keep their size, as on Mac.</summary>
-    private void SetZoom(double value, bool save = true)
-    {
-        _zoom = ZoomScale.Clamp(value);
-        ContentFrame.LayoutTransform = Math.Abs(_zoom - 1.0) < 0.001 ? Transform.Identity : new ScaleTransform(_zoom, _zoom);
-        if (save) ZoomScale.Save(_zoom);
-    }
+    /// <summary>
+    /// Scale the page area; the toolbar and terminal keep their size, as on
+    /// Mac. The value is the Text size setting, which applies it.
+    /// </summary>
+    private static void SetZoom(double value) => UserPreferences.SetTextScale(ZoomScale.Clamp(value));
 }
