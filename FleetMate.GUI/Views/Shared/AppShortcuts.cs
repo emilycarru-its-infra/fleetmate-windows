@@ -23,6 +23,7 @@ internal enum AppShortcut
     ZoomIn,
     ZoomOut,
     ActualSize,
+    ActivityLog,
 }
 
 internal static class AppShortcuts
@@ -51,6 +52,9 @@ internal static class AppShortcuts
             (Key.OemPlus or Key.Add, Ctrl) or (Key.OemPlus, Ctrl | Shift) => AppShortcut.ZoomIn,
             (Key.OemMinus or Key.Subtract, Ctrl) => AppShortcut.ZoomOut,
             (Key.D0 or Key.NumPad0, Ctrl) => AppShortcut.ActualSize,
+            // Not Ctrl+Alt+L: other apps commonly take that as a global hotkey,
+            // and a global hotkey reaches them before FleetMate's window sees it.
+            (Key.L, Ctrl | Shift) => AppShortcut.ActivityLog,
             _ => null,
         };
     }
