@@ -362,9 +362,13 @@ public static class HandbookLinks
     /// <summary>Stands in for the site when no address is configured, so relative links still resolve to pages.</summary>
     private static readonly Uri PlaceholderSite = new("https://handbook.invalid/");
 
+    /// <summary>
+    /// An absolute http(s) address with a host and no user name or password
+    /// in it ("https://site@elsewhere/" names elsewhere, not site).
+    /// </summary>
     public static bool IsWeb(Uri url) =>
         url.IsAbsoluteUri && (url.Scheme == Uri.UriSchemeHttps || url.Scheme == Uri.UriSchemeHttp)
-        && !url.IsUnc && !string.IsNullOrEmpty(url.Host);
+        && !url.IsUnc && !string.IsNullOrEmpty(url.Host) && string.IsNullOrEmpty(url.UserInfo);
 
     /// <summary>
     /// What clicking <paramref name="href"/> on <paramref name="from"/> does.
