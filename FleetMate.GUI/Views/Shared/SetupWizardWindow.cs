@@ -55,6 +55,9 @@ public sealed class SetupWizardWindow : Window
         _values["TdxBaseUrl"] = _config.Tdx?.BaseUrl ?? "";
         _values["TdxAppId"] = _config.Tdx?.AppId > 0 ? _config.Tdx.AppId.ToString() : "";
         _values["ReportMateUrl"] = _config.ReportMateUrl ?? "";
+        _values["HandbookRepoUrl"] = _config.HandbookRepoUrl ?? "";
+        _values["HandbookSiteUrl"] = _config.HandbookSiteUrl ?? "";
+        _values["AgentsHubRepoUrl"] = _config.AgentsHubRepoUrl ?? "";
 
         var footer = new DockPanel { Margin = new Thickness(24, 12, 24, 18), LastChildFill = true };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
@@ -190,6 +193,13 @@ public sealed class SetupWizardWindow : Window
             Section(panel, "ReportMate");
             Field(panel, "ReportMateUrl", "API URL");
         }
+        if (Shows("Development"))
+        {
+            Section(panel, "Handbook and Skills");
+            Field(panel, "HandbookRepoUrl", "Handbook repository");
+            Field(panel, "HandbookSiteUrl", "Handbook site");
+            Field(panel, "AgentsHubRepoUrl", "Skills repository");
+        }
         if (_fields.Count == 0)
             panel.Children.Add(Note("The modules you chose need no endpoints."));
         return panel;
@@ -306,6 +316,9 @@ public sealed class SetupWizardWindow : Window
         "TdxBaseUrl" => "TeamDynamix",
         "TdxAppId" => "Ticketing app",
         "ReportMateUrl" => "ReportMate",
+        "HandbookRepoUrl" => "Handbook repository",
+        "HandbookSiteUrl" => "Handbook site",
+        "AgentsHubRepoUrl" => "Skills repository",
         _ => name,
     };
 
