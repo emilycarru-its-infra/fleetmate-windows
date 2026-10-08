@@ -25,6 +25,10 @@ public partial class MainWindow
         return true;
     }
 
+    /// <summary>Start loading ReportMate's devices as soon as a search begins.</summary>
+    private void OnSearchFocused(object sender, KeyboardFocusChangedEventArgs e) =>
+        _ = FleetMate.GUI.Views.Reporting.ReportingDeviceList.LoadAsync();
+
     private async void OnSearchTextChanged(object sender, TextChangedEventArgs e)
     {
         var query = SearchBox.Text.Trim();
@@ -50,6 +54,15 @@ public partial class MainWindow
 
             if (cts.IsCancellationRequested) return;
             RenderSearchResults(hits, provider: ToolbarSearch.Provider != null);
+
+            // ReportMate's devices load with the first search; once they arrive,
+            // search again so they join the results already showing.
+            if (ToolbarSearch.Provider is { } again && FleetMate.GUI.Views.Reporting.ReportingDeviceList.NeedsLoad)
+            {
+                await FleetMate.GUI.Views.Reporting.ReportingDeviceList.LoadAsync();
+                if (cts.IsCancellationRequested) return;
+                RenderSearchResults(await again(query, cts.Token), provider: true);
+            }
         }
         catch (OperationCanceledException)
         {

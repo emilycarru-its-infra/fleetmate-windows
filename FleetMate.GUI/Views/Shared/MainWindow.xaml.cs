@@ -27,6 +27,7 @@ public partial class MainWindow : Window
         TabDevelopment.IsChecked = true;
         UpdateGraphsButton();
         InitShortcuts();
+        SearchBox.GotKeyboardFocus += OnSearchFocused;
 
         if (Application.Current is App app)
         {
@@ -260,6 +261,13 @@ public partial class MainWindow : Window
                 return;
             }
         }
+    }
+
+    /// <summary>Show the Reporting tab on a <c>reportmate://</c> page.</summary>
+    public void OpenReportingLink(string url)
+    {
+        NavigateToTab("Reporting");
+        if (GetOrCreatePage("Reporting") is FleetMate.GUI.Views.Reporting.ReportingPage page) page.OpenLink(url);
     }
 
     private Page GetOrCreatePage(string tag) => tag switch

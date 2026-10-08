@@ -4,11 +4,12 @@ using FleetMate.Core.Models.Devices;
 using FleetMate.Core.Models.Identity;
 using FleetMate.Core.Models.Inventory;
 using FleetMate.Core.Models.Projects;
+using FleetMate.Core.Models.Reporting;
 using FleetMate.Core.Models.Tickets;
 
 namespace FleetMate.Core.Services.Search;
 
-public enum SearchCategory { Devices, Inventory, Tickets, WorkItems, Users, Groups, PullRequests, Issues, Commits, PipelineRuns }
+public enum SearchCategory { Devices, Reporting, Inventory, Tickets, WorkItems, Users, Groups, PullRequests, Issues, Commits, PipelineRuns }
 
 /// <summary>
 /// One result: what to show (title, subtitle, and which field matched) and
@@ -42,6 +43,8 @@ public sealed record SearchGroup(SearchCategory Category, int Total, IReadOnlyLi
 public sealed class SearchSources
 {
     public IReadOnlyList<IntuneDevice> Devices { get; init; } = Array.Empty<IntuneDevice>();
+    /// <summary>The Reporting tab's ReportMate devices.</summary>
+    public IReadOnlyList<ReportingDevice> ReportingDevices { get; init; } = Array.Empty<ReportingDevice>();
     public IReadOnlyList<SnipeAsset> Assets { get; init; } = Array.Empty<SnipeAsset>();
     public IReadOnlyList<TdxTicket> Tickets { get; init; } = Array.Empty<TdxTicket>();
     public IReadOnlyList<WorkItem> WorkItems { get; init; } = Array.Empty<WorkItem>();
@@ -102,6 +105,16 @@ public static partial class GlobalSearch
                 Sub(d.Model, d.UserDisplayName),
                 ("Name", d.DeviceName), ("Serial", d.SerialNumber), ("User", d.UserDisplayName),
                 ("UPN", d.UserPrincipalName), ("Hostname", d.ManagedDeviceName)));
+
+        // ReportMate's devices open on the Reporting tab, by serial.
+        Add(groups, SearchCategory.Reporting, sources.ReportingDevices, d =>
+        {
+            var hit = Best(SearchCategory.Reporting, text, d.Serial,
+                string.IsNullOrWhiteSpace(d.Name) ? d.Serial : d.Name, Sub(d.Platform, d.User),
+                ("Name", d.Name), ("Serial", d.Serial), ("Asset tag", d.AssetTag), ("User", d.User),
+                ("Host", d.Hostname));
+            return hit == null ? null : hit with { Link = FleetMateLink.Reporting.ForDevice(d.Serial).ToLink() };
+        });
 
         Add(groups, SearchCategory.Inventory, sources.Assets, a =>
             Best(SearchCategory.Inventory, text, a.Id.ToString(),
