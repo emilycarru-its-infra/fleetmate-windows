@@ -56,4 +56,34 @@ public static class TicketBoardLayout
 
     public static string ResponsibleKey(TdxTicket t) =>
         string.IsNullOrWhiteSpace(t.ResponsibleFullName) ? Unassigned : t.ResponsibleFullName!;
+
+    public static string StatusKey(TdxTicket t) => t.StatusName ?? "Unknown";
+
+    public static string PriorityKey(TdxTicket t) => t.PriorityName ?? "No Priority";
+
+    /// <summary>The column a ticket sits in when the board is grouped by <paramref name="groupBy"/>.</summary>
+    public static string ColumnKey(TdxTicket t, string groupBy) => groupBy switch
+    {
+        "Status" => StatusKey(t),
+        "Priority" => PriorityKey(t),
+        "Group" => GroupKey(t),
+        _ => ResponsibleKey(t),
+    };
+
+    /// <summary>
+    /// Whether dropping <paramref name="t"/> on <paramref name="columnKey"/>
+    /// would change anything. A card dropped back on its own column is not an
+    /// edit, and must never reach the service desk as one.
+    /// </summary>
+    public static bool IsMove(TdxTicket t, string groupBy, string columnKey) =>
+        !string.Equals(ColumnKey(t, groupBy), columnKey, StringComparison.Ordinal);
+
+    /// <summary>The field a drop changes, in words, for the confirmation prompt.</summary>
+    public static string FieldLabel(string groupBy) => groupBy switch
+    {
+        "Status" => "status",
+        "Priority" => "priority",
+        "Group" => "responsible group",
+        _ => "responsible person",
+    };
 }
