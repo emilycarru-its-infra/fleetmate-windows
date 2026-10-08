@@ -93,6 +93,29 @@ public class SnipeService : IDisposable
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
     }
 
+    /// <summary>
+    /// Whether Snipe-IT accepts this client's credentials: one asset is asked
+    /// for, and anything but success is returned as the reason. The asset
+    /// list itself swallows a refusal and returns nothing, so it cannot tell
+    /// "no assets" from "not allowed".
+    /// </summary>
+    public async Task<string?> CheckAccessAsync(CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(BaseUrl)) return "no Snipe-IT address is set";
+        try
+        {
+            using var response = await _client.GetAsync("/api/v1/hardware?limit=1", ct);
+            if (response.IsSuccessStatusCode) return null;
+            return response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden
+                ? $"Snipe-IT refused the {(UsesOidc ? "sign-in" : "API key")} ({(int)response.StatusCode})"
+                : $"Snipe-IT answered {(int)response.StatusCode}";
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return ex.Message;
+        }
+    }
+
     #region Hardware/Assets
     
     /// <summary>
