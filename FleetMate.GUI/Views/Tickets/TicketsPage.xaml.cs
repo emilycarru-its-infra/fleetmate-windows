@@ -43,6 +43,9 @@ public partial class TicketsPage : Page
     internal const string UnassignedFilterLabel = "(Unassigned)";
     private List<TdxFeedEntry> _ticketFeed = new();
     private TdxTicket? _selectedTicket;
+
+    /// <summary>Set while the detail editors are filled from a ticket, so that is not read as an edit.</summary>
+    private bool _populatingEditors;
     private bool _sortAscending = false;  // Default descending (newest first)
     private string _sortField = "Modified";  // Default to Modified date
     private bool _detailPanelVisible = false;
@@ -303,6 +306,10 @@ private bool _isInitialLoadDone;
         {
             "Modified" => _sortAscending ? filtered.OrderBy(t => t.ModifiedDate) : filtered.OrderByDescending(t => t.ModifiedDate),
             "Created" => _sortAscending ? filtered.OrderBy(t => t.CreatedDate) : filtered.OrderByDescending(t => t.CreatedDate),
+            "ID" => _sortAscending ? filtered.OrderBy(t => t.Id) : filtered.OrderByDescending(t => t.Id),
+            // Oldest first when descending: a queue is read by what has been
+            // waiting longest, as on Mac.
+            "Age" => _sortAscending ? filtered.OrderByDescending(t => t.CreatedDate) : filtered.OrderBy(t => t.CreatedDate),
             "Title" => _sortAscending ? filtered.OrderBy(t => t.Title) : filtered.OrderByDescending(t => t.Title),
             "Status" => _sortAscending ? filtered.OrderBy(t => t.StatusName) : filtered.OrderByDescending(t => t.StatusName),
             "Priority" => _sortAscending ? filtered.OrderBy(t => t.PriorityName) : filtered.OrderByDescending(t => t.PriorityName),
@@ -999,6 +1006,164 @@ private bool _isInitialLoadDone;
         
         // Update notify options
         UpdateNotifyOptions(ticket);
+
+        _ = PopulateEditorsAsync(ticket);
+    }
+
+    /// <summary>
+    /// Fill Status, Priority and Classification with TDX's choices and select
+    /// the ticket's values. The ticket's own value is kept as a choice even
+    /// when TDX's list does not offer it, so the editor never reads blank.
+    /// </summary>
+    private async Task PopulateEditorsAsync(TdxTicket ticket)
+    {
+        if (_tdxService == null) return;
+        var statuses = new Dictionary<int, string>(await _tdxService.GetStatusesAsync());
+        var priorities = new Dictionary<int, string>(await _tdxService.GetPrioritiesAsync());
+        if (_selectedTicket?.Id != ticket.Id) return;
+
+        if (ticket.StatusId > 0) statuses.TryAdd(ticket.StatusId, ticket.StatusName ?? $"Status {ticket.StatusId}");
+        if (ticket.PriorityId is int pid && pid > 0) priorities.TryAdd(pid, ticket.PriorityName ?? $"Priority {pid}");
+        var classes = TdxClassification.All.ToDictionary(c => c.Key, c => c.Value);
+        if (ticket.Classification > 0) classes.TryAdd(ticket.Classification, ticket.ClassificationName ?? TdxClassification.Name(ticket.Classification));
+
+        _populatingEditors = true;
+        try
+        {
+            DetailStatusCombo.ItemsSource = statuses.OrderBy(s => s.Value).ToList();
+            DetailStatusCombo.SelectedValue = ticket.StatusId;
+            DetailPriorityCombo.ItemsSource = priorities.OrderBy(p => p.Value).ToList();
+            DetailPriorityCombo.SelectedValue = ticket.PriorityId;
+            DetailClassificationCombo.ItemsSource = classes.OrderBy(c => c.Value).ToList();
+            DetailClassificationCombo.SelectedValue = ticket.Classification;
+        }
+        finally
+        {
+            _populatingEditors = false;
+        }
+    }
+
+    private async void OnDetailFieldChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_populatingEditors || _selectedTicket == null || _tdxService == null || _app == null) return;
+        if (sender is not ComboBox combo || combo.SelectedValue is not int value) return;
+        var field = (string)combo.Tag;
+        var current = field switch
+        {
+            "StatusID" => (int?)_selectedTicket.StatusId,
+            "PriorityID" => _selectedTicket.PriorityId,
+            _ => _selectedTicket.Classification,
+        };
+        if (current == value) return;
+
+        var label = field switch { "StatusID" => "status", "PriorityID" => "priority", _ => "classification" };
+        ShowActionMessage($"Changing {label}…", isLoading: true);
+        var updated = await _tdxService.UpdateTicketAsync(_selectedTicket.Id, new Dictionary<string, object?> { [field] = value });
+        if (updated == null)
+        {
+            ShowActionMessage($"TeamDynamix did not accept the {label}. See the log for the response.", isError: true);
+            UpdateDetailPanel(_selectedTicket);
+            return;
+        }
+        ReplaceCachedTicket(updated);
+        ShowActionMessage($"Changed {label}");
+    }
+
+    private void ReplaceCachedTicket(TdxTicket updated)
+    {
+        if (_app == null) return;
+        var idx = _app.CachedTickets.FindIndex(t => t.Id == updated.Id);
+        if (idx >= 0) _app.CachedTickets[idx] = updated;
+        if (_selectedTicket?.Id == updated.Id)
+        {
+            _selectedTicket = updated;
+            UpdateDetailPanel(updated);
+        }
+        ApplyFiltersAndSort();
+    }
+
+    // Set Parent ---------------------------------------------------------------
+
+    private void OnSetParentClicked(object sender, RoutedEventArgs e)
+    {
+        if (_selectedTicket == null) return;
+        SetParentPopup.IsOpen = true;
+    }
+
+    private void OnSetParentPopupOpened(object? sender, EventArgs e)
+    {
+        ParentIdBox.Text = _selectedTicket?.ParentId is int id && id > 0 ? id.ToString() : "";
+        SetParentHintText.Text = _selectedTicket?.ParentTitle is { Length: > 0 } title ? $"Now: {title}" : "";
+        ParentIdBox.Focus();
+        ParentIdBox.SelectAll();
+    }
+
+    private async void OnParentIdKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            e.Handled = true;
+            await SetParentAsync();
+        }
+        else if (e.Key == Key.Escape)
+        {
+            SetParentPopup.IsOpen = false;
+        }
+    }
+
+    private async void OnSetParentConfirmed(object sender, RoutedEventArgs e) => await SetParentAsync();
+
+    private async Task SetParentAsync()
+    {
+        if (_selectedTicket == null || _tdxService == null) return;
+        var text = ParentIdBox.Text.Trim().TrimStart('#');
+        int? parentId = null;
+        if (text.Length > 0)
+        {
+            if (!int.TryParse(text, out var parsed) || parsed <= 0)
+            {
+                SetParentHintText.Text = "Enter a ticket number.";
+                return;
+            }
+            if (parsed == _selectedTicket.Id)
+            {
+                SetParentHintText.Text = "A ticket can't be its own parent.";
+                return;
+            }
+            parentId = parsed;
+        }
+
+        SetParentPopup.IsOpen = false;
+        ShowActionMessage(parentId == null ? "Clearing the parent…" : $"Setting parent to #{parentId}…", isLoading: true);
+        var updated = await _tdxService.SetParentAsync(_selectedTicket.Id, parentId);
+        if (updated == null)
+        {
+            ShowActionMessage("TeamDynamix did not accept the parent. See the log for the response.", isError: true);
+            return;
+        }
+        ReplaceCachedTicket(updated);
+        ShowActionMessage(parentId == null ? "Parent cleared" : $"Parent set to #{parentId}");
+    }
+
+    // New Ticket ---------------------------------------------------------------
+
+    private async void OnNewTicketClicked(object sender, RoutedEventArgs e) => await ShowNewTicketDialogAsync();
+
+    /// <summary>Open the New Ticket dialog and select the ticket it creates.</summary>
+    public async Task ShowNewTicketDialogAsync()
+    {
+        if (_tdxService == null || _app == null) return;
+        var me = await _tdxService.GetMeAsync();
+        var dialog = new CreateTicketDialog(_tdxService, me) { Owner = Window.GetWindow(this) };
+        if (dialog.ShowDialog() != true || dialog.CreatedTicket is not { } created) return;
+
+        _app.CachedTickets.Insert(0, created);
+        ApplyFiltersAndSort();
+        RevealTicket(created.Id);
+        ShowActionMessage(dialog.FailedAttachments.Count == 0
+            ? $"Created #{created.Id}"
+            : $"Created #{created.Id}, but these files did not attach: {string.Join(", ", dialog.FailedAttachments)}",
+            isError: dialog.FailedAttachments.Count > 0);
     }
 
     private void UpdateFeedPanel()
