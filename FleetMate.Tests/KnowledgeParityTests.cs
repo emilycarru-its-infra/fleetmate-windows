@@ -136,3 +136,99 @@ public class KnowledgeParityTests : IDisposable
         Assert.Empty(SkillCatalog.LoadLocal(Path.Combine(_root, "nowhere")));
     }
 }
+
+/// <summary>The allow-list for links in Handbook and skill text.</summary>
+public class HandbookLinkTests
+{
+    private const string Site = "https://handbook.example.org";
+
+    private static readonly HandbookIndex Index = new(new[]
+    {
+        HandbookIndex.Page("devices/enrollment.md", "---\ntitle: Enrollment\n---\nbody")!,
+        HandbookIndex.Page("devices/wifi.md", "---\ntitle: Wi-Fi\n---\nbody")!,
+    });
+
+    private static HandbookPage From => Index.Pages[0];
+
+    [Theory]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("JaVaScRiPt:alert(1)")]
+    [InlineData("file:///C:/Windows/System32/calc.exe")]
+    [InlineData(@"\\server\share\run.exe")]
+    [InlineData("//server/share/run.exe")]
+    [InlineData(@"C:\Windows\System32\calc.exe")]
+    [InlineData("ms-settings:privacy")]
+    [InlineData("data:text/html,<script>alert(1)</script>")]
+    [InlineData("mailto:someone@example.org")]
+    [InlineData("calc.exe")]
+    [InlineData("#steps")]
+    [InlineData("")]
+    public void AnythingButAPageOrAWebLinkIsDropped(string href)
+    {
+        var action = HandbookLinks.Classify(href, From, Index, Site);
+        // A bare name is a relative link on the site: at most an https page there, never the shell.
+        if (action.Kind == HandbookLinkKind.OpenInBrowser)
+        {
+            Assert.Equal("https", action.Url!.Scheme);
+            Assert.Equal("handbook.example.org", action.Url.Host);
+        }
+        if (action.Kind == HandbookLinkKind.OpenPage) Assert.NotNull(action.Page);
+        Assert.Null(HandbookLinks.External(href));
+    }
+
+    [Theory]
+    [InlineData("../wifi/")]
+    [InlineData("/devices/wifi/")]
+    [InlineData("/devices/wifi")]
+    [InlineData("https://handbook.example.org/devices/wifi/")]
+    public void LinksToAnotherPageOpenInTheReader(string href)
+    {
+        var action = HandbookLinks.Classify(href, From, Index, Site);
+        Assert.Equal(HandbookLinkKind.OpenPage, action.Kind);
+        Assert.Equal("Wi-Fi", action.Page!.Title);
+    }
+
+    [Fact]
+    public void RelativePageLinksWorkWithoutASiteAddress()
+    {
+        Assert.Equal(HandbookLinkKind.OpenPage, HandbookLinks.Classify("../wifi/", From, Index, null).Kind);
+        // Unknown on-site page and no site to send it to: nothing happens.
+        Assert.Equal(HandbookLinkKind.Ignore, HandbookLinks.Classify("/nowhere/", From, Index, null).Kind);
+    }
+
+    [Fact]
+    public void WebLinksOpenInTheBrowser()
+    {
+        var external = HandbookLinks.Classify("https://learn.example.com/a?b=c", From, Index, Site);
+        Assert.Equal(HandbookLinkKind.OpenInBrowser, external.Kind);
+        Assert.Equal("https://learn.example.com/a?b=c", external.Url!.AbsoluteUri);
+
+        var unknownOnSite = HandbookLinks.Classify("/not-in-the-copy/", From, Index, Site);
+        Assert.Equal(HandbookLinkKind.OpenInBrowser, unknownOnSite.Kind);
+        Assert.Equal("handbook.example.org", unknownOnSite.Url!.Host);
+
+        Assert.Equal("https://example.com/", HandbookLinks.External("https://example.com/")!.AbsoluteUri);
+    }
+
+    [Theory]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("//evil.example/x/")]
+    [InlineData("/ok/../../x/")]
+    public void SitePathsNeverLeaveTheSite(string sitePath)
+    {
+        var page = Index.Pages[0] with { SitePath = sitePath };
+        var url = HandbookSite.PageUrl(Site, page);
+        Assert.True(url == null || url.Host == "handbook.example.org");
+        Assert.True(url == null || url.Scheme == "https");
+        Assert.Null(HandbookSite.PageUrl("javascript:alert(1)", Index.Pages[0]));
+        Assert.Null(HandbookSite.PageUrl("file:///C:/", Index.Pages[0]));
+    }
+
+    [Theory]
+    [InlineData("javascript:alert(1)", "devices/enrollment.md", "/devices/enrollment/")]
+    [InlineData("//evil.example/x/", "devices/_index.md", "/devices/")]
+    [InlineData("/devices/enrollment/", "devices/enrollment.md", "/devices/enrollment/")]
+    [InlineData(null, "_index.md", "/")]
+    public void CatalogSitePathsAreSanitised(string? url, string path, string expected) =>
+        Assert.Equal(expected, HandbookIndex.SafeSitePath(url, path));
+}
