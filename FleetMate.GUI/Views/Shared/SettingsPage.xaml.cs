@@ -115,6 +115,7 @@ public partial class SettingsPage : Page
             "Dark" => 2,
             _ => 0
         };
+        LoadPreferences(config);
         _isLoadingSettings = false;
     }
 
@@ -296,7 +297,7 @@ public partial class SettingsPage : Page
         if (graphConfigured)
         {
             var (text, state) = BrokerState(app, AuthSystemId.Graph);
-            AddAuthCard("Microsoft Graph", "Entra SSO · Windows Web Account Manager", text, state,
+            AddAuthCard(AuthSystemId.Graph, "Microsoft Graph", "Entra SSO · Windows Web Account Manager", text, state,
                 new (string label, string? value)[]
                 {
                     ("Tenant ID", ShortId(config.Graph?.TenantId)),
@@ -310,7 +311,7 @@ public partial class SettingsPage : Page
         if (adoConfigured)
         {
             var (text, state) = BrokerState(app, AuthSystemId.DevOps);
-            AddAuthCard("Azure DevOps", "Entra SSO · Windows Web Account Manager", text, state,
+            AddAuthCard(AuthSystemId.DevOps, "Azure DevOps", "Entra SSO · Windows Web Account Manager", text, state,
                 new[]
                 {
                     ("Organization", config.AzureDevOps?.Organization),
@@ -323,7 +324,7 @@ public partial class SettingsPage : Page
         if (tdxConfigured)
         {
             var (text, state) = BrokerState(app, AuthSystemId.Tdx);
-            AddAuthCard("TeamDynamix", "Integrated SSO · Entra / Shibboleth", text, state,
+            AddAuthCard(AuthSystemId.Tdx, "TeamDynamix", "Integrated SSO · Entra / Shibboleth", text, state,
                 new[]
                 {
                     ("Base URL", config.Tdx?.BaseUrl),
@@ -335,7 +336,7 @@ public partial class SettingsPage : Page
         if (snipeConfigured)
         {
             var (text, state) = BrokerState(app, AuthSystemId.Snipe);
-            AddAuthCard("Snipe-IT", "Entra SSO · brokered bearer", text, state,
+            AddAuthCard(AuthSystemId.Snipe, "Snipe-IT", "Entra SSO · brokered bearer", text, state,
                 new[]
                 {
                     ("Instance URL", config.SnipeUrl),
@@ -347,7 +348,7 @@ public partial class SettingsPage : Page
         var rmConfigured = !string.IsNullOrEmpty(config.ReportMateUrl);
         if (rmConfigured)
         {
-            AddAuthCard("ReportMate", "Entra SSO · brokered bearer", "ready for SSO", AuthState.Configured,
+            AddAuthCard(null, "ReportMate", "Entra SSO · brokered bearer", "ready for SSO", AuthState.Configured,
                 new[]
                 {
                     ("API URL", config.ReportMateUrl),
@@ -361,7 +362,7 @@ public partial class SettingsPage : Page
         if (ghConfig is { Enabled: true } || ghState?.Kind == AuthStateKind.Valid)
         {
             var (text, state) = BrokerState(app, AuthSystemId.GitHub);
-            AddAuthCard("GitHub", "GitHub CLI · OS credential store", text, state,
+            AddAuthCard(AuthSystemId.GitHub, "GitHub", "GitHub CLI · OS credential store", text, state,
                 new[]
                 {
                     ("Organization", ghConfig?.Organization),
@@ -396,14 +397,15 @@ public partial class SettingsPage : Page
         };
     }
 
-    private void AddAuthCard(string systemName, string authMethod, string statusText, AuthState state,
-        (string label, string? value)[] details, string? actionLabel = null, Action? action = null)
+    private void AddAuthCard(AuthSystemId? systemId, string systemName, string authMethod, string statusText, AuthState state,
+        (string label, string? value)[] details)
     {
+        // Never red: a failed sign-in is orange, as on the macOS client.
         var color = state switch
         {
             AuthState.Valid => "#27ae60",
             AuthState.Configured => "#f39c12",
-            AuthState.Failed => "#d64545",
+            AuthState.Failed => "#e67e22",
             _ => "#666"
         };
         var borderColor = Color.FromArgb(50,
@@ -456,19 +458,12 @@ public partial class SettingsPage : Page
         Grid.SetColumn(badge, 1);
         header.Children.Add(badge);
 
-        // Action button
-        if (actionLabel != null && action != null)
+        // Sign-in actions: Sign Out / Retry SSO, az login, gh auth login, Re-check.
+        if (systemId is { } id)
         {
-            var btn = new Button
-            {
-                Content = actionLabel,
-                Margin = new Thickness(8, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-                Padding = new Thickness(12, 4, 12, 4)
-            };
-            btn.Click += (_, _) => action();
-            Grid.SetColumn(btn, 2);
-            header.Children.Add(btn);
+            var actions = BuildAuthActions(id, state);
+            Grid.SetColumn(actions, 2);
+            header.Children.Add(actions);
         }
 
         outerStack.Children.Add(header);
@@ -507,7 +502,7 @@ public partial class SettingsPage : Page
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
             if (value.StartsWith("✗"))
-                val.Foreground = new SolidColorBrush(Colors.Red);
+                val.Foreground = new SolidColorBrush(Colors.DarkOrange);
             else if (value.StartsWith("●"))
                 val.Foreground = new SolidColorBrush(Colors.Green);
             Grid.SetColumn(val, 1);
@@ -515,6 +510,21 @@ public partial class SettingsPage : Page
             row.Children.Add(lbl);
             row.Children.Add(val);
             outerStack.Children.Add(row);
+        }
+
+        // What the last az or gh sign-in from this card reported.
+        if (systemId is { } resultId && _signInResults.TryGetValue(resultId, out var outcome))
+        {
+            outerStack.Children.Add(new TextBlock
+            {
+                Text = outcome.Message,
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 6, 0, 0),
+                Foreground = outcome.Succeeded
+                    ? (Brush)FindResource("SystemControlForegroundBaseMediumBrush")
+                    : new SolidColorBrush(Colors.DarkOrange)
+            });
         }
 
         card.Child = outerStack;
