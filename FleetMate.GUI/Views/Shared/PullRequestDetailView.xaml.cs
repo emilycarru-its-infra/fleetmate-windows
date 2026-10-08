@@ -198,10 +198,13 @@ public partial class PullRequestDetailView : UserControl
         // hiding them entirely loses the approval trail.
         var comments = detail.Comments.Select(c => new PullRequestCommentViewModel { Comment = c }).ToList();
         ConversationSection.Visibility = PullRequestCheckViewModel.Show(comments.Count > 0);
-        ConversationHeader.Text = $"Conversation ({detail.Conversation.Count()})";
+        // The header count and the section count both leave system entries
+        // out, so they always agree.
+        var conversationCount = detail.Conversation.Count();
+        ConversationHeader.Text = $"Conversation ({conversationCount})";
         CommentsList.ItemsSource = comments;
 
-        CommentCountText.Text = detail.Comments.Count > 0 ? $"{detail.Comments.Count} comments" : "";
+        CommentCountText.Text = PullRequestDetail.CommentCountLabel(conversationCount);
 
         var handbook = _pullRequest is { } pr
             ? FleetMate.GUI.Views.Knowledge.HandbookRelatedCard.Build(new[] { pr.Repository, $"{pr.Container} {pr.Repository}" })
