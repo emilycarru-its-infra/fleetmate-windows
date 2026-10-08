@@ -69,14 +69,6 @@ public static class LoginCommand
     {
         var reports = new List<SystemReport>();
 
-        // --check must never prompt. Clearing the provider guarantees it: the
-        // token source falls back to "no window to prompt in" and fails fast
-        // rather than blocking a scripted run on a dialog nobody will answer.
-        if (check)
-        {
-            EntraTokenSource.ParentWindowProvider = null;
-        }
-
         // ── Entra — the trust anchor everything else rides on ────────────────
         var identity = await ProbeEntraAsync(config);
         reports.Add(identity);
