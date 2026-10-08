@@ -485,6 +485,45 @@ public class CreateTicketRequest
 
     [JsonPropertyName("Attributes")]
     public List<TdxAttribute>? Attributes { get; set; }
+
+    /// <summary>Ticket classification (see <see cref="TdxClassification"/>); left to TDX when null.</summary>
+    [JsonPropertyName("Classification")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Classification { get; set; }
+
+    /// <summary>TDX stores descriptions as HTML; set when the description is HTML.</summary>
+    [JsonPropertyName("IsRichHtml")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? IsRichHtml { get; set; }
+}
+
+/// <summary>
+/// TDX ticket classifications. Fixed ids across TDX tenants, the same set
+/// FleetMate for Mac offers.
+/// </summary>
+public static class TdxClassification
+{
+    public const int Ticket = 9;
+    public const int Incident = 32;
+    public const int Problem = 33;
+    public const int Change = 34;
+    public const int Release = 35;
+    public const int ServiceRequest = 46;
+    public const int MajorIncident = 77;
+
+    public static readonly IReadOnlyList<KeyValuePair<int, string>> All = new List<KeyValuePair<int, string>>
+    {
+        new(Ticket, "Ticket"),
+        new(Incident, "Incident"),
+        new(Problem, "Problem"),
+        new(Change, "Change"),
+        new(Release, "Release"),
+        new(ServiceRequest, "Service Request"),
+        new(MajorIncident, "Major Incident"),
+    };
+
+    public static string Name(int id) =>
+        All.FirstOrDefault(c => c.Key == id).Value ?? $"Classification {id}";
 }
 
 /// <summary>
