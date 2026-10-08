@@ -55,3 +55,25 @@ jobs:
 
       - name: Test
         run: dotnet test FleetMate.Tests/FleetMate.Tests.csproj --configuration Release --no-build --verbosity minimal
+
+  # A run started by workflow_dispatch (reportmate-sync does this for its pull
+  # request) is not counted toward the pull request's required check, so this
+  # job records the result as a commit status under the same name. It runs no
+  # code from the repository, so the build above never holds this token.
+  report:
+    if: always() && github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    steps:
+      - name: Record the result on the commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ needs.build.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$RESULT" = success ]; then state=success; else state=failure; fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state="$state" -f context="Build and test" \
+            -f target_url="$RUN_URL" -f description="workflow_dispatch run: $RESULT"
