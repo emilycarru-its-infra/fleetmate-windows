@@ -38,12 +38,14 @@ internal sealed class TabHistory
     }
 }
 
-/// <summary>Zoom for the page area: the same range and step as the Mac text size.</summary>
+/// <summary>
+/// The zoom saved before zoom and Text size were one setting. Read once to carry
+/// it over; <see cref="FleetMate.Core.Config.AppTextScale"/> owns the range and step.
+/// </summary>
 internal static class ZoomScale
 {
     public const double Min = 0.9;
     public const double Max = 1.6;
-    public const double Step = 0.1;
     public const double Default = 1.0;
 
     public static double Clamp(double value) => Math.Round(Math.Min(Max, Math.Max(Min, value)), 2);
