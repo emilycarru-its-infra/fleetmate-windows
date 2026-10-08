@@ -317,6 +317,16 @@ public partial class SettingsPage : Page
                     ("Elevation", "managed identity (aze)")
                 });
         }
+        else
+        {
+            // Shown rather than hidden, so a missing setting is visible instead of a missing card.
+            AddAuthCard(null, "Microsoft Graph", "Entra SSO · Windows Web Account Manager", "not configured", AuthState.NotConfigured,
+                new (string label, string? value)[]
+                {
+                    ("Needs", "Tenant ID (Microsoft Graph, above), or GraphTenantId in managed settings"),
+                    ("Used by", "Devices and Identity"),
+                });
+        }
 
         var adoConfigured = config.AzureDevOps != null && !string.IsNullOrEmpty(config.AzureDevOps.Organization);
         if (adoConfigured)
@@ -347,17 +357,28 @@ public partial class SettingsPage : Page
         if (snipeConfigured)
         {
             var (text, state) = BrokerState(app, AuthSystemId.Snipe);
-            AddAuthCard(AuthSystemId.Snipe, "Snipe-IT", "Entra SSO · brokered bearer", text, state,
-                new[]
-                {
-                    ("Instance URL", config.SnipeUrl),
-                    ("Audience", ShortId(config.SnipeOidcAudience)),
-                    ("Token source", "Windows broker — no API key")
-                });
+            // The card names the path the service actually uses: without an
+            // audience it falls back to the legacy API key, not SSO.
+            AddAuthCard(AuthSystemId.Snipe, "Snipe-IT",
+                config.SnipeUsesOidc ? "Entra SSO · brokered bearer" : "Legacy API key · no SSO audience set",
+                text, state,
+                config.SnipeUsesOidc
+                    ? new[]
+                    {
+                        ("Instance URL", config.SnipeUrl),
+                        ("Audience", ShortId(config.SnipeOidcAudience)),
+                        ("Token source", "Windows broker — no API key")
+                    }
+                    : new[]
+                    {
+                        ("Instance URL", config.SnipeUrl),
+                        ("Needs", "SnipeOidcAudience in managed settings, for SSO"),
+                        ("Token source", "stored API key")
+                    });
         }
 
         var rmConfigured = !string.IsNullOrEmpty(config.ReportMateUrl);
-        if (rmConfigured)
+        if (rmConfigured && config.ReportMateUsesOidc)
         {
             AddAuthCard(null, "ReportMate", "Entra SSO · brokered bearer", "ready for SSO", AuthState.Configured,
                 new[]
@@ -365,6 +386,16 @@ public partial class SettingsPage : Page
                     ("API URL", config.ReportMateUrl),
                     ("Audience", ShortId(config.ReportMateOidcAudience)),
                     ("Token source", "Windows broker — no passphrase")
+                });
+        }
+        else
+        {
+            AddAuthCard(null, "ReportMate", "Entra SSO · brokered bearer", "not configured", AuthState.NotConfigured,
+                new[]
+                {
+                    ("API URL", rmConfigured ? config.ReportMateUrl : null),
+                    ("Needs", ReportMateNeeds(rmConfigured)),
+                    ("Used by", "Reporting"),
                 });
         }
 
@@ -394,6 +425,11 @@ public partial class SettingsPage : Page
         }
     }
 
+    /// <summary>The settings Reporting still lacks, by the names they are set under.</summary>
+    internal static string ReportMateNeeds(bool hasUrl) => hasUrl
+        ? "ReportMateOidcAudience in managed settings"
+        : "API URL (ReportMate, above) and ReportMateOidcAudience in managed settings";
+
     private static (string text, AuthState state) BrokerState(App app, AuthSystemId id)
     {
         var status = app.AuthManager.Systems.GetValueOrDefault(id);
@@ -402,7 +438,7 @@ public partial class SettingsPage : Page
         {
             AuthStateKind.Valid => ($"signed in as {status.State.User ?? status.User ?? "you"}", AuthState.Valid),
             AuthStateKind.Authenticating => ("checking Windows session…", AuthState.Configured),
-            AuthStateKind.Failed => ("SSO unavailable", AuthState.Failed),
+            AuthStateKind.Failed => (id == AuthSystemId.Snipe ? "refused" : "SSO unavailable", AuthState.Failed),
             AuthStateKind.ServicePrincipal => ("service principal blocked", AuthState.Failed),
             _ => ("ready for SSO", AuthState.Configured)
         };
