@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using FleetMate.Core.Services.Activity;
 
 namespace FleetMate.Core.Services;
 
@@ -45,7 +46,7 @@ public sealed class PimService
     public PimService(EntraTokenSource tokens, HttpClient? http = null)
     {
         _tokens = tokens ?? throw new ArgumentNullException(nameof(tokens));
-        _http = http ?? new HttpClient();
+        _http = http ?? new HttpClient(new ActivityLogHandler("Privileged Identity"));
     }
 
     private async Task<HttpRequestMessage> RequestAsync(HttpMethod method, string path, string scope, CancellationToken ct)

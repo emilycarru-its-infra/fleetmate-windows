@@ -4,6 +4,7 @@ using FleetMate.Core.Converters;
 using FleetMate.Core.Models.Reporting;
 using FleetMate.Core.Services;
 using Serilog;
+using FleetMate.Core.Services.Activity;
 
 namespace FleetMate.Core.Services.Reporting;
 
@@ -79,8 +80,8 @@ public class ReportMateService : IDisposable
         // both are set, so migration is additive rather than a flag day.
         var inner = httpHandler ?? new HttpClientHandler();
         _client = UsesOidc
-            ? new HttpClient(new EntraBearerHandler(oidcAudience!) { InnerHandler = inner })
-            : new HttpClient(inner);
+            ? new HttpClient(new ActivityLogHandler("ReportMate", new EntraBearerHandler(oidcAudience!) { InnerHandler = inner }))
+            : new HttpClient(new ActivityLogHandler("ReportMate", inner));
         _client.BaseAddress = new Uri(_baseUrl + "/");
         _client.Timeout = TimeSpan.FromSeconds(120);
 

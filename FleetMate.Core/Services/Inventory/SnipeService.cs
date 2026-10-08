@@ -5,6 +5,7 @@ using System.Text.Json;
 using FleetMate.Core.Models.Inventory;
 using FleetMate.Core.Services;
 using Serilog;
+using FleetMate.Core.Services.Activity;
 
 namespace FleetMate.Core.Services.Inventory;
 
@@ -56,8 +57,8 @@ public class SnipeService : IDisposable
         // set, so migrating an estate is a matter of setting the audience rather
         // than of racing to delete keys everywhere first.
         _client = UsesOidc
-            ? new HttpClient(new EntraBearerHandler(oidcAudience!))
-            : new HttpClient();
+            ? new HttpClient(new ActivityLogHandler("Inventory", new EntraBearerHandler(oidcAudience!)))
+            : new HttpClient(new ActivityLogHandler("Inventory"));
         _client.Timeout = TimeSpan.FromSeconds(120);
 
         if (!string.IsNullOrEmpty(BaseUrl))
