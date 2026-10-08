@@ -16,6 +16,7 @@ namespace FleetMate.Core.Links;
 /// fleetmate://pipeline/github/&lt;owner&gt;/&lt;repo&gt;/&lt;runId&gt;  Actions run
 /// fleetmate://workitem/&lt;id&gt;
 /// fleetmate://issue/github/&lt;owner&gt;/&lt;repo&gt;/&lt;number&gt;
+/// fleetmate://reporting/&lt;ReportMate page&gt;          a reportmate:// page
 /// fleetmate://open?url=&lt;web URL of any of the above&gt;
 /// </code>
 /// </remarks>
@@ -45,6 +46,18 @@ public abstract record FleetMateLink
     public sealed record User(string Id) : FleetMateLink;
     /// <summary>An Entra group, by object ID.</summary>
     public sealed record Group(string Id) : FleetMateLink;
+
+    /// <summary>
+    /// A page of the Reporting tab's ReportMate dashboard: <paramref name="Page"/>
+    /// is what follows <c>reportmate://</c>, such as <c>device/ABC123?tab=installs</c>.
+    /// </summary>
+    public sealed record Reporting(string Page) : FleetMateLink
+    {
+        public static Reporting ForDevice(string serial) => new($"device/{Uri.EscapeDataString(serial)}");
+
+        /// <summary>The <c>reportmate://</c> link the dashboard opens.</summary>
+        public string ToReportMateUrl() => $"reportmate://{Page}";
+    }
 
     // ── Parse ────────────────────────────────────────────────────────────
 
@@ -137,6 +150,12 @@ public abstract record FleetMateLink
                     ? new Group(parts[0])
                     : throw Bad(text, "fleetmate://group/<id>");
 
+            case "reporting":
+            {
+                var page = parts.Length == 0 ? "dashboard" : string.Join('/', parts.Select(Uri.EscapeDataString));
+                return new Reporting(query.Length == 0 ? page : $"{page}?{query}");
+            }
+
             case "open":
                 var target = QueryValue(query, "url");
                 if (target == null || !Uri.TryCreate(target, UriKind.Absolute, out var web))
@@ -226,6 +245,7 @@ public abstract record FleetMateLink
             Ticket t => $"ticket/{t.Id}",
             User u => $"user/{E(u.Id)}",
             Group g => $"group/{E(g.Id)}",
+            Reporting r => $"reporting/{r.Page}",
             _ => throw new InvalidOperationException("Unknown link kind."),
         };
         return $"{Scheme}://{path}";
