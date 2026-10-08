@@ -22,6 +22,13 @@ public partial class PullRequestDetailView : UserControl
     private int _loadGeneration;
 
     /// <summary>
+    /// Pull requests whose details came back Not Found this session. Search can
+    /// list one the REST token cannot read (a private fork, say); asking again
+    /// only spends rate-limit budget on the same answer.
+    /// </summary>
+    private static readonly Dictionary<string, string> Unreadable = new();
+
+    /// <summary>
     /// Raised after an action that changes the PR's state (merge, close, draft
     /// toggle). The PR object this view holds is stale from that point, so the
     /// host should refresh its list — or, for a window, close.
@@ -86,6 +93,13 @@ public partial class PullRequestDetailView : UserControl
         // overwrite the one now selected.
         var generation = ++_loadGeneration;
 
+        if (Unreadable.TryGetValue(pr.Id, out var notFound))
+        {
+            ShowLoadError(notFound);
+            ChecksSummary.Text = "Checks unavailable";
+            return;
+        }
+
         LoadingPanel.Visibility = Visibility.Visible;
         ErrorText.Visibility = Visibility.Collapsed;
         ContentScroller.Visibility = Visibility.Collapsed;
@@ -103,9 +117,9 @@ public partial class PullRequestDetailView : UserControl
             if (generation != _loadGeneration) return;
             Log.Error(ex, "[pr-viewer] Failed to load {Reference}", pr.Reference);
 
-            LoadingPanel.Visibility = Visibility.Collapsed;
-            ErrorText.Visibility = Visibility.Visible;
-            ErrorText.Text = $"Could not load this pull request.\n\n{ex.Message}";
+            if (ex is System.Net.Http.HttpRequestException { StatusCode: System.Net.HttpStatusCode.NotFound })
+                Unreadable[pr.Id] = "This pull request cannot be read with the current GitHub access.";
+            ShowLoadError(Unreadable.GetValueOrDefault(pr.Id, ex.Message));
         }
 
         try
@@ -125,6 +139,14 @@ public partial class PullRequestDetailView : UserControl
             Log.Warning(ex, "[pr-viewer] Checks unavailable for {Reference}", pr.Reference);
             ChecksSummary.Text = "Checks unavailable";
         }
+    }
+
+    private void ShowLoadError(string message)
+    {
+        LoadingPanel.Visibility = Visibility.Collapsed;
+        ContentScroller.Visibility = Visibility.Collapsed;
+        ErrorText.Visibility = Visibility.Visible;
+        ErrorText.Text = $"Could not load this pull request.\n\n{message}";
     }
 
     private static App RequireApp() =>

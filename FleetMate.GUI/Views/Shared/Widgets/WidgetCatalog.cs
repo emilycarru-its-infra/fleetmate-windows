@@ -57,13 +57,22 @@ public static class WidgetCatalog
 
     private static string Count(int value, bool loaded) => loaded ? value.ToString() : "--";
 
+    /// <summary>
+    /// Whether a provider failed this load (rate-limited, unreachable). Its
+    /// count is unknown, so the tile shows "--": a 0 would read as nothing open.
+    /// Being signed out of a provider on purpose is not a failure.
+    /// </summary>
+    internal static bool Failed(PullRequestQueue? queue, PullRequestSource? source = null) =>
+        queue?.Errors.Any(e => (source == null || e.Source == source) && !PullRequestQueueView.IsExpectedSignedOut(e)) == true;
+
     // MARK: - Development
 
     private static List<UIElement> Development(App app, Action<string, string> filter)
     {
         var prs = app.DevelopmentPullRequests?.PullRequests ?? new List<UnifiedPullRequest>();
         var runs = app.DevelopmentRuns ?? new List<PipelineRun>();
-        var prsLoaded = app.DevelopmentPullRequests != null;
+        var queue = app.DevelopmentPullRequests;
+        var prsLoaded = queue != null;
         var runsLoaded = app.DevelopmentRuns != null;
 
         var cards = new List<UIElement>
@@ -76,8 +85,8 @@ public static class WidgetCatalog
             }),
             WidgetCards.KpiStack(new[]
             {
-                new KpiTile("DevOps Pull Requests", Count(prs.Count(p => p.Source == PullRequestSource.AzureDevOps), prsLoaded), "", "#FF3F51B5"),
-                new KpiTile("GitHub Pull Requests", Count(prs.Count(p => p.Source == PullRequestSource.GitHub), prsLoaded), "", "#FF607D8B"),
+                new KpiTile("DevOps Pull Requests", Count(prs.Count(p => p.Source == PullRequestSource.AzureDevOps), prsLoaded && !Failed(queue, PullRequestSource.AzureDevOps)), "", "#FF3F51B5"),
+                new KpiTile("GitHub Pull Requests", Count(prs.Count(p => p.Source == PullRequestSource.GitHub), prsLoaded && !Failed(queue, PullRequestSource.GitHub)), "", "#FF607D8B"),
             }),
             WidgetCards.KpiStack(new[]
             {

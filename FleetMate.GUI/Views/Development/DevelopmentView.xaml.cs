@@ -59,6 +59,10 @@ public partial class DevelopmentView : UserControl
         {
             await LoadPullRequestsAsync();
         }
+
+        // The overview's pipeline tiles read the run summary, so it loads with
+        // the tab rather than waiting for the Pipelines segment to be opened.
+        if (app.DevelopmentRuns is null) _ = LoadRunsAsync();
     }
 
     /// <summary>
