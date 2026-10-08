@@ -48,7 +48,7 @@
                         BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
                         BorderThickness="1" Padding="2">
                     <StackPanel Orientation="Horizontal" x:Name="TabBar">
-                        <RadioButton x:Name="TabDevelopment" Tag="Development" GroupName="MainTabs" IsChecked="True"
+                        <RadioButton x:Name="TabDevelopment" Tag="Development" GroupName="FleetMateTabs" IsChecked="True"
                                      Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xE943;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
@@ -56,49 +56,49 @@
                                 <TextBlock Text="Development" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
-                        <RadioButton x:Name="TabBoards" Tag="Projects" GroupName="MainTabs"
+                        <RadioButton x:Name="TabBoards" Tag="Projects" GroupName="FleetMateTabs"
                                      Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xF0E3;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Projects" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
-                        <RadioButton x:Name="TabDevices" Tag="Devices" GroupName="MainTabs"
+                        <RadioButton x:Name="TabDevices" Tag="Devices" GroupName="FleetMateTabs"
                                      Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xE7F8;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Devices" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
-                        <RadioButton x:Name="TabReporting" Tag="Reporting" GroupName="MainTabs"
+                        <RadioButton x:Name="TabReporting" Tag="Reporting" GroupName="FleetMateTabs"
                                      Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xE9F9;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Reporting" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
-                        <RadioButton x:Name="TabManage" Tag="Manage" GroupName="MainTabs"
+                        <RadioButton x:Name="TabManage" Tag="Manage" GroupName="FleetMateTabs"
                                      Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xEC7A;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Manage" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
-                        <RadioButton x:Name="TabInventory" Tag="Inventory" GroupName="MainTabs"
+                        <RadioButton x:Name="TabInventory" Tag="Inventory" GroupName="FleetMateTabs"
                                      Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xF158;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Inventory" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
-                        <RadioButton x:Name="TabIdentity" Tag="Identity" GroupName="MainTabs"
+                        <RadioButton x:Name="TabIdentity" Tag="Identity" GroupName="FleetMateTabs"
                                      Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xE716;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Identity" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
-                        <RadioButton x:Name="TabTickets" Tag="Tickets" GroupName="MainTabs"
+                        <RadioButton x:Name="TabTickets" Tag="Tickets" GroupName="FleetMateTabs"
                                      Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xE8EC;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
@@ -164,7 +164,7 @@
                     </Button>
                     <RadioButton x:Name="TabSettings" ToolTip="Settings"
                                  shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                                 Tag="Settings" GroupName="MainTabs" Checked="OnTabChecked"
+                                 Tag="Settings" GroupName="FleetMateTabs" Checked="OnTabChecked"
                                  Style="{StaticResource NavigationTabStyle}">
                         <ui:FontIcon Glyph="&#xE713;" FontFamily="Segoe Fluent Icons" FontSize="14" />
                     </RadioButton>
