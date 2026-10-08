@@ -33,12 +33,21 @@ public static class SearchAdapter
         var groups = await Task.Run(() => GlobalSearch.Search(text, sources), ct);
         ct.ThrowIfCancellationRequested();
 
-        return groups
+        var rows = groups
             .SelectMany(g => g.Hits.Select(hit => new SearchRow(
                 g.Title,
                 hit.Title,
                 string.Join(" · ", new[] { hit.Subtitle, hit.MatchLabel }.Where(s => !string.IsNullOrWhiteSpace(s))),
                 () => app.Dispatcher.BeginInvoke(() => app.OpenLink(hit.Link)))))
             .ToList();
+
+        // Handbook pages last, each opening in FleetMate's reader (macOS parity).
+        if (app.Handbook is { IsConfigured: true } handbook)
+            rows.AddRange(handbook.Index.Search(text, GlobalSearch.PerCategory).Select(page => new SearchRow(
+                "Handbook",
+                page.Title,
+                string.IsNullOrEmpty(page.Breadcrumb) ? "Handbook" : page.Breadcrumb,
+                () => app.Dispatcher.BeginInvoke(() => app.OpenHandbookPage(page)))));
+        return rows;
     }
 }
