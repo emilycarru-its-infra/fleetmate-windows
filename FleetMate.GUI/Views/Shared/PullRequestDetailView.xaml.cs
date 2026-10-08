@@ -181,6 +181,12 @@ public partial class PullRequestDetailView : UserControl
 
         CommentCountText.Text = detail.Comments.Count > 0 ? $"{detail.Comments.Count} comments" : "";
 
+        var handbook = _pullRequest is { } pr
+            ? FleetMate.GUI.Views.Knowledge.HandbookRelatedCard.Build(new[] { pr.Repository, $"{pr.Container} {pr.Repository}" })
+            : null;
+        HandbookHost.Content = handbook;
+        HandbookHost.Visibility = PullRequestCheckViewModel.Show(handbook != null);
+
         CommitsSection.Visibility = PullRequestCheckViewModel.Show(detail.Commits.Count > 0);
         CommitsHeader.Text = $"Commits ({detail.Commits.Count})";
         CommitsList.ItemsSource = detail.Commits;

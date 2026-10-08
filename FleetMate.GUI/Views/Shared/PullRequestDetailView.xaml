@@ -167,6 +167,9 @@
                         </Border>
                     </StackPanel>
 
+                    <!-- The Handbook pages about this repository, beside the change to it. -->
+                    <ContentControl x:Name="HandbookHost" Margin="0,0,0,16" Visibility="Collapsed" />
+
                     <!-- Commits -->
                     <StackPanel x:Name="CommitsSection" Margin="0,0,0,16">
                         <TextBlock x:Name="CommitsHeader" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,4"
