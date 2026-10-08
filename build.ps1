@@ -27,6 +27,10 @@
 .PARAMETER PkgOnly
     Create .pkg package from existing binaries (skip build)
 
+.PARAMETER BuildVersion
+    Stamp this YYYY.MM.DD.HHMM version instead of the current Pacific time.
+    The release workflow passes the tag, so every artifact carries it.
+
 .PARAMETER Launch
     After building and signing, launch the GUI application
 
@@ -61,7 +65,9 @@ param(
     # architecture; set explicitly to cross-build (e.g. win-arm64 from an x64
     # box for the ARM fleet).
     [ValidateSet('win-x64', 'win-arm64')]
-    [string]$GuiRuntime
+    [string]$GuiRuntime,
+    [ValidatePattern('^\d{4}\.\d{2}\.\d{2}\.\d{4}$')]
+    [string]$BuildVersion
 )
 
 $ErrorActionPreference = 'Stop'
@@ -199,7 +205,11 @@ function Get-PacificNow {
 }
 
 function Get-BuildVersion {
-    $now = Get-PacificNow
+    $now = if ($BuildVersion) {
+        [datetime]::ParseExact($BuildVersion, 'yyyy.MM.dd.HHmm', [System.Globalization.CultureInfo]::InvariantCulture)
+    } else {
+        Get-PacificNow
+    }
     # Authoritative binary/release/pkgsinfo version: YYYY.MM.DD.HHMM. This is
     # what appears in artifact filenames and what cimiimport derives the Cimian
     # package version from.
