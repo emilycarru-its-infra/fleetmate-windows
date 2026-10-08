@@ -192,7 +192,7 @@ public partial class PullRequestDetailView : UserControl
 
         var body = PullRequestCommentViewModel.Strip(detail.Body);
         DescriptionSection.Visibility = PullRequestCheckViewModel.Show(!string.IsNullOrWhiteSpace(body));
-        DescriptionText.Text = body;
+        DescriptionHost.Content = MarkdownDocument.Viewer(body);
 
         // System entries are kept but rendered grey — they are context, so
         // hiding them entirely loses the approval trail.
