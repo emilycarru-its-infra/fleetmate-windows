@@ -329,4 +329,16 @@ public class ManageViewModelTests : IDisposable
         Assert.Null(ssh.PrivateKeyEnvVar);
         Assert.EndsWith(Path.Combine("FleetMate", "manage", "commands.yaml"), c.ResolvedCommandsPath);
     }
+
+    [Fact]
+    public void ManageConfig_RosterFetchNeedsANamedRepository()
+    {
+        var c = new ManageConfig();
+        Assert.False(c.FetchesRoster);
+        Assert.Equal("/computers.csv", c.RosterRepoPath);
+        c.RosterRepoProject = "Fleet";
+        Assert.False(c.FetchesRoster);
+        c.RosterRepo = "Enrollment";
+        Assert.True(c.FetchesRoster);
+    }
 }
