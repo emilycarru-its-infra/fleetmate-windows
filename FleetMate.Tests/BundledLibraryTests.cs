@@ -82,7 +82,12 @@ public class BundledLibraryTests
     {
         // Public repository: the library must read as a generic Windows fleet library.
         var text = CommandLibrary.BundledYaml();
-        foreach (var forbidden in new[] { "contoso", "192.168.", "172.17.", "LAB-", "fleetadmin" })
+        // No private addresses, and none of the deployment's own names. Those
+        // names cannot be listed here without publishing them, so CI supplies
+        // them in FLEETMATE_FORBIDDEN_NAMES (comma-separated) instead.
+        Assert.DoesNotMatch(@"\b(10|192\.168|172\.(1[6-9]|2\d|3[01]))\.\d+\.", text);
+        var names = Environment.GetEnvironmentVariable("FLEETMATE_FORBIDDEN_NAMES") ?? "";
+        foreach (var forbidden in names.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             Assert.DoesNotContain(forbidden, text, StringComparison.OrdinalIgnoreCase);
     }
 }

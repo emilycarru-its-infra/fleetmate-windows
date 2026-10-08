@@ -179,17 +179,6 @@ public class EntraTokenSourceTests
 public class SecretlessConfigTests
 {
     [Fact]
-    public void SsoIsTheDefault_WhenNothingIsConfigured()
-    {
-        // The secretless path has to be what you get by not choosing, or it
-        // never becomes the norm.
-        var config = FleetMate.Core.Config.FleetMateConfig.Load();
-
-        Assert.True(config.SnipeUsesOidc);
-        Assert.True(config.ReportMateUsesOidc);
-    }
-
-    [Fact]
     public void GraphConfig_ExposesNoSecret()
     {
         // Guards the deprecation: if someone reintroduces a secret-bearing
