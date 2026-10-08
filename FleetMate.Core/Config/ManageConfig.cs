@@ -27,7 +27,7 @@ public class ManageConfig
     /// <summary>Path to the YAML command library; empty means the per-user default.</summary>
     public string CommandsPath { get; set; } = "";
 
-    /// <summary>Private key for fleet SSH; empty means <c>~/.ssh/id_rsa.winadmins</c>.</summary>
+    /// <summary>Private key for fleet SSH; empty means <c>~/.ssh/id_rsa.fleetadmin</c>.</summary>
     public string SshKeyPath { get; set; } = "";
 
     /// <summary>Account for fleet SSH; empty means the fleet admin account.</summary>
@@ -52,7 +52,7 @@ public class ManageConfig
         string.IsNullOrWhiteSpace(CommandsPath) ? new ManageStateStore().CommandsPath : ExpandHome(CommandsPath);
 
     public string ResolvedSshKeyPath =>
-        ExpandHome(string.IsNullOrWhiteSpace(SshKeyPath) ? "~/.ssh/id_rsa.winadmins" : SshKeyPath);
+        ExpandHome(string.IsNullOrWhiteSpace(SshKeyPath) ? "~/.ssh/id_rsa.fleetadmin" : SshKeyPath);
 
     public string ResolvedSshUser =>
         string.IsNullOrWhiteSpace(SshUser) ? SecureShellConfig.FleetAdminUsername : SshUser.Trim();

@@ -187,7 +187,7 @@ public sealed class UnifiedPullRequest : IEquatable<UnifiedPullRequest>
 
     public string Id => $"{Source}:{Container}/{Repository}#{Number}";
 
-    /// <summary>The <c>!10716</c> / <c>#42</c> reference shown next to the author.</summary>
+    /// <summary>The <c>!4821</c> / <c>#42</c> reference shown next to the author.</summary>
     public string Reference => Source == PullRequestSource.AzureDevOps ? $"!{Number}" : $"#{Number}";
 
     /// <summary>Most recent meaningful timestamp, used for sorting.</summary>

@@ -37,8 +37,8 @@ public class DirectoryAuditFilterTests
     [Fact]
     public void AGuidTargetMatchesOnObjectId()
     {
-        var filter = EntraCommand.BuildAuditFilter("2592274d-6c10-4daa-904e-49a47d94e5b0", null, 0, Now);
-        Assert.Equal("targetResources/any(t: t/id eq '2592274d-6c10-4daa-904e-49a47d94e5b0')", filter);
+        var filter = EntraCommand.BuildAuditFilter("5b1f0c3a-7e2d-4c8b-9a64-1d2e3f405162", null, 0, Now);
+        Assert.Equal("targetResources/any(t: t/id eq '5b1f0c3a-7e2d-4c8b-9a64-1d2e3f405162')", filter);
     }
 
     [Fact]

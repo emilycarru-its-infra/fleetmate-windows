@@ -133,7 +133,7 @@ public class EntraTokenSourceTests
 {
     [Theory]
     // A bare app-id GUID is the common config form.
-    [InlineData("4d6abdd9-5380-40a5-8f8e-fe41f317a29f", "4d6abdd9-5380-40a5-8f8e-fe41f317a29f/.default")]
+    [InlineData("7c2e4a90-1b3d-4f5e-8a6c-0d9e8f7a6b5c", "7c2e4a90-1b3d-4f5e-8a6c-0d9e8f7a6b5c/.default")]
     // An identifier URI works too.
     [InlineData("api://reportmate", "api://reportmate/.default")]
     [InlineData("https://graph.microsoft.com", "https://graph.microsoft.com/.default")]

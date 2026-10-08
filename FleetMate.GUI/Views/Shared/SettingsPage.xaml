@@ -212,7 +212,7 @@
                                 <TextBlock Text="Private key" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                 <DockPanel Margin="0,4,0,10">
                                     <Button DockPanel.Dock="Right" Content="Browse..." Margin="8,0,0,0" Click="OnBrowseSshKey" />
-                                    <TextBox x:Name="SecureShellKeyPathTextBox" ui:ControlHelper.PlaceholderText="~\.ssh\id_rsa.winadmins" />
+                                    <TextBox x:Name="SecureShellKeyPathTextBox" ui:ControlHelper.PlaceholderText="~\.ssh\id_rsa.fleetadmin" />
                                 </DockPanel>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -221,7 +221,7 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0" Margin="0,0,8,0">
                                         <TextBlock Text="SSH user" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                        <TextBox x:Name="SecureShellUserTextBox" Margin="0,4,0,0" ui:ControlHelper.PlaceholderText="winadmins" />
+                                        <TextBox x:Name="SecureShellUserTextBox" Margin="0,4,0,0" ui:ControlHelper.PlaceholderText="fleetadmin" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Margin="8,0,0,0">
                                         <TextBlock Text="Windows Terminal profile" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
@@ -394,7 +394,7 @@
                                 <TextBlock Text="Preview" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
                                 <Separator />
                                 <TextBlock Text="Add display reconciliation blueprint" FontWeight="SemiBold" Margin="0,10,0,2" />
-                                <TextBlock Text="Rod Christiansen request !10716 into Devices/ReportMate"
+                                <TextBlock Text="Ada Lovelace request !4821 into Platform/Inventory"
                                            FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                 <Separator Margin="0,10,0,10" />
                                 <StackPanel Orientation="Horizontal">

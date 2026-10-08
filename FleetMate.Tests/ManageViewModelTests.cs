@@ -315,9 +315,9 @@ public class ManageViewModelTests : IDisposable
     public void ManageConfig_DefaultsAndExpansion()
     {
         var c = new ManageConfig();
-        Assert.EndsWith(Path.Combine(".ssh", "id_rsa.winadmins"), c.ResolvedSshKeyPath);
-        Assert.Equal("winadmins", c.ResolvedSshUser);
-        Assert.Equal("winadmins", c.ResolvedRdpUser);
+        Assert.EndsWith(Path.Combine(".ssh", "id_rsa.fleetadmin"), c.ResolvedSshKeyPath);
+        Assert.Equal("fleetadmin", c.ResolvedSshUser);
+        Assert.Equal("fleetadmin", c.ResolvedRdpUser);
         c.SshUser = "  ops  ";
         Assert.Equal("ops", c.ResolvedSshUser);
         Assert.Equal("ops", c.ResolvedRdpUser);

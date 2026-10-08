@@ -289,7 +289,7 @@ reportmate:
 # Secure Shell (SSH)
 secure_shell:
   private_key_path: ~/.ssh/id_rsa
-  default_username: winadmins
+  default_username: fleetadmin
   connection_timeout_seconds: 30
   command_timeout_seconds: 120
   max_concurrent_connections: 10

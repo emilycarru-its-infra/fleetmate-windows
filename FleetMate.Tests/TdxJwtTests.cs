@@ -21,7 +21,7 @@ public class TdxJwtClaimTests
     {
         var jwt = MakeJwt(new { given_name = "Alex", email = "alex@example.edu" });
         var (name, email) = TdxJwt.ExtractUserInfo(jwt);
-        Assert.Equal("Nigel", name);
+        Assert.Equal("Alex", name);
         Assert.Equal("alex@example.edu", email);
     }
 

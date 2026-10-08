@@ -377,7 +377,7 @@ public static class SshCommand
 
         var patternArg = new Argument<string>(
             name: "pattern",
-            description: "IP pattern to match (e.g., '10.15.26.' to clean all hosts in that subnet)");
+            description: "IP pattern to match (e.g., '192.168.1.' to clean all hosts in that subnet)");
 
         var dryRunOption = new Option<bool>(
             aliases: ["--dry-run", "-n"],
@@ -452,7 +452,7 @@ public static class SshCommand
         AnsiConsole.MarkupLine("Add SecureShell configuration to your config file (~/.fleetmate/config.yaml):");
         AnsiConsole.MarkupLine("  [cyan]secureShell:[/]");
         AnsiConsole.MarkupLine("    [cyan]privateKeyPath:[/] ~/.ssh/id_rsa");
-        AnsiConsole.MarkupLine("    [cyan]defaultUsername:[/] winadmins");
+        AnsiConsole.MarkupLine("    [cyan]defaultUsername:[/] fleetadmin");
         return false;
     }
 

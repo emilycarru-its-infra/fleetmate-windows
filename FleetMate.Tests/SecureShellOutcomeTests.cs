@@ -65,7 +65,7 @@ public class SecureShellOutcomeTests
     [Fact]
     public void DefaultUsername_IsTheFleetAdminAccount()
     {
-        Assert.Equal("winadmins", new SecureShellConfig().DefaultUsername);
-        Assert.Equal("winadmins", SecureShellConfig.FleetAdminUsername);
+        Assert.Equal("fleetadmin", new SecureShellConfig().DefaultUsername);
+        Assert.Equal("fleetadmin", SecureShellConfig.FleetAdminUsername);
     }
 }

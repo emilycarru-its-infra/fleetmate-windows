@@ -9,7 +9,7 @@ namespace FleetMate.Tests;
 /// <summary>
 /// Opt-in checks against a real fleet host. Skipped unless
 /// <c>FLEETMATE_LIVE_SSH_HOST</c> names a reachable address; the key comes from
-/// <c>FLEETMATE_LIVE_SSH_KEY</c> or the default winadmins key path. Nothing
+/// <c>FLEETMATE_LIVE_SSH_KEY</c> or the default fleetadmin key path. Nothing
 /// from the host is recorded: assertions are on shape, never on values.
 /// </summary>
 public class SecureShellLiveTests
@@ -21,7 +21,7 @@ public class SecureShellLiveTests
         if (string.IsNullOrWhiteSpace(Host)) return null;
         var config = new SecureShellConfig
         {
-            PrivateKeyPath = Environment.GetEnvironmentVariable("FLEETMATE_LIVE_SSH_KEY") ?? "~/.ssh/id_rsa.winadmins",
+            PrivateKeyPath = Environment.GetEnvironmentVariable("FLEETMATE_LIVE_SSH_KEY") ?? "~/.ssh/id_rsa.fleetadmin",
             PrivateKeyEnvVar = null,
             AcceptAllHostKeys = true,
             ConnectionTimeoutSeconds = 10,

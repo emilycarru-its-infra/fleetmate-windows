@@ -137,7 +137,7 @@ public class PullRequestQueueMergeTests
     }
 
     [Theory]
-    [InlineData(PullRequestSource.AzureDevOps, 10716, "!10716")]
+    [InlineData(PullRequestSource.AzureDevOps, 4821, "!4821")]
     [InlineData(PullRequestSource.GitHub, 42, "#42")]
     public void ReferenceUsesEachProvidersConvention(
         PullRequestSource source, int number, string expected)
@@ -197,7 +197,7 @@ public class AzureDevOpsPullRequestMappingTests
         string? mergeStatus = null,
         string repo = "fleet") => new()
     {
-        PullRequestId = 10716,
+        PullRequestId = 4821,
         Title = "Fix the thing",
         Status = status,
         IsDraft = isDraft,
@@ -218,7 +218,7 @@ public class AzureDevOpsPullRequestMappingTests
         var pr = Map(Wire());
 
         Assert.Equal(PullRequestSource.AzureDevOps, pr.Source);
-        Assert.Equal(10716, pr.Number);
+        Assert.Equal(4821, pr.Number);
         Assert.Equal("Fix the thing", pr.Title);
         Assert.Equal("Ada Lovelace", pr.AuthorName);
         Assert.Equal("Infra", pr.Container);
@@ -295,9 +295,9 @@ public class AzureDevOpsPullRequestMappingTests
     public void BuildsAWebUrlUnderTheOrganization()
     {
         var url = AzureDevOpsService.PullRequestWebUrl(
-            "https://azure-devops.example.com/contoso", "Infra", "fleet", 10716);
+            "https://azure-devops.example.com/contoso", "Infra", "fleet", 4821);
 
-        Assert.Equal("https://azure-devops.example.com/contoso/Infra/_git/fleet/pullrequest/10716", url);
+        Assert.Equal("https://azure-devops.example.com/contoso/Infra/_git/fleet/pullrequest/4821", url);
     }
 
     [Fact]

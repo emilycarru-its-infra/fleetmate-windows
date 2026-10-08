@@ -25,7 +25,7 @@ public sealed class PullRequestRowViewModel
     public string WebUrl => PullRequest.WebUrl;
 
     /// <summary>
-    /// "Ada Lovelace · !10716 · Updated 3d ago". One line so a dense queue stays
+    /// "Ada Lovelace · !4821 · Updated 3d ago". One line so a dense queue stays
     /// scannable; the Azure DevOps queue reads the same way.
     /// </summary>
     public string Byline

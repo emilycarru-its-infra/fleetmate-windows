@@ -79,7 +79,7 @@ public class ElevationStatusTests
     [Fact]
     public void DeviceRecordState_DefaultsToAReadableLookup()
     {
-        var state = new GraphService.DeviceRecordState { Serial = "MJ0KP6EP" };
+        var state = new GraphService.DeviceRecordState { Serial = "SERIAL0002" };
 
         Assert.False(state.LookupFailed);
         Assert.Null(state.LookupError);
@@ -95,11 +95,11 @@ public class ElevationStatusTests
     {
         var unreadable = new GraphService.DeviceRecordState
         {
-            Serial = "MJ0KP6EP",
+            Serial = "SERIAL0002",
             LookupFailed = true,
             LookupError = "elevated devices call exited 1",
         };
-        var genuinelyClean = new GraphService.DeviceRecordState { Serial = "MJ0KP6EP" };
+        var genuinelyClean = new GraphService.DeviceRecordState { Serial = "SERIAL0002" };
 
         Assert.Null(unreadable.Intune);
         Assert.Null(genuinelyClean.Intune);

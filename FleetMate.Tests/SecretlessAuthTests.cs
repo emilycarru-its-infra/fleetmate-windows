@@ -99,14 +99,34 @@ public class NoServiceAccountsTests
 public class SsoDefaultsTests
 {
     [Fact]
-    public void SnipeAndReportMate_DefaultToSso()
+    public void NoEstateValuesAreBuiltIn()
     {
-        var config = FleetMateConfig.Load();
+        // Public repository: the tenant, audiences, ReportMate address and
+        // elevation resources come from config or managed settings, never code.
+        var config = new FleetMateConfig();
+        var apply = typeof(FleetMateConfig).GetMethod(
+            "ApplySsoDefaults", BindingFlags.NonPublic | BindingFlags.Static);
+        apply!.Invoke(null, new object[] { config });
+
+        Assert.True(string.IsNullOrEmpty(config.Graph?.TenantId));
+        Assert.Null(config.SnipeOidcAudience);
+        Assert.Null(config.ReportMateOidcAudience);
+        Assert.False(config.Elevation!.IsConfigured);
+    }
+
+    [Fact]
+    public void AnAudienceFromManagedSettingsTurnsOnSso()
+    {
+        var config = new FleetMateConfig();
+        var values = new Dictionary<string, object?>
+        {
+            ["SnipeOidcAudience"] = "api://snipe",
+            ["ReportMateOidcAudience"] = "api://reportmate",
+        };
+        FleetMateConfig.ApplyRegistryValues(name => values.GetValueOrDefault(name), config, fromPolicy: true);
 
         Assert.True(config.SnipeUsesOidc);
         Assert.True(config.ReportMateUsesOidc);
-        Assert.Equal(FleetMateConfig.DefaultSnipeOidcAudience, config.SnipeOidcAudience);
-        Assert.Equal(FleetMateConfig.DefaultReportMateOidcAudience, config.ReportMateOidcAudience);
     }
 
     [Fact]

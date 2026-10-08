@@ -28,7 +28,7 @@ public class SecureShellConfig
     /// as "Permission denied (publickey)" even with the right key, which reads
     /// like a key problem and is not.
     /// </summary>
-    public const string FleetAdminUsername = "winadmins";
+    public const string FleetAdminUsername = "fleetadmin";
 
     /// <summary>
     /// Default username for SecureShell connections.
