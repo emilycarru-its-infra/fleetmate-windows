@@ -1004,6 +1004,8 @@ private bool _isInitialLoadDone;
             DescriptionSection.Visibility = Visibility.Collapsed;
         }
         
+        ShowAttachments(ticket);
+
         // Update notify options
         UpdateNotifyOptions(ticket);
 
@@ -1507,8 +1509,9 @@ private bool _isInitialLoadDone;
         ActionMessageText.Text = message;
         ActionProgressRing.Visibility = isLoading ? Visibility.Visible : Visibility.Collapsed;
         ActionProgressRing.IsActive = isLoading;
-        ActionMessageBorder.Background = isError 
-            ? new SolidColorBrush(Color.FromRgb(0xFF, 0xC0, 0xC0))
+        // Failures are orange, never red, as everywhere else in FleetMate.
+        ActionMessageBorder.Background = isError
+            ? new SolidColorBrush(Color.FromRgb(0xFF, 0xE0, 0xB2))
             : (isLoading ? new SolidColorBrush(Color.FromRgb(0xC0, 0xC0, 0xFF))
                          : new SolidColorBrush(Color.FromRgb(0xC0, 0xFF, 0xC0)));
     }
