@@ -117,7 +117,7 @@ public partial class PullRequestDetailView : UserControl
             if (generation != _loadGeneration) return;
             Log.Error(ex, "[pr-viewer] Failed to load {Reference}", pr.Reference);
 
-            if (ex is HttpRequestException { StatusCode: System.Net.HttpStatusCode.NotFound })
+            if (ex is System.Net.Http.HttpRequestException { StatusCode: System.Net.HttpStatusCode.NotFound })
                 Unreadable[pr.Id] = "This pull request cannot be read with the current GitHub access.";
             ShowLoadError(Unreadable.GetValueOrDefault(pr.Id, ex.Message));
         }
