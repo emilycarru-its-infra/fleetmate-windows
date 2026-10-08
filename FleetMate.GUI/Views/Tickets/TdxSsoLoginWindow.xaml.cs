@@ -15,6 +15,7 @@ using ModernWpf.Controls;
 using Serilog;
 using FleetMate.Core.Services.Tickets;
 using FleetMate.Core.Services;
+using FleetMate.GUI.Views.Shared;
 
 namespace FleetMate.GUI.Views.Tickets;
 
@@ -280,7 +281,7 @@ public partial class TdxSsoLoginWindow : Window
             StatusText.Text = "Initializing WebView2...";
             
             // Initialize WebView2
-            await WebView.EnsureCoreWebView2Async(await CreateWebViewEnvironmentAsync());
+            await WebView.EnsureCoreWebView2Async(await WebViewEnvironments.SignIn());
             
             // Configure WebView2
             WebView.CoreWebView2.Settings.IsStatusBarEnabled = false;
@@ -951,7 +952,7 @@ public partial class TdxSsoLoginWindow : Window
         
         try
         {
-            await webView.EnsureCoreWebView2Async(await CreateWebViewEnvironmentAsync());
+            await webView.EnsureCoreWebView2Async(await WebViewEnvironments.SignIn());
             
             webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
             webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
@@ -1096,22 +1097,6 @@ public partial class TdxSsoLoginWindow : Window
         return result;
     }
 
-    private static async Task<CoreWebView2Environment> CreateWebViewEnvironmentAsync()
-    {
-        var userDataFolder = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "FleetMate", "WebView2");
-        Directory.CreateDirectory(userDataFolder);
-        var options = new CoreWebView2EnvironmentOptions
-        {
-            AllowSingleSignOnUsingOSPrimaryAccount = true
-        };
-        return await CoreWebView2Environment.CreateAsync(
-            browserExecutableFolder: null,
-            userDataFolder: userDataFolder,
-            options: options);
-    }
-    
     /// <summary>
     /// Extract JWT from WebView2 cookies via loginSSO endpoint.
     /// </summary>
