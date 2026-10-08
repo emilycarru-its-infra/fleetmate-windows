@@ -10,8 +10,8 @@ namespace FleetMate.GUI.Views.Projects;
 /// <summary>
 /// The card menu shared by board cards and Mine/Recent rows (macOS
 /// taskContextMenu): Copy ID for everything; for Azure DevOps work items,
-/// State, Priority, Assign To, Area, Iteration, Type, Reschedule and Create
-/// Branch. Option lists load once per project, the first time a submenu opens.
+/// State, Priority, Assign To, Area, Iteration, Type, Reschedule, Create
+/// Branch and Create New Alike (BoardsPage.Create.cs). Option lists load once per project, the first time a submenu opens.
 /// </summary>
 public partial class BoardsPage
 {

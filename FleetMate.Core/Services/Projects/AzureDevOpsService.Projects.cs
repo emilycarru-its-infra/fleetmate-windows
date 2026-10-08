@@ -105,6 +105,35 @@ public partial class AzureDevOpsService
         return result;
     }
 
+    /// <summary>
+    /// The work item types a board shows: the keys of its columns' state
+    /// mappings, alphabetical (macOS CreateWorkItemView extractTypesFromColumns).
+    /// </summary>
+    public async Task<List<string>> GetBoardWorkItemTypesAsync(string board, string? project = null)
+    {
+        if (!await SetAuthorizationAsync()) return new();
+        try
+        {
+            var json = await GetJsonAsync(
+                $"{ProjectSegment(project)}/_apis/work/boards/{Uri.EscapeDataString(board)}/columns?api-version=7.0");
+            return BoardWorkItemTypes(json);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[azdo] board columns unavailable for {Board}", board);
+            return new();
+        }
+    }
+
+    internal static List<string> BoardWorkItemTypes(JsonElement json) =>
+        Values(json)
+            .SelectMany(c => c.TryGetProperty("stateMappings", out var m) && m.ValueKind == JsonValueKind.Object
+                ? m.EnumerateObject().Select(p => p.Name)
+                : Enumerable.Empty<string>())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
     /// <summary>Work item type names in the project, alphabetical.</summary>
     public async Task<List<string>> GetWorkItemTypeNamesAsync(string? project = null)
     {
