@@ -459,22 +459,37 @@ private bool _isInitialLoadDone;
     // macOS board: StatusID / PriorityID / ResponsibleUid / ResponsibleGroupID.
 
     private const string TicketDragFormat = "FleetMateTicketId";
-    private Point _cardDragStart;
+
+    /// <summary>
+    /// The card a press landed on, and where. A drag starts only from a press
+    /// recorded on that same card: a press this page never saw (the click that
+    /// activates the window, say) has no start point, so it cannot turn into a
+    /// drag on the first mouse move.
+    /// </summary>
+    private (Border Card, Point Start)? _cardPress;
 
     private void OnBoardCardPreviewMouseDown(object sender, MouseButtonEventArgs e)
-        => _cardDragStart = e.GetPosition(null);
+    {
+        _cardPress = sender is Border card ? (card, e.GetPosition(null)) : null;
+    }
 
     private void OnBoardCardMouseMove(object sender, MouseEventArgs e)
     {
-        if (e.LeftButton != MouseButtonState.Pressed || sender is not Border card) return;
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            _cardPress = null;
+            return;
+        }
+        if (sender is not Border card || _cardPress is not { } press || !ReferenceEquals(press.Card, card)) return;
 
         // A real drag, not a sloppy click: require the system drag threshold so
         // plain clicks still open the detail panel.
         var pos = e.GetPosition(null);
-        if (Math.Abs(pos.X - _cardDragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
-            Math.Abs(pos.Y - _cardDragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
+        if (Math.Abs(pos.X - press.Start.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(pos.Y - press.Start.Y) < SystemParameters.MinimumVerticalDragDistance)
             return;
 
+        _cardPress = null;
         if (card.Tag is int ticketId)
             DragDrop.DoDragDrop(card, new DataObject(TicketDragFormat, ticketId), DragDropEffects.Move);
     }
@@ -496,6 +511,22 @@ private bool _isInitialLoadDone;
     private async Task ApplyBoardDropAsync(int ticketId, string columnKey)
     {
         if (_tdxService == null || _app == null) return;
+
+        // Dropped back where it started: not an edit, so nothing is sent.
+        var ticket = _allTickets.FirstOrDefault(t => t.Id == ticketId);
+        if (ticket == null || !TicketBoardLayout.IsMove(ticket, _boardGroupBy, columnKey)) return;
+
+        // A drop writes to a shared service desk, so it is confirmed first.
+        var field = TicketBoardLayout.FieldLabel(_boardGroupBy);
+        var from = TicketBoardLayout.ColumnKey(ticket, _boardGroupBy);
+        var confirm = MessageBox.Show(
+            Window.GetWindow(this)!,
+            $"Change the {field} of #{ticketId} from {from} to {columnKey}?\n\n{ticket.Title}",
+            "Move Ticket",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Question,
+            MessageBoxResult.Cancel);
+        if (confirm != MessageBoxResult.OK) return;
 
         var updates = new Dictionary<string, object?>();
         switch (_boardGroupBy)
@@ -668,6 +699,7 @@ private bool _isInitialLoadDone;
     
     private async void OnBoardCardClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
+        _cardPress = null;
         if (sender is Border border && border.Tag is int ticketId)
         {
             var ticket = _filteredTickets.FirstOrDefault(t => t.Id == ticketId);
