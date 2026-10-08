@@ -316,4 +316,13 @@ public class PullRequestDetailModelTests
     {
         Assert.Equal(expected, new PullRequestCommit { Message = message }.Subject);
     }
+
+    [Theory]
+    [InlineData(0, "")]
+    [InlineData(1, "1 comment")]
+    [InlineData(2, "2 comments")]
+    public void CommentCountLabelPluralizes(int count, string expected)
+    {
+        Assert.Equal(expected, PullRequestDetail.CommentCountLabel(count));
+    }
 }
