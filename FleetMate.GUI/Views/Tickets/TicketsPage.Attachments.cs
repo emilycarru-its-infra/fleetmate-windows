@@ -77,6 +77,8 @@ public partial class TicketsPage
         {
             FileName = TicketAttachments.SafeFileName(row.Attachment),
             Title = $"Save {row.Name}",
+            // Where a browser download would go, not the last folder any app used.
+            InitialDirectory = FleetMate.GUI.Views.Shared.KnownFolders.Downloads,
             OverwritePrompt = true,
         };
         if (dialog.ShowDialog(Window.GetWindow(this)) != true) return;
