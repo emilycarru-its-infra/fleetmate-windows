@@ -149,6 +149,110 @@ public class DeviceRecordTests
         Assert.False(state.HasDanglingManagedDeviceId);
     }
 
+    [Theory]
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void UnsetManagedDeviceIdIsNotDangling(string? managedDeviceId)
+    {
+        // Graph returns the all-zero GUID for an identity that was never bound to
+        // a managedDevice. That is "no pointer", not a pointer to a deleted record.
+        var autopilot = Autopilot();
+        autopilot.ManagedDeviceId = managedDeviceId;
+        var state = new GraphService.DeviceRecordState
+        {
+            Serial = "SERIAL0001",
+            Autopilot = autopilot,
+            Intune = null,
+            EntraDevices = []
+        };
+
+        Assert.False(state.HasDanglingManagedDeviceId);
+    }
+
+    [Fact]
+    public void CleanupKeepsTheEntraObjectTheAutopilotIdentityIsRegisteredTo()
+    {
+        // The AutoPilot-bound object is what OOBE looks up; enrollment does not
+        // re-create it, so a records cleanup must leave it in place.
+        var twin = new EntraDevice { Id = "66666666-6666-4666-8666-666666666666", DeviceId = "77777777-7777-4777-8777-777777777777", TrustType = "ServerAd" };
+        var state = new GraphService.DeviceRecordState
+        {
+            Serial = "SERIAL0001",
+            Autopilot = Autopilot(),
+            EntraDevices = [EntraDevice(), twin]
+        };
+
+        var (delete, keep) = GraphService.EntraCleanupPlan(state);
+
+        Assert.Equal([EntraObjectId], keep.Select(d => d.Id));
+        Assert.Equal([twin.Id], delete.Select(d => d.Id));
+    }
+
+    [Fact]
+    public void BoundObjectMatchesRegardlessOfGuidCase()
+    {
+        var autopilot = Autopilot();
+        autopilot.AzureActiveDirectoryDeviceId = AadDeviceId.ToUpperInvariant();
+        var state = new GraphService.DeviceRecordState { Serial = "SERIAL0001", Autopilot = autopilot, EntraDevices = [EntraDevice()] };
+
+        var (delete, keep) = GraphService.EntraCleanupPlan(state);
+
+        Assert.Single(keep);
+        Assert.Empty(delete);
+    }
+
+    [Fact]
+    public void OptInDeletesTheAutopilotBoundEntraObject()
+    {
+        var state = new GraphService.DeviceRecordState
+        {
+            Serial = "SERIAL0001",
+            Autopilot = Autopilot(),
+            EntraDevices = [EntraDevice()]
+        };
+
+        var (delete, keep) = GraphService.EntraCleanupPlan(state, includeAutopilotBound: true);
+
+        Assert.Equal([EntraObjectId], delete.Select(d => d.Id));
+        Assert.Empty(keep);
+    }
+
+    [Theory]
+    [InlineData("00000000-0000-0000-0000-000000000000")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void UnboundAutopilotIdentityProtectsNothing(string? aadDeviceId)
+    {
+        // An identity that points at no Entra object has nothing to protect, and
+        // an all-zero pointer must not match an object whose deviceId is also unset.
+        var autopilot = Autopilot();
+        autopilot.AzureActiveDirectoryDeviceId = aadDeviceId;
+        var unset = new EntraDevice { Id = "88888888-8888-4888-8888-888888888888", DeviceId = aadDeviceId };
+        var state = new GraphService.DeviceRecordState
+        {
+            Serial = "SERIAL0001",
+            Autopilot = autopilot,
+            EntraDevices = [EntraDevice(), unset]
+        };
+
+        var (delete, keep) = GraphService.EntraCleanupPlan(state);
+
+        Assert.Empty(keep);
+        Assert.Equal(2, delete.Count);
+    }
+
+    [Fact]
+    public void WithoutAnAutopilotIdentityEveryEntraObjectIsDeleted()
+    {
+        var state = new GraphService.DeviceRecordState { Serial = "SERIAL0001", Autopilot = null, EntraDevices = [EntraDevice()] };
+
+        var (delete, keep) = GraphService.EntraCleanupPlan(state);
+
+        Assert.Single(delete);
+        Assert.Empty(keep);
+    }
+
     [Fact]
     public async Task CleanupRefusesWithoutConfirmation()
     {
