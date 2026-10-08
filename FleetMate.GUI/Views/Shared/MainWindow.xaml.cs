@@ -142,6 +142,11 @@ public partial class MainWindow : Window
             ToggleGraphs();
             e.Handled = true;
         }
+        else if (key == System.Windows.Input.Key.L && mods == (Ctrl | System.Windows.Input.ModifierKeys.Alt))
+        {
+            ActivityLogWindow.ShowSingle(this);
+            e.Handled = true;
+        }
         else if (HandleSearchShortcut(key, mods))
         {
             e.Handled = true;

@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using FleetMate.Core.Config;
 using Serilog;
+using FleetMate.Core.Services.Activity;
 
 namespace FleetMate.Core.Services.Projects;
 
@@ -26,7 +27,7 @@ public class GitHubGraphQLClient : IDisposable
     {
         _tokenSource = new GitHubTokenSource(config) { DeviceFlowPrompt = deviceFlowPrompt };
         // Every request goes through the shared gate and ETag cache.
-        _client = new HttpClient(new GitHubHttpHandler()) { Timeout = TimeSpan.FromSeconds(30) };
+        _client = new HttpClient(new ActivityLogHandler("GitHub", new GitHubHttpHandler())) { Timeout = TimeSpan.FromSeconds(30) };
         _client.DefaultRequestHeaders.Add("User-Agent", "FleetMate");
         
         _jsonOptions = new JsonSerializerOptions

@@ -17,6 +17,12 @@ public partial class MainWindow
     private List<SnipeActivity> _snipeActivity = new();
     private DateTime _snipeActivityLoadedAt = DateTime.MinValue;
 
+    private void OnActivityLogClicked(object sender, RoutedEventArgs e)
+    {
+        RecentActivityPopup.IsOpen = false;
+        ActivityLogWindow.ShowSingle(this);
+    }
+
     private async void OnRecentActivityClicked(object sender, RoutedEventArgs e)
     {
         if (RecentActivityPopup.IsOpen)

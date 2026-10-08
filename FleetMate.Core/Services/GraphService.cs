@@ -7,6 +7,7 @@ using FleetMate.Core.Models.Devices;
 using FleetMate.Core.Models.Identity;
 using FleetMate.Core.Config;
 using Serilog;
+using FleetMate.Core.Services.Activity;
 
 namespace FleetMate.Core.Services;
 
@@ -87,12 +88,12 @@ public partial class GraphService : IDisposable
 
         // Both transports wait out Graph throttling (429, or 503 with Retry-After).
         _client = _useElevation
-            ? new HttpClient(new GraphThrottlingHandler(new ElevationHttpHandler(elevation ?? new ElevationConfig(), Elevation)))
+            ? new HttpClient(new ActivityLogHandler("Microsoft Graph", new GraphThrottlingHandler(new ElevationHttpHandler(elevation ?? new ElevationConfig(), Elevation))))
             {
                 BaseAddress = new Uri("https://graph.microsoft.com/v1.0/"),
                 Timeout = TimeSpan.FromSeconds(300) // the one-time ~30s container cold start, plus up to three throttle waits
             }
-            : new HttpClient(new GraphThrottlingHandler(new HttpClientHandler()))
+            : new HttpClient(new ActivityLogHandler("Microsoft Graph", new GraphThrottlingHandler(new HttpClientHandler())))
             {
                 BaseAddress = new Uri("https://graph.microsoft.com/v1.0/"),
                 // Room for up to three throttle waits of at most 60 s each.
@@ -216,6 +217,7 @@ public partial class GraphService : IDisposable
                 if (result?.Value != null)
                 {
                     allDevices.AddRange(result.Value);
+                    foreach (var device in result.Value) ActivityLog.Shared.Remember(device.SerialNumber, device.Id);
                 }
 
                 // Handle pagination
@@ -406,9 +408,9 @@ public partial class GraphService : IDisposable
     /// </summary>
     public async Task<List<DeviceActionResult>> SyncDevicesAsync(IEnumerable<string> deviceIds)
     {
-        var tasks = deviceIds.Select(SyncDeviceAsync);
-        var results = await Task.WhenAll(tasks);
-        return results.ToList();
+        var ids = deviceIds.ToList();
+        return await ActivityLog.Shared.RunAsync("Sync devices", "Microsoft Graph", ActivityLog.Shared.SerialsFor(ids),
+            async () => (await Task.WhenAll(ids.Select(SyncDeviceAsync))).ToList());
     }
 
     /// <summary>
@@ -448,9 +450,9 @@ public partial class GraphService : IDisposable
     /// </summary>
     public async Task<List<DeviceActionResult>> RebootDevicesAsync(IEnumerable<string> deviceIds)
     {
-        var tasks = deviceIds.Select(RebootDeviceAsync);
-        var results = await Task.WhenAll(tasks);
-        return results.ToList();
+        var ids = deviceIds.ToList();
+        return await ActivityLog.Shared.RunAsync("Restart devices", "Microsoft Graph", ActivityLog.Shared.SerialsFor(ids),
+            async () => (await Task.WhenAll(ids.Select(RebootDeviceAsync))).ToList());
     }
 
     /// <summary>
@@ -797,9 +799,9 @@ public partial class GraphService : IDisposable
     /// </summary>
     public async Task<List<DeviceActionResult>> RemoteLockDevicesAsync(IEnumerable<string> deviceIds, string? pin = null, bool confirmed = false)
     {
-        var tasks = deviceIds.Select(id => RemoteLockDeviceAsync(id, pin, confirmed));
-        var results = await Task.WhenAll(tasks);
-        return results.ToList();
+        var ids = deviceIds.ToList();
+        return await ActivityLog.Shared.RunAsync("Lock devices", "Microsoft Graph", ActivityLog.Shared.SerialsFor(ids),
+            async () => (await Task.WhenAll(ids.Select(id => RemoteLockDeviceAsync(id, pin, confirmed)))).ToList());
     }
 
     /// <summary>
@@ -930,17 +932,17 @@ public partial class GraphService : IDisposable
     /// <summary>Factory-reset multiple devices.</summary>
     public async Task<List<DeviceActionResult>> WipeDevicesAsync(IEnumerable<string> deviceIds, bool keepEnrollmentData = false, bool keepUserData = false, bool confirmed = false)
     {
-        var tasks = deviceIds.Select(id => WipeDeviceAsync(id, keepEnrollmentData, keepUserData, confirmed));
-        var results = await Task.WhenAll(tasks);
-        return results.ToList();
+        var ids = deviceIds.ToList();
+        return await ActivityLog.Shared.RunAsync("Erase devices", "Microsoft Graph", ActivityLog.Shared.SerialsFor(ids),
+            async () => (await Task.WhenAll(ids.Select(id => WipeDeviceAsync(id, keepEnrollmentData, keepUserData, confirmed)))).ToList());
     }
 
     /// <summary>Retire multiple devices (remove company data, unenroll).</summary>
     public async Task<List<DeviceActionResult>> RetireDevicesAsync(IEnumerable<string> deviceIds, bool confirmed = false)
     {
-        var tasks = deviceIds.Select(id => RetireDeviceAsync(id, confirmed));
-        var results = await Task.WhenAll(tasks);
-        return results.ToList();
+        var ids = deviceIds.ToList();
+        return await ActivityLog.Shared.RunAsync("Retire devices", "Microsoft Graph", ActivityLog.Shared.SerialsFor(ids),
+            async () => (await Task.WhenAll(ids.Select(id => RetireDeviceAsync(id, confirmed)))).ToList());
     }
 
     /// <summary>
