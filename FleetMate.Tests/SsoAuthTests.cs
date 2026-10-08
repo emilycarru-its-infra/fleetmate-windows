@@ -174,6 +174,61 @@ public class EntraTokenSourceTests
     {
         Assert.Equal(expected, EntraTokenSource.ToScope(audience));
     }
+
+    // A broker call that never returns for one resource must not hold up
+    // another: one stalled scope used to leave every other caller waiting.
+    [Fact]
+    public async Task GetToken_AStalledScopeDoesNotBlockAnother()
+    {
+        var stalled = new TaskCompletionSource<(string, DateTimeOffset)>();
+        var source = new EntraTokenSource("00000000-0000-0000-0000-000000000000")
+        {
+            AcquireTimeout = TimeSpan.FromSeconds(30),
+            AcquireOverride = (scope, _) => scope.StartsWith("api://slow")
+                ? stalled.Task
+                : Task.FromResult(("fast-token", DateTimeOffset.UtcNow.AddHours(1))),
+        };
+
+        var slow = source.GetTokenAsync("api://slow");
+        var fast = await source.GetTokenAsync("api://fast").WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal("fast-token", fast);
+        Assert.False(slow.IsCompleted);
+        stalled.SetResult(("slow-token", DateTimeOffset.UtcNow.AddHours(1)));
+        Assert.Equal("slow-token", await slow);
+    }
+
+    // A stall ends in an error the caller can show, not an endless wait.
+    [Fact]
+    public async Task GetToken_AStallTimesOutAsATokenError()
+    {
+        var source = new EntraTokenSource("00000000-0000-0000-0000-000000000000")
+        {
+            AcquireTimeout = TimeSpan.FromMilliseconds(100),
+            AcquireOverride = (_, _) => new TaskCompletionSource<(string, DateTimeOffset)>().Task,
+        };
+
+        await Assert.ThrowsAsync<EntraTokenException>(() => source.GetTokenAsync("api://stalled"));
+    }
+
+    [Fact]
+    public async Task GetToken_CachesUntilExpiry()
+    {
+        var calls = 0;
+        var source = new EntraTokenSource("00000000-0000-0000-0000-000000000000")
+        {
+            AcquireOverride = (_, _) =>
+            {
+                calls++;
+                return Task.FromResult(($"token-{calls}", DateTimeOffset.UtcNow.AddHours(1)));
+            },
+        };
+
+        Assert.Equal("token-1", await source.GetTokenAsync("api://cached"));
+        Assert.Equal("token-1", await source.GetTokenAsync("api://cached"));
+        source.Invalidate();
+        Assert.Equal("token-2", await source.GetTokenAsync("api://cached"));
+    }
 }
 
 public class SecretlessConfigTests

@@ -701,18 +701,6 @@ public partial class App : Application
                 .ToList();
         ElevationMonitor?.Start();
 
-        // Give the broker a window to parent to. Only consulted if the silent
-        // PRT path fails — on a managed device it never is — but without it an
-        // account that genuinely needs consent would fail with no way forward.
-        EntraTokenSource.ParentWindowProvider = () =>
-            Current.Dispatcher.Invoke(() =>
-            {
-                var window = Current.MainWindow;
-                return window == null
-                    ? IntPtr.Zero
-                    : new System.Windows.Interop.WindowInteropHelper(window).Handle;
-            });
-
         // Attempt silent TDX SSO, then preload all data in the background
         _ = InitializeAndPreloadAsync();
     }

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Client.Broker;
 using Serilog;
@@ -16,8 +17,8 @@ namespace FleetMate.Core.Services;
 /// Why the broker rather than a CLI shell-out: on an Entra-joined or hybrid-joined
 /// Windows device WAM can redeem the device-bound Primary Refresh Token directly,
 /// so the common case is a genuinely silent token with no prompt, no browser and
-/// no dependency on Azure CLI being installed or signed in. That makes the silent
-/// path the *primary* path here, not a best-effort attempt.
+/// no dependency on Azure CLI being installed or signed in. The silent path is
+/// the only path: FleetMate never prompts, so a failure surfaces as signed out.
 ///
 /// NOTE: this is deliberately NOT the <see cref="ElevationSession"/> path.
 /// Elevation runs as a domain managed identity for privileged Graph/Intune work;
@@ -38,13 +39,6 @@ public sealed class EntraTokenSource
     public const string AzureCliClientId = "04b07795-8ddb-461a-bbee-02f9e1bf7b46";
 
     /// <summary>
-    /// Supplies the window handle the broker parents its (rare) interactive
-    /// prompts to. The GUI sets this to its main window; the CLI leaves it null
-    /// and never prompts. Living here keeps Core free of a WPF dependency.
-    /// </summary>
-    public static Func<IntPtr>? ParentWindowProvider { get; set; }
-
-    /// <summary>
     /// Process-wide default, configured once at startup. Services resolve this
     /// lazily so a config reload is picked up without rebuilding them.
     /// </summary>
@@ -58,8 +52,21 @@ public sealed class EntraTokenSource
     }
 
     private readonly IPublicClientApplication _app;
-    private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly Dictionary<string, (string Token, DateTimeOffset Expiry)> _cache = new();
+    // One gate per scope, so a slow broker call for one resource never holds
+    // up another. A single shared gate let a stalled Azure DevOps request
+    // starve the ReportMate dashboard for as long as the stall lasted.
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _gates = new();
+    private readonly ConcurrentDictionary<string, (string Token, DateTimeOffset Expiry)> _cache = new();
+
+    /// <summary>
+    /// The longest one silent acquisition may take. The broker can stall (a
+    /// locked desktop, a hung network call); past this the caller gets an
+    /// <see cref="EntraTokenException"/> instead of waiting indefinitely.
+    /// </summary>
+    internal TimeSpan AcquireTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Test seam: replaces the broker call with a stand-in.</summary>
+    internal Func<string, CancellationToken, Task<(string Token, DateTimeOffset ExpiresOn)>>? AcquireOverride { get; init; }
 
     public EntraTokenSource(string? tenantId, string? clientId = null)
     {
@@ -72,7 +79,6 @@ public sealed class EntraTokenSource
             .WithAuthority(authority)
             // Windows-only broker. On a device with a PRT this redeems it without UI.
             .WithBroker(new BrokerOptions(BrokerOptions.OperatingSystems.Windows))
-            .WithParentActivityOrWindow(() => ParentWindowProvider?.Invoke() ?? IntPtr.Zero)
             .WithDefaultRedirectUri()
             .Build();
     }
@@ -83,7 +89,7 @@ public sealed class EntraTokenSource
     /// Cached until shortly before expiry.
     /// </summary>
     /// <exception cref="EntraTokenException">
-    /// Thrown when no token can be obtained without prompting.
+    /// Thrown when no token can be obtained silently, or the broker times out.
     /// </exception>
     public async Task<string> GetTokenAsync(string audience, CancellationToken ct = default)
     {
@@ -92,34 +98,51 @@ public sealed class EntraTokenSource
 
         var scope = ToScope(audience);
 
-        await _gate.WaitAsync(ct);
+        if (_cache.TryGetValue(scope, out var cached) && DateTimeOffset.UtcNow < cached.Expiry)
+            return cached.Token;
+
+        var gate = _gates.GetOrAdd(scope, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
         try
         {
             if (_cache.TryGetValue(scope, out var hit) && DateTimeOffset.UtcNow < hit.Expiry)
                 return hit.Token;
 
-            var result = await AcquireAsync(scope, ct);
+            // The broker does not always honour cancellation, so the wait is
+            // bounded here rather than trusted to the call itself.
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(AcquireTimeout);
+            (string Token, DateTimeOffset ExpiresOn) result;
+            try
+            {
+                var acquire = AcquireOverride?.Invoke(scope, timeout.Token) ?? AcquireAsync(scope, timeout.Token);
+                result = await acquire.WaitAsync(AcquireTimeout, ct);
+            }
+            catch (Exception ex) when (ex is TimeoutException or OperationCanceledException && !ct.IsCancellationRequested)
+            {
+                throw new EntraTokenException(scope, $"the sign-in broker did not answer within {AcquireTimeout.TotalSeconds:0} seconds");
+            }
 
             // Refresh a little early so a token never expires mid-flight.
-            var expiry = result.ExpiresOn.AddMinutes(-5);
-            _cache[scope] = (result.AccessToken, expiry);
-            return result.AccessToken;
+            _cache[scope] = (result.Token, result.ExpiresOn.AddMinutes(-5));
+            return result.Token;
         }
         finally
         {
-            _gate.Release();
+            gate.Release();
         }
     }
 
     /// <summary>Drop cached tokens — used on sign-out and after a 401.</summary>
-    public void Invalidate()
+    public void Invalidate() => _cache.Clear();
+
+    private async Task<(string Token, DateTimeOffset ExpiresOn)> AcquireAsync(string scope, CancellationToken ct)
     {
-        _gate.Wait();
-        try { _cache.Clear(); }
-        finally { _gate.Release(); }
+        var result = await AcquireResultAsync(scope, ct);
+        return (result.AccessToken, result.ExpiresOn);
     }
 
-    private async Task<AuthenticationResult> AcquireAsync(string scope, CancellationToken ct)
+    private async Task<AuthenticationResult> AcquireResultAsync(string scope, CancellationToken ct)
     {
         var scopes = new[] { scope };
 
@@ -154,30 +177,12 @@ public sealed class EntraTokenSource
             }
         }
 
-        // 3. Interactive, but only where there is a window to parent it to.
-        //    Headless callers (the CLI, scheduled runs) must fail loudly rather
-        //    than block forever on a prompt nobody can answer.
-        var parent = ParentWindowProvider?.Invoke() ?? IntPtr.Zero;
-        if (parent == IntPtr.Zero)
-        {
-            throw new EntraTokenException(
-                scope,
-                "no cached credential and no window to prompt in — sign in to FleetMate, " +
-                "or run on an Entra-joined device where the broker can use the device credential");
-        }
-
-        try
-        {
-            Log.Information("[entra] Silent acquisition failed for {Scope}; prompting via the broker", scope);
-            return await _app
-                .AcquireTokenInteractive(scopes)
-                .WithAccount(PublicClientApplication.OperatingSystemAccount)
-                .ExecuteAsync(ct);
-        }
-        catch (MsalException ex)
-        {
-            throw new EntraTokenException(scope, ex.Message, ex);
-        }
+        // FleetMate never opens a sign-in window: when neither silent path
+        // works, the system is reported as signed out and the operator fixes
+        // the sign-in outside the app (az login, or the Windows account).
+        throw new EntraTokenException(
+            scope,
+            "no silent credential — sign in to Windows with a work account, or run az login");
     }
 
     /// <summary>
