@@ -123,4 +123,25 @@ public class TdxPatchTests
         Assert.Equal(7, byPath["/Count"]);
         Assert.Equal(true, byPath["/Flag"]);
     }
+
+    // TeamDynamix refuses application/json-patch+json with 415; the same
+    // operations array is accepted as application/json, as the macOS client sends it.
+    [Fact]
+    public async Task SendsThePatchAsPlainJson()
+    {
+        using var service = new FleetMate.Core.Services.Tickets.TdxService(new FleetMate.Core.Models.Tickets.TdxConfig
+        {
+            BaseUrl = "https://service.example.com",
+            AppId = 1,
+        });
+        using var request = service.BuildPatchRequest(
+            "https://service.example.com/TDWebApi/api/1/tickets/5",
+            TdxService.ToJsonPatch(new Dictionary<string, object?> { ["StatusID"] = 3 }));
+
+        Assert.Equal(HttpMethod.Patch, request.Method);
+        Assert.Equal("application/json", request.Content!.Headers.ContentType!.MediaType);
+        using var doc = JsonDocument.Parse(await request.Content.ReadAsStringAsync());
+        Assert.Equal(JsonValueKind.Array, doc.RootElement.ValueKind);
+        Assert.Equal("/StatusID", doc.RootElement[0].GetProperty("path").GetString());
+    }
 }

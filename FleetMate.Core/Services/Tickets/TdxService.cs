@@ -494,6 +494,19 @@ public class TdxService : IDisposable
     /// clearing a field is a legitimate edit, and silently omitting it would
     /// turn "unset the assignee" into a no-op that reports success.
     /// </summary>
+    /// <summary>
+    /// The PATCH TeamDynamix accepts: a JSON Patch document (an array of
+    /// operations) sent as plain <c>application/json</c>. The API refuses
+    /// <c>application/json-patch+json</c> with 415, the media type RFC 6902
+    /// names, which is what every Windows ticket edit sent until now. There is
+    /// no POST fallback: POST to a ticket is the full-update route and would
+    /// read an operations array as a ticket.
+    /// </summary>
+    internal HttpRequestMessage BuildPatchRequest(string url, List<Dictionary<string, object?>> patch) => new(HttpMethod.Patch, url)
+    {
+        Content = new StringContent(JsonSerializer.Serialize(patch, _jsonOptions), Encoding.UTF8, "application/json"),
+    };
+
     internal static List<Dictionary<string, object?>> ToJsonPatch(IDictionary<string, object?> updates)
     {
         return updates
@@ -534,17 +547,8 @@ public class TdxService : IDisposable
             Log.Information("TDX PATCH ticket {Id} fields: {Fields}",
                 ticketId, string.Join(", ", updates.Keys.OrderBy(k => k, StringComparer.Ordinal)));
 
-            var content = new StringContent(
-                JsonSerializer.Serialize(patch, _jsonOptions), Encoding.UTF8, "application/json-patch+json");
-
-            var request = new HttpRequestMessage(HttpMethod.Patch, url) { Content = content };
-            var response = await _client.SendAsync(request);
-
-            // If PATCH fails, try POST
-            if (!response.IsSuccessStatusCode && response.StatusCode == System.Net.HttpStatusCode.MethodNotAllowed)
-            {
-                response = await _client.PostAsync(url, content);
-            }
+            using var request = BuildPatchRequest(url, patch);
+            using var response = await _client.SendAsync(request);
 
             if (!response.IsSuccessStatusCode)
             {
