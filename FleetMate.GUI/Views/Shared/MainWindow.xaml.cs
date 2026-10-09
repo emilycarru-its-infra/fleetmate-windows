@@ -288,7 +288,9 @@ public partial class MainWindow : Window
     private void NavigateToPage(string tag)
     {
         FleetMate.GUI.Views.Terminal.ContextPublisher.Tab(tag);
-        ContentFrame.Navigate(GetOrCreatePage(tag));
+        var page = GetOrCreatePage(tag);
+        ContentFrame.Navigate(page);
+        AttachSearchScope(page, tag);
     }
 
     public void ResetPageCache()

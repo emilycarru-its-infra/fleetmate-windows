@@ -48,6 +48,7 @@ public partial class IdentityPage : Page
         var isGroups = GroupsRadio.IsChecked == true;
         GroupsPanel.Visibility = isGroups ? Visibility.Visible : Visibility.Collapsed;
         UsersPanel.Visibility = isGroups ? Visibility.Collapsed : Visibility.Visible;
+        RaiseSearchScopeChanged();
     }
 
     // MARK: - Groups

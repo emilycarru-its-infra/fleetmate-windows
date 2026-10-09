@@ -296,6 +296,7 @@ public partial class DevelopmentView : UserControl
         SkillsFilters.Visibility = Show(skills);
         SkillsList.Visibility = Show(skills);
         EmptyText.Visibility = Visibility.Collapsed;
+        SearchScopeChanged?.Invoke(this, EventArgs.Empty);
 
         if (inbox) RenderInbox();
         else if (pulls) Rerender();

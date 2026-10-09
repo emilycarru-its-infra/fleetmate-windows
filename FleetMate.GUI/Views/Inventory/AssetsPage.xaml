@@ -52,7 +52,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <TextBox x:Name="SearchBox" 
+                <TextBox x:Name="SearchBox" Visibility="Collapsed" 
                          ui:ControlHelper.PlaceholderText="Search assets by name, tag, or serial..." 
                          Grid.Column="0"
                          MaxWidth="400" MinWidth="300" HorizontalAlignment="Left"

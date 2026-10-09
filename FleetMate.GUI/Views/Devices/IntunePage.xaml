@@ -106,7 +106,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBox x:Name="SearchBox" ui:ControlHelper.PlaceholderText="Search name, serial, user or group tag..." TextChanged="OnSearchChanged" />
+            <TextBox x:Name="SearchBox" Visibility="Collapsed" ui:ControlHelper.PlaceholderText="Search name, serial, user or group tag..." TextChanged="OnSearchChanged" />
             <Button Grid.Column="1" Content="Select All" Margin="8,0,0,0" Click="OnSelectAllClicked" />
             <Button Grid.Column="2" x:Name="ClearSelectionButton" Content="Clear" Margin="8,0,0,0" Click="OnClearSelectionClicked" IsEnabled="False" />
         </Grid>

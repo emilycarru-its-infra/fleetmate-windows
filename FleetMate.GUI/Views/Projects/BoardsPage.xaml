@@ -143,7 +143,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <TextBox x:Name="SearchBox" 
+                <TextBox x:Name="SearchBox" Visibility="Collapsed" 
                          ui:ControlHelper.PlaceholderText="Search tasks..." 
                          Grid.Column="0"
                          TextChanged="SearchBox_TextChanged" />
@@ -198,7 +198,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <TextBox x:Name="ListSearchBox" 
+                <TextBox x:Name="ListSearchBox" Visibility="Collapsed" 
                          ui:ControlHelper.PlaceholderText="Search work items..." 
                          Grid.Column="0"
                          TextChanged="ListSearchBox_TextChanged" />
@@ -232,7 +232,7 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <TextBox x:Name="ProjectsSearchBox" 
+                <TextBox x:Name="ProjectsSearchBox" Visibility="Collapsed" 
                          ui:ControlHelper.PlaceholderText="Search project items..." 
                          Grid.Column="0"
                          TextChanged="ProjectsSearchBox_TextChanged" />

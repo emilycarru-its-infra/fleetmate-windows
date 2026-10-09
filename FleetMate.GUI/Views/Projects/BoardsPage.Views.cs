@@ -64,6 +64,7 @@ public partial class BoardsPage
         // The source picker sits in the board filter card; keep it reachable
         // while the GitHub Project board (which has its own filter card) shows.
         if (githubBoard) BoardFilters.Visibility = Visibility.Visible;
+        RaiseSearchScopeChanged();
 
         if (queries && useQueries) await LoadQueriesAsync();
         else if (queries && _allWorkItems.Count == 0) await LoadWorkItemsAsync();

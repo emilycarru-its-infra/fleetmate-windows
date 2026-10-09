@@ -168,10 +168,12 @@
                                  Style="{StaticResource NavigationTabStyle}">
                         <ui:FontIcon Glyph="&#xE713;" FontFamily="Segoe Fluent Icons" FontSize="14" />
                     </RadioButton>
-                    <!-- Global search: last in the toolbar on every tab. Ctrl+K
-                         focuses it, Enter opens the first hit, Esc clears. It keeps
-                         its full width on every window size. -->
-                    <Grid Width="260" Height="28" Margin="8,0,0,0" VerticalAlignment="Center"
+                    <!-- The one search field: last in the toolbar on every tab. The
+                         chip inside it says what it searches: the tab's own list
+                         (Ctrl+F) or everything (Ctrl+K); clicking the chip switches.
+                         Enter opens the first hit, Esc clears. It keeps its full
+                         width on every window size. -->
+                    <Grid Width="320" Height="28" Margin="8,0,0,0" VerticalAlignment="Center"
                           shell:WindowChrome.IsHitTestVisibleInChrome="True">
                         <TextBox x:Name="SearchBox" AutomationProperties.AutomationId="ToolbarSearchBox"
                                  AutomationProperties.Name="Search" MinHeight="28" Height="28" FontSize="12"
@@ -179,17 +181,23 @@
                                  BorderThickness="1"
                                  BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
                                  Background="{DynamicResource CardBackgroundBrush}"
-                                 ui:ControlHelper.PlaceholderText="Search"
+                                 ui:ControlHelper.PlaceholderText="Search everything"
                                  ui:ControlHelper.PlaceholderForeground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                                  TextChanged="OnSearchTextChanged" PreviewKeyDown="OnSearchKeyDown" />
                         <ui:FontIcon Glyph="&#xE721;" FontFamily="Segoe Fluent Icons" FontSize="13"
                                      HorizontalAlignment="Left" VerticalAlignment="Center" Margin="9,0,0,0"
                                      IsHitTestVisible="False"
                                      Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <Button x:Name="SearchScopeChip" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                Margin="28,0,0,0" Padding="7,0" Height="20" MinHeight="0" MinWidth="0" FontSize="11"
+                                AutomationProperties.AutomationId="ToolbarSearchScopeChip"
+                                Click="OnSearchScopeChipClicked" SizeChanged="OnSearchScopeChipSizeChanged"
+                                ToolTip="Switch between this tab's list and everything"
+                                Background="{DynamicResource SubtleFillBrush}" BorderThickness="0" Content="All" />
                         <Border x:Name="SearchHint" HorizontalAlignment="Right" VerticalAlignment="Center"
                                 Margin="0,0,6,0" Padding="5,0" CornerRadius="3" IsHitTestVisible="False"
                                 BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
-                            <TextBlock Text="Ctrl+K" FontSize="10"
+                            <TextBlock x:Name="SearchHintText" Text="Ctrl+K" FontSize="10"
                                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                         </Border>
                         <Popup x:Name="SearchPopup" PlacementTarget="{Binding ElementName=SearchBox}"
