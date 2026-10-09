@@ -212,7 +212,7 @@ public class SnipeCustomField
 
     /// <summary>
     /// Slug of the fork's field group ("inventory", "specs", "networking",
-    /// "procurement", "identity", "management"). Sent by the ECU Snipe-IT fork;
+    /// "procurement", "identity", "management"). Sent by the Snipe-IT fork;
     /// null from stock Snipe-IT, in which case the client falls back to its
     /// mirrored copy of the seeded taxonomy.
     /// </summary>

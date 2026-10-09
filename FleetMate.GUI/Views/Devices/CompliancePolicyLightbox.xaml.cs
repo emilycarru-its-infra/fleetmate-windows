@@ -325,7 +325,7 @@ public partial class CompliancePolicyLightbox : Window
 
     private void OnCopyReport(object sender, RoutedEventArgs e)
     {
-        // Report layout shared with the macOS app (work item 5143): policy line
+        // Report layout shared with the macOS app: policy line
         // with state, device block, settings, requirements, actions, assignments.
         var report = new StringBuilder();
         var version = _definition?.Version ?? _policy.Version;

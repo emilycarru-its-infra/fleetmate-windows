@@ -205,7 +205,7 @@ public partial class ManagePage : Page
 
     private void OnReloadRosterClicked(object sender, RoutedEventArgs e) => ReloadRoster();
 
-    /// <summary>"22 labs · 445 machines · Devices/Cimian · fetched 14:32".</summary>
+    /// <summary>"22 labs · 445 machines · Platform/Agent · fetched 14:32".</summary>
     private void UpdateRosterFooter()
     {
         RosterFooterText.Text = _vm.RosterLoaded

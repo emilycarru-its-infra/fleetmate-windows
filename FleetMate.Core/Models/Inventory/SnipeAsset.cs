@@ -143,7 +143,7 @@ public class SnipeAsset
     [JsonPropertyName("decommission_date")]
     public SnipeDate? DecommissionDate { get; set; }
 
-    // Native lease / purchasing columns. The ECU fork's F2 migration promoted
+    // Native lease / purchasing columns. The Snipe-IT fork's F2 migration promoted
     // this cluster out of _snipeit_* custom fields into typed assets columns
     // and then dropped the custom fields, so these no longer arrive in
     // custom_fields — they are first-class keys on the asset payload.

@@ -18,7 +18,7 @@ public class SearchEverythingTests
         Devices = new[] { new IntuneDevice { Id = "dev-1", DeviceName = "DEVICE-ONE", SerialNumber = "SN1" } },
         Assets = new[] { new SnipeAsset { Id = 42, Name = "Sample Laptop", AssetTag = "T0042" } },
         Tickets = new[] { new TdxTicket { Id = 5150, Title = "Printer jam" } },
-        WorkItems = new[] { new WorkItem { Id = 5558, Fields = new WorkItemFields { Title = "Rotate keys" } } },
+        WorkItems = new[] { new WorkItem { Id = 1234, Fields = new WorkItemFields { Title = "Rotate keys" } } },
         Users = new[] { new EntraUser { Id = "u1", DisplayName = "Pat Doe", UserPrincipalName = "pdoe@example.edu" } },
         Groups = new[] { new EntraGroup { Id = "g1", DisplayName = "Lab Admins" } },
         PullRequests = new[]
@@ -60,7 +60,7 @@ public class SearchEverythingTests
             new PipelineRun
             {
                 Source = PullRequestSource.AzureDevOps, Container = "Proj", PipelineName = "nightly",
-                RunId = 23249, RunNumber = "20261004.3", Branch = "main"
+                RunId = 4242, RunNumber = "20261004.3", Branch = "main"
             },
             new PipelineRun
             {
@@ -131,9 +131,9 @@ public class SearchEverythingTests
     [Fact]
     public void PipelineRuns_MatchRunIdExactly_AndRunNumberAsText()
     {
-        var byId = Assert.Single(Group(GlobalSearch.Search("23249", Sources()), SearchCategory.PipelineRuns).Hits);
-        Assert.Equal("Run: 23249", byId.MatchLabel);
-        Assert.Equal("fleetmate://pipeline/Proj/23249", byId.Link);
+        var byId = Assert.Single(Group(GlobalSearch.Search("4242", Sources()), SearchCategory.PipelineRuns).Hits);
+        Assert.Equal("Run: 4242", byId.MatchLabel);
+        Assert.Equal("fleetmate://pipeline/Proj/4242", byId.Link);
 
         var byNumber = Assert.Single(Group(GlobalSearch.Search("20261004.3", Sources()), SearchCategory.PipelineRuns).Hits);
         Assert.StartsWith("Run number:", byNumber.MatchLabel);
@@ -146,7 +146,7 @@ public class SearchEverythingTests
     [InlineData("DEVICE-ONE", SearchCategory.Devices, "fleetmate://device/dev-1")]
     [InlineData("T0042", SearchCategory.Inventory, "fleetmate://asset/42")]
     [InlineData("Printer jam", SearchCategory.Tickets, "fleetmate://ticket/5150")]
-    [InlineData("Rotate keys", SearchCategory.WorkItems, "fleetmate://workitem/5558")]
+    [InlineData("Rotate keys", SearchCategory.WorkItems, "fleetmate://workitem/1234")]
     [InlineData("pdoe@example.edu", SearchCategory.Users, "fleetmate://user/u1")]
     [InlineData("Lab Admins", SearchCategory.Groups, "fleetmate://group/g1")]
     public void ExistingCategories_CarryLinks(string query, SearchCategory category, string link) =>
@@ -172,7 +172,7 @@ public class SearchEverythingTests
     [Fact]
     public void PrependedWorkItem_CarriesItsLink()
     {
-        var groups = GlobalSearch.Search("5558", new SearchSources());
+        var groups = GlobalSearch.Search("1234", new SearchSources());
         GlobalSearch.PrependWorkItem(groups, new WorkItem { Id = 999, Fields = new WorkItemFields { Title = "Fetched" } });
         Assert.Equal("fleetmate://workitem/999", groups[0].Hits[0].Link);
     }

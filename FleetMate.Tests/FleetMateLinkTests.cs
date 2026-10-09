@@ -14,17 +14,17 @@ public class FleetMateLinkTests
 
     [Fact]
     public void ParsesWorkItem() =>
-        Assert.Equal(new L.WorkItem(5558), L.Parse("fleetmate://workitem/5558"));
+        Assert.Equal(new L.WorkItem(1234), L.Parse("fleetmate://workitem/1234"));
 
     [Fact]
     public void ParsesAzureDevOpsRun() =>
-        Assert.Equal(new L.AzureDevOpsRun("Proj", 23249), L.Parse("fleetmate://pipeline/Proj/23249"));
+        Assert.Equal(new L.AzureDevOpsRun("Proj", 4242), L.Parse("fleetmate://pipeline/Proj/4242"));
 
     [Fact]
     public void ParsesWithoutSlashesAndInQuotes()
     {
-        Assert.Equal(new L.WorkItem(5558), L.Parse("fleetmate:workitem/5558"));
-        Assert.Equal(new L.WorkItem(5558), L.Parse("\"FLEETMATE://workitem/5558/\""));
+        Assert.Equal(new L.WorkItem(1234), L.Parse("fleetmate:workitem/1234"));
+        Assert.Equal(new L.WorkItem(1234), L.Parse("\"FLEETMATE://workitem/1234/\""));
     }
 
     [Theory]
@@ -74,12 +74,12 @@ public class FleetMateLinkTests
     [Fact]
     public void OpenMatchesOtherAzureDevOpsShapes()
     {
-        Assert.Equal(new L.AzureDevOpsRun("Proj", 23249),
-            L.ParseWeb(new Uri("https://dev.example.com/org/Proj/_build/results?buildId=23249&view=logs")));
+        Assert.Equal(new L.AzureDevOpsRun("Proj", 4242),
+            L.ParseWeb(new Uri("https://dev.example.com/org/Proj/_build/results?buildId=4242&view=logs")));
         Assert.Equal(new L.AzureDevOpsPipeline("Proj", 12),
             L.ParseWeb(new Uri("https://dev.example.com/org/Proj/_build?definitionId=12")));
-        Assert.Equal(new L.WorkItem(5558),
-            L.ParseWeb(new Uri("https://dev.example.com/org/Proj/_workitems/edit/5558/")));
+        Assert.Equal(new L.WorkItem(1234),
+            L.ParseWeb(new Uri("https://dev.example.com/org/Proj/_workitems/edit/1234/")));
         Assert.Equal(new L.Commit(new L.AzureDevOps("Proj", "Repo"), "abc1234"),
             L.ParseWeb(new Uri("https://dev.example.com/org/Proj/_git/Repo/commit/abc1234")));
     }

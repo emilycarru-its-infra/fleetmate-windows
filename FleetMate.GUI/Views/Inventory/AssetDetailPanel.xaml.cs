@@ -37,7 +37,7 @@ public partial class AssetDetailPanel : UserControl
     public event EventHandler? Changed;
 
     // ── Field group taxonomy ─────────────────────────────────────────────
-    // The six groups the ECU Snipe-IT fork seeds, in its render order. The
+    // The six groups the Snipe-IT fork seeds, in its render order. The
     // server's field_group slug on each custom field wins when present; this
     // mirror only decides where a field lands when the API doesn't say.
 
@@ -114,7 +114,7 @@ public partial class AssetDetailPanel : UserControl
         WhoWhereRow.Children.Clear();
 
         // An asset checked out to a room is not "assigned to a person named
-        // D4315" — when the assignee IS a location, the person line would
+        // R404" — when the assignee IS a location, the person line would
         // duplicate the pin line verbatim.
         var assignedToLocation = asset.AssignedTo?.Type == "location";
         if (asset.AssignedTo?.Name is { Length: > 0 } who && !assignedToLocation)

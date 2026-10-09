@@ -139,7 +139,7 @@ SSH-based remote command execution with automatic host key management:
 ```powershell
 # Execute single command
 fleetmate ssh exec ASSET-000 "hostname"
-fleetmate ssh exec REMOTE-24 "Get-Service Cimian"
+fleetmate ssh exec LAB-24 "Get-Service Cimian"
 
 # Batch execution
 fleetmate ssh batch "ASSET-000,ASSET-000,ASSET-000" "uptime"

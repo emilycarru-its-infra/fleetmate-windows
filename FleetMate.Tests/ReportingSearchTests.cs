@@ -15,7 +15,7 @@ public class ReportingSearchTests
     {
         ReportingDevices = new[]
         {
-            new ReportingDevice("C02ABC123", "Lab-Mac-01", Hostname: "labmac01", User: "Alex Doe", AssetTag: "A1001", Platform: "macOS"),
+            new ReportingDevice("C02ABC123", "Lab-Mac-01", Hostname: "labmac01", User: "Alex Doe", AssetTag: "AT1001", Platform: "macOS"),
             new ReportingDevice("PF3XYZ99", "Studio-PC", User: "Sam Roe", AssetTag: "A1002", Platform: "Windows"),
         },
     };
@@ -26,7 +26,7 @@ public class ReportingSearchTests
     [Theory]
     [InlineData("studio", "Name")]
     [InlineData("pf3xyz", "Serial")]
-    [InlineData("A1001", "Asset tag")]
+    [InlineData("AT1001", "Asset tag")]
     [InlineData("alex", "User")]
     [InlineData("labmac", "Host")]
     public void MatchesEachSearchableField(string query, string field) =>

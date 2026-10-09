@@ -77,7 +77,7 @@ public static class DeadlineCommand
             if (devices.Length == 0)
             {
                 AnsiConsole.MarkupLine("[yellow]No devices specified. Use --devices to specify render nodes.[/]");
-                AnsiConsole.MarkupLine("[dim]Example: fleetmate deadline audit --devices RENDER-NODE-01,RENDER-NODE-02[/]");
+                AnsiConsole.MarkupLine("[dim]Example: fleetmate deadline audit --devices FARM-A,FARM-B[/]");
                 return;
             }
 

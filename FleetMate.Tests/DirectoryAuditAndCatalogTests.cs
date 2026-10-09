@@ -46,8 +46,8 @@ public class DirectoryAuditFilterTests
     {
         // Whoever is investigating usually has the name, not the id -- the id
         // died with the object.
-        var filter = EntraCommand.BuildAuditFilter("Devices-Shared-Kiosk-Signage-A2003", null, 0, Now);
-        Assert.Equal("targetResources/any(t: t/displayName eq 'Devices-Shared-Kiosk-Signage-A2003')", filter);
+        var filter = EntraCommand.BuildAuditFilter("Devices-Shared-Kiosk-Signage-R201", null, 0, Now);
+        Assert.Equal("targetResources/any(t: t/displayName eq 'Devices-Shared-Kiosk-Signage-R201')", filter);
     }
 
     [Fact]
