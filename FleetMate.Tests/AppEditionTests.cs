@@ -42,6 +42,14 @@ public class AppEditionTests
     }
 
     [Fact]
+    public void TicketsMateLogsApartFromFleetMate()
+    {
+        Assert.Equal(Path.Combine(AppEdition.TicketsMate.LocalAppDataDirectory, "Logs"), AppEdition.TicketsMate.LogDirectory);
+        Assert.EndsWith(Path.Combine("TicketsMate", "Logs"), AppEdition.TicketsMate.LogDirectory);
+        Assert.Equal(AppEdition.FleetMate.UserDirectory, AppEdition.FleetMate.LogDirectory);
+    }
+
+    [Fact]
     public void TicketsMateCarriesTheTicketsTabAlone()
     {
         Assert.Equal(new[] { "Tickets" }, AppEdition.TicketsMate.Tabs(MainWindow.TabOrder));

@@ -19,7 +19,8 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <DefineConstants>BIN_DIR=$(BinDir);ProductVersion=$(ProductVersion);CalendarVersion=$(CalendarVersion)</DefineConstants>
+    <IconFile>$(MSBuildProjectDirectory)\..\FleetMate.GUI\Assets\TicketsMate.ico</IconFile>
+    <DefineConstants>BIN_DIR=$(BinDir);ICON_FILE=$(IconFile);ProductVersion=$(ProductVersion);CalendarVersion=$(CalendarVersion)</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

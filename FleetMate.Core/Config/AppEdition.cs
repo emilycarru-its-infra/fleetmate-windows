@@ -37,13 +37,23 @@ public sealed class AppEdition
     /// <summary>Where Intune or Group Policy writes managed settings, under HKLM or HKCU.</summary>
     public string PolicyRegistryPath => $@"SOFTWARE\Policies\{Name}";
 
-    /// <summary>The per-user folder for config.yaml, .env and debug.log.</summary>
+    /// <summary>The per-user folder for config.yaml and .env, and FleetMate's debug.log.</summary>
     public string UserDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "." + Name.ToLowerInvariant());
 
     /// <summary>The per-user local application data folder.</summary>
     public string LocalAppDataDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), Name);
+
+    /// <summary>
+    /// Where the desktop app writes its logs, debug.log included. FleetMate
+    /// keeps them in <see cref="UserDirectory"/>. TicketsMate keeps its own in
+    /// %LOCALAPPDATA%\TicketsMate\Logs, apart from every FleetMate and
+    /// Managed* log folder.
+    /// </summary>
+    public string LogDirectory => IsTicketsOnly
+        ? Path.Combine(LocalAppDataDirectory, "Logs")
+        : UserDirectory;
 
     /// <summary>The tabs of <paramref name="order"/> this edition carries at all.</summary>
     public IReadOnlyList<string> Tabs(IReadOnlyList<string> order) =>

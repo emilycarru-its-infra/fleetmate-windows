@@ -598,7 +598,7 @@ public partial class App : Application
         base.OnStartup(e);
 
         // Configure Serilog
-        var logDir = FleetMate.Core.Config.AppEdition.Current.UserDirectory;
+        var logDir = FleetMate.Core.Config.AppEdition.Current.LogDirectory;
         Directory.CreateDirectory(logDir);
         var logPath = Path.Combine(logDir, "debug.log");
 

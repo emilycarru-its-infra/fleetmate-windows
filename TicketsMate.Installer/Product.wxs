@@ -36,11 +36,18 @@
 
     <Media Id="1" Cabinet="ticketsmate.cab" EmbedCab="yes" />
 
+    <!-- The app icon, for the Start Menu shortcut and Installed apps. -->
+    <Icon Id="TicketsMate.ico" SourceFile="$(var.ICON_FILE)" />
+    <Property Id="ARPPRODUCTICON" Value="TicketsMate.ico" />
+
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLDIR" Name="TicketsMate" />
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder" />
 
+    <!-- Scope="perMachine" resolves ProgramMenuFolder to the all-users
+         Programs folder. The shortcut is installed with the exe and removed
+         with it on uninstall, like every file the MSI owns. -->
     <Component Id="TicketsMateExecutable" Directory="INSTALLDIR" Guid="{CDDB0235-3E53-4DF0-90EF-D7E91B252E7A}">
       <File Id="TicketsMateExe" Source="$(var.BIN_DIR)\TicketsMate.exe" KeyPath="yes" Vital="yes">
         <Shortcut Id="TicketsMateStartMenuShortcut"
@@ -48,6 +55,7 @@
                   Name="TicketsMate"
                   Description="TicketsMate service desk"
                   WorkingDirectory="INSTALLDIR"
+                  Icon="TicketsMate.ico"
                   Advertise="yes" />
       </File>
     </Component>

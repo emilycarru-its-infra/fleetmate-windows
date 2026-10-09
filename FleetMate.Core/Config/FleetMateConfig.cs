@@ -145,7 +145,8 @@ public class FleetMateConfig
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Cimian", "Logs")
     };
 
-    public string LogPath { get; set; } = DefaultLogPath;
+    // TicketsMate never logs under ManagedFleet; its logs stay in its own folder.
+    public string LogPath { get; set; } = AppEdition.Current.IsTicketsOnly ? AppEdition.Current.LogDirectory : DefaultLogPath;
 
     /// <summary>
     /// One-time move of any log left in a previous root into <paramref name="destination"/>,
