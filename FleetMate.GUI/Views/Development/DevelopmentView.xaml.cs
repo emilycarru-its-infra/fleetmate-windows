@@ -49,6 +49,11 @@ public partial class DevelopmentView : UserControl
             app.Inbox.Changed += (_, _) => Dispatcher.Invoke(RenderInbox);
         }
 
+        // The view is cached with the tab, so an Inbox read to zero on an earlier
+        // visit would still be the open segment. Coming back opens Pulls instead.
+        if (DevelopmentFilter.LeaveEmptyInbox(app.Inbox.UnreadCount, InboxSegment.IsChecked == true))
+            PullRequestsSegment.IsChecked = true;
+
         RenderInbox();
 
         if (app.DevelopmentPullRequests is { } cached)
@@ -316,9 +321,8 @@ public partial class DevelopmentView : UserControl
 
         var unread = inbox.UnreadCount;
 
-        // Shown only while there is something unread — and kept while it is
-        // the open segment, so marking everything read does not yank the page.
-        InboxSegment.Visibility = unread > 0 || InboxSegment.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        InboxSegment.Visibility = DevelopmentFilter.ShowInboxSegment(unread, InboxSegment.IsChecked == true)
+            ? Visibility.Visible : Visibility.Collapsed;
         MarkAllReadButton.IsEnabled = unread > 0;
 
         var selectedId = _selectedNotification?.Id;
