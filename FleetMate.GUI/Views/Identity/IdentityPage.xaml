@@ -82,7 +82,7 @@
 
                     <!-- Users Not Configured -->
                     <TextBlock x:Name="UsersNotConfiguredText" Grid.Row="1" Visibility="Collapsed"
-                               Text="Microsoft Graph is not configured. Set GRAPH_TENANT_ID and GRAPH_CLIENT_ID."
+                               Text="Microsoft Graph is not configured. Set the Tenant ID in Settings › Authentication."
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                                VerticalAlignment="Center" HorizontalAlignment="Center" />
 

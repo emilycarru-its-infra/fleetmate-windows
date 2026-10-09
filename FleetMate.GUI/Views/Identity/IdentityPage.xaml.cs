@@ -162,7 +162,12 @@ public partial class IdentityPage : Page
         var query = UsersSearchBox.Text?.Trim();
         if (string.IsNullOrEmpty(query) || _graphService == null)
         {
-            if (_graphService == null) UsersNotConfiguredText.Visibility = Visibility.Visible;
+            if (_graphService == null)
+            {
+                // Both messages sit in the same place; show one, not both on top of each other.
+                UsersPlaceholderText.Visibility = Visibility.Collapsed;
+                UsersNotConfiguredText.Visibility = Visibility.Visible;
+            }
             return;
         }
 
