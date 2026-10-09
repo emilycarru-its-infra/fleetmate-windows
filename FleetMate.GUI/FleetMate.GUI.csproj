@@ -13,8 +13,9 @@
     <AssemblyDescription>FleetMate Fleet Management</AssemblyDescription>
     <AssemblyCompany>Example Organisation</AssemblyCompany>
     <AssemblyProduct>FleetMate</AssemblyProduct>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <!-- AssemblyVersion and FileVersion follow Version, so a release build's
+         -p:Version stamps the exe the same way it stamps the CLI. -->
+    <Version>1.0.0</Version>
     <StartupObject>FleetMate.GUI.Program</StartupObject>
     <ApplicationIcon>Assets\FleetMate.ico</ApplicationIcon>
     <PublishSingleFile>true</PublishSingleFile>
