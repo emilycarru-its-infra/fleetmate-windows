@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- WiX v6 installer for TicketsMate, the Tickets-only edition of FleetMate.
+     The same shape as FleetMate.Installer, less the operator CLI: one
+     self-contained TicketsMate.exe in Program Files, a Start Menu shortcut,
+     and the registry values Intune uses for detection. Its own UpgradeCode
+     and install folder let it sit beside FleetMate on the same machine. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <?ifndef ProductVersion?>
+    <?define ProductVersion = "0.0.0"?>
+  <?endif?>
+  <?ifndef CalendarVersion?>
+    <?define CalendarVersion = "$(var.ProductVersion)"?>
+  <?endif?>
+
+  <Package Name="TicketsMate"
+           Version="$(var.ProductVersion)"
+           Manufacturer="Example Organisation"
+           UpgradeCode="{0836EE35-6B9E-4E04-A50A-FB919AAD237F}"
+           Language="1033"
+           InstallerVersion="500"
+           Compressed="yes"
+           Scope="perMachine">
+
+    <Property Id="MSIUSEREALADMINDETECTION" Value="1" />
+
+    <!-- The real calendar version, for cimiimport, as in FleetMate.Installer. -->
+    <Property Id="CIMIAN_PKG_FULL_VERSION" Value="$(var.CalendarVersion)" />
+
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  AllowDowngrades="no"
+                  MigrateFeatures="yes"
+                  DowngradeErrorMessage="A newer version of [ProductName] is already installed."
+                  Schedule="afterInstallInitialize" />
+
+    <Media Id="1" Cabinet="ticketsmate.cab" EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLDIR" Name="TicketsMate" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Component Id="TicketsMateExecutable" Directory="INSTALLDIR" Guid="{CDDB0235-3E53-4DF0-90EF-D7E91B252E7A}">
+      <File Id="TicketsMateExe" Source="$(var.BIN_DIR)\TicketsMate.exe" KeyPath="yes" Vital="yes">
+        <Shortcut Id="TicketsMateStartMenuShortcut"
+                  Directory="ProgramMenuFolder"
+                  Name="TicketsMate"
+                  Description="TicketsMate service desk"
+                  WorkingDirectory="INSTALLDIR"
+                  Advertise="yes" />
+      </File>
+    </Component>
+
+    <Component Id="RegistryEntries" Directory="INSTALLDIR" Guid="{069BC378-E66B-441A-9F13-9B656EDF00E7}">
+      <RegistryValue Root="HKLM" Key="SOFTWARE\TicketsMate" Name="InstallPath" Value="[INSTALLDIR]" Type="string" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\TicketsMate" Name="Version" Value="$(var.CalendarVersion)" Type="string" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\TicketsMate" Name="InstallDate" Value="[Date]" Type="string" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\TicketsMate" Name="Architecture" Value="[ProcessorArchitecture]" Type="string" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\TicketsMate" Name="LastRunVersion" Value="$(var.CalendarVersion)" Type="string" />
+    </Component>
+
+    <Feature Id="DefaultFeature" Level="1">
+      <ComponentRef Id="TicketsMateExecutable" />
+      <ComponentRef Id="RegistryEntries" />
+    </Feature>
+
+  </Package>
+
+</Wix>

@@ -48,7 +48,7 @@ namespace FleetMate.Core.Config;
 public class FleetMateConfig
 {
     // Registry path for FleetMate credentials (OMA-URI style CSP path)
-    private const string RegistryPath = @"SOFTWARE\FleetMate";
+    private static string RegistryPath => AppEdition.Current.UserRegistryPath;
     
     // ReportMate API settings
     public string? ReportMateUrl { get; set; }
@@ -232,15 +232,21 @@ public class FleetMateConfig
     /// </summary>
     public string? RepoRoot { get; set; }
     
-    private static readonly string[] ConfigLocations = new[]
-    {
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".fleetmate", "config.yaml"),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FleetMate", "config.yaml"),
-        @"C:\ProgramData\Cimian\fleetmate.yaml"
-    };
-    
-    private static readonly string EnvFile = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".fleetmate", ".env");
+    // Each edition reads its own files; TicketsMate has no machine-wide file.
+    private static readonly string[] ConfigLocations = AppEdition.Current.IsTicketsOnly
+        ? new[]
+        {
+            Path.Combine(AppEdition.Current.UserDirectory, "config.yaml"),
+            Path.Combine(AppEdition.Current.LocalAppDataDirectory, "config.yaml"),
+        }
+        : new[]
+        {
+            Path.Combine(AppEdition.Current.UserDirectory, "config.yaml"),
+            Path.Combine(AppEdition.Current.LocalAppDataDirectory, "config.yaml"),
+            @"C:\ProgramData\Cimian\fleetmate.yaml"
+        };
+
+    private static readonly string EnvFile = Path.Combine(AppEdition.Current.UserDirectory, ".env");
     
     public static FleetMateConfig Load()
     {
@@ -435,7 +441,7 @@ public class FleetMateConfig
     }
 
     /// <summary>Where Intune (or Group Policy) writes managed FleetMate settings.</summary>
-    public const string PolicyRegistryPath = @"SOFTWARE\Policies\FleetMate";
+    public static string PolicyRegistryPath => AppEdition.Current.PolicyRegistryPath;
 
     private static void LoadPolicy(RegistryKey hive, string hiveName, FleetMateConfig config)
     {

@@ -56,6 +56,17 @@ jobs:
       - name: Test
         run: dotnet test FleetMate.Tests/FleetMate.Tests.csproj --configuration Release --no-build --verbosity minimal
 
+      # TicketsMate is the GUI built as the Tickets-only edition. Build it too,
+      # so a break in the edition fails here rather than at release time.
+      - name: Build TicketsMate
+        shell: pwsh
+        run: |
+          dotnet build FleetMate.GUI/FleetMate.GUI.csproj --configuration Release -p:Edition=TicketsMate --verbosity minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $exe = Get-ChildItem FleetMate.GUI/bin/TicketsMate -Recurse -Filter TicketsMate.exe | Select-Object -First 1
+          if (-not $exe) { throw "TicketsMate.exe was not built" }
+          Write-Host "Built $($exe.FullName)"
+
   # A run started by workflow_dispatch (reportmate-sync does this for its pull
   # request) is not counted toward the pull request's required check, so this
   # job records the result as a commit status under the same name. It runs no

@@ -20,8 +20,13 @@ namespace FleetMate.GUI.Views.Shared;
 /// </summary>
 public sealed class SetupWizardWindow : Window
 {
-    private const string RegistryPath = @"SOFTWARE\FleetMate";
-    private static readonly string[] StepTitles = { "Welcome", "Modules", "Connections", "Sign In", "Summary" };
+    private static string RegistryPath => FleetMate.Core.Config.AppEdition.Current.UserRegistryPath;
+    // TicketsMate has one module and signs in with the Windows account alone,
+    // so it skips Modules and Sign In.
+    private readonly string[] StepTitles = AppEdition.Current.IsTicketsOnly
+        ? new[] { "Welcome", "Connections", "Summary" }
+        : new[] { "Welcome", "Modules", "Connections", "Sign In", "Summary" };
+    private static string AppName => AppEdition.Current.Name;
 
     private readonly FleetMateConfig _config;
     private readonly HashSet<string> _hidden;
@@ -38,7 +43,7 @@ public sealed class SetupWizardWindow : Window
 
     public SetupWizardWindow()
     {
-        Title = "FleetMate Setup";
+        Title = $"{AppName} Setup";
         Width = 640;
         Height = 600;
         ResizeMode = ResizeMode.CanResizeWithGrip;
@@ -46,7 +51,9 @@ public sealed class SetupWizardWindow : Window
         ModernWpf.Controls.Primitives.WindowHelper.SetUseModernWindowStyle(this, true);
 
         _config = (Application.Current as App)?.Config ?? FleetMateConfig.Load();
-        _hidden = new HashSet<string>(UserPreferences.HiddenModules, StringComparer.OrdinalIgnoreCase);
+        _hidden = AppEdition.Current.IsTicketsOnly
+            ? new HashSet<string>(AppModules.All.Select(m => m.Tag).Where(t => t != "Tickets"), StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(UserPreferences.HiddenModules, StringComparer.OrdinalIgnoreCase);
         _values["GraphTenantId"] = _config.Graph?.TenantId ?? "";
         _values["GraphClientId"] = _config.Graph?.ClientId ?? "";
         _values["DevOpsOrganization"] = _config.AzureDevOps?.Organization ?? "";
@@ -111,12 +118,12 @@ public sealed class SetupWizardWindow : Window
         if (_step == StepTitles.Length - 1) _next.Style = (Style)FindResource("AccentButtonStyle");
         else _next.ClearValue(StyleProperty);
         _hint.Text = "";
-        _body.Content = _step switch
+        _body.Content = StepTitles[_step] switch
         {
-            0 => WelcomeStep(),
-            1 => ModulesStep(),
-            2 => ConnectionsStep(),
-            3 => SignInStep(),
+            "Welcome" => WelcomeStep(),
+            "Modules" => ModulesStep(),
+            "Connections" => ConnectionsStep(),
+            "Sign In" => SignInStep(),
             _ => SummaryStep(),
         };
     }
@@ -125,6 +132,13 @@ public sealed class SetupWizardWindow : Window
 
     private UIElement WelcomeStep()
     {
+        if (AppEdition.Current.IsTicketsOnly)
+        {
+            var tickets = Heading($"Welcome to {AppName}",
+                $"{AppName} is your TeamDynamix service desk. This takes a minute: point it at your TeamDynamix site.");
+            tickets.Children.Add(Note($"{AppName} never stores a password. It signs in with your Windows account."));
+            return tickets;
+        }
         var panel = Heading("Welcome to FleetMate",
             "FleetMate brings devices, inventory, projects, tickets and reporting together. This takes a minute: choose the tabs you want, point them at your services, and sign in to az and gh.");
         panel.Children.Add(Note("FleetMate never stores a password or client secret. Services sign in with your Windows account, az or gh."));
@@ -241,7 +255,7 @@ public sealed class SetupWizardWindow : Window
 
     private UIElement SummaryStep()
     {
-        var panel = Heading("Summary", "Finish saves these choices and reloads FleetMate's services.");
+        var panel = Heading("Summary", $"Finish saves these choices and reloads {AppName}'s services.");
         var shown = AppModules.All.Where(m => Shows(m.Tag)).Select(m => m.Title).ToList();
         Section(panel, "Tabs");
         panel.Children.Add(Note(string.Join(", ", shown), top: 2));
@@ -278,7 +292,7 @@ public sealed class SetupWizardWindow : Window
         catch (Exception ex)
         {
             Log.Warning(ex, "[setup] Could not save endpoints");
-            MessageBox.Show(this, $"Couldn't save the endpoints:\n{ex.Message}", "FleetMate Setup",
+            MessageBox.Show(this, $"Couldn't save the endpoints:\n{ex.Message}", $"{AppName} Setup",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }

@@ -21,7 +21,7 @@ public interface IWidgetFilterHost
 /// </summary>
 public static class WidgetVisibility
 {
-    private const string RegistryPath = @"SOFTWARE\FleetMate";
+    private static string RegistryPath => FleetMate.Core.Config.AppEdition.Current.UserRegistryPath;
 
     /// <summary>Raised with the tab whose widgets were shown or hidden.</summary>
     public static event Action<string>? Changed;

@@ -598,9 +598,7 @@ public partial class App : Application
         base.OnStartup(e);
 
         // Configure Serilog
-        var logDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".fleetmate");
+        var logDir = FleetMate.Core.Config.AppEdition.Current.UserDirectory;
         Directory.CreateDirectory(logDir);
         var logPath = Path.Combine(logDir, "debug.log");
 
@@ -634,7 +632,8 @@ public partial class App : Application
             Current?.Dispatcher.BeginInvoke(() =>
                 ReportAppError(args.Exception.InnerException?.Message ?? args.Exception.Message));
         };
-        Log.Information("FleetMate GUI starting (pid {Pid}, version {Version})",
+        Log.Information("{Edition} GUI starting (pid {Pid}, version {Version})",
+            FleetMate.Core.Config.AppEdition.Current.Name,
             Environment.ProcessId,
             typeof(App).Assembly.GetName().Version);
 
@@ -653,7 +652,7 @@ public partial class App : Application
 
         // Apply the saved UI theme before constructing the main window so the
         // app never flashes through the system theme on launch.
-        using (var appearanceKey = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\FleetMate"))
+        using (var appearanceKey = Registry.CurrentUser.OpenSubKey(FleetMate.Core.Config.AppEdition.Current.UserRegistryPath))
         {
             ThemeManager.Current.ApplicationTheme = appearanceKey?.GetValue("UiTheme")?.ToString() switch
             {
@@ -691,7 +690,8 @@ public partial class App : Application
                 new FleetMate.GUI.Views.Shared.SetupWizardWindow { Owner = mainWindow }.ShowDialog(),
                 System.Windows.Threading.DispatcherPriority.ApplicationIdle);
         StartLinks(startupLink);
-        Inbox.Start();
+        // TicketsMate has no Development tab, so no GitHub inbox to poll.
+        if (!FleetMate.Core.Config.AppEdition.Current.IsTicketsOnly) Inbox.Start();
 
         // The toolbar search field asks the global search engine; each hit
         // opens through its fleetmate:// link.

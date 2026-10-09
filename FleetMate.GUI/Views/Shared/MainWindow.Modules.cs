@@ -23,8 +23,13 @@ public partial class MainWindow
         });
     }
 
-    /// <summary>The tags of the tabs showing, in tab-bar order.</summary>
-    internal IReadOnlyList<string> VisibleTabs => AppModules.Visible(TabOrder, UserPreferences.HiddenModules);
+    /// <summary>
+    /// The tags of the tabs showing, in tab-bar order. TicketsMate carries the
+    /// Tickets tab alone, whatever was hidden.
+    /// </summary>
+    internal IReadOnlyList<string> VisibleTabs => AppEdition.Current.IsTicketsOnly
+        ? AppEdition.Current.Tabs(TabOrder)
+        : AppModules.Visible(TabOrder, UserPreferences.HiddenModules);
 
     private void ApplyModules()
     {

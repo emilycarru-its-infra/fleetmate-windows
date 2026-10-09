@@ -12,7 +12,7 @@ namespace FleetMate.GUI.Views.Shared;
 /// </summary>
 public static class UserPreferences
 {
-    private const string RegistryPath = @"SOFTWARE\FleetMate";
+    private static string RegistryPath => FleetMate.Core.Config.AppEdition.Current.UserRegistryPath;
 
     /// <summary>Raised after any preference here changes.</summary>
     public static event Action? Changed;

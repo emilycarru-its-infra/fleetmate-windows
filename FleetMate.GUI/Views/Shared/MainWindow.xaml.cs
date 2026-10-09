@@ -22,9 +22,11 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // Development is the launch tab; there is no Dashboard.
-        ContentFrame.Navigate(GetOrCreatePage("Development"));
-        TabDevelopment.IsChecked = true;
+        // Development is the launch tab; there is no Dashboard. TicketsMate
+        // opens on Tickets, the only tab it has.
+        ContentFrame.Navigate(GetOrCreatePage(LaunchTab));
+        (TicketsOnly ? TabTickets : TabDevelopment).IsChecked = true;
+        if (TicketsOnly) ApplyTicketsOnlyChrome();
         UpdateGraphsButton();
         InitShortcuts();
         SearchBox.GotKeyboardFocus += OnSearchFocused;
@@ -50,7 +52,8 @@ public partial class MainWindow : Window
         Loaded += (_, _) => InitToolbarFit();
         InitPreferences();
         // An agent session started at launch must not take the keyboard.
-        if (Application.Current is App { Config.Terminal.AgentAutoStart: true })
+        // TicketsMate has no terminal.
+        if (!TicketsOnly && Application.Current is App { Config.Terminal.AgentAutoStart: true })
             Loaded += (_, _) =>
             {
                 SetTerminalVisible(true, takeFocus: false);
@@ -108,6 +111,34 @@ public partial class MainWindow : Window
         UpdateElevationStatus();
     }
 
+    // ── Edition ──────────────────────────────────────────────────────────
+
+    private static bool TicketsOnly => FleetMate.Core.Config.AppEdition.Current.IsTicketsOnly;
+
+    private static string LaunchTab => TicketsOnly ? "Tickets" : "Development";
+
+    /// <summary>
+    /// TicketsMate's window: its own title and icon, no tab bar for its one
+    /// tab, and no terminal button.
+    /// </summary>
+    private void ApplyTicketsOnlyChrome()
+    {
+        Title = FleetMate.Core.Config.AppEdition.Current.Name;
+        Icon = new System.Windows.Media.Imaging.BitmapImage(new Uri("pack://application:,,,/Assets/TicketsMate.ico"));
+        TabBarBorder.Visibility = Visibility.Collapsed;
+        TerminalToggleButton.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>Ctrl+`, Ctrl+T and Ctrl+Shift+Enter: the keys that open or size the terminal.</summary>
+    private static bool IsTerminalKey(System.Windows.Input.Key key, System.Windows.Input.ModifierKeys mods)
+    {
+        const System.Windows.Input.ModifierKeys Ctrl = System.Windows.Input.ModifierKeys.Control;
+        const System.Windows.Input.ModifierKeys Shift = System.Windows.Input.ModifierKeys.Shift;
+        return (key == System.Windows.Input.Key.Oem3 && mods == Ctrl)
+            || (key == System.Windows.Input.Key.T && (mods == Ctrl || mods == (Ctrl | Shift)))
+            || (key == System.Windows.Input.Key.Enter && mods == (Ctrl | Shift));
+    }
+
     // ── Terminal panel ───────────────────────────────────────────────────
 
     private readonly FleetMate.Core.Services.Terminal.TerminalLayoutState _terminalLayout = new();
@@ -121,7 +152,11 @@ public partial class MainWindow : Window
         const System.Windows.Input.ModifierKeys Ctrl = System.Windows.Input.ModifierKeys.Control;
         const System.Windows.Input.ModifierKeys Shift = System.Windows.Input.ModifierKeys.Shift;
 
-        if (key == System.Windows.Input.Key.Oem3 && mods == Ctrl)
+        if (TicketsOnly && IsTerminalKey(key, mods))
+        {
+            // TicketsMate has no terminal; its keys do nothing.
+        }
+        else if (key == System.Windows.Input.Key.Oem3 && mods == Ctrl)
         {
             ToggleTerminal();
             e.Handled = true;
@@ -243,7 +278,7 @@ public partial class MainWindow : Window
 
     /// <summary>The tag of the tab showing now.</summary>
     public string CurrentTab =>
-        TabBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag as string ?? "Development";
+        TabBar.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Tag as string ?? LaunchTab;
 
     /// <summary>Navigate to a tab by tag name — deep links and Ctrl+1–8.</summary>
     public void NavigateToTab(string tag)
