@@ -1,0 +1,11 @@
+<Project>
+  <!-- TicketsMate (dotnet build -p:Edition=TicketsMate) is this project built
+       under another name, so it gets its own bin and obj. Sharing FleetMate's
+       would let an incremental build keep FleetMate's compiled XAML, whose
+       resource URIs name the fleetmate-gui assembly. These must be set before
+       the SDK reads them, which is why they live here and not in the csproj. -->
+  <PropertyGroup Condition="'$(Edition)' == 'TicketsMate'">
+    <BaseIntermediateOutputPath>obj\TicketsMate\</BaseIntermediateOutputPath>
+    <BaseOutputPath>bin\TicketsMate\</BaseOutputPath>
+  </PropertyGroup>
+</Project>

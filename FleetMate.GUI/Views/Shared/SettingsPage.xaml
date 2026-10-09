@@ -37,7 +37,7 @@
                             </DockPanel>
                         </Border>
 
-                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,8">
+                        <Border x:Name="ModulesCard" Style="{StaticResource CardStyle}" Margin="0,0,0,8">
                             <StackPanel>
                                 <TextBlock Text="Enabled Modules" FontWeight="SemiBold" FontSize="15" />
                                 <TextBlock Text="A module switched off leaves the tab bar. Its endpoints and sign-in are kept, so switching it back on needs no setup."
@@ -100,7 +100,7 @@
                             </StackPanel>
                         </DockPanel>
 
-                        <Border Style="{StaticResource CardStyle}">
+                        <Border x:Name="GraphCard" Style="{StaticResource CardStyle}">
                             <StackPanel>
                                 <TextBlock Text="Microsoft Graph" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
                                 <Grid>
@@ -120,7 +120,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Style="{StaticResource CardStyle}">
+                        <Border x:Name="DevOpsCard" Style="{StaticResource CardStyle}">
                             <StackPanel>
                                 <TextBlock Text="Azure DevOps" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
                                 <Grid>
@@ -139,7 +139,7 @@
 
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                            <Border Grid.Column="0" Style="{StaticResource CardStyle}" Margin="0,0,5,10">
+                            <Border x:Name="SnipeCard" Grid.Column="0" Style="{StaticResource CardStyle}" Margin="0,0,5,10">
                                 <StackPanel>
                                     <TextBlock Text="Snipe-IT" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
                                     <TextBlock Text="Base URL" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
@@ -148,7 +148,7 @@
                                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                 </StackPanel>
                             </Border>
-                            <Border Grid.Column="1" Style="{StaticResource CardStyle}" Margin="5,0,0,10">
+                            <Border x:Name="TdxCard" Grid.Column="1" Style="{StaticResource CardStyle}" Margin="5,0,0,10">
                                 <StackPanel>
                                     <TextBlock Text="TeamDynamix" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
                                     <TextBlock Text="Base URL" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
@@ -161,7 +161,7 @@
                             </Border>
                         </Grid>
 
-                        <Border Style="{StaticResource CardStyle}">
+                        <Border x:Name="ReportMateCard" Style="{StaticResource CardStyle}">
                             <StackPanel>
                                 <TextBlock Text="ReportMate" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
                                 <TextBlock Text="API URL" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
@@ -172,7 +172,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Style="{StaticResource CardStyle}">
+                        <Border x:Name="HandbookCard" Style="{StaticResource CardStyle}">
                             <StackPanel>
                                 <TextBlock Text="Handbook and Skills" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
                                 <TextBlock Text="Handbook repository" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
@@ -202,7 +202,7 @@
                 </ScrollViewer>
             </TabItem>
 
-            <TabItem Header="Manage">
+            <TabItem Header="Manage" x:Name="ManageTab">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
                     <StackPanel Margin="2" MaxWidth="860">
                         <TextBlock Text="Manage" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" />
@@ -276,7 +276,7 @@
                 </ScrollViewer>
             </TabItem>
 
-            <TabItem Header="Apple" Loaded="OnAppleTabLoaded">
+            <TabItem Header="Apple" x:Name="AppleTab" Loaded="OnAppleTabLoaded">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
                     <StackPanel Margin="2" MaxWidth="860">
                         <TextBlock Text="Apple School and Business Manager" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" />
@@ -316,7 +316,7 @@
                 </ScrollViewer>
             </TabItem>
 
-            <TabItem Header="Terminal" AutomationProperties.AutomationId="SettingsTerminalTab">
+            <TabItem Header="Terminal" x:Name="TerminalTab" AutomationProperties.AutomationId="SettingsTerminalTab">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
                     <StackPanel Margin="2" MaxWidth="860">
                         <TextBlock Text="Terminal" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" />

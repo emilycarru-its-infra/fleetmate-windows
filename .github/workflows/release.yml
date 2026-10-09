@@ -53,7 +53,8 @@ jobs:
 
       - name: Build MSI packages (x64 + arm64)
         shell: pwsh
-        # Unsigned MSIs land in release\FleetMate-<arch>-<version>.msi. The
+        # Unsigned MSIs land in release\FleetMate-<arch>-<version>.msi, and
+        # TicketsMate's beside them as release\TicketsMate-<arch>-<version>.msi. The
         # deployment-pipeline pipeline fetches these, signs them with the
         # enterprise cert, repacks, and deploys as an Intune Win32 LOB.
         run: .\build.ps1 -MsiOnly -BuildVersion '${{ steps.version.outputs.version }}'
@@ -83,6 +84,12 @@ jobs:
             $files = Get-ChildItem $staging -File -Include fleetmate.exe,fleetmate-gui.exe -Recurse | ForEach-Object { $_.FullName }
             if ($files.Count -ne 2) { throw "Expected fleetmate.exe and fleetmate-gui.exe in $staging, found: $($files -join ', ')" }
             Compress-Archive -Path $files -DestinationPath "release/fleetmate-$arch.zip" -Force
+          }
+          # TicketsMate, the Tickets-only edition, ships as MSIs of its own.
+          foreach ($arch in @('x64', 'arm64')) {
+            if (-not (Get-ChildItem "release/TicketsMate-$arch-*.msi" -ErrorAction SilentlyContinue)) {
+              throw "TicketsMate MSI for $arch not found in release/"
+            }
           }
           Get-ChildItem release | Format-Table Name, Length
 

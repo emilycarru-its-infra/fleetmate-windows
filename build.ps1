@@ -406,6 +406,8 @@ function Build-MsiPackage {
 
     $wixproj = Join-Path $RootDir "FleetMate.Installer\FleetMate.Installer.wixproj"
     if (-not (Test-Path $wixproj)) { throw "WiX project not found: $wixproj" }
+    $ticketsWixproj = Join-Path $RootDir "TicketsMate.Installer\TicketsMate.Installer.wixproj"
+    if (-not (Test-Path $ticketsWixproj)) { throw "WiX project not found: $ticketsWixproj" }
 
     $releaseDir = Join-Path $RootDir "release"
     New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
@@ -487,6 +489,49 @@ function Build-MsiPackage {
         Copy-Item $msi $dest -Force
         Write-BuildLog "MSI saved to: $dest" "SUCCESS"
         $results += $dest
+
+        # TicketsMate: the same GUI built as the Tickets-only edition, in an
+        # MSI of its own so it installs beside FleetMate.
+        $ticketsStaging = Join-Path $RootDir "publish\msi-staging-ticketsmate\$arch"
+        Write-BuildLog "Publishing TicketsMate ($rid) into MSI staging (v$fileVer)..." "INFO"
+        & dotnet publish "$RootDir\FleetMate.GUI\FleetMate.GUI.csproj" `
+            --configuration Release `
+            --runtime $rid `
+            --self-contained true `
+            -p:Edition=TicketsMate `
+            -p:PublishSingleFile=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:Version=$asmVer `
+            -p:InformationalVersion=$fileVer `
+            -p:IncludeSourceRevisionInInformationalVersion=false `
+            --output $ticketsStaging | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "TicketsMate publish failed ($rid)" }
+
+        $ticketsExe = Join-Path $ticketsStaging "TicketsMate.exe"
+        if (-not (Test-Path $ticketsExe)) { throw "Published TicketsMate exe not found: $ticketsExe" }
+        if ($Sign -and $Thumbprint) {
+            Invoke-SignArtifact -Path $ticketsExe -Thumbprint $Thumbprint -Store $Store
+        }
+
+        Write-BuildLog "Building TicketsMate MSI ($arch)..." "INFO"
+        & dotnet build $ticketsWixproj `
+            --configuration Release `
+            -p:Platform=$arch `
+            -p:ProductVersion=$msiVer `
+            -p:CalendarVersion=$fileVer `
+            -p:BinDir=$ticketsStaging | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "TicketsMate MSI build failed ($arch)" }
+
+        $ticketsMsi = Join-Path $RootDir "TicketsMate.Installer\bin\$arch\Release\TicketsMate-$arch.msi"
+        if (-not (Test-Path $ticketsMsi)) { throw "TicketsMate MSI not found after build: $ticketsMsi" }
+        if ($Sign -and $Thumbprint) {
+            Invoke-SignArtifact -Path $ticketsMsi -Thumbprint $Thumbprint -Store $Store
+        }
+
+        $ticketsDest = Join-Path $releaseDir "TicketsMate-$arch-$fileVer.msi"
+        Copy-Item $ticketsMsi $ticketsDest -Force
+        Write-BuildLog "MSI saved to: $ticketsDest" "SUCCESS"
+        $results += $ticketsDest
     }
 
     return $results

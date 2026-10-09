@@ -12,7 +12,7 @@ namespace FleetMate.GUI.Views.Shared;
 
 public partial class SettingsPage : Page
 {
-    private const string RegistryPath = @"SOFTWARE\FleetMate";
+    private static string RegistryPath => FleetMate.Core.Config.AppEdition.Current.UserRegistryPath;
     private bool _isLoadingSettings;
     private IReadOnlyList<string> _repoDefaults = Array.Empty<string>();
     private FleetMate.Core.Config.TerminalSettings? _terminal;
@@ -33,6 +33,7 @@ public partial class SettingsPage : Page
     public SettingsPage()
     {
         InitializeComponent();
+        if (AppEdition.Current.IsTicketsOnly) ApplyTicketsOnly();
         Loaded += (_, _) =>
         {
             LoadSettings();
@@ -40,6 +41,23 @@ public partial class SettingsPage : Page
             UserPreferences.Changed += OnPreferencesChanged;
         };
         Unloaded += (_, _) => UserPreferences.Changed -= OnPreferencesChanged;
+    }
+
+    /// <summary>
+    /// TicketsMate's settings: no module switches, no Manage, Apple or
+    /// Terminal tabs, and TeamDynamix alone under Authentication.
+    /// </summary>
+    private void ApplyTicketsOnly()
+    {
+        foreach (var element in new UIElement[]
+                 {
+                     ModulesCard, ManageTab, AppleTab, TerminalTab,
+                     GraphCard, DevOpsCard, SnipeCard, ReportMateCard, HandbookCard,
+                 })
+            element.Visibility = Visibility.Collapsed;
+        Grid.SetColumn(TdxCard, 0);
+        Grid.SetColumnSpan(TdxCard, 2);
+        TdxCard.Margin = new Thickness(0, 0, 0, 10);
     }
 
     // ── Load ────────────────────────────────────────────────────────────────
@@ -50,7 +68,7 @@ public partial class SettingsPage : Page
         var config = Application.Current is App app ? app.Config : FleetMateConfig.Load();
 
         // Config file path
-        ConfigPathTextBox.Text = @"HKCU\SOFTWARE\FleetMate";
+        ConfigPathTextBox.Text = $@"HKCU\{AppEdition.Current.UserRegistryPath}";
 
         // Microsoft Graph — tenant and client ID only; there is no secret to enter.
         TenantIdTextBox.Text  = config.Graph?.TenantId  ?? "";
@@ -352,6 +370,15 @@ public partial class SettingsPage : Page
                     ("Token source", "silent Windows SSO (operator identity)")
                 });
         }
+        else if (AppEdition.Current.IsTicketsOnly)
+        {
+            // TeamDynamix is TicketsMate's only system, so its card always shows.
+            AddAuthCard(null, "TeamDynamix", "Integrated SSO · Entra / Shibboleth", "not configured", AuthState.NotConfigured,
+                new (string label, string? value)[]
+                {
+                    ("Needs", "Base URL and Ticketing App ID (TeamDynamix, above), or TdxBaseUrl in managed settings"),
+                });
+        }
 
         var snipeConfigured = !string.IsNullOrEmpty(config.SnipeUrl);
         if (snipeConfigured)
@@ -447,6 +474,8 @@ public partial class SettingsPage : Page
     private void AddAuthCard(AuthSystemId? systemId, string systemName, string authMethod, string statusText, AuthState state,
         (string label, string? value)[] details)
     {
+        // TicketsMate signs in to TeamDynamix and nothing else.
+        if (AppEdition.Current.IsTicketsOnly && systemName != "TeamDynamix") return;
         // Never red: a failed sign-in is orange, as on the macOS client.
         var color = state switch
         {

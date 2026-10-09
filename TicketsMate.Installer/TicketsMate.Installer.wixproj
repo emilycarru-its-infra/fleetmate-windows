@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="WixToolset.Sdk/6.0.2">
+
+  <PropertyGroup>
+    <OutputName>TicketsMate-$(Platform)</OutputName>
+    <OutputType>Package</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <Platform>x64</Platform>
+    <InstallerPlatform>x64</InstallerPlatform>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- MSI-safe ProductVersion and the calendar version, as in FleetMate.Installer. -->
+    <ProductVersion Condition="'$(ProductVersion)' == ''">0.0.0</ProductVersion>
+    <CalendarVersion Condition="'$(CalendarVersion)' == ''">$(ProductVersion)</CalendarVersion>
+    <!-- build.ps1 publishes TicketsMate.exe for each $(Platform) here. -->
+    <BinDir Condition="'$(BinDir)' == ''">$(MSBuildProjectDirectory)\..\publish\msi-staging-ticketsmate\$(Platform)</BinDir>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <IconFile>$(MSBuildProjectDirectory)\..\FleetMate.GUI\Assets\TicketsMate.ico</IconFile>
+    <DefineConstants>BIN_DIR=$(BinDir);ICON_FILE=$(IconFile);ProductVersion=$(ProductVersion);CalendarVersion=$(CalendarVersion)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Product.wxs" />
+  </ItemGroup>
+
+  <Target Name="BeforeBuild">
+    <Error Text="TicketsMate executable not found at $(BinDir)\TicketsMate.exe. Run build.ps1 -Msi (which publishes it) before building the MSI."
+           Condition="!Exists('$(BinDir)\TicketsMate.exe')" />
+  </Target>
+
+</Project>

@@ -29,6 +29,31 @@
     <CsWinRTAotOptimizerEnabled>false</CsWinRTAotOptimizerEnabled>
   </PropertyGroup>
 
+  <!-- Edition: FleetMate by default. -p:Edition=TicketsMate builds TicketsMate,
+       the Tickets tab alone, as TicketsMate.exe with its own icon. The exe's
+       FleetMateEdition metadata is what the app reads at run time
+       (FleetMate.Core/Config/AppEdition.cs). -->
+  <PropertyGroup>
+    <Edition Condition="'$(Edition)' == ''">FleetMate</Edition>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Edition)' == 'TicketsMate'">
+    <AssemblyName>TicketsMate</AssemblyName>
+    <AssemblyTitle>TicketsMate</AssemblyTitle>
+    <AssemblyDescription>TicketsMate service desk</AssemblyDescription>
+    <AssemblyProduct>TicketsMate</AssemblyProduct>
+    <ApplicationIcon>Assets\TicketsMate.ico</ApplicationIcon>
+    <!-- FleetMate's own bin and obj sit beside TicketsMate's; keep their
+         generated sources out of this build. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj\**;bin\**</DefaultItemExcludes>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(Edition)' == 'TicketsMate'">
+    <AssemblyMetadata Include="FleetMateEdition" Value="TicketsMate" />
+  </ItemGroup>
+  <Target Name="CheckEdition" BeforeTargets="Build">
+    <Error Condition="'$(Edition)' != 'FleetMate' And '$(Edition)' != 'TicketsMate'"
+           Text="Edition must be FleetMate or TicketsMate, not '$(Edition)'." />
+  </Target>
+
   <!-- The terminal page and xterm.js (MIT, see LICENSE.xterm.txt) ship inside
        the exe and are served to WebView2 from a private virtual host. -->
   <ItemGroup>
@@ -40,6 +65,7 @@
   <ItemGroup>
     <Resource Include="Assets\FleetMate.ico" />
     <Resource Include="Assets\FleetMate.png" />
+    <Resource Include="Assets\TicketsMate.ico" />
   </ItemGroup>
 
   <ItemGroup>

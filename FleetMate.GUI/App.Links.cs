@@ -22,7 +22,8 @@ public partial class App
     private void StartLinks(string? startupLink)
     {
         LinkHost.Listen(message => Dispatcher.BeginInvoke(() => OpenLink(message)));
-        _ = Task.Run(LinkHost.RegisterProtocol);
+        // fleetmate: links belong to FleetMate; TicketsMate never takes them over.
+        if (!FleetMate.Core.Config.AppEdition.Current.IsTicketsOnly) _ = Task.Run(LinkHost.RegisterProtocol);
         if (startupLink != null)
             Dispatcher.BeginInvoke(() => OpenLink(startupLink), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }

@@ -22,8 +22,9 @@ public static class LinkHost
     private static string UserKey =>
         WindowsIdentity.GetCurrent().User?.Value ?? Environment.UserName;
 
-    private static string MutexName => $@"Local\FleetMate.GUI.{UserKey}";
-    private static string PipeName => $"FleetMate.Links.{UserKey}";
+    // Per edition, so FleetMate and TicketsMate each run their own single instance.
+    private static string MutexName => $@"Local\{FleetMate.Core.Config.AppEdition.Current.Name}.GUI.{UserKey}";
+    private static string PipeName => $"{FleetMate.Core.Config.AppEdition.Current.Name}.Links.{UserKey}";
 
     /// <summary>The link among the command-line arguments, if Windows passed one.</summary>
     public static string? LinkFromArgs(IEnumerable<string> args) =>

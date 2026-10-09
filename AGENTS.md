@@ -102,6 +102,10 @@ Run the test suite before shipping:
 signing (`-Sign -PkgOnly`) belong to the release path, which runs only when a release is asked
 for — a merged pull request is not a release.
 
+## TicketsMate edition
+
+TicketsMate is the same GUI limited to the Tickets tab. `dotnet build FleetMate.GUI/FleetMate.GUI.csproj -p:Edition=TicketsMate` builds it as `TicketsMate.exe`, in `bin\TicketsMate` and `obj\TicketsMate` so it never shares compiled XAML with FleetMate. The exe's `FleetMateEdition` assembly metadata selects the edition at run time (`FleetMate.Core/Config/AppEdition.cs`); TicketsMate keeps its own `HKCU\SOFTWARE\TicketsMate` settings, `SOFTWARE\Policies\TicketsMate` policy key, `%USERPROFILE%\.ticketsmate` folder and single-instance lock. `build.ps1 -Msi` also builds `TicketsMate.Installer`, and the release workflow publishes `TicketsMate-<arch>-<version>.msi` beside FleetMate's on every tag. Every change lands here.
+
 ## Parity with FleetMate for Mac
 
 FleetMate ships on macOS and Windows with the same features. A change that adds or alters a
