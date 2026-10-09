@@ -35,7 +35,7 @@
                     <DockPanel Grid.Row="0" Margin="0,0,0,8">
                         <Button DockPanel.Dock="Right" x:Name="GroupsRefreshButton" Content="Refresh" 
                                 Click="OnGroupsRefreshClicked" Margin="8,0,0,0" />
-                        <TextBox x:Name="GroupsSearchBox" ui:ControlHelper.PlaceholderText="Filter groups..." 
+                        <TextBox x:Name="GroupsSearchBox" Visibility="Collapsed" ui:ControlHelper.PlaceholderText="Filter groups..." 
                                  TextChanged="OnGroupsSearchChanged" />
                     </DockPanel>
 
@@ -67,9 +67,9 @@
 
                     <!-- Users Search -->
                     <DockPanel Grid.Row="0" Margin="0,0,0,8">
-                        <Button DockPanel.Dock="Right" x:Name="UsersSearchButton" Content="Search" 
+                        <Button DockPanel.Dock="Right" x:Name="UsersSearchButton" Content="Search" Visibility="Collapsed" 
                                 Click="OnUsersSearchClicked" Margin="8,0,0,0" />
-                        <TextBox x:Name="UsersSearchBox" ui:ControlHelper.PlaceholderText="Search by email or name..." 
+                        <TextBox x:Name="UsersSearchBox" Visibility="Collapsed" ui:ControlHelper.PlaceholderText="Search by email or name..." 
                                  KeyDown="OnUsersSearchKeyDown" />
                     </DockPanel>
 

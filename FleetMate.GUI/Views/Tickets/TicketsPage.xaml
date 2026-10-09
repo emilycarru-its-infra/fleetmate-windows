@@ -124,7 +124,7 @@
                      tickets load per window, so there is no separate limit. -->
                 <ComboBox x:Name="DateRangeComboBox" Width="140" ToolTip="Tickets created in"
                           DisplayMemberPath="Label" SelectionChanged="OnDateRangeChanged" />
-                <TextBox x:Name="SearchBox" Width="160" ui:ControlHelper.PlaceholderText="Search..." TextChanged="OnSearchChanged" />
+                <TextBox x:Name="SearchBox" Visibility="Collapsed" Width="160" ui:ControlHelper.PlaceholderText="Search..." TextChanged="OnSearchChanged" />
             </ui:SimpleStackPanel>
         </Grid>
 

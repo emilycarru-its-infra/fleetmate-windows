@@ -190,7 +190,7 @@
 
             <!-- Pull request filters -->
             <StackPanel x:Name="PullRequestFilters" Grid.Row="1" Margin="0,0,0,8">
-                <TextBox x:Name="SearchBox" ui:ControlHelper.PlaceholderText="Search title, repo, author, branch…"
+                <TextBox x:Name="SearchBox" Visibility="Collapsed" ui:ControlHelper.PlaceholderText="Search title, repo, author, branch…"
                          TextChanged="OnSearchChanged" />
                 <WrapPanel Margin="0,6,0,0">
                     <ToggleButton x:Name="ScopeEverything" Content="Everything" IsChecked="True" Tag="Everything"
@@ -211,7 +211,7 @@
 
             <!-- Commits filters -->
             <StackPanel x:Name="CommitsFilters" Grid.Row="1" Margin="0,0,0,8" Visibility="Collapsed">
-                <TextBox x:Name="CommitsSearchBox" ui:ControlHelper.PlaceholderText="Search repository, message, author, sha…"
+                <TextBox x:Name="CommitsSearchBox" Visibility="Collapsed" ui:ControlHelper.PlaceholderText="Search repository, message, author, sha…"
                          TextChanged="OnCommitsFilterChanged" />
                 <WrapPanel Margin="0,6,0,0">
                     <ToggleButton x:Name="CommitsSourceAll" Content="All" IsChecked="True" Tag="All"
@@ -228,7 +228,7 @@
 
             <!-- Pipelines filters -->
             <StackPanel x:Name="PipelinesFilters" Grid.Row="1" Margin="0,0,0,8" Visibility="Collapsed">
-                <TextBox x:Name="PipelinesSearchBox" ui:ControlHelper.PlaceholderText="Search pipeline, repo, branch, requester, run…"
+                <TextBox x:Name="PipelinesSearchBox" Visibility="Collapsed" ui:ControlHelper.PlaceholderText="Search pipeline, repo, branch, requester, run…"
                          TextChanged="OnPipelinesFilterChanged" />
                 <WrapPanel Margin="0,6,0,0">
                     <ToggleButton x:Name="RunsSourceAll" Content="All" IsChecked="True" Tag="All"
@@ -252,7 +252,7 @@
             <!-- Inbox header: Unread / All, last checked, Mark all read. -->
             <!-- Skills filter -->
             <StackPanel x:Name="SkillsFilters" Grid.Row="1" Margin="0,0,0,8" Visibility="Collapsed">
-                <TextBox x:Name="SkillsSearchBox" ui:ControlHelper.PlaceholderText="Filter skills, hooks and standards…"
+                <TextBox x:Name="SkillsSearchBox" Visibility="Collapsed" ui:ControlHelper.PlaceholderText="Filter skills, hooks and standards…"
                          TextChanged="OnSkillsSearchChanged" />
                 <TextBlock x:Name="SkillsStatus" FontSize="11" Margin="0,4,0,0" Opacity="0.7" TextWrapping="Wrap" />
             </StackPanel>

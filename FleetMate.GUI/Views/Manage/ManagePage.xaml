@@ -131,7 +131,7 @@
                 Background="{DynamicResource CardBackgroundBrush}">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="10,12,10,4">
-                    <TextBox x:Name="SearchBox" ui:ControlHelper.PlaceholderText="Search machines, rooms, people..."
+                    <TextBox x:Name="SearchBox" Visibility="Collapsed" ui:ControlHelper.PlaceholderText="Search machines, rooms, people..."
                              TextChanged="OnSearchChanged" />
                 </StackPanel>
 
