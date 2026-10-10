@@ -38,10 +38,18 @@ public partial class DevelopmentPage : Page, IWidgetFilterHost
     public DevelopmentPage()
     {
         InitializeComponent();
+        // Pull-request widgets say nothing about a checkout being edited.
+        View.ReposShownChanged += (_, _) =>
+            Widgets.Visibility = View.IsReposShown ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private async void OnRefreshClicked(object sender, RoutedEventArgs e)
     {
+        if (View.IsReposShown)
+        {
+            await View.RefreshReposAsync();
+            return;
+        }
         // Refresh means fresh: GitHub data is rebuilt in full, not incrementally.
         FleetMate.Core.Services.Projects.GitHubSync.RequestFullResync();
         await View.RefreshAsync();

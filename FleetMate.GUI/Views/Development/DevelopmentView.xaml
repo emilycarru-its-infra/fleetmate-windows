@@ -4,7 +4,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.modernwpf.com/2019"
              xmlns:shared="clr-namespace:FleetMate.GUI.Views.Shared"
-             xmlns:local="clr-namespace:FleetMate.GUI.Views.Development">
+             xmlns:local="clr-namespace:FleetMate.GUI.Views.Development"
+             xmlns:repos="clr-namespace:FleetMate.GUI.Views.Development.Repos">
 
     <UserControl.Resources>
         <DataTemplate x:Key="PullRequestRowTemplate">
@@ -173,13 +174,19 @@
                      pill naming the open one (SegmentMenuButton). -->
                     <Grid>
                     <StackPanel x:Name="DevelopmentSegments" Orientation="Horizontal">
+                        <!-- Repos is first and the default: the checkouts people and agents work in. -->
+                        <RadioButton x:Name="ReposSegment" Content="Repos" GroupName="DevelopmentSegment"
+                                     Checked="OnReposSegmentChecked" Unchecked="OnReposSegmentUnchecked"
+                                     Loaded="OnReposSegmentLoaded" IsChecked="True"
+                                     Style="{StaticResource NavigationTabStyle}"
+                                     AutomationProperties.AutomationId="DevelopmentReposSegment" />
                         <!-- Inbox leads and appears only while it has unread notifications.
                              It never shows a count, and neither does the Development tab. -->
                         <RadioButton x:Name="InboxSegment" Content="Inbox" GroupName="DevelopmentSegment"
                                      Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}"
                                      Visibility="Collapsed" />
                         <RadioButton x:Name="PullRequestsSegment" Content="Pulls" GroupName="DevelopmentSegment"
-                                     IsChecked="True" Checked="OnSegmentChanged"
+                                     Checked="OnSegmentChanged"
                                      Style="{StaticResource NavigationTabStyle}" />
                         <RadioButton x:Name="CommitsSegment" Content="Commits" GroupName="DevelopmentSegment"
                                      Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}" />
@@ -348,6 +355,11 @@
                                Opacity="0.7" />
                 </Grid>
             </Border>
+
+            <!-- Repos: switcher, grouped repositories, filter and sort. Opaque, over
+                 the other segments' filters and lists. -->
+            <repos:RepoSidebar x:Name="ReposSidebar" Grid.Row="1" Grid.RowSpan="2" Visibility="Collapsed"
+                               Background="{DynamicResource AppBackgroundBrush}" />
         </Grid>
 
         <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="Transparent" />
@@ -368,6 +380,8 @@
             </StackPanel>
 
             <shared:PullRequestDetailView x:Name="DetailView" Visibility="Collapsed" />
+            <repos:RepoWorkspaceView x:Name="ReposWorkspace" Visibility="Collapsed" Panel.ZIndex="5"
+                                     Background="{DynamicResource AppBackgroundBrush}" />
             <local:CommitDetailView x:Name="CommitView" Visibility="Collapsed" />
             <local:PipelineRunView x:Name="RunView" Visibility="Collapsed" />
             <DockPanel x:Name="SkillDetail" Visibility="Collapsed">

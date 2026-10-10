@@ -33,7 +33,7 @@
             </ui:SimpleStackPanel>
         </Grid>
 
-        <widgets:WidgetsSection Grid.Row="1" Tab="Development" Margin="0,14,0,0" />
+        <widgets:WidgetsSection x:Name="Widgets" Grid.Row="1" Tab="Development" Margin="0,14,0,0" />
 
         <local:DevelopmentView x:Name="View" Grid.Row="2" Margin="0,8,0,0" />
     </Grid>
