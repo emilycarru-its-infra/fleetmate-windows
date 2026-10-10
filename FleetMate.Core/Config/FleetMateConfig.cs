@@ -213,6 +213,37 @@ public class FleetMateConfig
     // aze secretless elevation infrastructure (env/org-specific; no hardcoded defaults)
     public ElevationConfig? Elevation { get; set; }
 
+    // The flat config.yaml spellings the macOS client reads (elevation_image
+    // and the rest), folded into Elevation after the file is read so either
+    // spelling works. Write-only: they exist for the YAML reader.
+    private string? _flatElevationImage, _flatElevationResourceGroup, _flatElevationIdentityResourceGroup,
+        _flatElevationTranscriptAccount, _flatElevationIdentityPrefix;
+
+    [YamlMember(Alias = "elevation_image", ApplyNamingConventions = false)]
+    public string? ElevationImageSetting { get => null; set => _flatElevationImage = value; }
+
+    [YamlMember(Alias = "elevation_resource_group", ApplyNamingConventions = false)]
+    public string? ElevationResourceGroupSetting { get => null; set => _flatElevationResourceGroup = value; }
+
+    [YamlMember(Alias = "elevation_identity_resource_group", ApplyNamingConventions = false)]
+    public string? ElevationIdentityResourceGroupSetting { get => null; set => _flatElevationIdentityResourceGroup = value; }
+
+    [YamlMember(Alias = "elevation_transcript_account", ApplyNamingConventions = false)]
+    public string? ElevationTranscriptAccountSetting { get => null; set => _flatElevationTranscriptAccount = value; }
+
+    [YamlMember(Alias = "elevation_identity_prefix", ApplyNamingConventions = false)]
+    public string? ElevationIdentityPrefixSetting { get => null; set => _flatElevationIdentityPrefix = value; }
+
+    /// <summary>Apply the flat elevation keys read from config.yaml on top of the nested block.</summary>
+    internal void FoldFlatElevationKeys()
+    {
+        if (_flatElevationImage == null && _flatElevationResourceGroup == null && _flatElevationIdentityResourceGroup == null
+            && _flatElevationTranscriptAccount == null && _flatElevationIdentityPrefix == null) return;
+        Elevation ??= new ElevationConfig();
+        Elevation.Apply(_flatElevationImage, _flatElevationResourceGroup, _flatElevationIdentityResourceGroup,
+            _flatElevationTranscriptAccount, _flatElevationIdentityPrefix);
+    }
+
     // TeamDynamix Configuration
     public TdxConfig? Tdx { get; set; }
 
@@ -267,6 +298,7 @@ public class FleetMateConfig
                         .Build();
                     
                     config = deserializer.Deserialize<FleetMateConfig>(yaml) ?? config;
+                    config.FoldFlatElevationKeys();
                     Log.Debug("Loaded config from {Path}", location);
                     break;
                 }
@@ -333,6 +365,10 @@ public class FleetMateConfig
         var entraClientId = Environment.GetEnvironmentVariable("ENTRA_CLIENT_ID");
         if (!string.IsNullOrEmpty(entraClientId))
             config.EntraClientId = entraClientId;
+
+        // Elevation sessions: FLEETMATE_ELEVATION_IMAGE and the rest.
+        config.Elevation ??= new ElevationConfig();
+        config.Elevation.ApplyEnvironment(Environment.GetEnvironmentVariable);
 
         // TicketsMate runs Tickets alone, whatever the files, registry, policy
         // or environment configure for the other modules.
@@ -610,18 +646,21 @@ public class FleetMateConfig
             // keys, elevation is unconfigured and every Graph call fails as a masked
             // BadGateway — so managed boxes provisioned via the registry get them here,
             // the same way the Mac gets them from ~/.fleetmate/config.yaml.
+            // ElevationImage is the name the macOS client and its docs use;
+            // ElevationAcrImage is the older one and still read.
             var elevationResourceGroup = key.GetValue("ElevationResourceGroup") as string;
-            var elevationAcrImage = key.GetValue("ElevationAcrImage") as string;
+            var elevationIdentityResourceGroup = key.GetValue("ElevationIdentityResourceGroup") as string;
+            var elevationImage = key.GetValue("ElevationImage") as string;
+            if (string.IsNullOrWhiteSpace(elevationImage)) elevationImage = key.GetValue("ElevationAcrImage") as string;
             var elevationTranscriptAccount = key.GetValue("ElevationTranscriptAccount") as string;
             var elevationIdentityPrefix = key.GetValue("ElevationIdentityPrefix") as string;
-            if (!string.IsNullOrEmpty(elevationResourceGroup) || !string.IsNullOrEmpty(elevationAcrImage) ||
+            if (!string.IsNullOrEmpty(elevationResourceGroup) || !string.IsNullOrEmpty(elevationImage) ||
+                !string.IsNullOrEmpty(elevationIdentityResourceGroup) ||
                 !string.IsNullOrEmpty(elevationTranscriptAccount) || !string.IsNullOrEmpty(elevationIdentityPrefix))
             {
                 config.Elevation ??= new ElevationConfig();
-                if (!string.IsNullOrEmpty(elevationResourceGroup)) config.Elevation.ResourceGroup = elevationResourceGroup;
-                if (!string.IsNullOrEmpty(elevationAcrImage)) config.Elevation.AcrImage = elevationAcrImage;
-                if (!string.IsNullOrEmpty(elevationTranscriptAccount)) config.Elevation.TranscriptAccount = elevationTranscriptAccount;
-                if (!string.IsNullOrEmpty(elevationIdentityPrefix)) config.Elevation.IdentityPrefix = elevationIdentityPrefix;
+                config.Elevation.Apply(elevationImage, elevationResourceGroup, elevationIdentityResourceGroup,
+                    elevationTranscriptAccount, elevationIdentityPrefix);
                 if (key.GetValue("ElevationDefaultTtlHours") is string ttlRaw && int.TryParse(ttlRaw, out var ttl))
                     config.Elevation.DefaultTtlHours = ttl;
                 if (key.GetValue("ElevationPrewarmOnLaunch") is string prewarmRaw && bool.TryParse(prewarmRaw, out var prewarm))
@@ -1241,21 +1280,36 @@ public class MarkdownSyncConfig
 
 /// <summary>
 /// aze secretless elevation infrastructure. All values are environment/org-specific
-/// and come from app settings (config.yaml / registry / env) — there are no hardcoded
-/// defaults. Elevation fails fast with a clear message when these are unset.
+/// and come from app settings — there are no hardcoded defaults. Elevation fails
+/// fast, naming what is missing, when these are unset. Each can be set as:
+/// <list type="bullet">
+/// <item>config.yaml, flat (<c>elevation_image</c>, <c>elevation_resource_group</c>,
+/// <c>elevation_identity_resource_group</c>, <c>elevation_transcript_account</c>,
+/// <c>elevation_identity_prefix</c>) or nested under <c>elevation:</c>
+/// (<c>acrImage</c>, <c>resourceGroup</c>, …);</item>
+/// <item>the registry or managed settings (<c>ElevationImage</c> or <c>ElevationAcrImage</c>,
+/// <c>ElevationResourceGroup</c>, <c>ElevationIdentityResourceGroup</c>,
+/// <c>ElevationTranscriptAccount</c>, <c>ElevationIdentityPrefix</c>);</item>
+/// <item>the environment (<c>FLEETMATE_ELEVATION_IMAGE</c>, <c>FLEETMATE_ELEVATION_RESOURCE_GROUP</c>,
+/// <c>FLEETMATE_ELEVATION_IDENTITY_RESOURCE_GROUP</c>, <c>FLEETMATE_ELEVATION_TRANSCRIPT_ACCOUNT</c>,
+/// <c>FLEETMATE_ELEVATION_IDENTITY_PREFIX</c>).</item>
+/// </list>
 /// </summary>
 public class ElevationConfig
 {
-    /// <summary>Resource group holding the elevation session containers AND the per-domain managed identities.</summary>
+    /// <summary>Resource group holding the elevation session containers (and the identities, unless <see cref="IdentityResourceGroup"/> is set).</summary>
     public string? ResourceGroup { get; set; }
 
-    /// <summary>Container image for the elevation session (e.g. an ACR image reference).</summary>
+    /// <summary>Resource group holding the per-domain managed identities, when it differs from <see cref="ResourceGroup"/>.</summary>
+    public string? IdentityResourceGroup { get; set; }
+
+    /// <summary>Fully qualified container image for the elevation session, e.g. <c>&lt;registry&gt;/elevation-session:latest</c>.</summary>
     public string? AcrImage { get; set; }
 
-    /// <summary>Storage account name for elevation transcripts (passed into the container).</summary>
+    /// <summary>Storage account for elevation transcripts, passed into the container when set.</summary>
     public string? TranscriptAccount { get; set; }
 
-    /// <summary>Managed-identity name prefix; the per-domain identity is {Prefix}{Domain} (e.g. prefix "DevOps-" → "DevOps-Devices").</summary>
+    /// <summary>Managed-identity name prefix; the per-domain identity is {Prefix}{Domain} (e.g. prefix "Ops-" → "Ops-Devices").</summary>
     public string? IdentityPrefix { get; set; }
 
     /// <summary>Default elevation session TTL in hours.</summary>
@@ -1269,11 +1323,71 @@ public class ElevationConfig
     /// </summary>
     public bool PrewarmOnLaunch { get; set; } = true;
 
-    /// <summary>True only when every required field is set — elevation refuses to run otherwise.</summary>
-    public bool IsConfigured =>
-        !string.IsNullOrWhiteSpace(ResourceGroup) &&
-        !string.IsNullOrWhiteSpace(AcrImage) &&
-        !string.IsNullOrWhiteSpace(TranscriptAccount) &&
-        !string.IsNullOrWhiteSpace(IdentityPrefix);
-}
+    /// <summary>The resource group the identities are looked up in.</summary>
+    public string? EffectiveIdentityResourceGroup =>
+        string.IsNullOrWhiteSpace(IdentityResourceGroup) ? ResourceGroup : IdentityResourceGroup;
 
+    /// <summary>True only when every required field is set — elevation refuses to run otherwise.</summary>
+    public bool IsConfigured => Missing.Count == 0;
+
+    /// <summary>The required settings that are not set, by their config.yaml names.</summary>
+    public IReadOnlyList<string> Missing
+    {
+        get
+        {
+            var missing = new List<string>();
+            if (string.IsNullOrWhiteSpace(AcrImage)) missing.Add("elevation_image");
+            if (string.IsNullOrWhiteSpace(ResourceGroup)) missing.Add("elevation_resource_group");
+            if (string.IsNullOrWhiteSpace(IdentityPrefix)) missing.Add("elevation_identity_prefix");
+            return missing;
+        }
+    }
+
+    /// <summary>Why elevation cannot run, naming every place the missing settings can come from.</summary>
+    public string NotConfiguredMessage
+    {
+        get
+        {
+            var missing = Missing;
+            if (missing.Count == 0) return "";
+            var what = missing.Count == 1 && missing[0] == "elevation_image"
+                ? "no elevation session image is configured"
+                : $"{string.Join(", ", missing)} {(missing.Count == 1 ? "is" : "are")} not set";
+            var env = string.Join(", ", missing.Select(m => "FLEETMATE_" + m.ToUpperInvariant()));
+            var reg = string.Join(", ", missing.Select(RegistryName));
+            return $"Elevation is not set up: {what}. Set {string.Join(", ", missing)} in config.yaml, "
+                 + $"{reg} in the registry or managed settings, or {env}.";
+        }
+    }
+
+    private static string RegistryName(string setting) => setting switch
+    {
+        "elevation_image" => "ElevationImage",
+        "elevation_resource_group" => "ElevationResourceGroup",
+        "elevation_identity_prefix" => "ElevationIdentityPrefix",
+        _ => setting,
+    };
+
+    /// <summary>
+    /// Overlay any non-blank values, trimmed. Used by every source, so each
+    /// one only replaces what it actually sets.
+    /// </summary>
+    public void Apply(string? image = null, string? resourceGroup = null, string? identityResourceGroup = null,
+        string? transcriptAccount = null, string? identityPrefix = null)
+    {
+        static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+        AcrImage = Clean(image) ?? AcrImage;
+        ResourceGroup = Clean(resourceGroup) ?? ResourceGroup;
+        IdentityResourceGroup = Clean(identityResourceGroup) ?? IdentityResourceGroup;
+        TranscriptAccount = Clean(transcriptAccount) ?? TranscriptAccount;
+        IdentityPrefix = Clean(identityPrefix) ?? IdentityPrefix;
+    }
+
+    /// <summary>The <c>FLEETMATE_ELEVATION_*</c> variables, read through <paramref name="env"/>.</summary>
+    public void ApplyEnvironment(Func<string, string?> env) => Apply(
+        env("FLEETMATE_ELEVATION_IMAGE"),
+        env("FLEETMATE_ELEVATION_RESOURCE_GROUP"),
+        env("FLEETMATE_ELEVATION_IDENTITY_RESOURCE_GROUP"),
+        env("FLEETMATE_ELEVATION_TRANSCRIPT_ACCOUNT"),
+        env("FLEETMATE_ELEVATION_IDENTITY_PREFIX"));
+}

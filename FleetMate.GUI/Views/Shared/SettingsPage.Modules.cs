@@ -5,7 +5,11 @@ using FleetMate.Core.Config;
 
 namespace FleetMate.GUI.Views.Shared;
 
-/// <summary>Settings › General: Setup Wizard and Enabled Modules; Appearance: Text size.</summary>
+/// <summary>
+/// Settings › General: Enabled Modules and the Setup Wizard; Appearance:
+/// Text size. Every module can be switched off, Enrollment included, which
+/// is not a tab but stops Devices reading enrollment records.
+/// </summary>
 public partial class SettingsPage
 {
     private void LoadPreferences(FleetMateConfig config)
@@ -19,16 +23,20 @@ public partial class SettingsPage
     {
         ModulesPanel.Children.Clear();
         var hidden = UserPreferences.HiddenModules;
+        var enrollmentOrganizations = HasEnrollmentOrganizations();
         foreach (var module in AppModules.All)
         {
             var shown = !hidden.Contains(module.Tag);
+            var configured = AppModules.IsConfigured(module.Tag, config, enrollmentOrganizations);
             var row = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
 
             var toggle = new CheckBox
             {
                 IsChecked = shown,
                 VerticalAlignment = VerticalAlignment.Center,
-                ToolTip = shown ? $"Hide the {module.Title} tab" : $"Show the {module.Title} tab",
+                ToolTip = module.IsTab
+                    ? (shown ? $"Hide the {module.Title} tab" : $"Show the {module.Title} tab")
+                    : (shown ? $"Stop reading {module.Title.ToLowerInvariant()} records" : $"Read {module.Title.ToLowerInvariant()} records"),
             };
             System.Windows.Automation.AutomationProperties.SetAutomationId(toggle, $"SettingsModule{module.Tag}");
             System.Windows.Automation.AutomationProperties.SetName(toggle, module.Title);
@@ -42,28 +50,36 @@ public partial class SettingsPage
             DockPanel.SetDock(toggle, Dock.Left);
             row.Children.Add(toggle);
 
-            // Switched on but missing its endpoint: offer the way to set it up
+            // Switched on but missing what it needs: offer the way to set it up
             // instead of leaving an empty tab.
-            if (shown && !AppModules.IsConfigured(module.Tag, config))
+            if (shown && !configured)
             {
+                var pane = ConfigurePane(module.Tag);
                 var configure = new Button
                 {
-                    Content = "Configure",
+                    Content = "Configure…",
                     Padding = new Thickness(10, 3, 10, 3),
                     VerticalAlignment = VerticalAlignment.Center,
-                    ToolTip = "Enter this module's endpoint on the Authentication tab",
+                    ToolTip = $"Open Settings › {pane}",
                 };
-                configure.Click += (_, _) => SelectSettingsTab("Authentication");
+                configure.Click += (_, _) => SelectSettingsTab(pane);
                 DockPanel.SetDock(configure, Dock.Right);
                 row.Children.Add(configure);
             }
+
+            var icon = Glyph(module.Glyph, 18);
+            icon.Margin = new Thickness(8, 0, 0, 0);
+            icon.Width = 24;
+            icon.VerticalAlignment = VerticalAlignment.Center;
+            DockPanel.SetDock(icon, Dock.Left);
+            row.Children.Add(icon);
 
             var text = new StackPanel { Margin = new Thickness(8, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
             text.Children.Add(new TextBlock { Text = module.Title, FontWeight = FontWeights.SemiBold });
             text.Children.Add(new TextBlock
             {
-                Text = shown && !AppModules.IsConfigured(module.Tag, config)
-                    ? module.Subtitle + " · not set up yet"
+                Text = shown && !configured
+                    ? $"{module.Subtitle}. {AppModules.NeedsMessage(module.Tag)}"
                     : module.Subtitle,
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
@@ -72,6 +88,20 @@ public partial class SettingsPage
             row.Children.Add(text);
             ModulesPanel.Children.Add(row);
         }
+    }
+
+    /// <summary>The Settings pane that sets a module up.</summary>
+    private static string ConfigurePane(string tag) => tag switch
+    {
+        "Manage" => "Manage",
+        AppModules.Enrollment => "Enrollment",
+        _ => "Authentication",
+    };
+
+    private bool HasEnrollmentOrganizations()
+    {
+        try { return _appleStore.Profiles().Count > 0; }
+        catch { return false; }
     }
 
     private void SelectSettingsTab(string header)

@@ -63,20 +63,29 @@ public sealed class ElevationHttpHandler : HttpMessageHandler
         catch (Exception ex)
         {
             // Elevation infra failure (not configured, container/exec error, network).
-            // The full detail is logged at debug level only — ex.Message can still carry
-            // elevated output in edge cases, and GraphService re-logs the response body.
-            // The body callers receive is therefore a fixed, non-sensitive string.
+            var reason = FailureReason(ex);
             Log.Debug(ex, "Elevation {Domain} call to {Method} {Url} failed", domain.Slug(), method, url);
-            Log.Warning("Elevation {Domain} call to {Method} {Url} failed (detail at debug level)",
-                domain.Slug(), method, url);
-            _status.RecordFailure($"elevated {domain.Slug()} session failed: {ex.GetType().Name}");
+            Log.Warning("Elevation {Domain} call to {Method} {Url} failed: {Reason}",
+                domain.Slug(), method, url, reason);
+            _status.RecordFailure(reason);
             return new HttpResponseMessage(HttpStatusCode.BadGateway)
             {
-                Content = new StringContent("Elevation request failed; see FleetMate debug log for detail."),
+                Content = new StringContent(reason),
                 RequestMessage = request,
             };
         }
     }
+
+    /// <summary>
+    /// What the operator is told when a session could not be used. An
+    /// <see cref="ElevationException"/> carries its own message: those are
+    /// written here from az's error text and never hold Graph output (the
+    /// exec parser withholds the session body). Anything else may, so only
+    /// its type is named, with the detail in the debug log.
+    /// </summary>
+    internal static string FailureReason(Exception ex) => ex is ElevationException
+        ? ex.Message
+        : $"The elevation session failed ({ex.GetType().Name}); see the FleetMate debug log for detail.";
 
     /// <summary>
     /// The response for one az rest run. az rest prints no headers, so a throttle

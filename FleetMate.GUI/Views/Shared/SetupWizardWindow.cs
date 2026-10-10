@@ -12,20 +12,30 @@ namespace FleetMate.GUI.Views.Shared;
 
 /// <summary>
 /// The guided setup, as on the macOS client: Welcome, Modules, Connections,
-/// Sign In, Summary. It opens by itself on a first launch with nothing set
-/// up, and from Settings › General › Setup Wizard at any time. Connections
-/// writes the same non-secret endpoints Settings does, to the same values in
-/// HKCU\SOFTWARE\FleetMate; there is never a secret to enter. Sign In runs
-/// az login and gh auth login; FleetMate shows no sign-in window of its own.
+/// Development, Summary. It opens by itself on a first launch with nothing
+/// set up, and from Settings › General › Setup Wizard at any time.
+/// Connections writes the same non-secret endpoints Settings does, to the
+/// same values in HKCU\SOFTWARE\FleetMate; there is never a secret to enter.
+/// Development checks the gh and az sign-ins the Development tab reads
+/// through (az also starts the elevation sessions behind Devices and
+/// Identity) and runs az login or gh auth login for one that is missing;
+/// FleetMate shows no sign-in window of its own. With Development switched
+/// off but Devices, Identity or Projects chosen, the same step is Sign In.
 /// </summary>
 public sealed class SetupWizardWindow : Window
 {
     private static string RegistryPath => FleetMate.Core.Config.AppEdition.Current.UserRegistryPath;
     // TicketsMate has one module and signs in with the Windows account alone,
-    // so it skips Modules and Sign In.
-    private readonly string[] StepTitles = AppEdition.Current.IsTicketsOnly
+    // so it skips Modules and the sign-in step.
+    private string[] StepTitles => AppEdition.Current.IsTicketsOnly
         ? new[] { "Welcome", "Connections", "Summary" }
-        : new[] { "Welcome", "Modules", "Connections", "Sign In", "Summary" };
+        : new[] { "Welcome", "Modules", "Connections", SignInStepTitle, "Summary" }.OfType<string>().ToArray();
+
+    /// <summary>The sign-in step's title, or null when no chosen module needs az or gh.</summary>
+    private string? SignInStepTitle =>
+        Shows("Development") ? "Development"
+        : Shows("Devices") || Shows("Identity") || Shows("Projects") ? "Sign In"
+        : null;
     private static string AppName => AppEdition.Current.Name;
 
     private readonly FleetMateConfig _config;
@@ -40,6 +50,9 @@ public sealed class SetupWizardWindow : Window
     private int _step;
     private string _azStatus = "";
     private string _ghStatus = "";
+    private CliAccount? _azAccount;
+    private CliAccount? _ghAccount;
+    private bool _accountsChecked;
 
     public SetupWizardWindow()
     {
@@ -123,7 +136,7 @@ public sealed class SetupWizardWindow : Window
             "Welcome" => WelcomeStep(),
             "Modules" => ModulesStep(),
             "Connections" => ConnectionsStep(),
-            "Sign In" => SignInStep(),
+            "Development" or "Sign In" => SignInStep(),
             _ => SummaryStep(),
         };
     }
@@ -147,10 +160,11 @@ public sealed class SetupWizardWindow : Window
 
     private UIElement ModulesStep()
     {
-        var panel = Heading("Choose Your Modules", "Select the tabs you want. You can change this later in Settings › General.");
+        var panel = Heading("Choose Your Modules", $"Pick what you want {AppName} to show. The next steps connect each one; you can change this later in Settings › General.");
         foreach (var module in AppModules.All)
         {
             var box = new CheckBox { IsChecked = Shows(module.Tag), Margin = new Thickness(0, 6, 0, 0) };
+            System.Windows.Automation.AutomationProperties.SetAutomationId(box, $"SetupModule{module.Tag}");
             var label = new StackPanel();
             label.Children.Add(new TextBlock { Text = module.Title, FontWeight = FontWeights.SemiBold });
             label.Children.Add(Note(module.Subtitle, top: 0));
@@ -170,8 +184,8 @@ public sealed class SetupWizardWindow : Window
 
     private void UpdateModulesHint()
     {
-        var none = AppModules.All.All(m => _hidden.Contains(m.Tag));
-        _hint.Text = none ? "Select at least one module to continue." : "";
+        var none = AppModules.Tabs.All(m => _hidden.Contains(m.Tag));
+        _hint.Text = none ? "Select at least one tab to continue." : "";
         _next.IsEnabled = !none;
     }
 
@@ -179,37 +193,39 @@ public sealed class SetupWizardWindow : Window
     {
         var panel = Heading("Connections", "Endpoints for the modules you chose. Only addresses and identifiers go here; there is no secret to enter.");
         _fields.Clear();
-        if (Shows("Devices") || Shows("Identity"))
+        // Each section is named for what it does; the product behind it is
+        // named once, as its connector.
+        if (Shows("Devices") || Shows("Identity") || Shows(AppModules.Enrollment))
         {
-            Section(panel, "Microsoft Graph");
+            Section(panel, "Devices & Identity", "Managed devices, users and groups. Connector: Microsoft Graph.");
             Field(panel, "GraphTenantId", "Tenant ID");
             Field(panel, "GraphClientId", "Client ID");
         }
         if (Shows("Projects") || Shows("Development"))
         {
-            Section(panel, "Azure DevOps");
+            Section(panel, "Projects", "Boards, work items and issues. Connector: Azure DevOps.");
             Field(panel, "DevOpsOrganization", "Organization");
             Field(panel, "DevOpsProject", "Project");
         }
         if (Shows("Inventory"))
         {
-            Section(panel, "Snipe-IT");
+            Section(panel, "Inventory", "Asset inventory and lifecycle. Connector: Snipe-IT.");
             Field(panel, "SnipeUrl", "Base URL");
         }
         if (Shows("Tickets"))
         {
-            Section(panel, "TeamDynamix");
+            Section(panel, "Tickets", "Service desk tickets. Connector: TeamDynamix.");
             Field(panel, "TdxBaseUrl", "Base URL");
             Field(panel, "TdxAppId", "Ticketing App ID");
         }
         if (Shows("Reporting"))
         {
-            Section(panel, "ReportMate");
+            Section(panel, "Reporting", "Fleet reporting and device telemetry. Connector: ReportMate.");
             Field(panel, "ReportMateUrl", "API URL");
         }
         if (Shows("Development"))
         {
-            Section(panel, "Handbook and Skills");
+            Section(panel, "Handbook and Skills", "Shown beside Development and in the agent terminal.");
             Field(panel, "HandbookRepoUrl", "Handbook repository");
             Field(panel, "HandbookSiteUrl", "Handbook site");
             Field(panel, "AgentsHubRepoUrl", "Skills repository");
@@ -221,43 +237,115 @@ public sealed class SetupWizardWindow : Window
 
     private UIElement SignInStep()
     {
-        var panel = Heading("Sign In", "az is the sign-in Azure DevOps and the elevation sessions use; gh backs the GitHub inbox and issues. Each opens your browser; FleetMate never asks for a password.");
+        var development = Shows("Development");
+        var panel = development
+            ? Heading("Development", "Repositories, pull requests and pipelines come from your own command-line sign-ins. The agent terminal opens in your checkouts.")
+            : Heading("Sign In", "az is the sign-in the elevation sessions behind Devices and Identity start from.");
 
-        var az = new Button { Content = "az login", Padding = new Thickness(14, 5, 14, 5), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 12, 0, 0) };
-        az.ToolTip = CliSignIn.AzLoginCommandDescription(Value("GraphTenantId"));
-        var azStatus = Note(_azStatus);
-        az.Click += async (_, _) =>
+        var rows = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+        panel.Children.Add(rows);
+        var check = new Button { Content = "Check Again", Padding = new Thickness(12, 4, 12, 4), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 10, 0, 0) };
+        panel.Children.Add(check);
+        panel.Children.Add(Note(development
+            ? "Either one is enough for Development; az also starts the elevation sessions behind Devices and Identity. FleetMate reads with your own identity and never stores a token."
+            : "FleetMate reads with your own identity and never stores a token.", top: 14));
+        panel.Children.Add(Note("Settings › Authentication offers both again, with a Re-check on every card.", top: 6));
+
+        void Render()
         {
-            az.IsEnabled = false;
-            azStatus.Text = "Finish signing in in your browser…";
-            var outcome = await CliSignIn.AzLoginAsync(Value("GraphTenantId"));
-            _azStatus = outcome.Message;
-            azStatus.Text = _azStatus;
-            az.IsEnabled = true;
-        };
-        panel.Children.Add(az);
-        panel.Children.Add(azStatus);
+            rows.Children.Clear();
+            if (development)
+                rows.Children.Add(SignInRow("GitHub CLI", _ghAccount, "Repositories, pull requests and Actions runs on GitHub",
+                    "gh auth login", $"Opens a console running {CliSignIn.GhLoginCommand}", _ghStatus, _ =>
+                    {
+                        _ghStatus = CliSignIn.GhLoginInConsole().Message;
+                        Render();
+                        return Task.CompletedTask;
+                    }));
+            rows.Children.Add(SignInRow("Azure CLI", _azAccount,
+                development ? "Repositories, pull requests and pipelines on Azure DevOps, and elevation sessions" : "Elevation sessions for Devices and Identity",
+                "az login", CliSignIn.AzLoginCommandDescription(Value("GraphTenantId")), _azStatus, async button =>
+                {
+                    button.IsEnabled = false;
+                    _azStatus = "Finish signing in in your browser…";
+                    Render();
+                    var outcome = await CliSignIn.AzLoginAsync(Value("GraphTenantId"));
+                    _azStatus = outcome.Message;
+                    await CheckAccountsAsync();
+                    Render();
+                }));
+        }
 
-        var gh = new Button { Content = "gh auth login", Padding = new Thickness(14, 5, 14, 5), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 16, 0, 0) };
-        gh.ToolTip = $"Opens a console running {CliSignIn.GhLoginCommand}";
-        var ghStatus = Note(_ghStatus);
-        gh.Click += (_, _) =>
+        async Task CheckAccountsAsync()
         {
-            _ghStatus = CliSignIn.GhLoginInConsole().Message;
-            ghStatus.Text = _ghStatus;
-        };
-        panel.Children.Add(gh);
-        panel.Children.Add(ghStatus);
+            var gh = CliAccountProbe.GhAccountAsync();
+            var az = CliAccountProbe.AzAccountAsync();
+            _ghAccount = await gh;
+            _azAccount = await az;
+            _accountsChecked = true;
+        }
 
-        panel.Children.Add(Note("Both are optional here; Settings › Authentication offers them again, with a Re-check on every card.", top: 18));
+        check.Click += async (_, _) =>
+        {
+            check.IsEnabled = false;
+            _accountsChecked = false;
+            Render();
+            await CheckAccountsAsync();
+            Render();
+            check.IsEnabled = true;
+        };
+        Render();
+        if (!_accountsChecked)
+            _ = Dispatcher.InvokeAsync(async () =>
+            {
+                await CheckAccountsAsync();
+                Render();
+            });
         return panel;
+    }
+
+    /// <summary>One CLI: who it is signed in as, or a button to sign in.</summary>
+    private FrameworkElement SignInRow(string title, CliAccount? account, string detail, string action, string tooltip,
+        string status, Func<Button, Task> signIn)
+    {
+        var row = new DockPanel { Margin = new Thickness(0, 8, 0, 0) };
+        var mark = new TextBlock
+        {
+            Text = account != null ? "\uE73E" : "\uE9AE",
+            FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
+            FontSize = 16,
+            Width = 26,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 2, 0, 0),
+        };
+        if (account != null) mark.Foreground = new SolidColorBrush(Color.FromRgb(0x27, 0xae, 0x60));
+        else mark.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
+        System.Windows.Automation.AutomationProperties.SetName(mark, account != null ? "Signed in" : "Not signed in");
+        DockPanel.SetDock(mark, Dock.Left);
+        row.Children.Add(mark);
+
+        if (_accountsChecked && account == null)
+        {
+            var button = new Button { Content = action, Padding = new Thickness(12, 4, 12, 4), VerticalAlignment = VerticalAlignment.Top, ToolTip = tooltip };
+            button.Click += async (_, _) => await signIn(button);
+            DockPanel.SetDock(button, Dock.Right);
+            row.Children.Add(button);
+        }
+
+        var text = new StackPanel();
+        text.Children.Add(new TextBlock { Text = title, FontWeight = FontWeights.SemiBold });
+        text.Children.Add(Note(account != null ? $"Signed in as {account.User}"
+            : _accountsChecked ? $"Not signed in. {detail}." : "Checking…", top: 1));
+        if (!string.IsNullOrEmpty(status)) text.Children.Add(Note(status, top: 2));
+        row.Children.Add(text);
+        return row;
     }
 
     private UIElement SummaryStep()
     {
         var panel = Heading("Summary", $"Finish saves these choices and reloads {AppName}'s services.");
         var shown = AppModules.All.Where(m => Shows(m.Tag)).Select(m => m.Title).ToList();
-        Section(panel, "Tabs");
+        Section(panel, "Modules");
         panel.Children.Add(Note(string.Join(", ", shown), top: 2));
         var endpoints = _fields.Keys.Concat(_values.Keys).Distinct()
             .Where(k => _fields.ContainsKey(k) && !string.IsNullOrWhiteSpace(Value(k)))
@@ -265,11 +353,16 @@ public sealed class SetupWizardWindow : Window
             .ToList();
         Section(panel, "Endpoints");
         panel.Children.Add(Note(endpoints.Count > 0 ? string.Join(Environment.NewLine, endpoints) : "None entered.", top: 2));
-        if (!string.IsNullOrEmpty(_azStatus) || !string.IsNullOrEmpty(_ghStatus))
+        if (_accountsChecked || !string.IsNullOrEmpty(_azStatus) || !string.IsNullOrEmpty(_ghStatus))
         {
-            Section(panel, "Sign-in");
-            if (!string.IsNullOrEmpty(_azStatus)) panel.Children.Add(Note("az: " + _azStatus, top: 2));
-            if (!string.IsNullOrEmpty(_ghStatus)) panel.Children.Add(Note("gh: " + _ghStatus, top: 2));
+            Section(panel, "Sign-ins");
+            if (_accountsChecked)
+            {
+                panel.Children.Add(Note("az: " + (_azAccount?.User ?? "not signed in"), top: 2));
+                if (Shows("Development")) panel.Children.Add(Note("gh: " + (_ghAccount?.User ?? "not signed in"), top: 2));
+            }
+            if (!string.IsNullOrEmpty(_azStatus)) panel.Children.Add(Note("az login: " + _azStatus, top: 2));
+            if (!string.IsNullOrEmpty(_ghStatus)) panel.Children.Add(Note("gh auth login: " + _ghStatus, top: 2));
         }
         return panel;
     }
@@ -347,8 +440,11 @@ public sealed class SetupWizardWindow : Window
         panel.Children.Add(box);
     }
 
-    private static void Section(Panel panel, string title) =>
+    private static void Section(Panel panel, string title, string? subtitle = null)
+    {
         panel.Children.Add(new TextBlock { Text = title, FontWeight = FontWeights.SemiBold, FontSize = 15, Margin = new Thickness(0, 16, 0, 0) });
+        if (subtitle != null) panel.Children.Add(Note(subtitle, top: 1));
+    }
 
     private static StackPanel Heading(string title, string subtitle)
     {

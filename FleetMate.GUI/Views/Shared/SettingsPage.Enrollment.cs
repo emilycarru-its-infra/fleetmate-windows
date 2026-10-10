@@ -1,26 +1,33 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
+using FleetMate.Core.Config;
 using FleetMate.Core.Models.Devices;
 using FleetMate.Core.Services.Devices;
 
 namespace FleetMate.GUI.Views.Shared;
 
 /// <summary>
-/// Settings › Apple: add and remove Apple School and Business Manager API
-/// profiles. The key ID and private key go straight into Windows Credential
-/// Manager; the key file itself is not kept or copied anywhere.
+/// Settings › Enrollment: where the enrollment records joined into Devices
+/// come from. Windows registrations are read through the Devices connection;
+/// Mac, iPad and iPhone records from the Apple School and Business Manager
+/// API profiles added here. The key ID and private key go straight into
+/// Windows Credential Manager; the key file itself is not kept or copied
+/// anywhere.
 /// </summary>
 public partial class SettingsPage
 {
     private readonly AppleOrgCredentialStore _appleStore = new();
 
-    private void OnAppleTabLoaded(object sender, RoutedEventArgs e) => RefreshAppleProfiles();
+    private void OnEnrollmentTabLoaded(object sender, RoutedEventArgs e) => RefreshAppleProfiles();
 
     private void RefreshAppleProfiles()
     {
+        var count = 0;
         try
         {
             var profiles = _appleStore.Profiles();
+            count = profiles.Count;
             var labels = AppleOrgProfile.Labels(profiles);
             AppleProfilesList.ItemsSource = profiles.Select(p => new AppleProfileItem(p, $"{labels[p.Name]} — {p.Name}")).ToList();
             AppleProfilesList.DisplayMemberPath = nameof(AppleProfileItem.Display);
@@ -30,6 +37,39 @@ public partial class SettingsPage
         {
             AppleProfileStatusText.Text = $"Could not read Credential Manager: {ex.Message}";
         }
+        ShowEnrollmentSources(count);
+    }
+
+    /// <summary>The two sources of enrollment records and whether each is connected.</summary>
+    private void ShowEnrollmentSources(int appleProfiles)
+    {
+        var config = CurrentApp?.Config;
+        var graph = !string.IsNullOrWhiteSpace(config?.Graph?.TenantId);
+        var off = !AppModules.IsOn(UserPreferences.HiddenModules, AppModules.Enrollment);
+        EnrollmentSourcesPanel.Children.Clear();
+        if (off)
+            EnrollmentSourcesPanel.Children.Add(Caption("Enrollment is switched off in General, so neither source is read.", top: 0));
+        EnrollmentSourcesPanel.Children.Add(SourceRow("\uE7F8", "Windows",
+            graph ? "Registrations are read through the Devices connection." : "Connect Devices to read Windows registrations."));
+        EnrollmentSourcesPanel.Children.Add(SourceRow("\uE8EA", "Mac, iPad and iPhone",
+            appleProfiles == 0
+                ? "Add an enrollment organization below."
+                : $"{appleProfiles} organization{(appleProfiles == 1 ? "" : "s")} read."));
+    }
+
+    private FrameworkElement SourceRow(string glyph, string title, string detail)
+    {
+        var row = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
+        var icon = Glyph(glyph, 16);
+        icon.Margin = new Thickness(0, 2, 10, 0);
+        icon.VerticalAlignment = VerticalAlignment.Top;
+        DockPanel.SetDock(icon, Dock.Left);
+        row.Children.Add(icon);
+        var text = new StackPanel();
+        text.Children.Add(new TextBlock { Text = title, FontWeight = FontWeights.SemiBold });
+        text.Children.Add(Caption(detail, top: 1));
+        row.Children.Add(text);
+        return row;
     }
 
     private void OnBrowseAppleKey(object sender, RoutedEventArgs e)
