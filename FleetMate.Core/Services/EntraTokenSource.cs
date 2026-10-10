@@ -253,9 +253,28 @@ public sealed class EntraTokenSource
         }
         catch (Exception ex) when (ex is MsalException or TimeoutException or OperationCanceledException && !ct.IsCancellationRequested)
         {
-            Log.Debug(ex, "[entra] No operating-system account from the broker");
+            Log.Information("[entra] No operating-system account from the broker: {Detail}",
+                ex is MsalException msal ? BrokerDetail(msal) : ex.GetType().Name);
             return null;
         }
+    }
+
+    /// <summary>
+    /// What the broker said, for the log: MSAL's error code, the first line of
+    /// its message (which carries the WAM status and its error code), and any
+    /// extra data MSAL attached. The silent failure used to be logged at Debug
+    /// with the code alone, which said nothing about why WAM refused.
+    /// </summary>
+    internal static string BrokerDetail(MsalException ex)
+    {
+        var parts = new List<string> { ex.ErrorCode };
+        var first = ex.Message.Split('\n', 2)[0].Trim();
+        if (first.Length > 0 && first != ex.ErrorCode) parts.Add(first);
+        if (ex is MsalServiceException service && service.StatusCode != 0) parts.Add($"HTTP {service.StatusCode}");
+        if (ex.AdditionalExceptionData is { Count: > 0 } data)
+            parts.AddRange(data.Select(kv => $"{kv.Key}={kv.Value}"));
+        if (ex.InnerException is { } inner) parts.Add($"{inner.GetType().Name}: {inner.Message.Split('\n', 2)[0].Trim()}");
+        return string.Join("; ", parts);
     }
 
     private async Task<(string Token, DateTimeOffset ExpiresOn)> AcquireAsync(string scope, CancellationToken ct)
@@ -281,7 +300,7 @@ public sealed class EntraTokenSource
         {
             // No PRT the broker will hand over (a disconnected remote session
             // can do this), or consent this account hasn't given. Fall through.
-            Log.Debug(ex, "[entra] Broker declined the operating-system account for {Scope}", scope);
+            Log.Information("[entra] Broker declined the operating-system account for {Scope}: {Detail}", scope, BrokerDetail(ex));
             tried.Add($"operating-system account: {ex.ErrorCode}");
         }
 
@@ -296,7 +315,7 @@ public sealed class EntraTokenSource
             }
             catch (MsalException ex)
             {
-                Log.Debug(ex, "[entra] Broker declined {Upn} for {Scope}", upn, scope);
+                Log.Information("[entra] Broker declined {Upn} for {Scope}: {Detail}", upn, scope, BrokerDetail(ex));
                 tried.Add($"{upn}: {ex.ErrorCode}");
             }
         }
