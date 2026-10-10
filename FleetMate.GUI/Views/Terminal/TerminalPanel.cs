@@ -47,10 +47,10 @@ public sealed class TerminalPanel : UserControl
     private bool _collapsed;
     private int _tickCount;
 
-    /// <summary>Raised when the panel should hide (its Hide button, or Ctrl+` inside a terminal).</summary>
+    /// <summary>Raised when the panel should hide (Ctrl+` inside a terminal; the bar below holds the button).</summary>
     public event EventHandler? HideRequested;
 
-    /// <summary>Raised when full-window mode should turn on or off (its button, or Ctrl+Shift+Enter inside a terminal).</summary>
+    /// <summary>Raised when full-window mode should turn on or off (Ctrl+Shift+Enter inside a terminal; the bar below holds the button).</summary>
     public event EventHandler? FullWindowRequested;
 
     public bool HasSessions => _sessions.Count > 0;
@@ -66,8 +66,6 @@ public sealed class TerminalPanel : UserControl
         _headerWide.Children.Add(newButton);
         _headerWide.Children.Add(newMenu);
         _headerWide.Children.Add(IconButton("", "Split (Alt+Shift+D)", "TerminalSplitButton", (_, _) => SplitActive()));
-        _headerWide.Children.Add(IconButton("", "Full Window (Ctrl+Shift+Enter)", "TerminalFullWindowButton", (_, _) => FullWindowRequested?.Invoke(this, EventArgs.Empty)));
-        _headerWide.Children.Add(IconButton("", "Hide (Ctrl+`)", "TerminalHideButton", (_, _) => HideRequested?.Invoke(this, EventArgs.Empty)));
         _headerWide.Children.Add(IconButton("", "Collapse the list", "TerminalCollapseButton", (_, _) => SetCollapsed(true)));
 
         _headerNarrow.Children.Add(IconButton("", "Expand the list", "TerminalExpandButton", (_, _) => SetCollapsed(false)));

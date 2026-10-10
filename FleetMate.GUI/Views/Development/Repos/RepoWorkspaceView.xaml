@@ -110,7 +110,7 @@
                    Text="Select a repository. Browse, edit and commit in any tracked checkout; agents work in the same checkouts through 'fleetmate repos'." />
 
         <DockPanel x:Name="Workspace" Visibility="Collapsed">
-            <!-- Header: branch, network, refresh, help · AGENTS.md, terminal, reveal -->
+            <!-- Header: branch, network, refresh, help · AGENTS.md, reveal -->
             <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button x:Name="AgentsButton" Click="OnOpenAgents" Margin="0,0,6,0" Padding="8,4"
@@ -122,18 +122,9 @@
                     </Button>
                     <TextBlock x:Name="NoAgentsLabel" Text="No AGENTS.md" Opacity="0.6" VerticalAlignment="Center" Margin="0,0,10,0"
                                ToolTip="This repository has no AGENTS.md for agents to read" />
-                    <Button Click="OnOpenTerminal" Margin="0,0,6,0" Padding="8,4"
-                            ToolTip="Open an agent terminal session in this checkout">
-                        <StackPanel Orientation="Horizontal">
-                            <ui:FontIcon Glyph="&#xE756;" FontSize="13" Margin="0,0,6,0" />
-                            <TextBlock Text="Terminal" />
-                        </StackPanel>
-                    </Button>
-                    <Button x:Name="RevealButton" Click="OnReveal" Padding="8,4">
-                        <StackPanel Orientation="Horizontal">
-                            <ui:FontIcon Glyph="&#xE838;" FontSize="13" Margin="0,0,6,0" />
-                            <TextBlock Text="Reveal" />
-                        </StackPanel>
+                    <Button x:Name="RevealButton" Click="OnReveal" Padding="8,4"
+                            AutomationProperties.Name="Reveal in Explorer">
+                        <ui:FontIcon Glyph="&#xE838;" FontSize="13" />
                     </Button>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
