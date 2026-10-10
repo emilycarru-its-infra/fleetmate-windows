@@ -51,7 +51,8 @@ public partial class BoardsPage : Page
     public BoardsPage()
     {
         InitializeComponent();
-        AgentContextMenu.Attach(TaskBoardColumnsControl);
+        // Cards drag between columns; that drag carries the block too.
+        AgentContextMenu.Attach(TaskBoardColumnsControl, drag: false);
         AgentContextMenu.Attach(FlatTaskList);
         AgentContextMenu.Attach(WorkItemsListView);
         _app = Application.Current as App;
@@ -482,7 +483,8 @@ public partial class BoardsPage : Page
             Math.Abs(pos.Y - _taskDragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
             return;
         if (card.Tag is TaskCardVm vm)
-            DragDrop.DoDragDrop(card, new DataObject(TaskDragFormat, vm.Task.CompositeKey), DragDropEffects.Move);
+            AgentContextDrag.DoDragDrop(card, new DataObject(TaskDragFormat, vm.Task.CompositeKey),
+                [AgentContexts.WorkItem(vm.Task)], DragDropEffects.Move);
     }
 
     private void OnTaskColumnDragOver(object sender, DragEventArgs e)

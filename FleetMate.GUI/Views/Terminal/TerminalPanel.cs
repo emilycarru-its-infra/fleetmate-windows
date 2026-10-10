@@ -55,6 +55,9 @@ public sealed class TerminalPanel : UserControl
 
     public bool HasSessions => _sessions.Count > 0;
 
+    /// <summary>Text was dropped on a pane; the window decides whether it is a row's block to hand over.</summary>
+    public event Action<TerminalView, string>? TextDropped;
+
     public TerminalPanel()
     {
         AutomationProperties.SetAutomationId(this, "TerminalPanel");
@@ -154,20 +157,28 @@ public sealed class TerminalPanel : UserControl
     public void OpenDefaultSession(bool takeFocus = true) =>
         OpenSession(AgentLaunch(DefaultCommand, null) with { TakeFocus = takeFocus });
 
+    /// <summary>Tell every pane whether a row is being dragged, so they show the copy cursor only then.</summary>
+    public void SetAgentDragActive(bool active)
+    {
+        foreach (var pane in _sessions.SelectMany(s => s.Panes)) pane.SetAgentDragActive(active);
+    }
+
     public void FocusActive() => _active?.Panes.FirstOrDefault()?.FocusTerminal();
 
     /// <summary>
     /// Put <paramref name="text"/> into an agent's input without pressing
     /// Return, activating and focusing that session. Only a pane running an
     /// agent CLI that has asked for bracketed paste receives it, never a bare
-    /// shell; the active session is tried first. Returns false when no agent
+    /// shell; <paramref name="preferred"/> (the pane a row was dropped on) is
+    /// tried first, then the active session. Returns false when no agent
     /// is running, so the caller copies the text instead and nothing is ever
     /// sent on the person's behalf.
     /// </summary>
-    public bool Insert(string text)
+    public bool Insert(string text, TerminalView? preferred = null)
     {
         var candidates = (_active == null ? _sessions : _sessions.Where(s => !ReferenceEquals(s, _active)).Prepend(_active))
-            .SelectMany(s => s.Panes.Select(p => (Session: s, Pane: p)));
+            .SelectMany(s => s.Panes.Select(p => (Session: s, Pane: p)))
+            .OrderBy(c => ReferenceEquals(c.Pane, preferred) ? 0 : 1);
         foreach (var (session, pane) in candidates)
         {
             if (!pane.AcceptsBracketedPaste || !pane.AgentIsRunning) continue;
@@ -248,6 +259,7 @@ public sealed class TerminalPanel : UserControl
         view.ToggleRequested += (_, _) => HideRequested?.Invoke(this, EventArgs.Empty);
         view.StateChanged += (_, _) => Refresh(session);
         view.KeyAction += OnKeyAction;
+        view.TextDropped += (pane, text) => TextDropped?.Invoke(pane, text);
         session.Panes.Add(view);
 
         // Append after a splitter when it is not the first; existing panes stay put

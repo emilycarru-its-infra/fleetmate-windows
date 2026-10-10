@@ -10,6 +10,7 @@ using FleetMate.GUI.Views.Tickets;
 using FleetMate.GUI.Views.Projects;
 using FleetMate.GUI.Views.Identity;
 using FleetMate.GUI.Views.Manage;
+using FleetMate.GUI.Views.Terminal;
 
 namespace FleetMate.GUI.Views.Shared;
 
@@ -56,6 +57,16 @@ public partial class MainWindow : Window
         InitPreferences();
         // Search hits that stand for a record offer Copy and Send to Agent.
         AgentContextMenu.Attach(SearchResults);
+        // A row dropped on the terminal goes the way Send to Agent does;
+        // anything else dropped there is ignored.
+        if (!TicketsOnly)
+        {
+            AgentContextDrag.ActiveChanged += Terminal.SetAgentDragActive;
+            Terminal.TextDropped += (pane, text) =>
+            {
+                if (AgentContextDrag.Claim(text, DateTime.UtcNow) is { } block) SendToAgent(block, pane);
+            };
+        }
         // An agent session started at launch must not take the keyboard.
         // TicketsMate has no terminal.
         if (!TicketsOnly && Application.Current is App { Config.Terminal.AgentAutoStart: true })
@@ -262,13 +273,14 @@ public partial class MainWindow : Window
     /// started on the person's behalf: the text is copied and the terminal
     /// opens idle (a session running what Settings names, with no prompt), so
     /// the person pastes it alongside their own request. Returns true when
-    /// the text was pasted, false when it was copied.
+    /// the text was pasted, false when it was copied. <paramref name="pane"/>
+    /// is the pane a row was dropped on, tried first.
     /// </summary>
-    public bool SendToAgent(string text)
+    public bool SendToAgent(string text, TerminalView? pane = null)
     {
         if (TicketsOnly) return false;
         SetTerminalVisible(true, takeFocus: false);
-        if (Terminal.Insert(text)) return true;
+        if (Terminal.Insert(text, pane)) return true;
         AgentContextClipboard.SetText(text);
         if (Terminal.HasSessions) Terminal.FocusActive();
         else Terminal.OpenDefaultSession();

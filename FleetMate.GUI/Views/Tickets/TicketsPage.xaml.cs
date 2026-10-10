@@ -83,7 +83,9 @@ private bool _isInitialLoadDone;
     {
         InitializeComponent();
         AgentContextMenu.Attach(TicketsListView);
-        AgentContextMenu.Attach(BoardColumnsControl);
+        // Cards drag between columns; that drag carries the block too.
+        AgentContextMenu.Attach(BoardColumnsControl, drag: false);
+        AgentButton.Source = () => _selectedTicket is { } ticket ? AgentContextMenu.Resolve(ticket) : null;
 
         // Get services from App
         if (Application.Current is App app)
@@ -523,7 +525,8 @@ private bool _isInitialLoadDone;
 
         _cardPress = null;
         if (card.Tag is int ticketId)
-            DragDrop.DoDragDrop(card, new DataObject(TicketDragFormat, ticketId), DragDropEffects.Move);
+            AgentContextDrag.DoDragDrop(card, new DataObject(TicketDragFormat, ticketId),
+                AgentContextMenu.Resolve(card.DataContext) is { } context ? [context] : [], DragDropEffects.Move);
     }
 
     private void OnBoardColumnDragOver(object sender, DragEventArgs e)

@@ -94,48 +94,64 @@ public static class AgentContextMenu
     /// already has a menu gets the items at its top; one without gets a menu
     /// of its own. <paramref name="extra"/> resolves what only the page can,
     /// such as a file in the open repository; it is tried before the
-    /// app-wide types.
+    /// app-wide types. Unless <paramref name="drag"/> is false (rows that
+    /// already drag somewhere of their own), the rows also drag out as their
+    /// blocks, onto the agent terminal or anywhere text goes.
     /// </summary>
-    public static void Attach(FrameworkElement host, Func<object, AgentContext?>? extra = null)
+    public static void Attach(FrameworkElement host, Func<object, AgentContext?>? extra = null, bool drag = true)
     {
         host.PreviewMouseRightButtonUp += (_, e) => OnRightClick(host, e, extra);
+        if (drag) AgentContextDrag.Attach(host, source => Targets(host, source, extra));
     }
 
-    private static void OnRightClick(FrameworkElement host, MouseButtonEventArgs e, Func<object, AgentContext?>? extra)
+    /// <summary>
+    /// The blocks for the row under <paramref name="source"/>: every selected
+    /// row's when it is one of several selected, else its own; null when it
+    /// is not a record.
+    /// </summary>
+    internal static List<AgentContext>? Targets(FrameworkElement host, DependencyObject source, Func<object, AgentContext?>? extra)
     {
-        if (e.OriginalSource is not DependencyObject source) return;
         AgentContext? Build(object? o) => o == null ? null : extra?.Invoke(o) ?? Resolve(o);
+        if (Find(host, source, Build) is not var (item, clicked)) return null;
+        return SelectedPeers(source, host, item, Build) ?? new List<AgentContext> { clicked };
+    }
 
-        // Walk up to the host; the first element whose data (or Tag) is a
-        // record wins. An item container ends the walk, so a row nested in
-        // another row is never taken for its parent.
-        object? item = null;
-        AgentContext? clicked = null;
-        ContextMenu? owner = null;
-        for (var node = source; node != null && clicked == null; node = Parent(node))
+    /// <summary>
+    /// Walk up to the host; the first element whose data (or Tag) is a
+    /// record wins. An item container ends the walk, so a row nested in
+    /// another row is never taken for its parent.
+    /// </summary>
+    private static (object Item, AgentContext Context)? Find(FrameworkElement host, DependencyObject source,
+        Func<object?, AgentContext?> build)
+    {
+        for (var node = source; node != null; node = Parent(node))
         {
-            if (node is FrameworkElement { ContextMenu: { } menu } && owner == null) owner = menu;
             if (node is FrameworkElement element)
             {
                 foreach (var candidate in new object?[] { element, element.Tag, element.DataContext })
                 {
                     if (candidate == null || (candidate == element.DataContext && candidate == host.DataContext)) continue;
-                    if (Build(candidate) is { } built) { item = candidate; clicked = built; break; }
+                    if (build(candidate) is { } built) return (candidate, built);
                 }
             }
-            if (clicked == null && node is ListBoxItem or DataGridRow or TreeViewItem) return;
+            if (node is ListBoxItem or DataGridRow or TreeViewItem) return null;
             if (ReferenceEquals(node, host)) break;
         }
-        if (clicked == null || item == null) return;
-        // Keep walking to the host for the menu that will open, if the row's own has not been met.
-        if (owner == null)
-            for (var node = source; node != null; node = Parent(node))
-            {
-                if (node is FrameworkElement { ContextMenu: { } menu }) { owner = menu; break; }
-                if (ReferenceEquals(node, host)) break;
-            }
+        return null;
+    }
 
-        var targets = SelectedPeers(source, host, item, Build) ?? new List<AgentContext> { clicked };
+    private static void OnRightClick(FrameworkElement host, MouseButtonEventArgs e, Func<object, AgentContext?>? extra)
+    {
+        if (e.OriginalSource is not DependencyObject source) return;
+        if (Targets(host, source, extra) is not { } targets) return;
+
+        // The menu that will open: the nearest one up to the host.
+        ContextMenu? owner = null;
+        for (var node = source; node != null; node = Parent(node))
+        {
+            if (node is FrameworkElement { ContextMenu: { } menu }) { owner = menu; break; }
+            if (ReferenceEquals(node, host)) break;
+        }
 
         if (owner != null)
         {

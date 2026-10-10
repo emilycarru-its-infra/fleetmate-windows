@@ -83,6 +83,21 @@
     if (on !== bracketedPaste) { bracketedPaste = on; post({ type: 'modes', bracketedPaste: on }); }
   };
 
+  // Drops: a row dragged out of FleetMate goes to the host, which checks it
+  // is that drag's own block and hands it over the way Send to Agent does.
+  // Nothing dropped is ever typed here, so text or files dragged in from
+  // another app neither reach the program nor navigate the page away.
+  let agentDrag = false;
+  const refuse = e => { e.preventDefault(); e.stopPropagation(); };
+  window.addEventListener('dragenter', refuse, true);
+  window.addEventListener('dragover', e => { refuse(e); e.dataTransfer.dropEffect = agentDrag ? 'copy' : 'none'; }, true);
+  window.addEventListener('drop', e => {
+    refuse(e);
+    const text = e.dataTransfer.getData('text/plain');
+    // Not gated on agentDrag: the host's "drag ended" can overtake the drop.
+    if (text) post({ type: 'drop', text });
+  }, true);
+
   window.chrome.webview.addEventListener('message', ev => {
     const m = ev.data;
     if (m.type === 'output') term.write(m.data, reportModes);
@@ -90,6 +105,7 @@
     else if (m.type === 'font') setFont(m.size);
     else if (m.type === 'clear') term.clear();
     else if (m.type === 'focus') term.focus();
+    else if (m.type === 'agentDrag') agentDrag = !!m.active;
     else if (m.type === 'exit') term.write(`\r\n\x1b[90m[process exited with code ${m.code}]\x1b[0m\r\n`);
   });
 

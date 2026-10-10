@@ -4,7 +4,8 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:local="clr-namespace:FleetMate.GUI.Views.Manage"
       xmlns:vm="clr-namespace:FleetMate.GUI.ViewModels.Manage"
-      xmlns:ui="http://schemas.modernwpf.com/2019">
+      xmlns:ui="http://schemas.modernwpf.com/2019"
+      xmlns:shared="clr-namespace:FleetMate.GUI.Views.Shared">
     <Page.Resources>
         <local:StatusKeyToBrushConverter x:Key="StatusBrush" />
         <local:BoolToVisibilityConverter x:Key="BoolToVis" />
@@ -619,6 +620,7 @@
             <DockPanel>
                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                     <Button DockPanel.Dock="Right" Content="" FontFamily="Segoe Fluent Icons" Style="{StaticResource ChromeIconButtonStyle}" Click="OnCloseDetail" />
+                    <shared:AgentContextButton DockPanel.Dock="Right" x:Name="DetailAgentButton" Style="{StaticResource ChromeIconButtonStyle}" />
                     <TextBlock x:Name="DetailTitle" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                 </DockPanel>
                 <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,10,0,0">

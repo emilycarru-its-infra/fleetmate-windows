@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects.Tasks;
+using FleetMate.Core.Shared;
 using FleetMate.GUI.Views.Shared;
 using Serilog;
 
@@ -23,6 +24,7 @@ public partial class TaskDetailPanel : UserControl
     public TaskDetailPanel()
     {
         InitializeComponent();
+        AgentButton.Source = () => _task is { } task ? AgentContexts.WorkItem(task) : null;
     }
 
     public void ShowTask(UnifiedTask task, ITaskProvider? provider)

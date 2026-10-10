@@ -48,6 +48,8 @@ public sealed class TerminalView : UserControl, IDisposable
     public event EventHandler? StateChanged;
     /// <summary>A panel key binding was pressed inside this terminal.</summary>
     public event Action<TerminalView, TerminalAction, int>? KeyAction;
+    /// <summary>Text was dropped on this terminal; it reaches the program only through Send to Agent.</summary>
+    public event Action<TerminalView, string>? TextDropped;
 
     /// <summary>The command's label, until the program sets a title with OSC 0 or 2.</summary>
     public string Title { get; private set; }
@@ -109,6 +111,12 @@ public sealed class TerminalView : UserControl, IDisposable
     }
 
     public void Clear() => Post(new { type = "clear" });
+
+    /// <summary>Tell the page a row is being dragged, so it offers to take the drop.</summary>
+    public void SetAgentDragActive(bool active)
+    {
+        if (_ready) Post(new { type = "agentDrag", active });
+    }
 
     /// <summary>
     /// Draw at <paramref name="size"/>. xterm.js re-lays out the grid and the
@@ -222,6 +230,9 @@ public sealed class TerminalView : UserControl, IDisposable
                 break;
             case "modes":
                 AcceptsBracketedPaste = m.GetProperty("bracketedPaste").GetBoolean();
+                break;
+            case "drop":
+                TextDropped?.Invoke(this, m.GetProperty("text").GetString() ?? "");
                 break;
         }
     }

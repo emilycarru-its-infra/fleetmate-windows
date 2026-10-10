@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using FleetMate.Core.Models.Inventory;
 using FleetMate.Core.Services.Inventory;
+using FleetMate.Core.Shared;
 using ModernWpf.Controls;
 using Serilog;
 
@@ -71,6 +72,7 @@ public partial class AssetDetailPanel : UserControl
     {
         _asset = asset;
         _service = (Application.Current as App)?.SnipeService;
+        AgentButton.Context = AgentContexts.Asset(asset, (Application.Current as App)?.Config.SnipeUrl);
         Render();
         _historyAssetId = null; // a fresh Show (new asset, or a save) refetches history
         ShowSegment();

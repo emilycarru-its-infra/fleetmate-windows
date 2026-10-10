@@ -4,6 +4,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.modernwpf.com/2019"
              xmlns:local="clr-namespace:FleetMate.GUI.Views.Development.Repos"
+             xmlns:shared="clr-namespace:FleetMate.GUI.Views.Shared"
              Focusable="True" FocusVisualStyle="{x:Null}">
 
     <UserControl.Resources>
@@ -309,6 +310,7 @@
                                 <DockPanel>
                                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                                         <TextBlock x:Name="NoticeText" FontSize="11" Opacity="0.7" Margin="0,0,10,0" VerticalAlignment="Center" />
+                                        <shared:AgentContextButton x:Name="EditorAgentButton" Padding="8,2" Margin="0,0,4,0" />
                                         <Button x:Name="RevertButton" Content="Revert" Padding="8,2" FontSize="11" Margin="0,0,4,0"
                                                 Click="OnRevertEdits" ToolTip="Throw away unsaved edits (asks first)" />
                                         <Button x:Name="CloseButton" Content="Close" Padding="8,2" FontSize="11" Margin="0,0,4,0"

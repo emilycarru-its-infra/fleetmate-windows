@@ -39,6 +39,7 @@ public partial class ManagePage : Page
     {
         InitializeComponent();
         AgentContextMenu.Attach(MachinesGrid);
+        DetailAgentButton.Source = () => _detailRow is { } row ? AgentContextMenu.Resolve(row) : null;
         _vm = BuildViewModel();
         DataContext = _vm;
 

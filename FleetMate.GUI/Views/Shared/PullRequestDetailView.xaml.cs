@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
+using FleetMate.Core.Shared;
 using Serilog;
 
 namespace FleetMate.GUI.Views.Shared;
@@ -46,6 +47,7 @@ public partial class PullRequestDetailView : UserControl
     public async Task ShowAsync(UnifiedPullRequest pullRequest)
     {
         _pullRequest = pullRequest;
+        AgentButton.Context = AgentContexts.PullRequest(pullRequest);
         ComposerBox.Text = "";
         HideStatus();
         RenderHeader();
