@@ -1,0 +1,152 @@
+using System.Text.RegularExpressions;
+
+namespace FleetMate.Core.Services;
+
+/// <summary>
+/// The pieces of a headless Entra web sign-in that do not depend on a browser:
+/// the scripts injected into the hidden WebView2, the rule for which account
+/// tile to pick, and how long a silent attempt may run.
+///
+/// FleetMate never shows a sign-in window. The browser that carries a web SSO
+/// chain (TeamDynamix's Shibboleth → Entra, the Azure DevOps authorize page) is
+/// created hidden, driven by these scripts, and torn down; when it cannot finish
+/// on its own the system is reported as failed, never handed to the user.
+/// </summary>
+public static partial class EntraWebSignIn
+{
+    /// <summary>
+    /// How long one headless attempt may run before it is reported as failed.
+    /// The chain itself takes seconds; the allowance covers an Authenticator
+    /// push the fallback script may request, which waits on a phone, and matches
+    /// the macOS client.
+    /// </summary>
+    public static readonly TimeSpan HeadlessTimeout = TimeSpan.FromSeconds(95);
+
+    /// <summary>Hosts that serve Entra's sign-in pages.</summary>
+    private static readonly string[] EntraHosts =
+    {
+        "login.microsoftonline.com",
+        "login.microsoft.com",
+        "login.windows.net",
+    };
+
+    /// <summary>True when <paramref name="url"/> is an Entra sign-in page.</summary>
+    public static bool IsEntraPage(string? url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri)
+        && EntraHosts.Any(h => uri.Host.Equals(h, StringComparison.OrdinalIgnoreCase));
+
+    [GeneratedRegex(@"[a-z0-9._%+\-]+@[a-z0-9.\-]+", RegexOptions.IgnoreCase)]
+    private static partial Regex EmailPattern();
+
+    /// <summary>
+    /// Whether an account-picker tile belongs to <paramref name="upn"/>. The
+    /// address must appear as a whole address in the tile, never as a substring:
+    /// a second signed-in account such as <c>aws-adoe@example.edu</c> contains
+    /// <c>adoe@example.edu</c>, and a substring match picks it, signs in as the
+    /// wrong identity, and every API call comes back 403. This is the rule the
+    /// injected picker script applies; it lives here too so it can be tested.
+    /// </summary>
+    public static bool MatchesAccountTile(string? tileText, string? upn)
+    {
+        if (string.IsNullOrWhiteSpace(tileText) || string.IsNullOrWhiteSpace(upn)) return false;
+        var wanted = upn.Trim();
+        return EmailPattern().Matches(tileText)
+            .Any(m => m.Value.Equals(wanted, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Escape a value for a single-quoted JavaScript string literal.</summary>
+    public static string EscapeForScript(string value) => value
+        .Replace("\\", "\\\\")
+        .Replace("'", "\\'")
+        .Replace("\r", "\\r")
+        .Replace("\n", "\\n")
+        .Replace("<", "\\x3c");
+
+    /// <summary>
+    /// Answers Entra's account picker with the tile whose address is exactly
+    /// <paramref name="upn"/>, or, where Entra asks for a username instead, fills
+    /// it in and presses Next. The hidden browser's profile keeps live Entra
+    /// sessions, and with more than one signed-in account Entra asks which one
+    /// to use; unanswered, that page is where a headless attempt used to stall.
+    ///
+    /// Progress is reported to the host through <c>chrome.webview.postMessage</c>
+    /// as <c>{debug: …}</c> lines (console output from a hidden view goes
+    /// nowhere) and <c>{account: 'picked'|'filled'}</c> once it has acted.
+    /// </summary>
+    public static string AccountScript(string upn)
+    {
+        var wanted = EscapeForScript(upn.Trim().ToLowerInvariant());
+        return $$"""
+        (function() {
+            if (window.__fleetmateAccount) return;
+            var acted = false;
+            function post(m) { try { window.chrome.webview.postMessage(m); } catch (e) {} }
+            function act() {
+                if (acted) return;
+                var wanted = '{{wanted}}';
+                var tiles = document.querySelectorAll('[role="button"], [role="link"], .table, div[data-test-id], small');
+                for (var i = 0; i < tiles.length; i++) {
+                    var txt = (tiles[i].textContent || '').toLowerCase();
+                    var emails = txt.match(/[a-z0-9._%+\-]+@[a-z0-9.\-]+/g) || [];
+                    if (emails.indexOf(wanted) !== -1) {
+                        var target = tiles[i].closest('[role="button"], [role="link"], .table') || tiles[i];
+                        acted = true; window.__fleetmateAccount = true;
+                        post({ debug: '[PICKER] Choosing signed-in account tile ' + emails.join(',') });
+                        post({ account: 'picked' });
+                        target.click();
+                        return;
+                    }
+                }
+                var input = document.querySelector('input[name="loginfmt"]:not([type="hidden"])')
+                         || document.querySelector('input[type="email"]');
+                if (!input || input.offsetParent === null) return;
+                var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                setter.call(input, wanted);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+                acted = true; window.__fleetmateAccount = true;
+                post({ debug: '[USERNAME] Filled the sign-in address' });
+                post({ account: 'filled' });
+                setTimeout(function() {
+                    var next = document.querySelector('#idSIButton9')
+                            || document.querySelector('input[type="submit"]')
+                            || document.querySelector('button[type="submit"]');
+                    if (next) next.click();
+                }, 300);
+            }
+            act();
+            [200, 500, 1000, 2000, 4000, 8000].forEach(function(d) { setTimeout(act, d); });
+            if (document.body) {
+                var observer = new MutationObserver(act);
+                observer.observe(document.body, { childList: true, subtree: true });
+                setTimeout(function() { observer.disconnect(); }, 15000);
+            }
+        })();
+        """;
+    }
+
+    /// <summary>
+    /// Accepts Entra's "Stay signed in?" prompt. Accepting turns the Entra
+    /// session cookie into a persistent one the hidden browser's profile keeps,
+    /// so the next launch completes without reaching a sign-in form at all.
+    /// Entra reuses <c>#idSIButton9</c> for Next, Sign in and Yes, so it only
+    /// clicks once it is sure the page is the KMSI prompt.
+    /// </summary>
+    public const string KmsiScript = """
+        (function() {
+            if (window.__fleetmateKmsi) return 'already-handled';
+            var checkbox = document.querySelector('#KmsiCheckboxField');
+            var bodyText = document.body ? document.body.innerText : '';
+            var isKmsi = window.location.href.indexOf('kmsi') !== -1
+                         || checkbox !== null
+                         || bodyText.indexOf('Stay signed in') !== -1;
+            if (!isKmsi) return 'not-kmsi';
+            var yes = document.querySelector('#idSIButton9');
+            if (!yes) return 'no-button';
+            if (checkbox && !checkbox.checked) checkbox.click();
+            window.__fleetmateKmsi = true;
+            yes.click();
+            return 'accepted';
+        })();
+        """;
+}

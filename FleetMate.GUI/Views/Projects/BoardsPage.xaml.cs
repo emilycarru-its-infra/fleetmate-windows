@@ -1015,7 +1015,7 @@ public partial class BoardsPage : Page
 
     // MARK: - SSO
 
-    private void OnSsoButtonClicked(object sender, RoutedEventArgs e)
+    private async void OnSsoButtonClicked(object sender, RoutedEventArgs e)
     {
         if (_app == null) return;
 
@@ -1027,16 +1027,14 @@ public partial class BoardsPage : Page
         }
         else
         {
-            // Launch OAuth2 PKCE SSO flow
-            _app.ShowDevOpsSsoLogin(success =>
+            // Retry the silent sign-in; no window opens.
+            await _app.AttemptSilentDevOpsSsoAsync();
+            UpdateSsoButtonState();
+            if (_app.IsDevOpsSsoAuthenticated)
             {
-                UpdateSsoButtonState();
-                if (success)
-                {
-                    // Reload work items with new auth
-                    _ = LoadWorkItemsAsync();
-                }
-            });
+                // Reload work items with new auth
+                _ = LoadWorkItemsAsync();
+            }
         }
     }
 
