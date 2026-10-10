@@ -6,6 +6,7 @@ using RmConfig = ReportMate.App.Services.ConfigManager;
 using RmApi = ReportMate.App.Services.FleetApiClient;
 using RmSetup = ReportMate.App.Services.FleetSetupHints;
 using RmDashboard = ReportMate.App.Views.Shared.DashboardView;
+using RmChrome = ReportMate.App.Views.Shared.DashboardChrome;
 using RmLink = ReportMate.App.Services.DeepLink;
 
 namespace FleetMate.GUI.Views.Reporting;
@@ -16,7 +17,7 @@ namespace FleetMate.GUI.Views.Reporting;
 /// has -- the API address from its settings and the signed-in user's token -- so
 /// the tab is whatever the standalone app is, release for release.
 /// </summary>
-public sealed class ReportingPage : Page
+public sealed partial class ReportingPage : Page
 {
     private readonly RmDashboard _dashboard;
 
@@ -26,9 +27,12 @@ public sealed class ReportingPage : Page
         if (Application.Current is App app) Connect(app.Config);
 
         // Scoped: the dashboard keeps its own palette and styles, which share keys
-        // such as CardStyle and NavigationTabStyle with FleetMate's.
-        _dashboard = new RmDashboard(scopedResources: true);
+        // such as CardStyle and NavigationTabStyle with FleetMate's. Host chrome:
+        // the toolbar already has the one search field and the tab names the view,
+        // so the dashboard draws neither and gives its row to the section tabs.
+        _dashboard = new RmDashboard(scopedResources: true, RmChrome.HostProvided);
         Content = _dashboard;
+        _searchBox.TextChanged += (_, _) => _dashboard.DeviceSearch = _searchBox.Text;
     }
 
     /// <summary>Open the view a reportmate:// link names, such as one device's report.</summary>
