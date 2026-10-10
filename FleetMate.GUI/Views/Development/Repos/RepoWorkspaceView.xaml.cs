@@ -518,7 +518,12 @@ public partial class RepoWorkspaceView : UserControl
     {
         if (_model?.Selected is not { Local: { } local } record) return;
         if (Window.GetWindow(this) is not MainWindow window) return;
-        var agent = ((App)Application.Current).Config.Terminal.AgentCommand;
+        // The terminal panel's own default: the configured agent, or the shell
+        // when the built-in default agent is not installed.
+        var settings = ((App)Application.Current).Config.Terminal;
+        var agent = settings.AgentCommandIsBuiltInDefault && AgentCommands.FindInstalled(settings.AgentCommand) == null
+            ? AgentCommands.Shell
+            : settings.AgentCommand;
         var command = AgentCommands.Resolve(agent, AgentCommands.FindInstalled);
         var label = string.IsNullOrWhiteSpace(agent) ? AgentCommands.Shell : agent.Split(' ')[0];
         var location = new RepoLocation(record.Key.Name, local.Path, null);
