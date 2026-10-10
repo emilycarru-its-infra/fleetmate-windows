@@ -63,19 +63,6 @@ public partial class AzureDevOpsService : IDisposable
         Log.Information("AzureDevOpsService: SSO token set for {UserName}, expires {Expiry}", userName ?? "(unknown)", expiry);
     }
 
-    /// <summary>
-    /// Clear the SSO token (sign out)
-    /// </summary>
-    public void ClearSsoToken()
-    {
-        _ssoToken = null;
-        _ssoTokenExpiry = DateTime.MinValue;
-        _ssoUserName = null;
-        _cachedToken = null;
-        _tokenExpiry = DateTime.MinValue;
-        Log.Information("AzureDevOpsService: SSO token cleared");
-    }
-
     public AzureDevOpsService(AzureDevOpsConfig config)
     {
         _config = config;

@@ -180,17 +180,6 @@ public class DevOpsSsoService
             RefreshToken = refreshToken;
     }
 
-    /// <summary>Clear all in-memory token state</summary>
-    public void ClearTokens()
-    {
-        AccessToken = null;
-        RefreshToken = null;
-        TokenExpiry = DateTime.MinValue;
-        UserName = null;
-        UserEmail = null;
-        Log.Debug("[DevOps SSO] Tokens cleared");
-    }
-
     /// <summary>
     /// Get a valid access token, automatically refreshing if needed.
     /// Returns null if not authenticated and refresh fails.

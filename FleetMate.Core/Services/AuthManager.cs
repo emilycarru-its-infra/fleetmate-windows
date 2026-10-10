@@ -158,16 +158,6 @@ public class AuthManager : INotifyPropertyChanged
         Update(id, AuthTokenState.Failed(message));
     }
 
-    public void SignOut()
-    {
-        foreach (var id in _systems.Keys.ToList())
-            Update(id, AuthTokenState.Configured());
-
-        // Drop brokered tokens too, or "sign out" leaves the next call silently
-        // succeeding on a cached credential.
-        EntraTokenSource.Shared?.Invalidate();
-    }
-
     // MARK: - Queries
 
     public IReadOnlyList<AuthSystemStatus> ConfiguredSystems =>

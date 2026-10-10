@@ -227,7 +227,7 @@ public sealed class EntraTokenSource
         return at < 0 ? ex.Message : ex.Message[(at + separator.Length)..];
     }
 
-    /// <summary>Drop cached tokens — used on sign-out and after a 401.</summary>
+    /// <summary>Drop cached tokens — used by Retry SSO and after a 401.</summary>
     public void Invalidate()
     {
         _cache.Clear();

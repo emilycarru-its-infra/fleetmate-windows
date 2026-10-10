@@ -379,19 +379,6 @@ public partial class App : Application
         return IsTdxSsoAuthenticated;
     }
 
-    /// <summary>
-    /// Sign out of TDX SSO
-    /// </summary>
-    public void SignOutTdxSso()
-    {
-        TdxService?.ClearSsoToken();
-        _ticketsCacheTime = null;
-        CachedTickets.Clear();
-        AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Configured());
-        Log.Information("Signed out of TDX SSO");
-        NotifyTdxSignInChanged();
-    }
-
     // MARK: - DevOps SSO Authentication
 
     private Task? _devOpsSsoInFlight;
@@ -508,18 +495,6 @@ public partial class App : Application
         }
         
         DevOpsProjectReady = true;
-    }
-
-    /// <summary>
-    /// Sign out of DevOps SSO.
-    /// </summary>
-    public void SignOutDevOpsSso()
-    {
-        DevOpsSsoService?.ClearTokens();
-        DevOpsService?.ClearSsoToken();
-        DevOpsProjectReady = false;
-        AuthManager.Update(AuthSystemId.DevOps, AuthTokenState.Configured());
-        Log.Information("Signed out of DevOps SSO");
     }
 
     protected override void OnStartup(StartupEventArgs e)
