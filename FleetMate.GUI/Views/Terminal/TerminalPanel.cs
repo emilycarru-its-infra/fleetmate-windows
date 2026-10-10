@@ -7,6 +7,7 @@ using System.Windows.Shapes;
 using System.Windows.Threading;
 using FleetMate.Core.Config;
 using FleetMate.Core.Services.Terminal;
+using FleetMate.GUI.Views.Shared;
 using ModernWpf.Controls;
 
 namespace FleetMate.GUI.Views.Terminal;
@@ -107,7 +108,28 @@ public sealed class TerminalPanel : UserControl
             foreach (var session in _sessions) Refresh(session);
         };
         _tick.Start();
+
+        // The text follows the app's text size as it changes.
+        UserPreferences.Changed += OnPreferencesChanged;
     }
+
+    // ── Text size ────────────────────────────────────────────────────────
+
+    /// <summary>The size every session draws at now: the app's text size plus the terminal's own offset.</summary>
+    private static double TerminalTextSize => TerminalFontSize.For(UserPreferences.TextScale, UserPreferences.TerminalFontOffset);
+
+    private void OnPreferencesChanged() => Dispatcher.BeginInvoke(ApplyFontSize);
+
+    private void ApplyFontSize()
+    {
+        var size = TerminalTextSize;
+        foreach (var pane in _sessions.SelectMany(s => s.Panes)) pane.SetFontSize(size);
+    }
+
+    /// <summary>Ctrl+= and Ctrl+- inside a terminal: a step from the app's text size, for the terminal alone.</summary>
+    private static void StepFont(double points) =>
+        UserPreferences.SetTerminalFontOffset(
+            TerminalFontSize.Step(UserPreferences.TextScale, UserPreferences.TerminalFontOffset, points));
 
     private static TerminalSettings Settings => ((App)Application.Current).Config.Terminal;
 
@@ -189,6 +211,7 @@ public sealed class TerminalPanel : UserControl
     private void AddPane(Session session, TerminalLaunch launch)
     {
         var view = new TerminalView(launch);
+        view.SetFontSize(TerminalTextSize);
         AutomationProperties.SetAutomationId(view, $"TerminalPane{session.Panes.Count}");
         view.ToggleRequested += (_, _) => HideRequested?.Invoke(this, EventArgs.Empty);
         view.StateChanged += (_, _) => Refresh(session);
@@ -226,6 +249,9 @@ public sealed class TerminalPanel : UserControl
             case TerminalAction.Next: Cycle(+1); break;
             case TerminalAction.Previous: Cycle(-1); break;
             case TerminalAction.FullWindow: FullWindowRequested?.Invoke(this, EventArgs.Empty); break;
+            case TerminalAction.ZoomIn: StepFont(1); break;
+            case TerminalAction.ZoomOut: StepFont(-1); break;
+            case TerminalAction.ActualSize: UserPreferences.SetTerminalFontOffset(0); break;
         }
     }
 
@@ -297,12 +323,7 @@ public sealed class TerminalPanel : UserControl
     {
         var lead = session.Panes.FirstOrDefault();
         if (lead == null) return;
-        var now = DateTime.UtcNow;
-        var states = session.Panes.Select(p => p.Activity.State(now)).ToList();
-        var state = states.Contains(ActivityState.Attention) ? ActivityState.Attention
-            : states.Contains(ActivityState.Active) ? ActivityState.Active
-            : states.All(s => s == ActivityState.Exited) ? ActivityState.Exited
-            : ActivityState.Idle;
+        var state = StateOf(session, DateTime.UtcNow);
         session.Dot.Fill = state switch
         {
             ActivityState.Active => new SolidColorBrush(Color.FromRgb(0x2E, 0x9E, 0x4F)),
@@ -315,6 +336,34 @@ public sealed class TerminalPanel : UserControl
         var rowName = $"{lead.Title}, {state}";
         AutomationProperties.SetName(session.Row, rowName);
         session.Row.ToolTip = $"{lead.Title}\n{lead.Directory}\n{state} · directory from {(lead.DirectorySource == "osc" ? "the shell" : "the process")}";
+    }
+
+    private static ActivityState StateOf(Session session, DateTime now)
+    {
+        var states = session.Panes.Select(p => p.Activity.State(now)).ToList();
+        return states.Contains(ActivityState.Attention) ? ActivityState.Attention
+            : states.Contains(ActivityState.Active) ? ActivityState.Active
+            : states.All(s => s == ActivityState.Exited) ? ActivityState.Exited
+            : ActivityState.Idle;
+    }
+
+    /// <summary>Each session's state, for the strip shown while the panel is closed.</summary>
+    public IReadOnlyCollection<ActivityState> SessionStates()
+    {
+        var now = DateTime.UtcNow;
+        return _sessions.Select(s => StateOf(s, now)).ToList();
+    }
+
+    /// <summary>The name of what a new session runs, for the strip: "codex", "claude", "shell".</summary>
+    public static string DefaultAgentLabel
+    {
+        get
+        {
+            var command = Settings.AgentCommand;
+            return string.IsNullOrWhiteSpace(command) || command.Equals(AgentCommands.Shell, StringComparison.OrdinalIgnoreCase)
+                ? AgentCommands.Shell
+                : command.Split(' ')[0];
+        }
     }
 
     private void SetCollapsed(bool collapsed)
@@ -386,6 +435,7 @@ public sealed class TerminalPanel : UserControl
     public void DisposeAll()
     {
         _tick.Stop();
+        UserPreferences.Changed -= OnPreferencesChanged;
         foreach (var session in _sessions.ToList()) CloseSession(session);
     }
 

@@ -37,6 +37,7 @@ public sealed class TerminalView : UserControl, IDisposable
     private short _cols = 120, _rows = 30;
     private readonly TerminalSignalScanner _scanner = new();
     private bool _focusWhenReady;
+    private double _fontSize = TerminalFontSize.Base;
 
     public event EventHandler? ToggleRequested;
     public event EventHandler? Exited;
@@ -73,6 +74,17 @@ public sealed class TerminalView : UserControl, IDisposable
     }
 
     public void Clear() => Post(new { type = "clear" });
+
+    /// <summary>
+    /// Draw at <paramref name="size"/>. xterm.js re-lays out the grid and the
+    /// program is told the new size; nothing restarts.
+    /// </summary>
+    public void SetFontSize(double size)
+    {
+        if (size == _fontSize) return;
+        _fontSize = size;
+        if (_ready) Post(new { type = "font", size });
+    }
 
     /// <summary>
     /// Read the child's directory, for shells that never report it with OSC 7
@@ -151,7 +163,7 @@ public sealed class TerminalView : UserControl, IDisposable
         {
             case "ready":
                 _ready = true;
-                Post(new { type = "config", chords = TerminalKeyBindings.Chords() });
+                Post(new { type = "config", chords = TerminalKeyBindings.Chords(), fontSize = _fontSize });
                 FlushPending();
                 if (_focusWhenReady) FocusTerminal();
                 break;

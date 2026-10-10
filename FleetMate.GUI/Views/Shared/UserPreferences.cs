@@ -7,7 +7,8 @@ namespace FleetMate.GUI.Views.Shared;
 /// <summary>
 /// The operator's own display choices, kept in HKCU\SOFTWARE\FleetMate beside
 /// the theme: which tabs are switched off (<c>HiddenModules</c>), the text size
-/// (<c>TextScale</c>), whether the setup wizard has run (<c>SetupCompleted</c>)
+/// (<c>TextScale</c>), the terminal's offset from it (<c>agentTerminalFontOffset</c>),
+/// whether the setup wizard has run (<c>SetupCompleted</c>)
 /// and whether Tickets shows only the operator's own (<c>tickets.assignedToMe</c>,
 /// the macOS app's key).
 /// None of these is managed by policy.
@@ -40,6 +41,14 @@ public static class UserPreferences
 
     public static void SetTextScale(double scale) =>
         Write("TextScale", AppTextScale.IsDefault(scale) ? null : AppTextScale.Format(scale));
+
+    /// <summary>Points the terminal's text is above or below the app's text size.</summary>
+    public static double TerminalFontOffset =>
+        double.TryParse(Read("agentTerminalFontOffset"), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var value) && double.IsFinite(value) ? value : 0;
+
+    public static void SetTerminalFontOffset(double offset) =>
+        Write("agentTerminalFontOffset", offset == 0 ? null : offset.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
     public static bool SetupCompleted => Read("SetupCompleted") == "1";
 

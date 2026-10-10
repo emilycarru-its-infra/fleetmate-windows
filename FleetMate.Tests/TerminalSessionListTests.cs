@@ -126,7 +126,8 @@ public class TerminalSessionListTests
         Assert.Equal(0, first);
         Assert.Equal(TerminalAction.Select, TerminalKeyBindings.Map("Digit9", true, false, false, out var ninth));
         Assert.Equal(8, ninth);
-        Assert.Equal(TerminalAction.None, TerminalKeyBindings.Map("Digit0", true, false, false, out _));
+        // Ctrl+0 is not a session: it puts the terminal's text back to the app's size.
+        Assert.Equal(TerminalAction.ActualSize, TerminalKeyBindings.Map("Digit0", true, false, false, out _));
     }
 
     [Fact]

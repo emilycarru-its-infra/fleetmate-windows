@@ -8,7 +8,7 @@ namespace FleetMate.GUI.Views.Shared;
 /// <summary>
 /// Enabled Modules and text size, from Settings. A switched-off module's tab
 /// leaves the tab bar, and Ctrl+1–8 count only the tabs left showing. Text
-/// size scales the page content; the toolbar and the terminal keep their size.
+/// size scales the page content and the terminal's text; the toolbar keeps its size.
 /// </summary>
 public partial class MainWindow
 {
