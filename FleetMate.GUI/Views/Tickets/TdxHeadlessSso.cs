@@ -23,9 +23,11 @@ namespace FleetMate.GUI.Views.Tickets;
 /// <see cref="EntraWebSignIn.HeadlessTimeout"/> the result is a failure that
 /// names where the chain stopped, and TeamDynamix is reported as not signed in.
 /// It is the user's own identity or nothing: there is no shared account to
-/// fall back to. A JWT from either phase that belongs to a different account
-/// fails the sign-in (<see cref="TdxSsoIdentity"/>), and nothing further is
-/// tried, since the next phase would reach the same account.
+/// fall back to. A JWT from either phase that cannot be confirmed as the
+/// Windows account's — another account's, or one with no email or UPN — fails
+/// the sign-in (<see cref="TdxSsoIdentity"/>), and nothing further is tried,
+/// since the next phase would reach the same account. When the Windows
+/// account's own address cannot be found, no phase is tried at all.
 /// </summary>
 internal static class TdxHeadlessSso
 {
@@ -44,19 +46,21 @@ internal static class TdxHeadlessSso
     {
         var upn = await TdxSsoIdentity.ResolveWindowsUpnAsync(ct);
         if (upn == null)
-            Log.Warning("[tdx-sso] No Windows work-account address found; the session's account cannot be checked");
-        else
-            Log.Information("[tdx-sso] Signing in as the Windows account {Upn}", upn);
+        {
+            Log.Error("[tdx-sso] No Windows work-account address found; the session's account cannot be checked, sign-in refused");
+            return TdxSsoResult.Refused(TdxSsoResult.UnknownExpectedAddressReason);
+        }
+        Log.Information("[tdx-sso] Signing in as the Windows account {Upn}", upn);
 
         Log.Information("[tdx-sso] Phase 1: silent HTTP SSO (Negotiate/Kerberos)");
         var http = await Task.Run(() => new TdxSsoService(baseUrl).TrySilentSsoAsync(ct, upn), ct);
-        if (http is { Success: true, Token: not null } or { WrongAccount: true }) return http;
+        if (http is { Success: true, Token: not null } or { IdentityRefused: true }) return http;
 
         Log.Information("[tdx-sso] Phase 2: hidden WebView2 SSO");
         return await HiddenBrowserAsync(baseUrl, upn, ct);
     }
 
-    private static async Task<TdxSsoResult> HiddenBrowserAsync(string baseUrl, string? upn, CancellationToken ct)
+    private static async Task<TdxSsoResult> HiddenBrowserAsync(string baseUrl, string upn, CancellationToken ct)
     {
         var tcs = new TaskCompletionSource<TdxSsoResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         string? lastUrl = null;
@@ -106,7 +110,7 @@ internal static class TdxHeadlessSso
                     if (EntraWebSignIn.IsEntraPage(url))
                     {
                         await core.ExecuteScriptAsync(EntraWebSignIn.KmsiScript);
-                        if (!accountAnswered && upn != null)
+                        if (!accountAnswered)
                             await core.ExecuteScriptAsync(EntraWebSignIn.AccountScript(upn));
                         ScheduleMethodFallback(core, url, tcs.Task);
                         return;
@@ -153,11 +157,11 @@ internal static class TdxHeadlessSso
     }
 
     /// <summary>
-    /// The sign-in result for a JWT, refused when it belongs to someone other
-    /// than the Windows account. A refused token is dropped here and never
+    /// The sign-in result for a JWT, refused when it cannot be confirmed as the
+    /// Windows account's. A refused token is dropped here and never
     /// reaches the caller.
     /// </summary>
-    private static TdxSsoResult Checked(string token, string? expectedUpn)
+    private static TdxSsoResult Checked(string token, string expectedUpn)
     {
         var result = TdxSsoIdentity.Verify(token, expectedUpn);
         if (!result.Success)

@@ -75,8 +75,9 @@ public class TdxSsoService
     /// No UI required — pure HTTP call chain.
     /// </summary>
     /// <param name="expectedUpn">The Windows account the session must belong to;
-    /// resolved from the device when not given. A JWT for anyone else fails
-    /// the attempt (<see cref="TdxSsoResult.WrongAccount"/>) and is not kept.</param>
+    /// resolved from the device when not given. A JWT that cannot be confirmed
+    /// as that account's fails the attempt (<see cref="TdxSsoResult.IdentityRefused"/>)
+    /// and is not kept.</param>
     public async Task<TdxSsoResult> TrySilentSsoAsync(CancellationToken ct = default, string? expectedUpn = null)
     {
         var loginSsoUrl = BuildLoginSsoUrl(_baseUrl);
@@ -284,20 +285,33 @@ public class TdxSsoResult
     public string? Error { get; init; }
 
     /// <summary>
-    /// The sign-in finished, but as someone other than the Windows account.
-    /// That is final: another attempt in the same session reaches the same
-    /// account, so callers stop rather than move on to another phase.
+    /// The sign-in finished, but its identity could not be confirmed as the
+    /// Windows account's: it is someone else, or one side has no address to
+    /// compare. That is final: another attempt in the same session reaches the
+    /// same account, so callers stop rather than move on to another phase.
     /// </summary>
-    public bool WrongAccount { get; init; }
+    public bool IdentityRefused { get; init; }
+
+    public const string NoAddressInTokenReason =
+        "TDX sign-in refused: the session carries no email or UPN to confirm whose it is";
+
+    public const string UnknownExpectedAddressReason =
+        "TDX sign-in refused: the signed-in user's own address could not be determined";
 
     public static TdxSsoResult Failed(string error) => new() { Success = false, Error = error };
+
+    /// <summary>A sign-in refused by the identity check; no token is carried.</summary>
+    public static TdxSsoResult Refused(string reason) =>
+        new() { Success = false, IdentityRefused = true, Error = reason };
 }
 
 /// <summary>
 /// Checks that a TeamDynamix session belongs to the person signed in to
 /// Windows. Entra can hold more than one account, and the JWT that loginsso
-/// returns is for whichever one the chain ended on. A token for anyone else is
-/// refused outright: it is never stored, and the sign-in is reported as failed.
+/// returns is for whichever one the chain ended on. A sign-in is accepted only
+/// when the token's address is known and equals the Windows account's; anything
+/// else is refused outright: the token is never stored, and the sign-in is
+/// reported as failed.
 /// </summary>
 public static class TdxSsoIdentity
 {
@@ -306,10 +320,9 @@ public static class TdxSsoIdentity
     /// <list type="bullet">
     /// <item>A token whose email/UPN matches (ignoring case and surrounding space) succeeds.</item>
     /// <item>A token for a different address fails, and the token is dropped.</item>
-    /// <item>A token with no address claim cannot be checked, so it is attributed
-    /// to the expected account, which Entra's picker chose by exact address.</item>
-    /// <item>With no expected address there is nothing to compare, and the
-    /// token's own claims are used.</item>
+    /// <item>With no expected address there is nothing to compare against, so
+    /// the sign-in fails.</item>
+    /// <item>A token with no address claim cannot be checked, so the sign-in fails.</item>
     /// </list>
     /// </summary>
     public static TdxSsoResult Verify(string token, string? expectedUpn)
@@ -318,20 +331,19 @@ public static class TdxSsoIdentity
         var expected = Normalize(expectedUpn);
         var actual = Normalize(claimed);
 
-        if (expected != null && actual != null && actual != expected)
-            return new TdxSsoResult
-            {
-                Success = false,
-                WrongAccount = true,
-                Error = $"TDX session belongs to {actual}; expected {expected}",
-            };
+        if (expected == null)
+            return TdxSsoResult.Refused(TdxSsoResult.UnknownExpectedAddressReason);
+        if (actual == null)
+            return TdxSsoResult.Refused(TdxSsoResult.NoAddressInTokenReason);
+        if (actual != expected)
+            return TdxSsoResult.Refused($"TDX session belongs to {actual}; expected {expected}");
 
         return new TdxSsoResult
         {
             Success = true,
             Token = token,
             UserName = name,
-            UserEmail = actual ?? expected,
+            UserEmail = actual,
             Expiry = TdxSsoService.ReadExpiry(token),
         };
     }

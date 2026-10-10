@@ -219,7 +219,7 @@ public static class LoginCommand
                 ? new SystemReport("TeamDynamix", AuthStatus.Ok,
                     $"SSO as {result.UserName ?? result.UserEmail ?? "operator"}")
                 : new SystemReport("TeamDynamix", AuthStatus.Failed,
-                    result.WrongAccount && result.Error != null
+                    result.IdentityRefused && result.Error != null
                         ? result.Error
                         : "silent SSO produced no token — sign in from the app");
         }

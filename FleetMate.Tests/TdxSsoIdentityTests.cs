@@ -6,7 +6,7 @@ using Xunit;
 namespace FleetMate.Tests;
 
 /// <summary>
-/// A TeamDynamix session for anyone but the Windows account must fail the
+/// A TeamDynamix session not confirmed as the Windows account's must fail the
 /// sign-in and never hand its token on.
 /// </summary>
 public class TdxSsoIdentityTests
@@ -30,7 +30,7 @@ public class TdxSsoIdentityTests
         var result = TdxSsoIdentity.Verify(token, expected);
 
         Assert.True(result.Success);
-        Assert.False(result.WrongAccount);
+        Assert.False(result.IdentityRefused);
         Assert.Equal(token, result.Token);
         Assert.Equal("adoe@example.edu", result.UserEmail);
         Assert.Equal("Alex", result.UserName);
@@ -47,7 +47,7 @@ public class TdxSsoIdentityTests
         var result = TdxSsoIdentity.Verify(token, "adoe@example.edu");
 
         Assert.False(result.Success);
-        Assert.True(result.WrongAccount);
+        Assert.True(result.IdentityRefused);
         Assert.Null(result.Token);
         Assert.Equal("TDX session belongs to aws-adoe@example.edu; expected adoe@example.edu", result.Error);
     }
@@ -55,8 +55,9 @@ public class TdxSsoIdentityTests
     [Theory]
     [InlineData(null)]
     [InlineData("")]
+    [InlineData("  ")]
     [InlineData("Alex Doe")]
-    public void Verify_AMissingAddressIsAttributedToTheExpectedAccount(string? claimed)
+    public void Verify_AMissingAddressFailsAndDropsTheToken(string? claimed)
     {
         var token = claimed == null
             ? MakeJwt(new { given_name = "Alex" })
@@ -64,20 +65,39 @@ public class TdxSsoIdentityTests
 
         var result = TdxSsoIdentity.Verify(token, "ADoe@example.edu");
 
-        Assert.True(result.Success);
-        Assert.Equal(token, result.Token);
-        Assert.Equal("adoe@example.edu", result.UserEmail);
+        Assert.False(result.Success);
+        Assert.True(result.IdentityRefused);
+        Assert.Null(result.Token);
+        Assert.Null(result.UserEmail);
+        Assert.Equal(TdxSsoResult.NoAddressInTokenReason, result.Error);
     }
 
-    [Fact]
-    public void Verify_WithNoExpectedAddressUsesTheTokensOwnClaims()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not-an-address")]
+    public void Verify_AnUnknownExpectedAddressFailsAndDropsTheToken(string? expected)
     {
         var token = MakeJwt(new { email = "adoe@example.edu" });
 
+        var result = TdxSsoIdentity.Verify(token, expected);
+
+        Assert.False(result.Success);
+        Assert.True(result.IdentityRefused);
+        Assert.Null(result.Token);
+        Assert.Equal(TdxSsoResult.UnknownExpectedAddressReason, result.Error);
+    }
+
+    [Fact]
+    public void Verify_NeitherAddressKnownFailsOnTheExpectedOne()
+    {
+        var token = MakeJwt(new { given_name = "Alex" });
+
         var result = TdxSsoIdentity.Verify(token, null);
 
-        Assert.True(result.Success);
-        Assert.Equal("adoe@example.edu", result.UserEmail);
+        Assert.False(result.Success);
+        Assert.True(result.IdentityRefused);
+        Assert.Equal(TdxSsoResult.UnknownExpectedAddressReason, result.Error);
     }
 
     [Fact]
