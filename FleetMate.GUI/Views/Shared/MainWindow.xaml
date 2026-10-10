@@ -162,12 +162,14 @@
                             Style="{StaticResource ChromeIconButtonStyle}">
                         <ui:FontIcon Glyph="&#xE72E;" FontFamily="Segoe Fluent Icons" FontSize="14" />
                     </Button>
-                    <RadioButton x:Name="TabSettings" ToolTip="Settings"
-                                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                                 Tag="Settings" GroupName="FleetMateTabs" Checked="OnTabChecked"
-                                 Style="{StaticResource NavigationTabStyle}">
+                    <!-- Settings opens its own window, like the Mac app's, so the
+                         tab underneath stays put and Close or Esc returns to it. -->
+                    <Button x:Name="SettingsButton" ToolTip="Settings (Ctrl+,)" Click="OnSettingsClicked"
+                            AutomationProperties.AutomationId="SettingsButton"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Style="{StaticResource ChromeIconButtonStyle}" Margin="4,0,0,0">
                         <ui:FontIcon Glyph="&#xE713;" FontFamily="Segoe Fluent Icons" FontSize="14" />
-                    </RadioButton>
+                    </Button>
                     <!-- The one search field: last in the toolbar on every tab. The
                          chip inside it says what it searches: the tab's own list
                          (Ctrl+F) or everything (Ctrl+K); clicking the chip switches.

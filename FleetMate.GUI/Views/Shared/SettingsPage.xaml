@@ -12,7 +12,7 @@
 
         <StackPanel Margin="0,0,0,14">
             <TextBlock Text="Settings" Style="{StaticResource TitleTextStyle}" />
-            <TextBlock Text="Configure FleetMate" Style="{StaticResource SubtitleTextStyle}" Margin="0,3,0,0" />
+            <TextBlock x:Name="SettingsSubtitleText" Text="Configure FleetMate" Style="{StaticResource SubtitleTextStyle}" Margin="0,3,0,0" />
         </StackPanel>
 
         <TabControl Grid.Row="1" x:Name="SettingsTabs" Background="Transparent">
@@ -20,7 +20,7 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
                     <StackPanel Margin="2" MaxWidth="860">
                         <TextBlock Text="General" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" />
-                        <TextBlock Text="Setup, the tabs FleetMate shows, configuration storage and application information."
+                        <TextBlock x:Name="GeneralSubtitleText" Text="Setup, the tabs FleetMate shows, configuration storage and application information."
                                    Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,14" />
 
                         <Border Style="{StaticResource CardStyle}" Margin="0,0,0,8">
@@ -371,7 +371,7 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
                     <StackPanel Margin="2" MaxWidth="860">
                         <TextBlock Text="Appearance" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" />
-                        <TextBlock Text="Choose how FleetMate looks on this PC."
+                        <TextBlock x:Name="AppearanceSubtitleText" Text="Choose how FleetMate looks on this PC."
                                    Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,14" />
                         <Border Style="{StaticResource CardStyle}">
                             <DockPanel>

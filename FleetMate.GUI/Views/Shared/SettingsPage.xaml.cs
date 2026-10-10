@@ -33,6 +33,13 @@ public partial class SettingsPage : Page
     public SettingsPage()
     {
         InitializeComponent();
+        // The edition's own name: TicketsMate must not read "Configure FleetMate".
+        var name = AppEdition.Current.Name;
+        SettingsSubtitleText.Text = $"Configure {name}";
+        GeneralSubtitleText.Text = AppEdition.Current.IsTicketsOnly
+            ? "Setup, configuration storage and application information."
+            : $"Setup, the tabs {name} shows, configuration storage and application information.";
+        AppearanceSubtitleText.Text = $"Choose how {name} looks on this PC.";
         if (AppEdition.Current.IsTicketsOnly) ApplyTicketsOnly();
         Loaded += (_, _) =>
         {

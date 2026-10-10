@@ -22,6 +22,7 @@ public class AppShortcutsTests
     [InlineData(Key.OemMinus, ModifierKeys.Control, "ZoomOut")]
     [InlineData(Key.D0, ModifierKeys.Control, "ActualSize")]
     [InlineData(Key.L, ModifierKeys.Control | ModifierKeys.Shift, "ActivityLog")]
+    [InlineData(Key.OemComma, ModifierKeys.Control, "Settings")]
     public void MapsMacMenuShortcutsToWindowsKeys(Key key, ModifierKeys mods, string expected) =>
         Assert.Equal(expected, AppShortcuts.Resolve(key, mods)?.ToString());
 

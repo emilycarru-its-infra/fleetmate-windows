@@ -300,12 +300,8 @@ public partial class MainWindow : Window
         if (GetOrCreatePage("Reporting") is FleetMate.GUI.Views.Reporting.ReportingPage page) page.OpenLink(url);
     }
 
-    private Page GetOrCreatePage(string tag) => tag switch
-    {
-        // Settings is intentionally NOT cached (always fresh)
-        "Settings" => new SettingsPage(),
-        _ => _pageCache.TryGetValue(tag, out var cached) ? cached : (_pageCache[tag] = CreatePage(tag))
-    };
+    private Page GetOrCreatePage(string tag) =>
+        _pageCache.TryGetValue(tag, out var cached) ? cached : (_pageCache[tag] = CreatePage(tag));
 
     private static Page CreatePage(string tag) => tag switch
     {

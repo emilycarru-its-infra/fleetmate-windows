@@ -31,7 +31,7 @@ public partial class MainWindow
     /// <summary>Called on every tab change, so Back knows where it came from.</summary>
     private void RecordTabVisit(string tag)
     {
-        if (!_navigatingHistory && tag != "Settings" && _lastTab != "Settings")
+        if (!_navigatingHistory)
             _tabHistory.Visit(_lastTab, tag);
         _lastTab = tag;
     }
@@ -61,6 +61,9 @@ public partial class MainWindow
                 return true;
             case AppShortcut.ActivityLog:
                 ActivityLogWindow.ShowSingle(this);
+                return true;
+            case AppShortcut.Settings:
+                SettingsWindow.ShowSingle(this);
                 return true;
             case AppShortcut.ActualSize:
                 SetZoom(AppTextScale.Default);
@@ -103,4 +106,6 @@ public partial class MainWindow
     /// </summary>
     // The keys move in the slider's own 5% steps, so the two always agree.
     private static void SetZoom(double value) => UserPreferences.SetTextScale(AppTextScale.Clamp(value));
+
+    private void OnSettingsClicked(object sender, RoutedEventArgs e) => SettingsWindow.ShowSingle(this);
 }
