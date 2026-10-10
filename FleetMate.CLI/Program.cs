@@ -13,6 +13,7 @@ using FleetMate.Core.Services.Tickets;
 using FleetMate.Core.Services.Projects;
 using FleetMate.Core.Services.Reporting;
 using FleetMate.Commands.Reporting;
+using FleetMate.Commands.Repos;
 using Serilog;
 using Serilog.Events;
 
@@ -201,6 +202,9 @@ class Program
 
             // GitHub Projects v2 board and management
             rootCommand.AddCommand(ProjectsCommand.Create(config));
+
+            // Core repositories across Azure DevOps and GitHub: catalog, checkouts and git
+            rootCommand.AddCommand(ReposCommand.Create(config));
 
             // ReportMate fleet reporting
             rootCommand.AddCommand(ReportMateCommand.Create(reportMate));
