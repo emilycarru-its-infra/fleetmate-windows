@@ -154,6 +154,9 @@ internal static class TdxHeadlessSso
     private static TdxSsoResult Succeeded(string token, string? expectedUpn)
     {
         var (name, email) = TdxSsoService.ExtractUserInfoFromJwt(token);
+        // Assigned to Me finds the TDX person by email. A token without an
+        // address claim still belongs to the account picked by exact address.
+        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@')) email = expectedUpn;
         if (expectedUpn != null && email != null && !email.Equals(expectedUpn, StringComparison.OrdinalIgnoreCase))
             Log.Warning("[tdx-sso] Signed in as {Email}, not the Windows account {Upn}", email, expectedUpn);
         Log.Information("[tdx-sso] JWT acquired in the hidden browser for {User}", name ?? email ?? "(unknown)");
