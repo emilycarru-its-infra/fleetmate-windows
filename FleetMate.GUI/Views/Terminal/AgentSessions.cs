@@ -3,6 +3,7 @@ using System.Windows;
 using FleetMate.Core.Config;
 using FleetMate.Core.Models;
 using FleetMate.Core.Services.Agent;
+using FleetMate.Core.Services.Repos;
 using FleetMate.Core.Services.Terminal;
 using Serilog;
 
@@ -70,7 +71,7 @@ public sealed class AgentSessions
     /// </summary>
     private static bool CodexHasNoDaemon()
     {
-        if (AgentCommands.FindOnPath("codex") is not { } codex) return false;
+        if (AgentCommands.FindInstalled("codex") is not { } codex) return false;
         var output = AgentCliUpdater.DefaultRunner(new AgentCliCommand(codex, new[] { "--help" })).GetAwaiter().GetResult();
         return output.Succeeded && output.Stdout.Contains("--no-daemon", StringComparison.Ordinal);
     }
@@ -90,16 +91,32 @@ public sealed class AgentSessions
             && context.Selection.TryGetValue("pullRequest", out var pulls) && pulls.FirstOrDefault() is { } pr
             && pr.Fields.TryGetValue("repository", out var name) && name != null)
         {
-            var repo = TrackedRepositories().FirstOrDefault(r =>
-                string.Equals(r.Name, name.Split('/').Last(), StringComparison.OrdinalIgnoreCase));
-            if (repo != null && Directory.Exists(repo.Path)) return repo.Path;
+            var repoName = name.Split('/').Last();
+            var registered = (Registry()?.Entries ?? Array.Empty<RepoRegistryEntry>())
+                .Where(e => string.Equals(e.Key.Name, repoName, StringComparison.OrdinalIgnoreCase))
+                .Select(e => e.Path);
+            var listed = TrackedRepositories()
+                .Where(r => string.Equals(r.Name.Split('/').Last(), repoName, StringComparison.OrdinalIgnoreCase))
+                .Select(r => r.Path);
+            if (registered.Concat(listed).FirstOrDefault(Directory.Exists) is { } checkout) return checkout;
         }
         return WorkspaceDirectory();
     }
 
-    /// <summary>The repos folder when it exists, else FleetMate's per-user folder.</summary>
+    /// <summary>The registry of checkouts the app and `fleetmate repos` share, or null when it cannot be read.</summary>
+    private static RepoRegistryDocument? Registry()
+    {
+        try { return new RepoRegistryStore().Load(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { return null; }
+    }
+
+    /// <summary>
+    /// The clone root repositories live under, else the terminal's repos
+    /// folder, else FleetMate's per-user folder.
+    /// </summary>
     public static string WorkspaceDirectory()
     {
+        if (Registry()?.Settings.CloneRoot is { } root && Directory.Exists(RepoSettings.Expand(root))) return RepoSettings.Expand(root);
         if (Directory.Exists(RepoLocator.DefaultRoot)) return RepoLocator.DefaultRoot;
         var own = AppEdition.Current.UserDirectory;
         try { Directory.CreateDirectory(own); } catch (IOException) { } catch (UnauthorizedAccessException) { }
@@ -157,12 +174,24 @@ public sealed class AgentSessions
         catch (Exception ex) { Log.Debug(ex, "Agent context: could not publish the environment"); }
     }
 
-    /// <summary>The repos Settings › Terminal lists, with each checkout's origin where it has one.</summary>
-    private List<AgentRepository> TrackedRepositories() =>
-        Settings.EffectiveRepos
-            .Select(entry => RepoLocator.Resolve(entry, RepoLocator.DefaultRoot))
-            .Select(r => new AgentRepository(r.Name, r.Path, r.CloneUrl ?? GitOrigin.Read(r.Path)))
+    /// <summary>
+    /// The tracked checkouts in the registry `fleetmate repos` shares, then
+    /// the repos Settings › Terminal lists that are not among them, each with
+    /// its origin where it has one.
+    /// </summary>
+    private List<AgentRepository> TrackedRepositories()
+    {
+        var tracked = (Registry()?.TrackedEntries ?? Array.Empty<RepoRegistryEntry>())
+            .Select(e => new AgentRepository(e.Key.DisplayName, e.Path, e.RemoteUrl, e.DefaultBranch))
             .ToList();
+        foreach (var entry in Settings.EffectiveRepos)
+        {
+            var r = RepoLocator.Resolve(entry, RepoLocator.DefaultRoot);
+            if (tracked.Any(t => string.Equals(t.Path.TrimEnd('\\'), r.Path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))) continue;
+            tracked.Add(new AgentRepository(r.Name, r.Path, r.CloneUrl ?? GitOrigin.Read(r.Path)));
+        }
+        return tracked;
+    }
 
     /// <summary>
     /// Every configured system and whether it is signed in. Account names,

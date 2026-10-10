@@ -120,7 +120,9 @@ public partial class SettingsPage : Page
         Func<string, bool> installed = key => AgentCommands.IsInstalled(key, AgentCommands.FindInstalled);
         AgentCommandPicker.ItemsSource = FleetMate.Core.Config.AgentCommandPicker.InstalledChoices(installed)
             .Select(c => new { c.Key, c.Label }).ToList();
-        var (pickerKey, customCommand) = FleetMate.Core.Config.AgentCommandPicker.FromSetting(terminal.AgentCommand, installed);
+        // The built-in default (Codex) shows as Shell where Codex is not installed, as sessions run it.
+        var shown = terminal.AgentCommandIsBuiltInDefault && !installed(terminal.AgentCommand) ? "" : terminal.AgentCommand;
+        var (pickerKey, customCommand) = FleetMate.Core.Config.AgentCommandPicker.FromSetting(shown, installed);
         AgentCustomCommandTextBox.Text = customCommand;
         AgentCommandPicker.SelectedValue = pickerKey;
         AgentAutoStartCheckBox.IsChecked = terminal.AgentAutoStart;

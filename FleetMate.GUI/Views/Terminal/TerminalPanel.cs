@@ -138,7 +138,7 @@ public sealed class TerminalPanel : UserControl
     /// (Codex) gives way to the shell on a PC without Codex.
     /// </summary>
     private static string DefaultCommand =>
-        Settings.AgentCommandIsBuiltInDefault && AgentCommands.FindOnPath(Settings.AgentCommand) == null
+        Settings.AgentCommandIsBuiltInDefault && AgentCommands.FindInstalled(Settings.AgentCommand) == null
             ? AgentCommands.Shell
             : Settings.AgentCommand;
 
