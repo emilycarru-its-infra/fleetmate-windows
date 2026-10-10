@@ -241,7 +241,7 @@
                                         <TextBlock Text="{Binding AgeLabel}" FontSize="11" ToolTip="Days since opened"
                                                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,6,0" />
                                         <TextBlock Text="{Binding LastActivityLabel}" FontSize="11" ToolTip="Days since last activity"
-                                                   Foreground="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                     </StackPanel>
                                 </Grid>
                             </DataTemplate>

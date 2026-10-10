@@ -17,10 +17,10 @@
 
                 <TextBlock Grid.Column="1" Text="{Binding OldLineLabel}" FontFamily="Consolas"
                            FontSize="11" TextAlignment="Right" Padding="0,0,6,0"
-                           Foreground="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                 <TextBlock Grid.Column="2" Text="{Binding NewLineLabel}" FontFamily="Consolas"
                            FontSize="11" TextAlignment="Right" Padding="0,0,6,0"
-                           Foreground="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
 
                 <TextBlock Grid.Column="3" Text="{Binding Marker}" FontFamily="Consolas" FontSize="11"
                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />

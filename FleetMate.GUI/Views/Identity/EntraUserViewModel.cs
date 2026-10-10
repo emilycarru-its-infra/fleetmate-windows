@@ -28,7 +28,7 @@ public sealed class UserPropertyRow
         get
         {
             var key = string.IsNullOrWhiteSpace(Value)
-                ? "SystemControlForegroundBaseLowBrush"
+                ? "SystemControlForegroundBaseMediumBrush"
                 : "SystemControlForegroundBaseHighBrush";
 
             return Application.Current?.TryFindResource(key) as Brush

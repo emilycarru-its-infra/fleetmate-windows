@@ -529,7 +529,10 @@ public partial class MainWindow : Window
     private static TextBlock AuthDetailRow(string label, string value)
     {
         var tb = new TextBlock { FontSize = 11, Margin = new Thickness(0, 1, 0, 1) };
-        tb.Inlines.Add(new System.Windows.Documents.Run(label + "  ") { Foreground = new SolidColorBrush(Colors.Gray) });
+        // The theme's secondary text, not a fixed grey that fades on the light card.
+        var caption = new System.Windows.Documents.Run(label + "  ");
+        caption.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
+        tb.Inlines.Add(caption);
         tb.Inlines.Add(new System.Windows.Documents.Run(value) { FontFamily = new FontFamily("Consolas") });
         return tb;
     }

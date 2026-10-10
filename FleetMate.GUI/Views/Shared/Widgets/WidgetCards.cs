@@ -582,7 +582,7 @@ public static class WidgetCards
     /// <summary>A card's message when it has nothing to chart.</summary>
     public static UIElement Empty(string message) => new TextBlock
     {
-        Text = message, FontSize = 12, Foreground = Medium, Opacity = 0.7,
+        Text = message, FontSize = 12, Foreground = Medium,
         HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 20, 0, 20),
     };
 
