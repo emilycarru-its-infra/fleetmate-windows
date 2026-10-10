@@ -115,6 +115,8 @@ public partial class RepoWorkspaceView : UserControl
         InitializeComponent();
         AgentContextMenu.Attach(FilesList, o => o is FileRow row && _model?.Selected is { } record ? AgentContexts.File(row.Path, record) : null);
         AgentContextMenu.Attach(GrepList, o => o is GrepRow row && _model?.Selected is { } record ? AgentContexts.File(row.Path, record, row.Match.Line) : null);
+        EditorAgentButton.Source = () => _model?.Document is { } document && _model.Selected is { } record
+            ? AgentContexts.File(document.Path, record) : null;
         ((Grid)Content).Children.Add(SearchBox);
         SearchBox.TextChanged += (_, _) => { if (_model != null) _model.FileFilter = SearchBox.Text; };
         _errorTimer.Tick += (_, _) => { _errorTimer.Stop(); ErrorBanner.Visibility = Visibility.Collapsed; };

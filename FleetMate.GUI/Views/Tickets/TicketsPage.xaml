@@ -3,6 +3,7 @@
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.modernwpf.com/2019"
+      xmlns:shared="clr-namespace:FleetMate.GUI.Views.Shared"
       xmlns:widgets="clr-namespace:FleetMate.GUI.Views.Shared.Widgets">
 
     <!-- Widgets sit above the page; the DockPanel keeps the page's own grid untouched. -->
@@ -407,6 +408,7 @@
                                         ToolTip="Open in TDX" Style="{StaticResource ChromeIconButtonStyle}">
                                     <ui:FontIcon Glyph="&#xE774;" FontFamily="Segoe Fluent Icons" FontSize="14" />
                                 </Button>
+                                <shared:AgentContextButton x:Name="AgentButton" Style="{StaticResource ChromeIconButtonStyle}" />
                             </StackPanel>
 
                         <WrapPanel x:Name="DetailActionsPanel" VerticalAlignment="Center">

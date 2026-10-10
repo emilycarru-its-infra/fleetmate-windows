@@ -2,6 +2,7 @@
              Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shared="clr-namespace:FleetMate.GUI.Views.Shared"
              xmlns:ui="http://schemas.modernwpf.com/2019">
 
     <Grid>
@@ -18,6 +19,7 @@
                 <Button Padding="8,3" Margin="0,0,6,0" Click="OnCopyLinkClicked" ToolTip="Copy link">
                     <ui:FontIcon Glyph="&#xE71B;" FontSize="13" />
                 </Button>
+                <shared:AgentContextButton x:Name="AgentButton" Padding="8,3" Margin="0,0,6,0" />
                 <Button Padding="8,3" Click="OnOpenInBrowserClicked" ToolTip="Open in browser">
                     <ui:FontIcon Glyph="&#xE8A7;" FontSize="13" />
                 </Button>

@@ -11,6 +11,7 @@ using FleetMate.Core.Services.Inventory;
 using FleetMate.Core.Services.Tickets;
 using FleetMate.Core.Services.Projects;
 using FleetMate.Core.Services.Reporting;
+using FleetMate.Core.Shared;
 using FleetMate.GUI.Views.Shared;
 
 namespace FleetMate.GUI.Views.Devices;
@@ -617,6 +618,7 @@ public partial class IntunePage : Page
         }
         DeviceDetail.Visibility = Visibility.Visible;
         DetailPanelColumn.Width = new GridLength(520);
+        DeviceDetail.AgentButton.Context = AgentContexts.Device(row);
         var apple = AppleContext(row);
         if (row.Intune is { } device)
             await DeviceDetail.ShowDeviceAsync(device, _graphService, row.Autopilot, apple);

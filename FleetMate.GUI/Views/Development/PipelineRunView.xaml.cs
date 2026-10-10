@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
+using FleetMate.Core.Shared;
 using Serilog;
 
 namespace FleetMate.GUI.Views.Development;
@@ -29,6 +30,7 @@ public partial class PipelineRunView : UserControl
     public async Task ShowAsync(PipelineRun run)
     {
         _run = run;
+        AgentButton.Context = AgentContexts.PipelineRun(run);
         ActionStatus.Visibility = Visibility.Collapsed;
         RenderHeader(run);
         await LoadLogAsync();

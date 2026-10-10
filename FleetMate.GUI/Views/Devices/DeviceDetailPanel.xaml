@@ -2,6 +2,7 @@
       Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shared="clr-namespace:FleetMate.GUI.Views.Shared"
              xmlns:ui="http://schemas.modernwpf.com/2019">
 
     <Border Style="{StaticResource CardStyle}" MinWidth="360" MaxWidth="500">
@@ -24,8 +25,11 @@
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                 </StackPanel>
 
-                <Button Grid.Column="1" Content="" FontFamily="Segoe Fluent Icons" Click="OnClose" VerticalAlignment="Top"
-                        FontSize="14" Background="Transparent" Padding="8,4" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                    <shared:AgentContextButton x:Name="AgentButton" Background="Transparent" Padding="8,4" />
+                    <Button Content="" FontFamily="Segoe Fluent Icons" Click="OnClose"
+                            FontSize="14" Background="Transparent" Padding="8,4" />
+                </StackPanel>
             </Grid>
 
             <!-- Content -->

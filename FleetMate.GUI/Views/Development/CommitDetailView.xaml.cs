@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
+using FleetMate.Core.Shared;
 using FleetMate.GUI.Views.Shared;
 using Serilog;
 
@@ -26,6 +27,7 @@ public partial class CommitDetailView : UserControl
     {
         _commit = commit;
         var generation = ++_generation;
+        AgentButton.Context = AgentContexts.Commit(commit, repository);
 
         SubjectText.Text = commit.Subject;
         BylineText.Text = $"{commit.AuthorName ?? "unknown"} · {commit.ShortSha} · " +

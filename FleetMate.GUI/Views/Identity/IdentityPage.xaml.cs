@@ -255,6 +255,7 @@ public partial class IdentityPage : Page
         UserDetailPlaceholder.Visibility = Visibility.Collapsed;
         UserDetailPane.Visibility = Visibility.Visible;
 
+        UserAgentButton.Context = AgentContexts.User(vm.User);
         UserInitialsText.Text = vm.Initials;
         UserNameText.Text = vm.DisplayName;
         UserUpnText.Text = vm.UserPrincipalName;
