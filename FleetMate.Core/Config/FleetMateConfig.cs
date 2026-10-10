@@ -334,6 +334,10 @@ public class FleetMateConfig
         if (!string.IsNullOrEmpty(entraClientId))
             config.EntraClientId = entraClientId;
 
+        // TicketsMate runs Tickets alone, whatever the files, registry, policy
+        // or environment configure for the other modules.
+        if (AppEdition.Current.IsTicketsOnly) config.LimitToTickets();
+
         ApplySsoDefaults(config);
 
         // Try to find repo root
@@ -362,6 +366,34 @@ public class FleetMateConfig
         return config;
     }
     
+    /// <summary>
+    /// Clears every module but Tickets, so TicketsMate never loads, signs in to
+    /// or lists any of them: no Graph, Intune or Entra, no Snipe-IT, no Azure
+    /// DevOps, GitHub or Gitea, no ReportMate, no Manage or SSH, no elevation
+    /// sessions, and no Handbook or skills repositories. TeamDynamix and the
+    /// settings every edition shares (logging, cache, the broker client) stay.
+    /// </summary>
+    public void LimitToTickets()
+    {
+        Graph = null;
+        Elevation = null;
+        SnipeUrl = null;
+        SnipeOidcAudience = null;
+        ReportMateUrl = null;
+        ReportMateOidcAudience = null;
+#pragma warning disable CS0618 // the retired secrets go too
+        SnipeApiKey = null;
+        ReportMatePassphrase = null;
+#pragma warning restore CS0618
+        AzureDevOps = null;
+        Tasks = null;
+        Manage = new ManageConfig();
+        SecureShell = null;
+        HandbookRepoUrl = null;
+        HandbookSiteUrl = null;
+        AgentsHubRepoUrl = null;
+    }
+
     /// <summary>
     /// Flag a stored credential that FleetMate no longer honours.
     ///
