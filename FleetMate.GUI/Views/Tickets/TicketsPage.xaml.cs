@@ -88,6 +88,13 @@ private bool _isInitialLoadDone;
         {
             _app = app;
             _tdxService = app.TdxService;
+
+            // Silent SSO can finish after this page has loaded, and the preload
+            // can fill the cache after the page drew it empty; follow both.
+            app.CacheChanged += OnAppCacheChanged;
+            app.TdxSignInChanged += OnTdxSignInChanged;
+            // A reload rebuilds the page, so this one stops listening.
+            app.ServicesReloaded += DetachFromApp;
         }
 
         TicketsListView.ItemsSource = _ticketRows;
@@ -177,15 +184,50 @@ private bool _isInitialLoadDone;
     private async void OnSsoLoginClicked(object sender, RoutedEventArgs e)
     {
         if (_app == null) return;
-        // Retries the silent sign-in; no window opens.
-        var success = await _app.RetryTdxSsoAsync();
+        // Retries the silent sign-in; no window opens. A success raises
+        // TdxSignInChanged, which reloads the list and resolves the person.
+        await _app.RetryTdxSsoAsync();
         UpdateSsoState();
-        if (success)
+    }
+
+    /// <summary>
+    /// TeamDynamix sign-in changed. On success: hide Sign In, find the TDX
+    /// person so Assigned to Me works, and load the board if the cache does not
+    /// already hold it. On sign-out: forget the person and redraw.
+    /// </summary>
+    private async void OnTdxSignInChanged()
+    {
+        UpdateSsoState();
+        _me = null;
+        UpdateAssignedToMeToggle();
+
+        if (_tdxService?.IsSsoAuthenticated != true || _app == null)
         {
-            // Reload tickets with new auth
-            _ = LoadTicketsAsync();
-            _ = ResolveMeAsync();
+            ApplyFiltersAndSort();
+            return;
         }
+
+        await ResolveMeAsync();
+        if (TicketsPageSync.ShouldReloadAfterSignIn(_isInitialLoadDone, _isLoading, _app.IsTicketsCacheValid, _app.CachedTickets.Count))
+            await LoadTicketsAsync();
+        else
+            ApplyFiltersAndSort();
+    }
+
+    /// <summary>The shared ticket cache changed (the preload, or another view): redraw from it.</summary>
+    private void OnAppCacheChanged(string key)
+    {
+        if (!TicketsPageSync.ShouldRedrawOnCacheChange(key, _isInitialLoadDone, _isLoading)) return;
+        UpdateFilterOptions();
+        ApplyFiltersAndSort();
+    }
+
+    private void DetachFromApp()
+    {
+        if (_app == null) return;
+        _app.CacheChanged -= OnAppCacheChanged;
+        _app.TdxSignInChanged -= OnTdxSignInChanged;
+        _app.ServicesReloaded -= DetachFromApp;
     }
     
     private void OnSsoSignOutClicked(object sender, RoutedEventArgs e)
@@ -861,6 +903,7 @@ private bool _isInitialLoadDone;
             _app.CachedTickets.Clear();
         }
         await LoadTicketsAsync();
+        if (_me == null) await ResolveMeAsync();
     }
 
     // Detail panel sizing. The panel opens at half the width; the splitter

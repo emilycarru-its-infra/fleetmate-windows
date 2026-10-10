@@ -59,12 +59,32 @@ public partial class App : Application
 
     /// <summary>
     /// Load the board's ticket set — the same query the macOS app runs. See
-    /// <see cref="TicketBoardQuery"/>.
+    /// <see cref="TicketBoardQuery"/>. Waits for a TeamDynamix sign-in in flight, and shares one fetch between
+    /// callers asking at the same time (the Tickets page and the preload).
     /// </summary>
-    public Task<List<TdxTicket>> LoadBoardTicketsAsync()
+    public Task<List<TdxTicket>> LoadBoardTicketsAsync() => _boardLoader.LoadAsync(TicketDatePreset);
+
+    private TicketBoardLoader? _boardLoaderInstance;
+    private TicketBoardLoader _boardLoader => _boardLoaderInstance ??= new TicketBoardLoader(
+        () => TdxSignInSettled,
+        preset => TdxService is { } tdx && Config.Tdx is { } tdxConfig
+            ? TicketBoardQuery.LoadAsync(tdx, tdxConfig, preset)
+            : Task.FromResult(new List<TdxTicket>()));
+
+    /// <summary>The TeamDynamix sign-in in flight, or a completed task when there is none.</summary>
+    public Task TdxSignInSettled => _tdxSsoInFlight ?? Task.CompletedTask;
+
+    /// <summary>
+    /// Raised on the UI thread when TeamDynamix sign-in state changes: a
+    /// silent sign-in succeeded, or the operator signed out. Pages that show
+    /// TeamDynamix data refresh their sign-in controls and data from it.
+    /// </summary>
+    public event Action? TdxSignInChanged;
+
+    private void NotifyTdxSignInChanged()
     {
-        if (TdxService == null || Config.Tdx == null) return Task.FromResult(new List<TdxTicket>());
-        return TicketBoardQuery.LoadAsync(TdxService, Config.Tdx, TicketDatePreset);
+        if (Dispatcher.CheckAccess()) TdxSignInChanged?.Invoke();
+        else Dispatcher.BeginInvoke(() => TdxSignInChanged?.Invoke());
     }
 
     /// <summary>
@@ -326,6 +346,7 @@ public partial class App : Application
         _ticketsCacheTime = null;
         AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Valid(result.UserName, result.Expiry));
         Log.Information("[tdx-sso] ✓ Silent SSO successful — user={UserName}", result.UserName ?? "(unknown)");
+        NotifyTdxSignInChanged();
     }
 
     /// <summary>
@@ -349,6 +370,7 @@ public partial class App : Application
         CachedTickets.Clear();
         AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Configured());
         Log.Information("Signed out of TDX SSO");
+        NotifyTdxSignInChanged();
     }
 
     // MARK: - DevOps SSO Authentication
