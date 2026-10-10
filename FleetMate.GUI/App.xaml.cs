@@ -607,7 +607,7 @@ public partial class App : Application
         // opens through its fleetmate:// link.
         FleetMate.GUI.Views.Shared.ToolbarSearch.Provider = async (text, ct) =>
             (await FleetMate.GUI.Search.SearchAdapter.QueryAsync(text, ct))
-                .Select(r => new FleetMate.GUI.Views.Shared.ToolbarSearchResult(r.Category, r.Title, r.Detail, r.Open))
+                .Select(r => new FleetMate.GUI.Views.Shared.ToolbarSearchResult(r.Category, r.Title, r.Detail, r.Open, r.Record))
                 .ToList();
         ElevationMonitor?.Start();
 

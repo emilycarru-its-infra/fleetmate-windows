@@ -8,7 +8,8 @@ namespace FleetMate.GUI.Search;
 /// <param name="Title">The hit's title.</param>
 /// <param name="Detail">Its subtitle and the field that matched, e.g. "Proj/Repo · Pat · Branch: fix/x".</param>
 /// <param name="Open">Opens the hit through its fleetmate:// link, on the UI thread.</param>
-public sealed record SearchRow(string Category, string Title, string Detail, Action Open);
+/// <param name="Record">The record behind the hit, where "Copy for Agent" can describe it.</param>
+public sealed record SearchRow(string Category, string Title, string Detail, Action Open, object? Record = null);
 
 /// <summary>
 /// The one search behind every search field: <see cref="GlobalSearch"/> over
@@ -38,7 +39,8 @@ public static class SearchAdapter
                 g.Title,
                 hit.Title,
                 string.Join(" · ", new[] { hit.Subtitle, hit.MatchLabel }.Where(s => !string.IsNullOrWhiteSpace(s))),
-                () => app.Dispatcher.BeginInvoke(() => app.OpenLink(hit.Link)))))
+                () => app.Dispatcher.BeginInvoke(() => app.OpenLink(hit.Link)),
+                Record(g.Category, hit, sources))))
             .ToList();
 
         // Handbook pages last, each opening in FleetMate's reader (macOS parity).
@@ -50,4 +52,11 @@ public static class SearchAdapter
                 () => app.Dispatcher.BeginInvoke(() => app.OpenHandbookPage(page)))));
         return rows;
     }
+
+    /// <summary>The record a hit stands for, for the hits the agent menu describes.</summary>
+    private static object? Record(SearchCategory category, SearchHit hit, SearchSources sources) => category switch
+    {
+        SearchCategory.Reporting => sources.ReportingDevices.FirstOrDefault(d => d.Serial == hit.Key),
+        _ => null,
+    };
 }

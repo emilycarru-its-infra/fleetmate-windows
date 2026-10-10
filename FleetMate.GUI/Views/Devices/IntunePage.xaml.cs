@@ -11,6 +11,7 @@ using FleetMate.Core.Services.Inventory;
 using FleetMate.Core.Services.Tickets;
 using FleetMate.Core.Services.Projects;
 using FleetMate.Core.Services.Reporting;
+using FleetMate.GUI.Views.Shared;
 
 namespace FleetMate.GUI.Views.Devices;
 
@@ -54,6 +55,8 @@ public partial class IntunePage : Page
     public IntunePage()
     {
         InitializeComponent();
+        // Copy or Send to Agent on device rows; the header's column menu is its own.
+        AgentContextMenu.Attach(DevicesDataGrid);
 
         // Get services from App
         if (Application.Current is App app)

@@ -17,6 +17,8 @@ public class AdoQuery
     public bool? IsPublic { get; set; }
     public bool? HasChildren { get; set; }
     public string? QueryType { get; set; }
+    /// <summary>The query's WIQL text; sent when the tree is fetched with <c>$expand</c>.</summary>
+    public string? Wiql { get; set; }
     public List<AdoQuery>? Children { get; set; }
 
     public bool IsLeafQuery => !(IsFolder ?? false);
@@ -36,6 +38,8 @@ public class AdoSharedQuery
     public string Name { get; init; } = "";
     public string FolderPath { get; init; } = "";
     public string QueryType { get; init; } = "flat";
+    /// <summary>The query's WIQL, when the API sent it.</summary>
+    public string? Wiql { get; init; }
 }
 
 /// <summary>

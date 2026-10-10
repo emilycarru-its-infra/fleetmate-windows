@@ -78,6 +78,7 @@ public partial class AzureDevOpsService
                         {
                             Id = child.Id,
                             Name = child.Name ?? "Untitled query",
+                            Wiql = child.Wiql,
                             FolderPath = folderPath,
                             QueryType = child.ResolvedQueryType
                         });

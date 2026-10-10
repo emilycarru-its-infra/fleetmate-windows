@@ -3,7 +3,7 @@ namespace FleetMate.GUI.Views.Shared;
 /// <summary>One hit in the toolbar search's dropdown.</summary>
 /// <param name="Category">Group heading: Pull Requests, Issues, Work Items, Commits, Pipeline Runs, Devices…</param>
 /// <param name="Open">What choosing the hit does — normally opening its fleetmate:// link.</param>
-public sealed record ToolbarSearchResult(string Category, string Title, string Detail, Action Open);
+public sealed record ToolbarSearchResult(string Category, string Title, string Detail, Action Open, object? Record = null);
 
 /// <summary>
 /// The seam between the toolbar search field and the search engine. The field

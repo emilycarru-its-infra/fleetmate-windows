@@ -9,6 +9,7 @@ using System.Windows.Interop;
 using FleetMate.Core.Models.Manage;
 using FleetMate.Core.Services.Manage;
 using FleetMate.GUI.ViewModels.Manage;
+using FleetMate.GUI.Views.Shared;
 
 namespace FleetMate.GUI.Views.Manage;
 
@@ -37,6 +38,7 @@ public partial class ManagePage : Page
     public ManagePage()
     {
         InitializeComponent();
+        AgentContextMenu.Attach(MachinesGrid);
         _vm = BuildViewModel();
         DataContext = _vm;
 

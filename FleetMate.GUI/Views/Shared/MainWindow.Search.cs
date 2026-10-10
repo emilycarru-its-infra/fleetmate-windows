@@ -239,7 +239,7 @@ public partial class MainWindow
 
             foreach (var hit in group)
             {
-                var row = new StackPanel { Margin = new Thickness(0, 1, 0, 1), Background = Brushes.Transparent, Cursor = Cursors.Hand };
+                var row = new StackPanel { Margin = new Thickness(0, 1, 0, 1), Background = Brushes.Transparent, Cursor = Cursors.Hand, Tag = hit.Record };
                 var inner = new StackPanel { Margin = new Thickness(6, 3, 6, 3) };
                 inner.Children.Add(new TextBlock { Text = hit.Title, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis });
                 if (!string.IsNullOrEmpty(hit.Detail))
