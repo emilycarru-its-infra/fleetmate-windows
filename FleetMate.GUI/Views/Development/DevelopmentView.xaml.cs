@@ -22,7 +22,9 @@ public partial class DevelopmentView : UserControl
 {
     private DevelopmentSourceFilter _source = DevelopmentSourceFilter.All;
     private DevelopmentScope _scope = DevelopmentScope.Everything;
-    private string? _repository;
+    private string? _repository = UserPreferences.PullsRepository;
+    private bool _pullsOldestFirst = UserPreferences.PullsOldestFirst;
+    private bool _pullsGrouped = UserPreferences.PullsGroupedByRepository;
     private bool _loading;
     private bool _inboxHooked;
     private GitHubNotification? _selectedNotification;
@@ -30,6 +32,7 @@ public partial class DevelopmentView : UserControl
     public DevelopmentView()
     {
         InitializeComponent();
+        UpdatePullsSortTooltip();
         AgentContextMenu.Attach(PullRequestList);
         AgentContextMenu.Attach(CommitsList);
         AgentContextMenu.Attach(PipelinesList);
@@ -148,14 +151,27 @@ public partial class DevelopmentView : UserControl
         _repository = RepoFilterMenu.Fill(PullsRepoCombo,
             RepoFilterMenu.Counts(scoped, DevelopmentFilter.RepositoryKey), _repository);
 
-        var visible = DevelopmentFilter.Apply(queue.PullRequests, _source, _scope, _repository, SearchBox.Text);
-        var rows = visible.Select(pr => new DevelopmentPullRequestRowViewModel { PullRequest = pr }).ToList();
-
+        var visible = DevelopmentFilter.Apply(queue.PullRequests, _source, _scope, _repository, SearchBox.Text, _pullsOldestFirst);
         var selectedId = (PullRequestList.SelectedItem as DevelopmentPullRequestRowViewModel)?.PullRequest.Id;
 
-        var view = new ListCollectionView(rows);
-        view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(DevelopmentPullRequestRowViewModel.RepositoryKey)));
-        PullRequestList.ItemsSource = view;
+        List<DevelopmentPullRequestRowViewModel> rows;
+        if (_pullsGrouped)
+        {
+            // Sections appear in the order of their first row, so the rows go in
+            // already ordered section by section.
+            rows = DevelopmentFilter.GroupByRepository(visible, _pullsOldestFirst)
+                .SelectMany(g => g.Rows)
+                .Select(pr => new DevelopmentPullRequestRowViewModel { PullRequest = pr })
+                .ToList();
+            var view = new ListCollectionView(rows);
+            view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(DevelopmentPullRequestRowViewModel.RepositoryKey)));
+            PullRequestList.ItemsSource = view;
+        }
+        else
+        {
+            rows = visible.Select(pr => new DevelopmentPullRequestRowViewModel { PullRequest = pr, ShowRepository = true }).ToList();
+            PullRequestList.ItemsSource = rows;
+        }
 
         if (selectedId != null)
             PullRequestList.SelectedItem = rows.FirstOrDefault(r => r.PullRequest.Id == selectedId);
@@ -182,13 +198,53 @@ public partial class DevelopmentView : UserControl
         if (AppInstance?.DevelopmentPullRequests is { } queue) RenderPullRequests(queue);
     }
 
+    /// <summary>A repository the person chose, remembered for the next launch.</summary>
+    private void PickRepository(string? repository)
+    {
+        _repository = repository;
+        UserPreferences.SetPullsRepository(repository);
+    }
+
+    private void OnPullsSortClicked(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu { PlacementTarget = PullsSortButton, Placement = PlacementMode.Bottom };
+        menu.Items.Add(new MenuItem { Header = "Sort By", IsEnabled = false });
+        foreach (var (label, oldestFirst) in new[] { ("Recently Modified", false), ("Least Recently Modified", true) })
+        {
+            var item = new MenuItem { Header = label, IsCheckable = true, IsChecked = _pullsOldestFirst == oldestFirst };
+            item.Click += (_, _) =>
+            {
+                _pullsOldestFirst = oldestFirst;
+                UserPreferences.SetPullsOldestFirst(oldestFirst);
+                UpdatePullsSortTooltip();
+                Rerender();
+            };
+            menu.Items.Add(item);
+        }
+        menu.Items.Add(new Separator());
+        var group = new MenuItem { Header = "Group by Repository", IsCheckable = true, IsChecked = _pullsGrouped };
+        group.Click += (_, _) =>
+        {
+            _pullsGrouped = !_pullsGrouped;
+            UserPreferences.SetPullsGroupedByRepository(_pullsGrouped);
+            UpdatePullsSortTooltip();
+            Rerender();
+        };
+        menu.Items.Add(group);
+        menu.IsOpen = true;
+    }
+
+    private void UpdatePullsSortTooltip() =>
+        PullsSortButton.ToolTip = $"Sorted by {(_pullsOldestFirst ? "least" : "most")} recently modified"
+                                  + (_pullsGrouped ? ", grouped by repository" : "");
+
     /// <summary>Show Pulls filtered to one repository — the Development widget's bar click.</summary>
     public void ShowRepository(string repository)
     {
         _source = DevelopmentSourceFilter.All;
         SourceAll.IsChecked = true;
         SourceDevOps.IsChecked = SourceGitHub.IsChecked = false;
-        _repository = repository;
+        PickRepository(repository);
         PullRequestsSegment.IsChecked = true;
         Rerender();
     }
@@ -197,7 +253,7 @@ public partial class DevelopmentView : UserControl
     public void ShowPullRequests(DevelopmentSourceFilter source)
     {
         _source = source;
-        _repository = null;
+        PickRepository(null);
         SourceAll.IsChecked = source == DevelopmentSourceFilter.All;
         SourceDevOps.IsChecked = source == DevelopmentSourceFilter.DevOps;
         SourceGitHub.IsChecked = source == DevelopmentSourceFilter.GitHub;
@@ -217,7 +273,7 @@ public partial class DevelopmentView : UserControl
     {
         var repo = RepoFilterMenu.Picked(PullsRepoCombo, out var changed);
         if (!changed || repo == _repository) return;
-        _repository = repo;
+        PickRepository(repo);
         Rerender();
     }
 
@@ -229,7 +285,7 @@ public partial class DevelopmentView : UserControl
             _source = source;
 
         // A repository picked under the old source means nothing under the new one.
-        _repository = null;
+        PickRepository(null);
 
         SourceAll.IsChecked = _source == DevelopmentSourceFilter.All;
         SourceDevOps.IsChecked = _source == DevelopmentSourceFilter.DevOps;

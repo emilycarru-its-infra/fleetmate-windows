@@ -309,6 +309,76 @@ public class DevelopmentSectionTests
         Assert.Equal(2, DevelopmentFilter.Apply(new[] { a, b, c }, DevelopmentSourceFilter.GitHub, DevelopmentScope.Everything, null, "#42").Count);
     }
 
+    /// <summary>A PR titled "repo-day", last modified on that day. Titles tell rows apart; equality is by number.</summary>
+    private static UnifiedPullRequest Modified(string repo, int day)
+    {
+        var pr = Pr(repo: repo, title: $"{repo}-{day}");
+        pr.UpdatedAt = new DateTime(2026, 9, day, 0, 0, 0, DateTimeKind.Utc);
+        return pr;
+    }
+
+    private static string[] Titles(IEnumerable<UnifiedPullRequest> prs) => prs.Select(pr => pr.Title).ToArray();
+
+    [Fact]
+    public void Sort_NewestModifiedFirstByDefault()
+    {
+        var old = Modified("fleet", 1);
+        var mid = Modified("tools", 5);
+        var recent = Modified("fleet", 9);
+
+        var result = DevelopmentFilter.Apply(new[] { old, recent, mid }, DevelopmentSourceFilter.All, DevelopmentScope.Everything, null, null);
+        Assert.Equal(new[] { "fleet-9", "tools-5", "fleet-1" }, Titles(result));
+    }
+
+    [Fact]
+    public void Sort_LeastRecentlyModifiedPutsOldestFirst()
+    {
+        var old = Modified("fleet", 1);
+        var mid = Modified("tools", 5);
+        var recent = Modified("fleet", 9);
+
+        var result = DevelopmentFilter.Apply(new[] { recent, old, mid }, DevelopmentSourceFilter.All, DevelopmentScope.Everything, null, null, oldestFirst: true);
+        Assert.Equal(new[] { "fleet-1", "tools-5", "fleet-9" }, Titles(result));
+    }
+
+    [Fact]
+    public void Group_SectionsRankByNewestRowThenName()
+    {
+        var fleetOld = Modified("fleet", 1);
+        var fleetNew = Modified("fleet", 9);
+        var tools = Modified("tools", 5);
+        var alpha = Modified("alpha", 5);
+
+        var groups = DevelopmentFilter.GroupByRepository(new[] { fleetOld, tools, fleetNew, alpha }, oldestFirst: false);
+
+        Assert.Equal(new[] { "acme/fleet", "acme/alpha", "acme/tools" }, groups.Select(g => g.Repository));
+        Assert.Equal(new[] { "fleet-9", "fleet-1" }, Titles(groups[0].Rows));
+    }
+
+    [Fact]
+    public void Group_OldestFirstRanksSectionsByOldestRow()
+    {
+        var fleetOld = Modified("fleet", 1);
+        var fleetNew = Modified("fleet", 9);
+        var tools = Modified("tools", 5);
+
+        var groups = DevelopmentFilter.GroupByRepository(new[] { fleetNew, tools, fleetOld }, oldestFirst: true);
+
+        Assert.Equal(new[] { "acme/fleet", "acme/tools" }, groups.Select(g => g.Repository));
+        Assert.Equal(new[] { "fleet-1", "fleet-9" }, Titles(groups[0].Rows));
+    }
+
+    [Fact]
+    public void Row_NamesRepositoryOnlyWhenUngrouped()
+    {
+        var pr = Pr(repo: "fleet");
+        var ungrouped = new DevelopmentPullRequestRowViewModel { PullRequest = pr, ShowRepository = true };
+        var grouped = new DevelopmentPullRequestRowViewModel { PullRequest = pr };
+
+        Assert.StartsWith("acme/fleet · ", ungrouped.Subtitle);
+        Assert.Equal(grouped.Byline, grouped.Subtitle);
+    }
+
     [Fact]
     public void Filter_RepositoryCountsBusiestFirst()
     {

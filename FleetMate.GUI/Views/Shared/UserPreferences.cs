@@ -9,8 +9,9 @@ namespace FleetMate.GUI.Views.Shared;
 /// the theme: which tabs are switched off (<c>HiddenModules</c>), the text size
 /// (<c>TextScale</c>), the terminal's offset from it (<c>agentTerminalFontOffset</c>),
 /// whether the setup wizard has run (<c>SetupCompleted</c>)
-/// and whether Tickets shows only the operator's own (<c>tickets.assignedToMe</c>,
-/// the macOS app's key).
+/// whether Tickets shows only the operator's own (<c>tickets.assignedToMe</c>,
+/// the macOS app's key), and how Development's Pulls list is sorted and filtered
+/// (<c>development.pulls.*</c>, the macOS app's keys).
 /// None of these is managed by policy.
 /// </summary>
 public static class UserPreferences
@@ -57,6 +58,21 @@ public static class UserPreferences
     public static bool TicketsAssignedToMe => Read("tickets.assignedToMe") == "1";
 
     public static void SetTicketsAssignedToMe(bool on) => Write("tickets.assignedToMe", on ? "1" : null);
+
+    /// <summary>Pulls sections per repository instead of one list by last modified.</summary>
+    public static bool PullsGroupedByRepository => Read("development.pulls.grouped") == "1";
+
+    public static void SetPullsGroupedByRepository(bool on) => Write("development.pulls.grouped", on ? "1" : null);
+
+    /// <summary>Pulls least recently modified first instead of most.</summary>
+    public static bool PullsOldestFirst => Read("development.pulls.oldestFirst") == "1";
+
+    public static void SetPullsOldestFirst(bool on) => Write("development.pulls.oldestFirst", on ? "1" : null);
+
+    /// <summary>The repository Pulls is filtered to, "owner/repo" or "Project/Repo"; null for all.</summary>
+    public static string? PullsRepository => Read("development.pulls.repository") is { Length: > 0 } repo ? repo : null;
+
+    public static void SetPullsRepository(string? repository) => Write("development.pulls.repository", repository);
 
     private static string? Read(string name)
     {

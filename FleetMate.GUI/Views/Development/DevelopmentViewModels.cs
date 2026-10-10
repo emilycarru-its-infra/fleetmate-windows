@@ -41,16 +41,39 @@ public static class DevelopmentFilter
         bool Contains(string? hay) => hay?.Contains(needle, StringComparison.OrdinalIgnoreCase) == true;
     }
 
-    /// <summary>Every filter together, busiest-activity first, ready to group by repository.</summary>
+    /// <summary>Every filter together, by last modified — newest first unless <paramref name="oldestFirst"/>.</summary>
     public static List<UnifiedPullRequest> Apply(
         IEnumerable<UnifiedPullRequest> prs, DevelopmentSourceFilter source, DevelopmentScope scope,
-        string? repository, string? search) =>
-        prs.Where(pr => MatchesSource(pr, source)
-                        && MatchesScope(pr, scope)
-                        && (repository == null || RepositoryKey(pr) == repository)
-                        && MatchesSearch(pr, search))
-           .OrderByDescending(pr => pr.LastActivity)
-           .ToList();
+        string? repository, string? search, bool oldestFirst = false) =>
+        SortByModified(
+            prs.Where(pr => MatchesSource(pr, source)
+                            && MatchesScope(pr, scope)
+                            && (repository == null || RepositoryKey(pr) == repository)
+                            && MatchesSearch(pr, search)),
+            oldestFirst);
+
+    /// <summary>Last modified, newest first, or oldest first.</summary>
+    public static List<UnifiedPullRequest> SortByModified(IEnumerable<UnifiedPullRequest> prs, bool oldestFirst) =>
+        (oldestFirst ? prs.OrderBy(pr => pr.LastActivity) : prs.OrderByDescending(pr => pr.LastActivity)).ToList();
+
+    /// <summary>
+    /// Sections per repository for Group by Repository, rows in the chosen modified
+    /// order. A section ranks by its first row — its newest, or its oldest when
+    /// <paramref name="oldestFirst"/> — and ties go alphabetically.
+    /// </summary>
+    public static List<(string Repository, List<UnifiedPullRequest> Rows)> GroupByRepository(
+        IEnumerable<UnifiedPullRequest> prs, bool oldestFirst)
+    {
+        var groups = SortByModified(prs, oldestFirst)
+            .GroupBy(RepositoryKey)
+            .Select(g => (Repository: g.Key, Rows: g.ToList()));
+
+        var ordered = oldestFirst
+            ? groups.OrderBy(g => g.Rows[0].LastActivity)
+            : groups.OrderByDescending(g => g.Rows[0].LastActivity);
+
+        return ordered.ThenBy(g => g.Repository, StringComparer.Ordinal).ToList();
+    }
 
     /// <summary>The inbox list: unread only, or every loaded thread.</summary>
     public static List<GitHubNotification> Inbox(IEnumerable<GitHubNotification> notifications, bool showRead) =>
@@ -108,6 +131,12 @@ public sealed class DevelopmentPullRequestRowViewModel
     public Brush StateBrush => Row.StateBrush;
     public string SourceLabel => Row.SourceLabel;
     public string RepositoryKey => DevelopmentFilter.RepositoryKey(PullRequest);
+
+    /// <summary>Names the repository on the row in the ungrouped list, where no section header does.</summary>
+    public bool ShowRepository { get; init; }
+
+    /// <summary>"owner/repo · ada · #42 · Updated 3h ago" ungrouped; the plain byline under a section header.</summary>
+    public string Subtitle => ShowRepository ? $"{RepositoryKey} · {Byline}" : Byline;
 
     /// <summary>
     /// Why this PR is on the operator's plate, strongest reason first — "Review"
