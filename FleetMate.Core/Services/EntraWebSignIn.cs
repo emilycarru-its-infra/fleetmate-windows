@@ -229,4 +229,39 @@ public static partial class EntraWebSignIn
             [0, 500, 1000, 2000, 4000, 8000, 13000, 20000].forEach(function(d) { setTimeout(tryFallback, d); });
         })();
         """;
+
+    /// <summary>
+    /// Makes WebAuthn unavailable in a hidden sign-in browser. Run before any
+    /// page script (<c>AddScriptToExecuteOnDocumentCreatedAsync</c>), in every
+    /// frame. Without it Entra's passkey page calls <c>navigator.credentials.get</c>,
+    /// and Windows answers that with its own visible "Windows Security" passkey
+    /// dialog, outside the hidden browser — a window the user never asked for.
+    /// Here the call is refused at once with <c>NotAllowedError</c>, which is
+    /// what a cancelled passkey prompt returns, so Entra offers another method or
+    /// the attempt fails on its passkey page with that reason.
+    /// </summary>
+    public const string WebAuthnBlockScript = """
+        (function() {
+            function post(m) { try { window.chrome.webview.postMessage(m); } catch (e) {} }
+            function refuse(kind) {
+                return function() {
+                    post({ debug: '[WEBAUTHN] Refused navigator.credentials.' + kind + ' in the hidden browser', webauthn: kind });
+                    return Promise.reject(new DOMException('Passkeys are not available in a hidden sign-in', 'NotAllowedError'));
+                };
+            }
+            function no() { return Promise.resolve(false); }
+            try {
+                if (window.CredentialsContainer) {
+                    Object.defineProperty(CredentialsContainer.prototype, 'get', { value: refuse('get'), configurable: false, writable: false });
+                    Object.defineProperty(CredentialsContainer.prototype, 'create', { value: refuse('create'), configurable: false, writable: false });
+                }
+            } catch (e) {}
+            try {
+                if (window.PublicKeyCredential) {
+                    Object.defineProperty(PublicKeyCredential, 'isUserVerifyingPlatformAuthenticatorAvailable', { value: no, configurable: false, writable: false });
+                    Object.defineProperty(PublicKeyCredential, 'isConditionalMediationAvailable', { value: no, configurable: false, writable: false });
+                }
+            } catch (e) {}
+        })();
+        """;
 }

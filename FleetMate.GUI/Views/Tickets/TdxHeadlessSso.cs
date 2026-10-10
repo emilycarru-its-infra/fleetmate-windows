@@ -109,10 +109,10 @@ internal static class TdxHeadlessSso
                 {
                     if (EntraWebSignIn.IsEntraPage(url))
                     {
-                        await core.ExecuteScriptAsync(EntraWebSignIn.KmsiScript);
-                        if (!accountAnswered)
-                            await core.ExecuteScriptAsync(EntraWebSignIn.AccountScript(upn));
-                        EntraPageDriver.ScheduleMethodFallback(core, url, tcs.Task);
+                        // The same handling as the API and Azure DevOps sign-ins,
+                        // including giving up on Entra's passkey page early.
+                        await EntraPageDriver.HandleAsync(core, url, upn, accountAnswered, tcs.Task,
+                            reason => tcs.TrySetResult(TdxSsoResult.Failed($"Silent SSO stopped: {reason}")));
                         return;
                     }
 

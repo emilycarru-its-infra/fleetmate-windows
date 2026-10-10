@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Interop;
+using FleetMate.Core.Services;
 using Microsoft.Web.WebView2.Core;
 
 namespace FleetMate.GUI.Views.Shared;
@@ -7,7 +8,8 @@ namespace FleetMate.GUI.Views.Shared;
 /// <summary>
 /// A WebView2 that is never on screen, for headless web sign-in. Its host is a
 /// WPF window whose handle is created but which is never shown: no taskbar
-/// button, no Alt+Tab entry, nothing to see or click. The browser is attached
+/// button, no Alt+Tab entry, nothing to see or click. WebAuthn is refused in
+/// every page it loads, so no page can raise the system passkey dialog either. The browser is attached
 /// to that handle through a <see cref="CoreWebView2Controller"/>, which needs a
 /// parent window but not a visible one.
 ///
@@ -54,6 +56,10 @@ internal sealed class HiddenWebView : IDisposable
             controller.CoreWebView2.Settings.IsStatusBarEnabled = false;
             // A page that tries to open a window gets nothing, so no popup can surface.
             controller.CoreWebView2.NewWindowRequested += (_, e) => e.Handled = true;
+            // Passkeys are refused before any page script runs, so Entra's
+            // passkey page can never bring up the operating system's own
+            // passkey dialog (EntraWebSignIn.WebAuthnBlockScript).
+            await controller.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(EntraWebSignIn.WebAuthnBlockScript);
             return new HiddenWebView(host, controller);
         }
         catch
