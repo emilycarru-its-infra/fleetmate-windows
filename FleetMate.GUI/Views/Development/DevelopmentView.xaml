@@ -33,7 +33,7 @@
                     <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold"
                                TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
                 </DockPanel>
-                <TextBlock Text="{Binding Byline}" FontSize="10" Margin="0,2,0,0" Opacity="0.75"
+                <TextBlock Text="{Binding Subtitle}" FontSize="10" Margin="0,2,0,0" Opacity="0.75"
                            TextTrimming="CharacterEllipsis" />
             </StackPanel>
         </DataTemplate>
@@ -217,8 +217,14 @@
                     <ToggleButton x:Name="SourceGitHub" Content="GitHub" Tag="GitHub"
                                   Padding="10,2" FontSize="11" Margin="0,0,4,4" Click="OnSourceClicked" />
                 </WrapPanel>
-                <ComboBox x:Name="PullsRepoCombo" Margin="0,2,0,0" MinWidth="200" MaxWidth="360" HorizontalAlignment="Left"
-                          SelectionChanged="OnPullsRepoChanged" ToolTip="Filter by repository" Visibility="Collapsed" />
+                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                    <ComboBox x:Name="PullsRepoCombo" Margin="0,0,6,0" MinWidth="200" MaxWidth="360"
+                              SelectionChanged="OnPullsRepoChanged" ToolTip="Filter by repository" Visibility="Collapsed" />
+                    <Button x:Name="PullsSortButton" Padding="6,4" Click="OnPullsSortClicked"
+                            AutomationProperties.Name="Sort and group pull requests">
+                        <ui:FontIcon Glyph="&#xE8CB;" FontSize="13" />
+                    </Button>
+                </StackPanel>
                 <TextBlock x:Name="PullRequestCount" FontSize="11" Margin="0,4,0,0" Opacity="0.7" />
             </StackPanel>
 
