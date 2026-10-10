@@ -13,19 +13,19 @@ namespace FleetMate.Commands.Shared;
 
 public static class StatusCommand
 {
-    public static Command Create(FleetMateConfig config, ReportMateService reportMate)
+    public static Command Create(FleetMateConfig config, ReportMateService reportMate, SnipeService? snipe = null)
     {
         var command = new Command("status", "Show FleetMate status and configuration");
         
         command.SetHandler(async () =>
         {
-            await ExecuteAsync(config, reportMate);
+            await ExecuteAsync(config, reportMate, snipe);
         });
         
         return command;
     }
     
-    private static async Task ExecuteAsync(FleetMateConfig config, ReportMateService reportMate)
+    private static async Task ExecuteAsync(FleetMateConfig config, ReportMateService reportMate, SnipeService? snipe)
     {
         AnsiConsole.Write(new FigletText("FleetMate").Color(Color.Cyan1));
         AnsiConsole.MarkupLine("[dim]Fleet orchestration, inventory, deployment monitoring, and troubleshooting[/]\n");
@@ -45,6 +45,11 @@ public static class StatusCommand
         configTable.AddRow("ReportMate Auth", config.ReportMateUsesOidc
             ? "[green]Entra SSO[/] [dim](secretless)[/]"
             : "[yellow]Legacy passphrase[/]");
+        
+        configTable.AddRow("Snipe-IT URL", string.IsNullOrEmpty(config.SnipeUrl) ? "[dim](not configured)[/]" : Markup.Escape(config.SnipeUrl));
+        configTable.AddRow("Snipe-IT Auth", config.SnipeUsesOidc
+            ? "[green]Entra SSO[/] [dim](secretless)[/]"
+            : "[yellow]No SnipeOidcAudience set[/]");
         
         AnsiConsole.Write(configTable);
         Console.WriteLine();
@@ -125,7 +130,80 @@ public static class StatusCommand
         }
         
         Console.WriteLine();
+        await WriteSnipeAsync(snipe);
+        
+        Console.WriteLine();
         AnsiConsole.MarkupLine("[dim]Commands: errors, troubleshoot, device, test, lint, validate[/]");
         AnsiConsole.MarkupLine("[dim]Run 'fleetmate --help' for usage information[/]");
     }
+
+    /// <summary>
+    /// The Snipe-IT section, as on the Mac: connected with its counts, or
+    /// disconnected with the reason, or not configured. A failed sign-in used
+    /// to leave no Snipe-IT line at all.
+    /// </summary>
+    private static async Task WriteSnipeAsync(SnipeService? snipe)
+    {
+        if (snipe == null)
+        {
+            AnsiConsole.MarkupLine("[yellow]⚠ Snipe-IT not configured - set SnipeUrl and SnipeOidcAudience[/]");
+            return;
+        }
+
+        var summary = await AnsiConsole.Status()
+            .StartAsync("Checking Snipe-IT connection...", _ => SnipeStatus.CheckAsync(snipe));
+
+        var table = new Table();
+        table.Border = TableBorder.Rounded;
+        table.Title = new TableTitle("[cyan]Snipe-IT[/]");
+        table.AddColumn("Metric");
+        table.AddColumn("Value");
+        if (summary.Error is { } error)
+        {
+            table.AddRow("Status", "[red]Disconnected[/]");
+            table.AddRow("Error", Markup.Escape(error));
+            Environment.ExitCode = 1;
+        }
+        else
+        {
+            table.AddRow("Status", "[green]Connected[/]");
+            table.AddRow("Total Assets", summary.TotalAssets.ToString());
+            table.AddRow("Deployed", summary.Deployed.ToString());
+            table.AddRow("Ready", summary.Ready.ToString());
+            table.AddRow("Archived", summary.Archived.ToString());
+            table.AddRow("Locations", summary.Locations.ToString());
+        }
+        AnsiConsole.Write(table);
+    }
+}
+
+/// <summary>What <c>fleetmate status</c> reports for Snipe-IT.</summary>
+public sealed record SnipeStatus(int TotalAssets, int Deployed, int Ready, int Archived, int Locations, string? Error)
+{
+    public static async Task<SnipeStatus> CheckAsync(SnipeService snipe)
+    {
+        try
+        {
+            var assets = await snipe.GetAssetsAsync();
+            snipe.ClearLastError();
+            var locations = await snipe.GetLocationsAsync();
+            if (snipe.LastError is { } failed) return Failed(failed);
+            return From(assets, locations.Count);
+        }
+        catch (SnipeException ex)
+        {
+            return Failed(ex.Message);
+        }
+    }
+
+    public static SnipeStatus Failed(string reason) => new(0, 0, 0, 0, 0, reason);
+
+    /// <summary>Counts by the status label's meta, the way the Mac groups them.</summary>
+    public static SnipeStatus From(IReadOnlyCollection<FleetMate.Core.Models.Inventory.SnipeAsset> assets, int locations) => new(
+        assets.Count,
+        assets.Count(a => a.StatusLabel?.StatusMeta == "deployed"),
+        assets.Count(a => a.StatusLabel?.StatusMeta == "deployable"),
+        assets.Count(a => a.StatusLabel?.StatusMeta == "archived"),
+        locations,
+        null);
 }

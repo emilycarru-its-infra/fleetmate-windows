@@ -60,6 +60,34 @@ public static class SnipeCommand
         return false;
     }
 
+    /// <summary>
+    /// Run a list call and hand back its rows, or report why there are none:
+    /// the reason goes to stderr, the exit code is 1, and nothing is printed
+    /// as data. An empty list from a call that failed used to print as "[]"
+    /// with exit 0, which read as an empty inventory.
+    /// </summary>
+    internal static async Task<List<T>?> ListOrReport<T>(SnipeService snipe, Func<Task<List<T>>> call)
+    {
+        snipe.ClearLastError();
+        try
+        {
+            var rows = await call();
+            if (snipe.LastError is not { } failed) return rows;
+            Report(failed);
+        }
+        catch (SnipeException ex)
+        {
+            Report(ex.Message);
+        }
+        return null;
+    }
+
+    private static void Report(string reason)
+    {
+        Console.Error.WriteLine($"Snipe-IT: {reason}");
+        Environment.ExitCode = 1;
+    }
+
     #region Assets Commands
     
     private static Command CreateAssetsCommand(SnipeService? snipe)
@@ -96,7 +124,8 @@ public static class SnipeCommand
         command.SetHandler(async (search, status, location, limit, json) =>
         {
             if (!EnsureConfigured(snipe)) return;
-            var assets = await snipe.GetAssetsAsync(search: search, statusId: status, locationId: location);
+            var assets = await ListOrReport(snipe!, () => snipe!.GetAssetsAsync(search: search, statusId: status, locationId: location));
+            if (assets == null) return;
             
             if (json)
             {
@@ -307,7 +336,8 @@ public static class SnipeCommand
         command.SetHandler(async (search, limit, json) =>
         {
             if (!EnsureConfigured(snipe)) return;
-            var users = await snipe.GetUsersAsync(search: search);
+            var users = await ListOrReport(snipe!, () => snipe!.GetUsersAsync(search: search));
+            if (users == null) return;
             
             if (json)
             {
@@ -418,7 +448,8 @@ public static class SnipeCommand
             if (showAssets)
             {
                 Console.WriteLine();
-                var assets = await snipe.GetUserAssetsAsync(id);
+                var assets = await ListOrReport(snipe!, () => snipe!.GetUserAssetsAsync(id));
+                if (assets == null) return;
                 
                 if (assets.Count == 0)
                 {
@@ -474,7 +505,8 @@ public static class SnipeCommand
         command.SetHandler(async (search, json) =>
         {
             if (!EnsureConfigured(snipe)) return;
-            var locations = await snipe.GetLocationsAsync(search: search);
+            var locations = await ListOrReport(snipe!, () => snipe!.GetLocationsAsync(search: search));
+            if (locations == null) return;
             
             if (json)
             {
@@ -534,7 +566,8 @@ public static class SnipeCommand
         command.SetHandler(async (search, json) =>
         {
             if (!EnsureConfigured(snipe)) return;
-            var models = await snipe.GetModelsAsync(search);
+            var models = await ListOrReport(snipe!, () => snipe!.GetModelsAsync(search));
+            if (models == null) return;
             
             if (json)
             {
@@ -589,7 +622,8 @@ public static class SnipeCommand
         command.SetHandler(async (json) =>
         {
             if (!EnsureConfigured(snipe)) return;
-            var categories = await snipe.GetCategoriesAsync();
+            var categories = await ListOrReport(snipe!, () => snipe!.GetCategoriesAsync());
+            if (categories == null) return;
             
             if (json)
             {
@@ -645,7 +679,8 @@ public static class SnipeCommand
         command.SetHandler(async (search, json) =>
         {
             if (!EnsureConfigured(snipe)) return;
-            var licenses = await snipe.GetLicensesAsync(search);
+            var licenses = await ListOrReport(snipe!, () => snipe!.GetLicensesAsync(search));
+            if (licenses == null) return;
             
             if (json)
             {
@@ -703,7 +738,8 @@ public static class SnipeCommand
         command.SetHandler(async (json) =>
         {
             if (!EnsureConfigured(snipe)) return;
-            var manufacturers = await snipe.GetManufacturersAsync();
+            var manufacturers = await ListOrReport(snipe!, () => snipe!.GetManufacturersAsync());
+            if (manufacturers == null) return;
             
             if (json)
             {
@@ -752,7 +788,8 @@ public static class SnipeCommand
         command.SetHandler(async (json) =>
         {
             if (!EnsureConfigured(snipe)) return;
-            var statuses = await snipe.GetStatusLabelsAsync();
+            var statuses = await ListOrReport(snipe!, () => snipe!.GetStatusLabelsAsync());
+            if (statuses == null) return;
             
             if (json)
             {
@@ -817,7 +854,8 @@ public static class SnipeCommand
         command.SetHandler(async (search, json) =>
         {
             if (!EnsureConfigured(snipe)) return;
-            var accessories = await snipe.GetAccessoriesAsync(search);
+            var accessories = await ListOrReport(snipe!, () => snipe!.GetAccessoriesAsync(search));
+            if (accessories == null) return;
             
             if (json)
             {
@@ -878,7 +916,8 @@ public static class SnipeCommand
         command.SetHandler(async (search, json) =>
         {
             if (!EnsureConfigured(snipe)) return;
-            var consumables = await snipe.GetConsumablesAsync(search);
+            var consumables = await ListOrReport(snipe!, () => snipe!.GetConsumablesAsync(search));
+            if (consumables == null) return;
             
             if (json)
             {
@@ -939,7 +978,8 @@ public static class SnipeCommand
         command.SetHandler(async (search, json) =>
         {
             if (!EnsureConfigured(snipe)) return;
-            var components = await snipe.GetComponentsAsync(search);
+            var components = await ListOrReport(snipe!, () => snipe!.GetComponentsAsync(search));
+            if (components == null) return;
             
             if (json)
             {
@@ -1005,7 +1045,8 @@ public static class SnipeCommand
         command.SetHandler(async (limit, json) =>
         {
             if (!EnsureConfigured(snipe)) return;
-            var activities = await snipe.GetActivityAsync();
+            var activities = await ListOrReport(snipe!, () => snipe!.GetActivityAsync());
+            if (activities == null) return;
             
             if (json)
             {

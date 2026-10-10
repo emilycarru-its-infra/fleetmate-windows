@@ -1,4 +1,7 @@
 using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
+using System.Security.Principal;
+using System.Text;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Client.Broker;
 using Serilog;
@@ -52,6 +55,34 @@ public sealed class EntraTokenSource
     }
 
     private readonly IPublicClientApplication _app;
+    private readonly string? _tenantId;
+
+    /// <summary>The public client every token is minted for.</summary>
+    public string ClientId { get; }
+
+    /// <summary>The tenant tokens come from, or <c>organizations</c> when none is set.</summary>
+    public string Tenant => string.IsNullOrWhiteSpace(_tenantId) ? "organizations" : _tenantId!;
+
+    /// <summary>
+    /// The last silent path: a hidden-browser authorization-code sign-in for a
+    /// scope, carried by the device's primary refresh token, which the desktop
+    /// app registers at startup (it owns the WebView2). It must never put a
+    /// window on screen. The command line has no browser, so it has none.
+    /// Process-wide, so a config reload that rebuilds <see cref="Shared"/> keeps it.
+    /// </summary>
+    public static Func<EntraHeadlessRequest, CancellationToken, Task<(string Token, DateTimeOffset ExpiresOn)>>? HeadlessSignIn { get; set; }
+
+    /// <summary>Test seam: replaces <see cref="HeadlessSignIn"/> for this instance.</summary>
+    internal Func<EntraHeadlessRequest, CancellationToken, Task<(string Token, DateTimeOffset ExpiresOn)>>? HeadlessOverride { get; init; }
+
+    /// <summary>Test seam: replaces the Windows account lookup.</summary>
+    internal Func<string?>? UpnOverride { get; init; }
+
+    // A scope that could not be acquired is not retried for this long, so a
+    // paged list or a burst of widget loads fails once instead of running the
+    // whole silent chain (and its hidden browser) for every request.
+    private readonly ConcurrentDictionary<string, (EntraTokenException Error, DateTimeOffset Until)> _failures = new();
+    internal TimeSpan FailureBackoff { get; init; } = TimeSpan.FromSeconds(60);
     // One gate per scope, so a slow broker call for one resource never holds
     // up another. A single shared gate let a stalled Azure DevOps request
     // starve the ReportMate dashboard for as long as the stall lasted.
@@ -74,8 +105,11 @@ public sealed class EntraTokenSource
             ? "https://login.microsoftonline.com/organizations"
             : $"https://login.microsoftonline.com/{tenantId}";
 
+        _tenantId = string.IsNullOrWhiteSpace(tenantId) ? null : tenantId.Trim();
+        ClientId = string.IsNullOrWhiteSpace(clientId) ? AzureCliClientId : clientId.Trim();
+
         _app = PublicClientApplicationBuilder
-            .Create(string.IsNullOrWhiteSpace(clientId) ? AzureCliClientId : clientId)
+            .Create(ClientId)
             .WithAuthority(authority)
             // Windows-only broker. On a device with a PRT this redeems it without UI.
             .WithBroker(new BrokerOptions(BrokerOptions.OperatingSystems.Windows))
@@ -107,25 +141,34 @@ public sealed class EntraTokenSource
         {
             if (_cache.TryGetValue(scope, out var hit) && DateTimeOffset.UtcNow < hit.Expiry)
                 return hit.Token;
+            if (_failures.TryGetValue(scope, out var failed) && DateTimeOffset.UtcNow < failed.Until)
+                throw failed.Error;
 
-            // The broker does not always honour cancellation, so the wait is
-            // bounded here rather than trusted to the call itself.
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeout.CancelAfter(AcquireTimeout);
             (string Token, DateTimeOffset ExpiresOn) result;
             try
             {
-                var acquire = AcquireOverride?.Invoke(scope, timeout.Token) ?? AcquireAsync(scope, timeout.Token);
-                result = await acquire.WaitAsync(AcquireTimeout, ct);
+                result = await AcquireFromBrokerAsync(scope, ct);
             }
-            catch (Exception ex) when (ex is TimeoutException or OperationCanceledException && !ct.IsCancellationRequested)
+            catch (EntraTokenException brokerFailure)
             {
-                throw new EntraTokenException(scope, $"the sign-in broker did not answer within {AcquireTimeout.TotalSeconds:0} seconds");
+                result = await AcquireHeadlessAsync(scope, brokerFailure, ct);
             }
 
             // Refresh a little early so a token never expires mid-flight.
             _cache[scope] = (result.Token, result.ExpiresOn.AddMinutes(-5));
+            _failures.TryRemove(scope, out _);
             return result.Token;
+        }
+        catch (EntraTokenException ex)
+        {
+            // Every caller sees the same failure, and it is written down once:
+            // a token that cannot be had used to leave no trace at all.
+            if (!_failures.TryGetValue(scope, out var known) || !ReferenceEquals(known.Error, ex))
+            {
+                Log.Warning("[entra] No token for {Scope}: {Reason}", scope, ex.Message);
+                _failures[scope] = (ex, DateTimeOffset.UtcNow + FailureBackoff);
+            }
+            throw;
         }
         finally
         {
@@ -133,8 +176,64 @@ public sealed class EntraTokenSource
         }
     }
 
+    private async Task<(string Token, DateTimeOffset ExpiresOn)> AcquireFromBrokerAsync(string scope, CancellationToken ct)
+    {
+        // The broker does not always honour cancellation, so the wait is
+        // bounded here rather than trusted to the call itself.
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(AcquireTimeout);
+        try
+        {
+            var acquire = AcquireOverride?.Invoke(scope, timeout.Token) ?? AcquireAsync(scope, timeout.Token);
+            return await acquire.WaitAsync(AcquireTimeout, ct);
+        }
+        catch (Exception ex) when (ex is TimeoutException or OperationCanceledException && !ct.IsCancellationRequested)
+        {
+            throw new EntraTokenException(scope, $"the sign-in broker did not answer within {AcquireTimeout.TotalSeconds:0} seconds");
+        }
+    }
+
+    /// <summary>
+    /// The hidden-browser path, tried only once the broker has nothing. Its
+    /// failure is reported together with the broker's, so the message says
+    /// what was tried rather than only the last thing that failed.
+    /// </summary>
+    private async Task<(string Token, DateTimeOffset ExpiresOn)> AcquireHeadlessAsync(
+        string scope, EntraTokenException brokerFailure, CancellationToken ct)
+    {
+        var headless = HeadlessOverride ?? HeadlessSignIn;
+        if (headless is null) throw brokerFailure;
+
+        var upn = WindowsUpn();
+        Log.Information("[entra] Broker had no token for {Scope}; trying the hidden browser", scope);
+        try
+        {
+            var result = await headless(new EntraHeadlessRequest(scope, ClientId, Tenant, upn), ct);
+            if (string.IsNullOrEmpty(result.Token))
+                throw new InvalidOperationException("the hidden browser returned no token");
+            Log.Information("[entra] Hidden browser acquired a token for {Scope}", scope);
+            return result;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            throw new EntraTokenException(scope,
+                $"{BrokerReason(brokerFailure)}; the hidden browser sign-in failed too: {ex.Message}", ex);
+        }
+    }
+
+    private static string BrokerReason(EntraTokenException ex)
+    {
+        const string separator = " — ";
+        var at = ex.Message.IndexOf(separator, StringComparison.Ordinal);
+        return at < 0 ? ex.Message : ex.Message[(at + separator.Length)..];
+    }
+
     /// <summary>Drop cached tokens — used on sign-out and after a 401.</summary>
-    public void Invalidate() => _cache.Clear();
+    public void Invalidate()
+    {
+        _cache.Clear();
+        _failures.Clear();
+    }
 
     /// <summary>
     /// The address of the work account Windows is signed in with, as the broker
@@ -169,6 +268,7 @@ public sealed class EntraTokenSource
     private async Task<AuthenticationResult> AcquireResultAsync(string scope, CancellationToken ct)
     {
         var scopes = new[] { scope };
+        var tried = new List<string>();
 
         // 1. The signed-in Windows account, redeemed straight from the device PRT.
         //    This is the path that makes FleetMate silent on a managed device.
@@ -178,17 +278,35 @@ public sealed class EntraTokenSource
                 .AcquireTokenSilent(scopes, PublicClientApplication.OperatingSystemAccount)
                 .ExecuteAsync(ct);
         }
-        catch (MsalUiRequiredException)
+        catch (MsalException ex)
         {
-            // No PRT, or the resource needs consent this account hasn't given.
-            // Fall through — a cached MSAL account may still serve.
-        }
-        catch (MsalServiceException ex)
-        {
-            Log.Debug(ex, "[entra] Broker declined the OS account for {Scope}", scope);
+            // No PRT the broker will hand over (a disconnected remote session
+            // can do this), or consent this account hasn't given. Fall through.
+            Log.Debug(ex, "[entra] Broker declined the operating-system account for {Scope}", scope);
+            tried.Add($"operating-system account: {ex.ErrorCode}");
         }
 
-        // 2. Any account MSAL has already seen this session.
+        // 2. The Windows account named outright. When the broker will not
+        //    surface the operating-system account, it can still find the same
+        //    work account by its address.
+        if (WindowsUpn() is { } upn)
+        {
+            try
+            {
+                return await _app.AcquireTokenSilent(scopes, upn).ExecuteAsync(ct);
+            }
+            catch (MsalException ex)
+            {
+                Log.Debug(ex, "[entra] Broker declined {Upn} for {Scope}", upn, scope);
+                tried.Add($"{upn}: {ex.ErrorCode}");
+            }
+        }
+        else
+        {
+            tried.Add("no Windows work account address");
+        }
+
+        // 3. Any account MSAL has already seen this session.
         foreach (var account in await _app.GetAccountsAsync())
         {
             try
@@ -201,13 +319,64 @@ public sealed class EntraTokenSource
             }
         }
 
-        // FleetMate never opens a sign-in window: when neither silent path
-        // works, the system is reported as signed out and the operator fixes
-        // the sign-in outside the app (az login, or the Windows account).
+        // FleetMate never opens a sign-in window: when no silent path works,
+        // the system is reported as signed out with what was tried.
         throw new EntraTokenException(
             scope,
-            "no silent credential — sign in to Windows with a work account, or run az login");
+            $"no silent credential from the Windows sign-in broker ({string.Join("; ", tried)})");
     }
+
+    /// <summary>
+    /// The address of the account Windows is signed in with, from the logon
+    /// itself rather than the broker: <c>GetUserNameEx(NameUserPrincipal)</c>,
+    /// then the UPN claim on the logon token. Null for a local account.
+    /// </summary>
+    public string? WindowsUpn()
+    {
+        if (UpnOverride is { } overridden) return Normalize(overridden());
+        return ResolveWindowsUpn();
+    }
+
+    /// <inheritdoc cref="WindowsUpn"/>
+    public static string? ResolveWindowsUpn()
+    {
+        if (!OperatingSystem.IsWindows()) return null;
+        try
+        {
+            var size = 256u;
+            var buffer = new StringBuilder((int)size);
+            if (GetUserNameEx(NameUserPrincipal, buffer, ref size) && Normalize(buffer.ToString()) is { } upn)
+                return upn;
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+        {
+            Log.Debug(ex, "[entra] GetUserNameEx is unavailable");
+        }
+
+        try
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            var claim = identity.Claims.FirstOrDefault(c =>
+                c.Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn");
+            return Normalize(claim?.Value) ?? Normalize(identity.Name);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[entra] Could not read the Windows identity");
+            return null;
+        }
+    }
+
+    private static string? Normalize(string? value)
+    {
+        var trimmed = value?.Trim().ToLowerInvariant();
+        return string.IsNullOrEmpty(trimmed) || !trimmed.Contains('@') || trimmed.Contains('\\') ? null : trimmed;
+    }
+
+    private const int NameUserPrincipal = 8;
+
+    [DllImport("secur32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool GetUserNameEx(int nameFormat, StringBuilder userName, ref uint userNameSize);
 
     /// <summary>
     /// Turn an audience into a scope. Callers configure audiences (a GUID or an
@@ -243,6 +412,9 @@ public sealed class EntraTokenSource
         return $"{trimmed.TrimEnd('/')}/.default";
     }
 }
+
+/// <summary>What a hidden-browser sign-in needs to mint a token for one scope.</summary>
+public sealed record EntraHeadlessRequest(string Scope, string ClientId, string Tenant, string? LoginHint);
 
 /// <summary>Raised when no Entra token can be obtained for a resource.</summary>
 public sealed class EntraTokenException : Exception

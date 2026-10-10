@@ -296,8 +296,16 @@ public class SecureShellService : IDisposable
             Device? device = null;
             if (_reportMate != null)
             {
-                var devices = await _reportMate.GetDevicesAsync();
-                device = devices.FirstOrDefault(d => d.IpAddress == hostOrDevice);
+                try
+                {
+                    var devices = await _reportMate.GetDevicesAsync();
+                    device = devices.FirstOrDefault(d => d.IpAddress == hostOrDevice);
+                }
+                catch (Exception ex)
+                {
+                    // The address is enough to connect; the device record is extra.
+                    Log.Warning(ex, "[ssh] No ReportMate record for {Ip}", hostOrDevice);
+                }
             }
             return (hostOrDevice, device);
         }

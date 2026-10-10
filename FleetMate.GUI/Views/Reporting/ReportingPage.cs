@@ -54,14 +54,25 @@ public sealed class ReportingPage : Page
         RmApi.BearerTokenProvider = audience is null ? null : async ct =>
         {
             if (EntraTokenSource.Shared is not { } source) return null;
-            try { return await source.GetTokenAsync(audience, ct); }
-            // No silent token: fall back to the device's own read credential.
-            catch (EntraTokenException) { return null; }
+            try
+            {
+                var token = await source.GetTokenAsync(audience, ct);
+                LastSignInError = null;
+                return token;
+            }
+            // No silent token: fall back to the device's own read credential,
+            // and keep the reason for the page to show if that cannot read either.
+            // The token source has already logged it.
+            catch (EntraTokenException ex)
+            {
+                LastSignInError = ex.Message;
+                return null;
+            }
         };
 
         // FleetMate supplies the sign-in, so the setting a fleet page is missing
         // is one of FleetMate's, not the dashboard's read passphrase.
-        RmSetup.HostHint = hasUrl => SetupHint(hasUrl, audience);
+        RmSetup.HostHint = hasUrl => SetupHint(hasUrl, audience, LastSignInError);
 
         RmConfig.Instance.ReloadSettings();
 
@@ -72,14 +83,23 @@ public sealed class ReportingPage : Page
         if (!string.IsNullOrWhiteSpace(resolved)) config.ReportMateUrl = resolved;
     }
 
-    /// <summary>The FleetMate setting a fleet page needs, in the words Settings uses.</summary>
-    internal static string SetupHint(bool hasUrl, string? audience)
+    /// <summary>Why the last ReportMate token could not be had, or null once one was.</summary>
+    internal static string? LastSignInError { get; private set; }
+
+    /// <summary>
+    /// The FleetMate setting a fleet page needs, in the words Settings uses, or,
+    /// when everything is set but no token could be had, the sign-in failure
+    /// itself rather than an empty page.
+    /// </summary>
+    internal static string SetupHint(bool hasUrl, string? audience, string? signInError = null)
     {
         if (!hasUrl)
             return "Set the ReportMate API URL in FleetMate Settings, or ReportMateUrl in managed settings, "
                  + "and ReportMateOidcAudience in managed settings so FleetMate can sign in to it.";
-        return audience is null
-            ? "Set ReportMateOidcAudience in managed settings so FleetMate can sign in to ReportMate."
+        if (audience is null)
+            return "Set ReportMateOidcAudience in managed settings so FleetMate can sign in to ReportMate.";
+        return signInError is not null
+            ? $"Sign-in failed: {signInError}. Check the ReportMate card under Settings › Authentication Status."
             : "FleetMate could not get a ReportMate sign-in token. Check the ReportMate card under Settings › Authentication Status.";
     }
 }

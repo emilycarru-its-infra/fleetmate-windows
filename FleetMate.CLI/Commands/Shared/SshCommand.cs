@@ -146,7 +146,17 @@ public static class SshCommand
             }
             else if (reportMate != null)
             {
-                var allDevices = await reportMate.GetDevicesAsync();
+                List<FleetMate.Core.Models.Reporting.Device> allDevices;
+                try
+                {
+                    allDevices = await reportMate.GetDevicesAsync();
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine($"[red]ReportMate: {Markup.Escape(ex.Message)}[/]");
+                    Environment.ExitCode = 1;
+                    return;
+                }
 
                 var filtered = allDevices.AsEnumerable();
                 if (!string.IsNullOrEmpty(location))

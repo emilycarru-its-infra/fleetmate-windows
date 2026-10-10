@@ -22,7 +22,10 @@ public class AuthCardTruthTests
         using var service = new SnipeService("https://snipe.example.edu");
         Assert.False(service.HasCredential);
         Assert.Contains("SnipeOidcAudience", await service.CheckAccessAsync());
-        Assert.Empty(await service.GetAssetsAsync());
+        // And the asset list says so instead of reading as an empty inventory.
+        var ex = await Assert.ThrowsAsync<SnipeException>(() => service.GetAssetsAsync());
+        Assert.Contains("SnipeOidcAudience", ex.Message);
+        Assert.Contains("SnipeOidcAudience", service.LastError);
     }
 
     [Fact]
