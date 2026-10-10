@@ -164,6 +164,64 @@ public static class WidgetCards
         return chart;
     }
 
+    /// <summary>
+    /// Horizontal bars, one row per value with its label, bar and count, so
+    /// long names (people, groups) stay readable. A click passes the label.
+    /// <paramref name="faded"/> values draw at reduced opacity.
+    /// </summary>
+    public static UIElement HorizontalBars(IReadOnlyList<ChartSlice> slices, Func<string, Color> colorOf,
+        Action<string>? onClick = null, Func<string, bool>? faded = null)
+    {
+        var max = Math.Max(1, slices.Count == 0 ? 1 : slices.Max(s => s.Value));
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star), MaxWidth = 160 });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        for (var i = 0; i < slices.Count; i++)
+        {
+            var slice = slices[i];
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var opacity = faded?.Invoke(slice.Label) == true ? 0.3 : 1.0;
+
+            var label = new TextBlock
+            {
+                Text = slice.Label, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 3, 8, 3), ToolTip = slice.Label,
+                Opacity = opacity,
+            };
+            var track = new Grid { Margin = new Thickness(0, 3, 8, 3), Opacity = opacity };
+            track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(slice.Value, 0), GridUnitType.Star) });
+            track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(max - Math.Max(slice.Value, 0), GridUnitType.Star) });
+            var bar = new Border { Height = 10, CornerRadius = new CornerRadius(3), Background = new SolidColorBrush(colorOf(slice.Label)) };
+            track.Children.Add(bar);
+            var count = new TextBlock
+            {
+                Text = slice.Value.ToString(), FontSize = 11, Foreground = Medium,
+                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 3, 0, 3), Opacity = opacity,
+            };
+
+            Grid.SetRow(label, i); Grid.SetColumn(label, 0);
+            Grid.SetRow(track, i); Grid.SetColumn(track, 1);
+            Grid.SetRow(count, i); Grid.SetColumn(count, 2);
+            grid.Children.Add(label);
+            grid.Children.Add(track);
+            grid.Children.Add(count);
+
+            if (onClick != null)
+            {
+                // One hit target across the whole row, so a short bar is as easy to click as a long one.
+                var hit = new Border { Background = Brushes.Transparent, Cursor = Cursors.Hand, ToolTip = $"{slice.Label}: {slice.Value}" };
+                hit.MouseLeftButtonUp += (_, _) => onClick(slice.Label);
+                Grid.SetRow(hit, i);
+                Grid.SetColumnSpan(hit, 3);
+                grid.Children.Add(hit);
+            }
+        }
+
+        return grid;
+    }
+
     private static void Wire(UIElement chart, ISeries[] series, IReadOnlyList<ChartSlice> slices, Action<string>? onClick)
     {
         if (onClick == null) return;

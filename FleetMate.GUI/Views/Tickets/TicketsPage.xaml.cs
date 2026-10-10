@@ -12,6 +12,8 @@ using FleetMate.Core.Services.Inventory;
 using FleetMate.Core.Services.Tickets;
 using FleetMate.Core.Services.Projects;
 using FleetMate.Core.Services.Reporting;
+using FleetMate.GUI.Views.Shared;
+using FleetMate.GUI.Views.Shared.Widgets;
 
 namespace FleetMate.GUI.Views.Tickets;
 
@@ -37,10 +39,15 @@ public partial class TicketsPage : Page
     private readonly Dictionary<int, string> _commentDrafts = new();
 
     /// <summary>
-    /// Filter entry for tickets nobody has picked up. Not a real responsible
-    /// name, so it is matched by identity rather than compared as one.
+    /// The list's filter selections, any number of values per category. The
+    /// filter row, the list and the widgets all read and change this.
     /// </summary>
-    internal const string UnassignedFilterLabel = "(Unassigned)";
+    private readonly TicketFilters _filters = new();
+
+    /// <summary>The signed-in TDX person, for Assigned to Me. Null until resolved.</summary>
+    private TdxPerson? _me;
+
+    private bool _isLoading;
     private List<TdxFeedEntry> _ticketFeed = new();
     private TdxTicket? _selectedTicket;
 
@@ -85,6 +92,21 @@ private bool _isInitialLoadDone;
 
         TicketsListView.ItemsSource = _ticketRows;
 
+        // The widgets count the list's tickets with each category's own
+        // filter left out, and clicking them changes the filters.
+        TicketWidgetsSection.Builder = () => TicketWidgets.Build(TicketsMatching, _filters, _isLoading);
+        TicketWidgetsSection.EqualHeights = true;
+        _filters.Changed += () =>
+        {
+            UpdateFilterButtons();
+            ApplyFiltersAndSort();
+        };
+        BuildFilterButtons();
+
+        _assignedToMe = UserPreferences.TicketsAssignedToMe;
+        AssignedToMeToggle.IsChecked = _assignedToMe;
+        KeyDown += OnPageKeyDown;
+
         // Selecting the stored preset fires OnDateRangeChanged during
         // construction; _isInitialLoadDone is still false then, so it only
         // records the choice and the Loaded handler does the first load.
@@ -111,6 +133,9 @@ private bool _isInitialLoadDone;
                 UpdateSsoState();
                 await LoadTicketsAsync();
             }
+            // Signing in can finish after the first visit, so try again
+            // until the TDX person is known.
+            if (_me == null) await ResolveMeAsync();
             // Deep link: check on every navigation (page is cached)
             if (_app?.PendingNavigateTicketId is { } ticketId)
             {
@@ -158,6 +183,7 @@ private bool _isInitialLoadDone;
             {
                 // Reload tickets with new auth
                 _ = LoadTicketsAsync();
+                _ = ResolveMeAsync();
             }
         });
     }
@@ -166,6 +192,9 @@ private bool _isInitialLoadDone;
     {
         _app?.SignOutTdxSso();
         UpdateSsoState();
+        _me = null;
+        UpdateAssignedToMeToggle();
+        ApplyFiltersAndSort();
     }
 
     private async Task LoadTicketsAsync()
@@ -197,6 +226,8 @@ private bool _isInitialLoadDone;
 
         LoadingPanel.Visibility = Visibility.Visible;
         NotConfiguredText.Visibility = Visibility.Collapsed;
+        _isLoading = true;
+        TicketWidgetsSection.Invalidate();
 
         try
         {
@@ -214,49 +245,24 @@ private bool _isInitialLoadDone;
         finally
         {
             LoadingPanel.Visibility = Visibility.Collapsed;
+            _isLoading = false;
+            TicketWidgetsSection.Invalidate();
         }
     }
 
-    private void UpdateFilterOptions()
+    /// <summary>
+    /// Selections stay across a reload, as on macOS; the filter row shows
+    /// them, so one that no longer matches anything is easy to clear.
+    /// </summary>
+    private void UpdateFilterOptions() => UpdateFilterButtons();
+
+    /// <summary>
+    /// The list's tickets with every filter applied except
+    /// <paramref name="ignoring"/>'s selections, unsorted. The widgets count
+    /// each category this way, so its other values stay clickable.
+    /// </summary>
+    private List<TdxTicket> TicketsMatching(TicketFilterCategory? ignoring)
     {
-        var statuses = new HashSet<string> { "All" };
-        var groups = new HashSet<string> { "All" };
-        var responsible = new HashSet<string> { "All" };
-
-        foreach (var ticket in _allTickets)
-        {
-            if (!string.IsNullOrEmpty(ticket.StatusName)) statuses.Add(ticket.StatusName);
-            if (!string.IsNullOrEmpty(ticket.ResponsibleGroupName)) groups.Add(ticket.ResponsibleGroupName);
-            if (!string.IsNullOrEmpty(ticket.ResponsibleFullName)) responsible.Add(ticket.ResponsibleFullName);
-        }
-
-        StatusFilterComboBox.ItemsSource = statuses.OrderBy(s => s == "All" ? "" : s).ToList();
-        StatusFilterComboBox.SelectedIndex = 0;
-        
-        GroupFilterComboBox.ItemsSource = groups.OrderBy(s => s == "All" ? "" : s).ToList();
-        GroupFilterComboBox.SelectedIndex = 0;
-        
-        // Unassigned is offered explicitly. Tickets nobody has picked up are
-        // the ones most worth finding, and they were unreachable through a
-        // filter built only from names that exist.
-        var responsibleOptions = responsible.OrderBy(s => s == "All" ? "" : s).ToList();
-        if (_allTickets.Any(t => string.IsNullOrWhiteSpace(t.ResponsibleFullName)))
-        {
-            responsibleOptions.Add(UnassignedFilterLabel);
-        }
-
-        ResponsibleFilterComboBox.ItemsSource = responsibleOptions;
-        ResponsibleFilterComboBox.SelectedIndex = 0;
-    }
-
-    private void ApplyFiltersAndSort()
-    {
-        // Reached during BAML load too: SortComboBox marks an item IsSelected in
-        // markup, so SelectionChanged fires while the tree is half-built and the
-        // controls this touches — TicketsListView in particular — are still null.
-        // Nothing here is meaningful before the page exists.
-        if (!IsInitialized) return;
-
         var filtered = _allTickets.AsEnumerable();
 
         // Filter show closed (hide when unchecked)
@@ -268,31 +274,21 @@ private bool _isInitialLoadDone;
                 t.StatusName?.ToLower() != "canceled");
         }
 
-        // Filter by status
-        var statusFilter = StatusFilterComboBox.SelectedItem?.ToString();
-        if (!string.IsNullOrEmpty(statusFilter) && statusFilter != "All")
+        // Assigned to Me: the signed-in TDX person is the responsible one.
+        if (_assignedToMe && _me is { } me)
         {
-            filtered = filtered.Where(t => t.StatusName == statusFilter);
+            filtered = filtered.Where(t => TicketFilters.IsAssignedTo(t, me));
         }
 
-        // Filter by group
-        var groupFilter = GroupFilterComboBox.SelectedItem?.ToString();
-        if (!string.IsNullOrEmpty(groupFilter) && groupFilter != "All")
+        // Filter row and widget selections
+        if (_filters.HasActiveFilters)
         {
-            filtered = filtered.Where(t => t.ResponsibleGroupName == groupFilter);
-        }
-
-        // Filter by responsible
-        var responsibleFilter = ResponsibleFilterComboBox.SelectedItem?.ToString();
-        if (!string.IsNullOrEmpty(responsibleFilter) && responsibleFilter != "All")
-        {
-            filtered = responsibleFilter == UnassignedFilterLabel
-                ? filtered.Where(t => string.IsNullOrWhiteSpace(t.ResponsibleFullName))
-                : filtered.Where(t => t.ResponsibleFullName == responsibleFilter);
+            var now = DateTime.UtcNow;
+            filtered = filtered.Where(t => _filters.Matches(t, ignoring, now));
         }
 
         // Filter by search text
-        var searchText = SearchBox.Text?.Trim();
+        var searchText = SearchBox?.Text?.Trim();
         if (!string.IsNullOrEmpty(searchText))
         {
             filtered = filtered.Where(t =>
@@ -300,6 +296,19 @@ private bool _isInitialLoadDone;
                 (t.RequestorName?.Contains(searchText, StringComparison.OrdinalIgnoreCase) == true) ||
                 t.Id.ToString().Contains(searchText));
         }
+
+        return filtered.ToList();
+    }
+
+    private void ApplyFiltersAndSort()
+    {
+        // Reached during BAML load too: SortComboBox marks an item IsSelected in
+        // markup, so SelectionChanged fires while the tree is half-built and the
+        // controls this touches — TicketsListView in particular — are still null.
+        // Nothing here is meaningful before the page exists.
+        if (!IsInitialized) return;
+
+        IEnumerable<TdxTicket> filtered = TicketsMatching(null);
 
         // Sort
         filtered = _sortField switch
@@ -335,6 +344,8 @@ private bool _isInitialLoadDone;
         {
             UpdateBoardView();
         }
+
+        TicketWidgetsSection?.Invalidate();
     }
     
     /// <summary>
@@ -720,11 +731,6 @@ private bool _isInitialLoadDone;
         }
     }
 
-    private void OnFilterChanged(object sender, SelectionChangedEventArgs e)
-    {
-        ApplyFiltersAndSort();
-    }
-
     private void OnSearchChanged(object sender, TextChangedEventArgs e)
     {
         ApplyFiltersAndSort();
@@ -857,28 +863,35 @@ private bool _isInitialLoadDone;
         await LoadTicketsAsync();
     }
 
-    // Detail panel sizing. The column is resizable via DetailPanelSplitter; the
-    // last dragged width survives close/reopen for the life of the page.
-    private const double DetailPanelDefaultWidth = 520;
+    // Detail panel sizing. The panel opens at half the width; the splitter
+    // resizes it, and the share it is dragged to survives close and reopen
+    // for the life of the page.
     private const double DetailPanelMinWidth = 360;
-    private double _detailPanelWidth = DetailPanelDefaultWidth;
+    private GridLength _listShare = new(1, GridUnitType.Star);
+    private GridLength _detailShare = new(1, GridUnitType.Star);
 
     private void OpenDetailPanel()
     {
         DetailPanel.Visibility = Visibility.Visible;
         DetailPanelSplitter.Visibility = Visibility.Visible;
         DetailPanelColumn.MinWidth = DetailPanelMinWidth;
-        DetailPanelColumn.Width = new GridLength(Math.Max(_detailPanelWidth, DetailPanelMinWidth));
+        ListPanelColumn.Width = _listShare;
+        DetailPanelColumn.Width = _detailShare;
     }
 
     private void CloseDetailPanel()
     {
-        if (DetailPanelColumn.ActualWidth >= DetailPanelMinWidth)
-            _detailPanelWidth = DetailPanelColumn.ActualWidth;
+        // The splitter turns both star columns into their dragged shares.
+        if (DetailPanelColumn.Width.IsStar && ListPanelColumn.Width.IsStar)
+        {
+            _listShare = ListPanelColumn.Width;
+            _detailShare = DetailPanelColumn.Width;
+        }
         DetailPanel.Visibility = Visibility.Collapsed;
         DetailPanelSplitter.Visibility = Visibility.Collapsed;
         DetailPanelColumn.MinWidth = 0;
         DetailPanelColumn.Width = new GridLength(0);
+        ListPanelColumn.Width = new GridLength(1, GridUnitType.Star);
     }
 
     private void OnToggleDetailPanel(object sender, RoutedEventArgs e)
@@ -887,10 +900,30 @@ private bool _isInitialLoadDone;
         if (_detailPanelVisible) OpenDetailPanel(); else CloseDetailPanel();
     }
 
-    private void OnCloseDetailPanel(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// The chevron (and Esc): close the ticket. The selection clears too, so
+    /// picking the same ticket again opens it again.
+    /// </summary>
+    private void OnCloseDetailPanel(object sender, RoutedEventArgs e) => CloseTicket();
+
+    private void CloseTicket()
     {
+        StashCommentDraft();
+        _selectedTicket = null;
+        TicketsListView.SelectedItem = null;
+        DetailContent.Visibility = Visibility.Collapsed;
+        NoSelectionPanel.Visibility = Visibility.Visible;
         _detailPanelVisible = false;
         CloseDetailPanel();
+    }
+
+    private void OnPageKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || e.Handled || !_detailPanelVisible) return;
+        // Esc in a text box belongs to the box (and a half-written comment).
+        if (e.OriginalSource is TextBox) return;
+        CloseTicket();
+        e.Handled = true;
     }
 
     private async void OnTicketSelectionChanged(object sender, SelectionChangedEventArgs e)

@@ -84,6 +84,30 @@ public sealed class WidgetsSection : StackPanel
 
     public static string PersistenceKey(string tab) => WidgetVisibility.PersistenceKey(tab);
 
+    /// <summary>
+    /// The page's own cards, used instead of the catalog's when set — for a
+    /// tab whose widgets follow its list's filters, as Tickets' do.
+    /// </summary>
+    public Func<List<UIElement>>? Builder { get; set; }
+
+    /// <summary>Give every card in a row the row's tallest height.</summary>
+    public bool EqualHeights
+    {
+        get => _flow.EqualHeights;
+        set => _flow.EqualHeights = value;
+    }
+
+    private bool _rebuildQueued;
+
+    /// <summary>Redraw now if showing, otherwise on the next show. Calls made together redraw once.</summary>
+    public void Invalidate()
+    {
+        _dirty = true;
+        if (!IsVisible || _rebuildQueued) return;
+        _rebuildQueued = true;
+        Dispatcher.BeginInvoke(() => { _rebuildQueued = false; Rebuild(); });
+    }
+
     public WidgetsSection()
     {
         Margin = new Thickness(0, 0, 0, 8);
@@ -151,8 +175,7 @@ public sealed class WidgetsSection : StackPanel
     private void OnCacheChanged(string key)
     {
         if (!WidgetCatalog.DependsOn(Tab, key)) return;
-        _dirty = true;
-        if (IsVisible) Dispatcher.BeginInvoke(Rebuild);
+        Invalidate();
     }
 
     private void Rebuild()
@@ -163,7 +186,8 @@ public sealed class WidgetsSection : StackPanel
         try
         {
             _flow.Children.Clear();
-            foreach (var card in WidgetCatalog.Build(Tab, app, ApplyFilter)) _flow.Children.Add(card);
+            var cards = Builder?.Invoke() ?? WidgetCatalog.Build(Tab, app, ApplyFilter);
+            foreach (var card in cards) _flow.Children.Add(card);
         }
         catch (Exception ex)
         {

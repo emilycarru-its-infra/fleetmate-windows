@@ -51,7 +51,9 @@ public static class WidgetCatalog
         "Projects" => Projects(app),
         "Devices" => Devices(app, filter),
         "Inventory" => Inventory(app, filter),
-        "Tickets" => Tickets(app, filter),
+        // The Tickets page builds its own cards (TicketWidgets), because
+        // they count the list's filtered tickets and change its filters.
+        "Tickets" => new(),
         _ => new(),
     };
 
@@ -334,49 +336,6 @@ public static class WidgetCatalog
     /// </summary>
     internal static bool IsActiveTicket(string? statusName) =>
         string.IsNullOrEmpty(statusName) || !ClosedStatuses.Contains(statusName);
-
-    private static List<UIElement> Tickets(App app, Action<string, string> filter)
-    {
-        var tickets = app.CachedTickets;
-        var loaded = tickets.Count > 0;
-        var active = tickets.Where(t => IsActiveTicket(t.StatusName)).ToList();
-        var open = active.Count(t => !t.IsOnHold);
-        var onHold = tickets.Count(t => t.IsOnHold);
-
-        var cards = new List<UIElement>
-        {
-            WidgetCards.KpiStack(new[]
-            {
-                new KpiTile("Open Tickets", Count(open, loaded), "\uE8A7", "#FF9C27B0"),
-                new KpiTile("SLA Violated", Count(tickets.Count(t => t.IsSlaViolated), loaded), "\uE7BA", "#FFE07A1F"),
-            }),
-        };
-
-        if (loaded)
-        {
-            var status = new[] { new ChartSlice("Open", open), new ChartSlice("On Hold", onHold) }
-                .Where(x => x.Value > 0).ToList();
-            cards.Add(WidgetCards.Card("Ticket Status", WidgetCards.Donut(status, st => filter(Category.Status, st),
-                new SKColor[] { new(33, 150, 243), new(255, 152, 0) })));
-
-            // Keyed by name, not position, so a missing priority never shifts
-            // the others' colours. No red: High is orange.
-            var order = new Dictionary<string, int> { ["Low"] = 0, ["Medium"] = 1, ["High"] = 2 };
-            var colorOf = new Dictionary<string, SKColor>
-            {
-                ["Low"] = new(76, 175, 80), ["Medium"] = new(33, 150, 243), ["High"] = new(255, 152, 0),
-            };
-            var priorities = active.GroupBy(t => t.PriorityName ?? "None")
-                .OrderBy(g => order.GetValueOrDefault(g.Key, 99))
-                .Select(g => new ChartSlice(g.Key, g.Count()))
-                .ToList();
-            cards.Add(WidgetCards.Card("Tickets by Priority",
-                WidgetCards.Bars(priorities, pr => filter(Category.Priority, pr),
-                    priorities.Select(x => colorOf.GetValueOrDefault(x.Label, new SKColor(158, 158, 158))).ToList())));
-        }
-
-        return cards;
-    }
 
     private static void OpenUrl(string? url)
     {
