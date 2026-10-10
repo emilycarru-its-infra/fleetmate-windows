@@ -8,12 +8,22 @@ namespace FleetMate.GUI.Views.Shared.Widgets;
 /// or more units (<see cref="UnitsProperty"/>); a row takes as many units as
 /// fit while each unit stays at least <see cref="MinUnitWidth"/> wide, and
 /// wraps otherwise. Cards keep their natural height (capped by their own
-/// MaxHeight) and are never stretched to match a neighbour.
+/// MaxHeight) unless <see cref="EqualHeights"/> is set, which gives every
+/// card in a row the row's tallest height so the row reads as one band.
 /// </summary>
 public sealed class WidgetFlowPanel : Panel
 {
     public const double MinUnitWidth = 240;
     public const double Gap = 12;
+
+    private bool _equalHeights;
+
+    /// <summary>Offer every card its row's tallest height. Cards must stretch vertically to use it.</summary>
+    public bool EqualHeights
+    {
+        get => _equalHeights;
+        set { _equalHeights = value; InvalidateMeasure(); }
+    }
 
     public static readonly DependencyProperty UnitsProperty = DependencyProperty.RegisterAttached(
         "Units", typeof(int), typeof(WidgetFlowPanel),
@@ -65,6 +75,7 @@ public sealed class WidgetFlowPanel : Panel
             var unitWidth = (width - Gap * (row.Count - 1)) / rowUnits;
             var x = 0.0;
             var rowHeight = 0.0;
+            var rowStart = slots.Count;
 
             foreach (var r in row)
             {
@@ -75,6 +86,15 @@ public sealed class WidgetFlowPanel : Panel
                 slots.Add((index, new Rect(x, y, w, h)));
                 rowHeight = Math.Max(rowHeight, h);
                 x += w + Gap;
+            }
+
+            if (EqualHeights)
+            {
+                for (var k = rowStart; k < slots.Count; k++)
+                {
+                    var (i, slot) = slots[k];
+                    slots[k] = (i, new Rect(slot.X, slot.Y, slot.Width, rowHeight));
+                }
             }
 
             y += rowHeight + Gap;

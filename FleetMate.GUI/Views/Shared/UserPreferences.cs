@@ -7,7 +7,9 @@ namespace FleetMate.GUI.Views.Shared;
 /// <summary>
 /// The operator's own display choices, kept in HKCU\SOFTWARE\FleetMate beside
 /// the theme: which tabs are switched off (<c>HiddenModules</c>), the text size
-/// (<c>TextScale</c>) and whether the setup wizard has run (<c>SetupCompleted</c>).
+/// (<c>TextScale</c>), whether the setup wizard has run (<c>SetupCompleted</c>)
+/// and whether Tickets shows only the operator's own (<c>tickets.assignedToMe</c>,
+/// the macOS app's key).
 /// None of these is managed by policy.
 /// </summary>
 public static class UserPreferences
@@ -42,6 +44,10 @@ public static class UserPreferences
     public static bool SetupCompleted => Read("SetupCompleted") == "1";
 
     public static void MarkSetupCompleted() => Write("SetupCompleted", "1");
+
+    public static bool TicketsAssignedToMe => Read("tickets.assignedToMe") == "1";
+
+    public static void SetTicketsAssignedToMe(bool on) => Write("tickets.assignedToMe", on ? "1" : null);
 
     private static string? Read(string name)
     {

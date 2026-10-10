@@ -7,7 +7,7 @@
 
     <!-- Widgets sit above the page; the DockPanel keeps the page's own grid untouched. -->
     <DockPanel>
-    <widgets:WidgetsSection DockPanel.Dock="Top" Tab="Tickets" Margin="16,14,16,0" />
+    <widgets:WidgetsSection x:Name="TicketWidgetsSection" DockPanel.Dock="Top" Tab="Tickets" Margin="16,14,16,0" />
     <Grid Margin="16,14,16,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -81,6 +81,16 @@
                 <ComboBoxItem Content="Responsible" />
             </ComboBox>
             <Button x:Name="SortDirectionButton" Content="↓" Width="32" Margin="0,0,8,0" Click="OnSortDirectionClicked" ToolTip="Toggle sort direction" />
+            <!-- Assigned to Me narrows the list to tickets the signed-in TDX
+                 person is responsible for; the choice is remembered. -->
+            <ToggleButton x:Name="AssignedToMeToggle" Margin="0,0,8,0" IsEnabled="False"
+                          ToolTip="Waiting to identify you in TeamDynamix"
+                          Checked="OnAssignedToMeChanged" Unchecked="OnAssignedToMeChanged">
+                <StackPanel Orientation="Horizontal">
+                    <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE77B;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                    <TextBlock Text="Assigned to Me" VerticalAlignment="Center" />
+                </StackPanel>
+            </ToggleButton>
             <Button x:Name="DetailPanelButton" Margin="0,0,8,0" Click="OnToggleDetailPanel"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE89F;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="Details" VerticalAlignment="Center" /></StackPanel></Button>
             <Button x:Name="NewTicketButton" Margin="0,0,8,0" Click="OnNewTicketClicked" ToolTip="Create a ticket"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE710;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="New Ticket" VerticalAlignment="Center" /></StackPanel></Button>
             <Button x:Name="RefreshButton" Click="OnRefreshClicked"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="Refresh" VerticalAlignment="Center" /></StackPanel></Button>
@@ -90,9 +100,6 @@
         <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,16,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
@@ -100,26 +107,12 @@
             <!-- Hide Closed → Show Closed (unchecked by default) -->
             <CheckBox Grid.Column="0" x:Name="ShowClosedCheckBox" Content="Show Closed" IsChecked="False" Margin="0,0,16,0" Checked="OnShowClosedChanged" Unchecked="OnShowClosedChanged" />
 
-            <!-- Status Filter -->
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,16,0">
-                <TextBlock Text="Status:" VerticalAlignment="Center" Margin="0,0,4,0" />
-                <ComboBox x:Name="StatusFilterComboBox" MinWidth="120" SelectionChanged="OnFilterChanged" />
-            </StackPanel>
-
-            <!-- Group Filter -->
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="0,0,16,0">
-                <TextBlock Text="Group:" VerticalAlignment="Center" Margin="0,0,4,0" />
-                <ComboBox x:Name="GroupFilterComboBox" MinWidth="140" SelectionChanged="OnFilterChanged" />
-            </StackPanel>
-
-            <!-- Responsible Filter -->
-            <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="0,0,16,0">
-                <TextBlock Text="Responsible:" VerticalAlignment="Center" Margin="0,0,4,0" />
-                <ComboBox x:Name="ResponsibleFilterComboBox" MinWidth="140" SelectionChanged="OnFilterChanged" />
-            </StackPanel>
+            <!-- One dropdown per filter category. Each holds any number of
+                 values, which the widgets above also toggle. -->
+            <WrapPanel Grid.Column="1" x:Name="FilterButtonsPanel" VerticalAlignment="Center" />
 
             <!-- Search -->
-            <ui:SimpleStackPanel Grid.Column="5" Orientation="Horizontal" Spacing="8">
+            <ui:SimpleStackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
                 <!-- Created-date window, same presets as macOS. Up to 5000
                      tickets load per window, so there is no separate limit. -->
                 <ComboBox x:Name="DateRangeComboBox" Width="140" ToolTip="Tickets created in"
@@ -131,14 +124,14 @@
         <!-- Main Content -->
         <Grid Grid.Row="2" Grid.ColumnSpan="2">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MinWidth="480" />
+                <ColumnDefinition x:Name="ListPanelColumn" Width="*" MinWidth="480" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition x:Name="DetailPanelColumn" Width="0" />
             </Grid.ColumnDefinitions>
 
             <!-- Drag handle between the ticket list and the detail panel. Only
-                 shown while the panel is open; the panel's column keeps whatever
-                 width the operator drags it to. -->
+                 shown while the panel is open. The panel opens at half the
+                 width and keeps whatever share the operator drags it to. -->
             <GridSplitter x:Name="DetailPanelSplitter" Grid.Column="1" Width="6" Margin="5,0"
                           HorizontalAlignment="Center" VerticalAlignment="Stretch"
                           Background="Transparent" ShowsPreview="False"
@@ -377,17 +370,20 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <!-- Panel Header, laid out like the macOS detail header:
-                         the ticket number (click to copy), copy-link and open-in-TDX
-                         on the left; close on the right; actions on their own row
-                         so they wrap in a narrow pane instead of clipping. -->
+                    <!-- Panel Header, laid out like the macOS detail header: a
+                         chevron that closes the pane, pointing the way it goes; the
+                         ticket number (click to copy), copy-link and open-in-TDX;
+                         actions on their own row so they wrap in a narrow pane
+                         instead of clipping. -->
                     <StackPanel Grid.Row="0" Margin="12,12,12,8">
                         <DockPanel>
-                            <Button DockPanel.Dock="Right" Click="OnCloseDetailPanel" ToolTip="Close"
-                                    Style="{StaticResource ChromeIconButtonStyle}">
-                                <ui:FontIcon Glyph="&#xE711;" FontFamily="Segoe Fluent Icons" FontSize="12" />
-                            </Button>
                             <StackPanel Orientation="Horizontal">
+                                <Button x:Name="CloseDetailButton" Click="OnCloseDetailPanel" ToolTip="Close the ticket (Esc)"
+                                        AutomationProperties.Name="Close the ticket"
+                                        Style="{StaticResource ChromeIconButtonStyle}" MinWidth="0" Padding="2,5,6,5">
+                                    <ui:FontIcon Glyph="&#xE76C;" FontFamily="Segoe Fluent Icons" FontSize="14"
+                                                 Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                </Button>
                                 <Button x:Name="CopyTicketIdButton" Click="OnCopyTicketIdClicked"
                                         ToolTip="Copy ticket number" Style="{StaticResource ChromeIconButtonStyle}" Padding="0,2,6,2">
                                     <TextBlock x:Name="DetailTicketIdText" FontWeight="Bold" FontSize="18"
