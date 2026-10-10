@@ -445,7 +445,7 @@ public partial class MainWindow : Window
                 else
                 {
                     tdxBtn.Content = "Sign In";
-                    tdxBtn.Click += (_, _) => { app.ShowTdxSsoLogin(_ => Dispatcher.Invoke(PopulateAuthPopup)); };
+                    tdxBtn.Click += async (_, _) => { await app.RetryTdxSsoAsync(); PopulateAuthPopup(); };
                 }
                 return tdxBtn;
 
@@ -459,7 +459,7 @@ public partial class MainWindow : Window
                 else
                 {
                     devOpsBtn.Content = "Sign In";
-                    devOpsBtn.Click += (_, _) => { app.ShowDevOpsSsoLogin(_ => Dispatcher.Invoke(PopulateAuthPopup)); };
+                    devOpsBtn.Click += async (_, _) => { await app.AttemptSilentDevOpsSsoAsync(); PopulateAuthPopup(); };
                 }
                 return devOpsBtn;
 

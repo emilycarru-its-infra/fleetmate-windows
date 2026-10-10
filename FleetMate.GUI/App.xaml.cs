@@ -272,59 +272,53 @@ public partial class App : Application
     public Task ReloadAllDataAsync() => PreloadAllDataAsync();
     
     // MARK: - TDX SSO Authentication
-    
+
+    private Task? _tdxSsoInFlight;
+
     /// <summary>
-    /// Attempt silent TDX SSO authentication (Phase 1 → Phase 1.5 → Phase 2 fallback).
-    /// Called automatically on startup when TDX is configured with SSO.
+    /// Sign in to TeamDynamix as the Windows user with nothing on screen: HTTP
+    /// Negotiate first, then a never-shown WebView2 (see <see cref="TdxHeadlessSso"/>).
+    /// Runs on startup and from every Sign In / Retry SSO button. There is no
+    /// interactive fallback: when it cannot finish silently, TeamDynamix is
+    /// marked failed with the reason. Concurrent callers share one attempt.
     /// </summary>
-    public async Task AttemptSilentTdxSsoAsync()
+    public Task AttemptSilentTdxSsoAsync()
+    {
+        if (_tdxSsoInFlight is { IsCompleted: false } running) return running;
+        return _tdxSsoInFlight = RunSilentTdxSsoAsync();
+    }
+
+    private async Task RunSilentTdxSsoAsync()
     {
         if (Config.Tdx == null || string.IsNullOrEmpty(Config.Tdx.BaseUrl) || !Config.Tdx.SsoEnabled)
         {
             Log.Debug("[tdx-sso] TDX SSO not configured or not enabled");
             return;
         }
-        
+
         if (IsTdxSsoAuthenticated)
         {
             Log.Debug("[tdx-sso] Already authenticated, skipping silent SSO");
             return;
         }
-        
-        var baseUrl = Config.Tdx.BaseUrl;
-        
-        // Phase 1: Silent HttpClient SSO (Negotiate/Kerberos)
+
         AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Authenticating());
-        Log.Information("[tdx-sso] Starting silent SSO sequence for {BaseUrl}", baseUrl);
-        
-        var result = await Task.Run(() => TdxSsoLoginWindow.TryPhase1SilentAsync(baseUrl));
-        
+        Log.Information("[tdx-sso] Starting silent SSO for {BaseUrl}", Config.Tdx.BaseUrl);
+
+        var result = await TdxHeadlessSso.SignInAsync(Config.Tdx.BaseUrl);
         if (result is { Success: true, Token: not null })
         {
             HandleSilentSsoSuccess(result);
             return;
         }
-        
-        // Phase 1.5: Headless WebView2 SSO (must run on UI thread)
-        Log.Information("[tdx-sso] Phase 1 failed — trying headless WebView2 (Phase 1.5)");
-        result = await TdxSsoLoginWindow.TryPhase15HeadlessAsync(baseUrl);
-        
-        if (result is { Success: true, Token: not null })
-        {
-            HandleSilentSsoSuccess(result);
-            return;
-        }
-        
-        // Broker-only desktop policy: do not turn a silent failure into a login
-        // window. The status card exposes the failure and can be re-checked
-        // after the Windows session is repaired.
-        Log.Warning("[tdx-sso] Silent Windows SSO failed; no interactive fallback will be shown");
+
+        Log.Warning("[tdx-sso] Silent SSO failed; no sign-in window is shown: {Reason}", result.Error);
         AuthManager.Update(AuthSystemId.Tdx,
-            AuthTokenState.Failed("Silent Windows SSO unavailable"));
+            AuthTokenState.Failed(result.Error ?? "Silent Windows SSO unavailable"));
     }
-    
+
     /// <summary>
-    /// Handle a successful silent SSO result (from Phase 1 or 1.5).
+    /// Handle a successful silent SSO result.
     /// </summary>
     private void HandleSilentSsoSuccess(TdxSsoResult result)
     {
@@ -333,60 +327,18 @@ public partial class App : Application
         AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Valid(result.UserName, result.Expiry));
         Log.Information("[tdx-sso] ✓ Silent SSO successful — user={UserName}", result.UserName ?? "(unknown)");
     }
-    
+
     /// <summary>
-    /// Show TDX SSO login window and handle result
+    /// The Sign In buttons' action: retry the silent sign-in and report whether
+    /// TeamDynamix is now signed in. It never opens a window.
     /// </summary>
-    public void ShowTdxSsoLogin(Action<bool>? onComplete = null)
+    public async Task<bool> RetryTdxSsoAsync()
     {
-        if (Config.Tdx == null || string.IsNullOrEmpty(Config.Tdx.BaseUrl))
-        {
-            Log.Warning("Cannot show TDX SSO login - TDX not configured");
-            onComplete?.Invoke(false);
-            return;
-        }
-        
-        var ssoWindow = new TdxSsoLoginWindow(Config.Tdx.BaseUrl)
-        {
-            Owner = Current.MainWindow
-        };
-        
-        ssoWindow.AuthenticationCompleted += (_, result) =>
-        {
-            if (result.Success && !string.IsNullOrEmpty(result.Token))
-            {
-                TdxService?.SetSsoToken(
-                    result.Token,
-                    result.Expiry,
-                    result.UserEmail,
-                    result.UserName
-                );
-                
-                // Clear tickets cache to reload with new auth
-                _ticketsCacheTime = null;
-                
-                AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Valid(result.UserName, result.Expiry));
-                Log.Information("TDX SSO authentication successful for {UserName}", result.UserName);
-                onComplete?.Invoke(true);
-            }
-            else
-            {
-                Log.Warning("TDX SSO authentication failed: {Error}", result.Error);
-                if (result.Error != null)
-                    AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Failed(result.Error));
-                onComplete?.Invoke(false);
-            }
-        };
-        
-        ssoWindow.AuthenticationCancelled += (_, _) =>
-        {
-            Log.Debug("TDX SSO authentication cancelled");
-            onComplete?.Invoke(false);
-        };
-        
-        ssoWindow.ShowDialog();
+        try { await AttemptSilentTdxSsoAsync(); }
+        catch (Exception ex) { Log.Warning(ex, "[tdx-sso] Silent SSO retry failed"); }
+        return IsTdxSsoAuthenticated;
     }
-    
+
     /// <summary>
     /// Sign out of TDX SSO
     /// </summary>
@@ -401,109 +353,85 @@ public partial class App : Application
 
     // MARK: - DevOps SSO Authentication
 
+    private Task? _devOpsSsoInFlight;
+
     /// <summary>
-    /// Phase 1: Attempt silent SSO (az CLI → MSAL cache → refresh token).
-    /// No UI shown. If it fails, falls through to Phase 1.5 headless WebView2.
+    /// Sign in to Azure DevOps with nothing on screen: the broker (WAM) with the
+    /// Windows account first, then az CLI and its token cache, then a never-shown
+    /// WebView2 running the PKCE flow on the device's Entra session. There is no
+    /// interactive fallback. Concurrent callers share one attempt.
     /// </summary>
-    public async Task AttemptSilentDevOpsSsoAsync()
+    public Task AttemptSilentDevOpsSsoAsync()
+    {
+        if (_devOpsSsoInFlight is { IsCompleted: false } running) return running;
+        return _devOpsSsoInFlight = RunSilentDevOpsSsoAsync();
+    }
+
+    private async Task RunSilentDevOpsSsoAsync()
     {
         if (DevOpsSsoService == null || DevOpsService == null)
         {
             Log.Debug("[devops-sso] DevOps not configured, skipping silent SSO");
             return;
         }
-        
+
         if (IsDevOpsSsoAuthenticated)
         {
             Log.Debug("[devops-sso] Already authenticated, skipping silent SSO");
             return;
         }
-        
-        Log.Information("[devops-sso] Phase 1: Starting silent token acquisition (az CLI → MSAL cache)");
+
         AuthManager.Update(AuthSystemId.DevOps, AuthTokenState.Authenticating());
-        
+
+        // Phase 1: the broker, redeeming the device's primary refresh token.
+        if (EntraTokenSource.Shared is { } broker)
+        {
+            try
+            {
+                var token = await broker.GetTokenAsync(DevOpsSsoService.AdoResourceId);
+                var (name, email) = DevOpsSsoService.ExtractUserInfoFromJwt(token);
+                Log.Information("[devops-sso] Phase 1: broker token acquired — user={UserName}", name ?? email ?? "(unknown)");
+                HandleDevOpsSsoSuccess(DevOpsSsoResult.Succeeded(token, TdxSsoService.ReadExpiry(token), userName: name, userEmail: email));
+                return;
+            }
+            catch (Exception ex)
+            {
+                Log.Information("[devops-sso] Phase 1: broker had no token: {Reason}", ex.Message);
+            }
+        }
+
+        // Phase 2: az CLI, then its MSAL cache, then a refresh token from this session.
         try
         {
             var result = await DevOpsSsoService.RefreshAccessTokenAsync();
-            
             if (result.Success && !string.IsNullOrEmpty(result.Token))
             {
-                Log.Information("[devops-sso] Phase 1: Silent token acquired — user={UserName}", result.UserName ?? "(unknown)");
+                Log.Information("[devops-sso] Phase 2: token acquired — user={UserName}", result.UserName ?? "(unknown)");
                 HandleDevOpsSsoSuccess(result);
                 return;
             }
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "[devops-sso] Phase 1: Token acquisition failed");
+            Log.Warning(ex, "[devops-sso] Phase 2: token acquisition failed");
         }
-        
-        Log.Information("[devops-sso] Phase 1 failed — trying headless WebView2 (Phase 1.5)");
-        await AttemptHeadlessDevOpsSsoAsync();
-    }
-    
-    /// <summary>
-    /// Phase 1.5: Attempt SSO using a hidden WebView2 window.
-    /// Enterprise SSO / WAM can intercept WebView2 requests to login.microsoftonline.com
-    /// and handle auth silently (Kerberos/Windows Hello).
-    /// </summary>
-    private async Task AttemptHeadlessDevOpsSsoAsync()
-    {
-        if (DevOpsSsoService == null)
-            return;
-        
-        Log.Information("[devops-sso] Phase 1.5: Starting headless WebView2 SSO attempt");
-        
-        DevOpsSsoResult? capturedResult = null;
-        var tcs = new TaskCompletionSource<bool>();
-        
-        // Create a hidden window with a DevOpsSsoLoginWindow
-        var ssoWindow = new DevOpsSsoLoginWindow(DevOpsSsoService)
+
+        // Phase 3: the hidden browser.
+        Log.Information("[devops-sso] Phase 3: hidden WebView2 SSO");
+        var upn = EntraTokenSource.Shared is { } source ? await source.GetOperatingSystemAccountUpnAsync() : null;
+        var headless = await DevOpsHeadlessSso.SignInAsync(DevOpsSsoService, upn);
+        if (headless is { Success: true, Token: not null })
         {
-            WindowState = WindowState.Minimized,
-            ShowInTaskbar = false,
-            ShowActivated = false,
-            Width = 1,
-            Height = 1,
-            Left = -9999,
-            Top = -9999
-        };
-        
-        ssoWindow.AuthenticationCompleted += (_, result) =>
-        {
-            capturedResult = result;
-            tcs.TrySetResult(true);
-        };
-        
-        ssoWindow.AuthenticationCancelled += (_, _) =>
-        {
-            tcs.TrySetResult(false);
-        };
-        
-        ssoWindow.Show();
-        
-        // Wait up to 15 seconds for headless auth to complete
-        var timeoutTask = Task.Delay(TimeSpan.FromSeconds(15));
-        var completedTask = await Task.WhenAny(tcs.Task, timeoutTask);
-        
-        // Close the hidden window
-        if (ssoWindow.IsLoaded)
-        {
-            try { ssoWindow.Close(); } catch { /* window may already be closed */ }
-        }
-        
-        if (completedTask == tcs.Task && capturedResult is { Success: true, Token: not null })
-        {
-            Log.Information("[devops-sso] Phase 1.5: Headless SSO SUCCEEDED — user={UserName}", capturedResult.UserName ?? "(unknown)");
-            HandleDevOpsSsoSuccess(capturedResult);
+            Log.Information("[devops-sso] Phase 3: token acquired — user={UserName}", headless.UserName ?? "(unknown)");
+            HandleDevOpsSsoSuccess(headless);
             return;
         }
-        
-        Log.Warning("[devops-sso] Silent Windows SSO failed or timed out; no interactive fallback will be shown");
+
+        Log.Warning("[devops-sso] Silent SSO failed; no sign-in window is shown: {Reason}", headless.Error);
         AuthManager.Update(AuthSystemId.DevOps,
-            AuthTokenState.Failed("Silent Windows SSO unavailable"));
+            AuthTokenState.Failed(headless.Error ?? "Silent Windows SSO unavailable"));
     }
-    
+
     /// <summary>
     /// Handle successful DevOps SSO authentication from any phase.
     /// </summary>
@@ -536,49 +464,6 @@ public partial class App : Application
         }
         
         DevOpsProjectReady = true;
-    }
-
-    /// <summary>
-    /// Show DevOps SSO login window (Phase 2: interactive OAuth2 PKCE) and handle result.
-    /// </summary>
-    public void ShowDevOpsSsoLogin(Action<bool>? onComplete = null)
-    {
-        if (DevOpsSsoService == null)
-        {
-            Log.Warning("Cannot show DevOps SSO login - DevOpsSsoService not configured");
-            onComplete?.Invoke(false);
-            return;
-        }
-
-        var ssoWindow = new DevOpsSsoLoginWindow(DevOpsSsoService)
-        {
-            Owner = Current.MainWindow
-        };
-
-        ssoWindow.AuthenticationCompleted += (_, result) =>
-        {
-            if (result.Success && !string.IsNullOrEmpty(result.Token))
-            {
-                HandleDevOpsSsoSuccess(result);
-                Log.Information("DevOps SSO authentication successful for {UserName}", result.UserName);
-                onComplete?.Invoke(true);
-            }
-            else
-            {
-                Log.Warning("DevOps SSO authentication failed: {Error}", result.Error);
-                if (result.Error != null)
-                    AuthManager.Update(AuthSystemId.DevOps, AuthTokenState.Failed(result.Error));
-                onComplete?.Invoke(false);
-            }
-        };
-
-        ssoWindow.AuthenticationCancelled += (_, _) =>
-        {
-            Log.Debug("DevOps SSO authentication cancelled");
-            onComplete?.Invoke(false);
-        };
-
-        ssoWindow.ShowDialog();
     }
 
     /// <summary>
@@ -712,7 +597,7 @@ public partial class App : Application
     /// </summary>
     private async Task InitializeAndPreloadAsync()
     {
-        // Try silent TDX SSO first (Phase 1 → 1.5 → 2)
+        // Silent TDX SSO first; it never shows a window
         try
         {
             await AttemptSilentTdxSsoAsync();
@@ -722,7 +607,7 @@ public partial class App : Application
             Log.Warning(ex, "[tdx-sso] Silent SSO sequence failed");
         }
         
-        // Try silent DevOps SSO (Phase 1 → 1.5 → 2)
+        // Then silent DevOps SSO; it never shows a window either
         try
         {
             await AttemptSilentDevOpsSsoAsync();
@@ -970,11 +855,9 @@ public partial class App : Application
             if (TdxService == null || string.IsNullOrWhiteSpace(Config.Tdx?.BaseUrl))
                 throw new InvalidOperationException("TeamDynamix is not configured");
 
-            var result = await TdxSsoLoginWindow.TryPhase1SilentAsync(Config.Tdx.BaseUrl)
-                ?? await TdxSsoLoginWindow.TryPhase15HeadlessAsync(Config.Tdx.BaseUrl);
-            if (result == null || !result.Success || string.IsNullOrEmpty(result.Token))
-                throw new InvalidOperationException(
-                    result?.Error ?? "The persistent WebView2 profile could not complete Shibboleth/Entra SSO silently; interactive consent or Windows Hello is required once in Settings.");
+            var result = await TdxHeadlessSso.SignInAsync(Config.Tdx.BaseUrl);
+            if (!result.Success || string.IsNullOrEmpty(result.Token))
+                throw new InvalidOperationException(result.Error ?? "Silent Windows SSO did not produce a TeamDynamix token");
 
             TdxService.SetSsoToken(result.Token, result.Expiry, result.UserEmail, result.UserName);
             var ticketCount = await TdxService.VerifyTicketAccessAsync();

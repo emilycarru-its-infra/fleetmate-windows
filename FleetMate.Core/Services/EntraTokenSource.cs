@@ -136,6 +136,30 @@ public sealed class EntraTokenSource
     /// <summary>Drop cached tokens — used on sign-out and after a 401.</summary>
     public void Invalidate() => _cache.Clear();
 
+    /// <summary>
+    /// The address of the work account Windows is signed in with, as the broker
+    /// (WAM) reports it from the device's primary refresh token. A headless web
+    /// sign-in uses it to pick that exact account in Entra's account picker.
+    /// Silent only; null when there is no such account or the broker stalls.
+    /// </summary>
+    public async Task<string?> GetOperatingSystemAccountUpnAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var acquire = _app
+                .AcquireTokenSilent(new[] { "https://graph.microsoft.com/.default" }, PublicClientApplication.OperatingSystemAccount)
+                .ExecuteAsync(ct);
+            var result = await acquire.WaitAsync(AcquireTimeout, ct);
+            var upn = result.Account?.Username;
+            return string.IsNullOrWhiteSpace(upn) || !upn.Contains('@') ? null : upn.Trim();
+        }
+        catch (Exception ex) when (ex is MsalException or TimeoutException or OperationCanceledException && !ct.IsCancellationRequested)
+        {
+            Log.Debug(ex, "[entra] No operating-system account from the broker");
+            return null;
+        }
+    }
+
     private async Task<(string Token, DateTimeOffset ExpiresOn)> AcquireAsync(string scope, CancellationToken ct)
     {
         var result = await AcquireResultAsync(scope, ct);

@@ -174,18 +174,18 @@ private bool _isInitialLoadDone;
         }
     }
     
-    private void OnSsoLoginClicked(object sender, RoutedEventArgs e)
+    private async void OnSsoLoginClicked(object sender, RoutedEventArgs e)
     {
-        _app?.ShowTdxSsoLogin(success =>
+        if (_app == null) return;
+        // Retries the silent sign-in; no window opens.
+        var success = await _app.RetryTdxSsoAsync();
+        UpdateSsoState();
+        if (success)
         {
-            UpdateSsoState();
-            if (success)
-            {
-                // Reload tickets with new auth
-                _ = LoadTicketsAsync();
-                _ = ResolveMeAsync();
-            }
-        });
+            // Reload tickets with new auth
+            _ = LoadTicketsAsync();
+            _ = ResolveMeAsync();
+        }
     }
     
     private void OnSsoSignOutClicked(object sender, RoutedEventArgs e)
