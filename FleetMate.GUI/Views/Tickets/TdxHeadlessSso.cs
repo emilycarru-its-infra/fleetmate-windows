@@ -1,5 +1,4 @@
 using System.Linq;
-using System.Security.Principal;
 using System.Text.Json;
 using FleetMate.Core.Services;
 using FleetMate.Core.Services.Tickets;
@@ -24,7 +23,9 @@ namespace FleetMate.GUI.Views.Tickets;
 /// <see cref="EntraWebSignIn.HeadlessTimeout"/> the result is a failure that
 /// names where the chain stopped, and TeamDynamix is reported as not signed in.
 /// It is the user's own identity or nothing: there is no shared account to
-/// fall back to.
+/// fall back to. A JWT from either phase that belongs to a different account
+/// fails the sign-in (<see cref="TdxSsoIdentity"/>), and nothing further is
+/// tried, since the next phase would reach the same account.
 /// </summary>
 internal static class TdxHeadlessSso
 {
@@ -41,22 +42,22 @@ internal static class TdxHeadlessSso
     /// <summary>Run both phases. Call on the UI thread.</summary>
     public static async Task<TdxSsoResult> SignInAsync(string baseUrl, CancellationToken ct = default)
     {
-        Log.Information("[tdx-sso] Phase 1: silent HTTP SSO (Negotiate/Kerberos)");
-        var http = await Task.Run(() => new TdxSsoService(baseUrl).TrySilentSsoAsync(ct), ct);
-        if (http is { Success: true, Token: not null }) return http;
-
-        Log.Information("[tdx-sso] Phase 2: hidden WebView2 SSO");
-        return await HiddenBrowserAsync(baseUrl, ct);
-    }
-
-    private static async Task<TdxSsoResult> HiddenBrowserAsync(string baseUrl, CancellationToken ct)
-    {
-        var upn = await ResolveUpnAsync(ct);
+        var upn = await TdxSsoIdentity.ResolveWindowsUpnAsync(ct);
         if (upn == null)
-            Log.Warning("[tdx-sso] No Windows work-account address found; Entra's account picker cannot be answered");
+            Log.Warning("[tdx-sso] No Windows work-account address found; the session's account cannot be checked");
         else
             Log.Information("[tdx-sso] Signing in as the Windows account {Upn}", upn);
 
+        Log.Information("[tdx-sso] Phase 1: silent HTTP SSO (Negotiate/Kerberos)");
+        var http = await Task.Run(() => new TdxSsoService(baseUrl).TrySilentSsoAsync(ct, upn), ct);
+        if (http is { Success: true, Token: not null } or { WrongAccount: true }) return http;
+
+        Log.Information("[tdx-sso] Phase 2: hidden WebView2 SSO");
+        return await HiddenBrowserAsync(baseUrl, upn, ct);
+    }
+
+    private static async Task<TdxSsoResult> HiddenBrowserAsync(string baseUrl, string? upn, CancellationToken ct)
+    {
         var tcs = new TaskCompletionSource<TdxSsoResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         string? lastUrl = null;
         var accountAnswered = false;
@@ -116,7 +117,7 @@ internal static class TdxHeadlessSso
                         var body = await core.ExecuteScriptAsync("document.body ? document.body.innerText : ''");
                         var token = (JsonSerializer.Deserialize<string>(body) ?? "").Trim().Trim('"');
                         if (TdxSsoService.LooksLikeJwt(token))
-                            tcs.TrySetResult(Succeeded(token, upn));
+                            tcs.TrySetResult(Checked(token, upn));
                         else
                             Log.Information("[tdx-sso] loginsso answered without a JWT");
                         return;
@@ -151,23 +152,21 @@ internal static class TdxHeadlessSso
         return failed;
     }
 
-    private static TdxSsoResult Succeeded(string token, string? expectedUpn)
+    /// <summary>
+    /// The sign-in result for a JWT, refused when it belongs to someone other
+    /// than the Windows account. A refused token is dropped here and never
+    /// reaches the caller.
+    /// </summary>
+    private static TdxSsoResult Checked(string token, string? expectedUpn)
     {
-        var (name, email) = TdxSsoService.ExtractUserInfoFromJwt(token);
-        // Assigned to Me finds the TDX person by email. A token without an
-        // address claim still belongs to the account picked by exact address.
-        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@')) email = expectedUpn;
-        if (expectedUpn != null && email != null && !email.Equals(expectedUpn, StringComparison.OrdinalIgnoreCase))
-            Log.Warning("[tdx-sso] Signed in as {Email}, not the Windows account {Upn}", email, expectedUpn);
-        Log.Information("[tdx-sso] JWT acquired in the hidden browser for {User}", name ?? email ?? "(unknown)");
-        return new TdxSsoResult
+        var result = TdxSsoIdentity.Verify(token, expectedUpn);
+        if (!result.Success)
         {
-            Success = true,
-            Token = token,
-            UserName = name,
-            UserEmail = email,
-            Expiry = TdxSsoService.ReadExpiry(token),
-        };
+            Log.Error("[tdx-sso] {Reason}; token discarded, sign-in refused", result.Error);
+            return result;
+        }
+        Log.Information("[tdx-sso] JWT acquired in the hidden browser for {User}", result.UserName ?? result.UserEmail ?? "(unknown)");
+        return result;
     }
 
     /// <summary>
@@ -187,34 +186,6 @@ internal static class TdxHeadlessSso
             }
             catch { /* the browser has gone */ }
         }, TaskScheduler.FromCurrentSynchronizationContext());
-    }
-
-    /// <summary>
-    /// The Windows account's address: the broker's operating-system account
-    /// first (the identity behind the device's primary refresh token), then the
-    /// UPN claim on the Windows logon token.
-    /// </summary>
-    private static async Task<string?> ResolveUpnAsync(CancellationToken ct)
-    {
-        if (EntraTokenSource.Shared is { } broker)
-        {
-            var upn = await broker.GetOperatingSystemAccountUpnAsync(ct);
-            if (upn != null) return upn.ToLowerInvariant();
-        }
-
-        try
-        {
-            using var identity = WindowsIdentity.GetCurrent();
-            var claim = identity.Claims.FirstOrDefault(c =>
-                c.Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn");
-            if (claim?.Value.Contains('@') == true) return claim.Value.ToLowerInvariant();
-            if (identity.Name?.Contains('@') == true) return identity.Name.ToLowerInvariant();
-        }
-        catch (Exception ex)
-        {
-            Log.Debug(ex, "[tdx-sso] Could not read the Windows identity");
-        }
-        return null;
     }
 
     /// <summary>

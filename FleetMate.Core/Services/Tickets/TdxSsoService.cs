@@ -1,4 +1,5 @@
 using System.Net;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using Serilog;
@@ -73,10 +74,14 @@ public class TdxSsoService
     /// Phase 1: Attempt silent SSO using Windows Negotiate/Kerberos credentials.
     /// No UI required — pure HTTP call chain.
     /// </summary>
-    public async Task<TdxSsoResult> TrySilentSsoAsync(CancellationToken ct = default)
+    /// <param name="expectedUpn">The Windows account the session must belong to;
+    /// resolved from the device when not given. A JWT for anyone else fails
+    /// the attempt (<see cref="TdxSsoResult.WrongAccount"/>) and is not kept.</param>
+    public async Task<TdxSsoResult> TrySilentSsoAsync(CancellationToken ct = default, string? expectedUpn = null)
     {
         var loginSsoUrl = BuildLoginSsoUrl(_baseUrl);
         var entryUrl = BuildEntryUrl(_baseUrl);
+        expectedUpn ??= await TdxSsoIdentity.ResolveWindowsUpnAsync(ct);
 
         Log.Information("[tdx-sso-core] Starting silent HTTP SSO (Negotiate/Kerberos)");
 
@@ -97,7 +102,7 @@ public class TdxSsoService
             var resp = await client.GetAsync(loginSsoUrl, ct);
             if (resp.IsSuccessStatusCode)
             {
-                var result = await TryExtractJwt(resp, ct);
+                var result = await TryExtractJwt(resp, expectedUpn, ct);
                 if (result != null) return result;
             }
 
@@ -108,7 +113,7 @@ public class TdxSsoService
             var jwtResp = await client.GetAsync(loginSsoUrl, ct);
             if (jwtResp.IsSuccessStatusCode)
             {
-                var result = await TryExtractJwt(jwtResp, ct);
+                var result = await TryExtractJwt(jwtResp, expectedUpn, ct);
                 if (result != null) return result;
             }
         }
@@ -144,7 +149,7 @@ public class TdxSsoService
         _userEmail = null;
     }
 
-    private async Task<TdxSsoResult?> TryExtractJwt(HttpResponseMessage response, CancellationToken ct)
+    private async Task<TdxSsoResult?> TryExtractJwt(HttpResponseMessage response, string? expectedUpn, CancellationToken ct)
     {
         var body = await response.Content.ReadAsStringAsync(ct);
         var token = body.Trim().Trim('"');
@@ -152,21 +157,20 @@ public class TdxSsoService
         if (!LooksLikeJwt(token))
             return null;
 
-        var (name, email) = ExtractUserInfoFromJwt(token);
-        _token = token;
-        _tokenExpiry = ReadExpiry(token);
-        _userName = name;
-        _userEmail = email;
-        Log.Information("[tdx-sso-core] ✓ JWT acquired — user={UserName}, expires={Expiry:u}",
-            name ?? "(unknown)", _tokenExpiry);
-        return new TdxSsoResult
+        var result = TdxSsoIdentity.Verify(token, expectedUpn);
+        if (!result.Success)
         {
-            Success = true,
-            Token = token,
-            UserName = name,
-            UserEmail = email,
-            Expiry = _tokenExpiry
-        };
+            Log.Error("[tdx-sso-core] {Reason}; token discarded, sign-in refused", result.Error);
+            return result;
+        }
+
+        _token = token;
+        _tokenExpiry = result.Expiry;
+        _userName = result.UserName;
+        _userEmail = result.UserEmail;
+        Log.Information("[tdx-sso-core] ✓ JWT acquired — user={UserName}, expires={Expiry:u}",
+            result.UserName ?? "(unknown)", _tokenExpiry);
+        return result;
     }
 
     /// <summary>
@@ -279,5 +283,98 @@ public class TdxSsoResult
     public DateTime Expiry { get; init; }
     public string? Error { get; init; }
 
+    /// <summary>
+    /// The sign-in finished, but as someone other than the Windows account.
+    /// That is final: another attempt in the same session reaches the same
+    /// account, so callers stop rather than move on to another phase.
+    /// </summary>
+    public bool WrongAccount { get; init; }
+
     public static TdxSsoResult Failed(string error) => new() { Success = false, Error = error };
+}
+
+/// <summary>
+/// Checks that a TeamDynamix session belongs to the person signed in to
+/// Windows. Entra can hold more than one account, and the JWT that loginsso
+/// returns is for whichever one the chain ended on. A token for anyone else is
+/// refused outright: it is never stored, and the sign-in is reported as failed.
+/// </summary>
+public static class TdxSsoIdentity
+{
+    /// <summary>
+    /// Turn a JWT into a sign-in result, checked against the expected address.
+    /// <list type="bullet">
+    /// <item>A token whose email/UPN matches (ignoring case and surrounding space) succeeds.</item>
+    /// <item>A token for a different address fails, and the token is dropped.</item>
+    /// <item>A token with no address claim cannot be checked, so it is attributed
+    /// to the expected account, which Entra's picker chose by exact address.</item>
+    /// <item>With no expected address there is nothing to compare, and the
+    /// token's own claims are used.</item>
+    /// </list>
+    /// </summary>
+    public static TdxSsoResult Verify(string token, string? expectedUpn)
+    {
+        var (name, claimed) = TdxSsoService.ExtractUserInfoFromJwt(token);
+        var expected = Normalize(expectedUpn);
+        var actual = Normalize(claimed);
+
+        if (expected != null && actual != null && actual != expected)
+            return new TdxSsoResult
+            {
+                Success = false,
+                WrongAccount = true,
+                Error = $"TDX session belongs to {actual}; expected {expected}",
+            };
+
+        return new TdxSsoResult
+        {
+            Success = true,
+            Token = token,
+            UserName = name,
+            UserEmail = actual ?? expected,
+            Expiry = TdxSsoService.ReadExpiry(token),
+        };
+    }
+
+    /// <summary>
+    /// The Windows account's address: the broker's operating-system account
+    /// first (the identity behind the device's primary refresh token), then the
+    /// UPN claim on the Windows logon token.
+    /// </summary>
+    public static async Task<string?> ResolveWindowsUpnAsync(CancellationToken ct = default)
+    {
+        if (EntraTokenSource.Shared is { } broker)
+        {
+            try
+            {
+                var upn = await broker.GetOperatingSystemAccountUpnAsync(ct);
+                if (upn != null) return upn.ToLowerInvariant();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Log.Debug(ex, "[tdx-sso] Could not read the broker's account");
+            }
+        }
+
+        try
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            var claim = identity.Claims.FirstOrDefault(c =>
+                c.Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn");
+            if (claim?.Value.Contains('@') == true) return claim.Value.ToLowerInvariant();
+            if (identity.Name?.Contains('@') == true) return identity.Name.ToLowerInvariant();
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[tdx-sso] Could not read the Windows identity");
+        }
+        return null;
+    }
+
+    /// <summary>A trimmed, lower-cased address, or null for anything that is not one.</summary>
+    private static string? Normalize(string? value)
+    {
+        var trimmed = value?.Trim().ToLowerInvariant();
+        return string.IsNullOrEmpty(trimmed) || !trimmed.Contains('@') ? null : trimmed;
+    }
 }
