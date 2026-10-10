@@ -101,8 +101,9 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// Scale the page area; the toolbar and terminal keep their size, as on
-    /// Mac. The value is the Text size setting, which applies it.
+    /// Scale the page area and the terminal's text; the toolbar keeps its
+    /// size, as on Mac. The value is the Text size setting, which applies it.
+    /// Inside a terminal the same keys size only the terminal's text.
     /// </summary>
     // The keys move in the slider's own 5% steps, so the two always agree.
     private static void SetZoom(double value) => UserPreferences.SetTextScale(AppTextScale.Clamp(value));

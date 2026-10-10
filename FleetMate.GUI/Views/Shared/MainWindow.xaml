@@ -29,7 +29,7 @@
             <RowDefinition Height="48" />
             <RowDefinition x:Name="ContentRow" Height="*" />
             <RowDefinition Height="Auto" />
-            <RowDefinition x:Name="TerminalRow" Height="0" />
+            <RowDefinition x:Name="TerminalRow" Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- Centered, segmented top navigation. The equal outer columns keep it
@@ -129,9 +129,9 @@
                                        VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <ToggleButton x:Name="TerminalToggleButton" ToolTip="Terminal (Ctrl+`)" Click="OnTerminalToggleClicked"
+                    <ToggleButton x:Name="TerminalToggleButton" ToolTip="Show Agent Terminal (Ctrl+`)" Click="OnTerminalToggleClicked"
                                   AutomationProperties.AutomationId="TerminalToggleButton"
-                                  AutomationProperties.Name="Terminal"
+                                  AutomationProperties.Name="Show Agent Terminal"
                                   shell:WindowChrome.IsHitTestVisibleInChrome="True"
                                   Background="Transparent" BorderThickness="0" Padding="8,5" Margin="0,0,4,0">
                         <ui:FontIcon Glyph="&#xE756;" FontFamily="Segoe Fluent Icons" FontSize="14" />
@@ -266,10 +266,15 @@
         <!-- Agent terminal: reachable from every tab, resized by dragging the splitter. -->
         <!-- The divider is a Thumb, not a GridSplitter: its height comes from
              the pointer's position in the window, so it tracks smoothly, and
-             dragging it near the top switches to full-window mode. -->
+             dragging it near the top switches to full-window mode. Dragging it
+             to the bottom, or double-clicking it, folds the terminal into the
+             strip that stands in for it while it is closed. -->
         <Thumb x:Name="TerminalDivider" Grid.Row="2" Height="5" Cursor="SizeNS" Visibility="Collapsed"
                AutomationProperties.AutomationId="TerminalDivider"
-               DragStarted="OnDividerDragStarted" DragDelta="OnDividerDragDelta">
+               AutomationProperties.Name="Agent Terminal divider"
+               ToolTip="Drag to resize; drag to the bottom or double-click to close (Ctrl+`)"
+               DragStarted="OnDividerDragStarted" DragDelta="OnDividerDragDelta"
+               DragCompleted="OnDividerDragCompleted" MouseDoubleClick="OnDividerDoubleClick">
             <Thumb.Template>
                 <ControlTemplate TargetType="Thumb">
                     <Border Background="Transparent" />
@@ -277,5 +282,6 @@
             </Thumb.Template>
         </Thumb>
         <term:TerminalPanel x:Name="Terminal" Grid.Row="3" Visibility="Collapsed" />
+        <term:TerminalStrip x:Name="TerminalStrip" Grid.Row="3" />
     </Grid>
 </Window>

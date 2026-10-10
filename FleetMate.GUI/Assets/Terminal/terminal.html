@@ -41,6 +41,14 @@
     post({ type: 'resize', cols: term.cols, rows: term.rows });
   };
 
+  // The host sets the size from the app's text size; refit so the program
+  // learns its new rows and columns.
+  const setFont = size => {
+    if (!size || term.options.fontSize === size) return;
+    term.options.fontSize = size;
+    sendSize();
+  };
+
   term.onData(data => post({ type: 'input', data }));
   // Panel chords (new, close, split, clear, select, cycle, full window) come
   // from the host as "ctrl shift alt:code" and go back to it; every other
@@ -68,7 +76,8 @@
   window.chrome.webview.addEventListener('message', ev => {
     const m = ev.data;
     if (m.type === 'output') term.write(m.data);
-    else if (m.type === 'config') chords = new Set(m.chords);
+    else if (m.type === 'config') { chords = new Set(m.chords); setFont(m.fontSize); }
+    else if (m.type === 'font') setFont(m.size);
     else if (m.type === 'clear') term.clear();
     else if (m.type === 'focus') term.focus();
     else if (m.type === 'exit') term.write(`\r\n\x1b[90m[process exited with code ${m.code}]\x1b[0m\r\n`);

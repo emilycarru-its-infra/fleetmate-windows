@@ -48,6 +48,9 @@ public partial class MainWindow : Window
         // window, and with AgentAutoStart (on by default) open a session at launch.
         Terminal.HideRequested += (_, _) => SetTerminalVisible(false);
         Terminal.FullWindowRequested += (_, _) => ToggleFullWindow();
+        // While the panel is closed the strip stands in for it.
+        TerminalStrip.Panel = Terminal;
+        TerminalStrip.ShowRequested += (_, _) => SetTerminalVisible(true);
         Closed += (_, _) => Terminal.DisposeAll();
         Loaded += (_, _) => InitToolbarFit();
         InitPreferences();
@@ -119,7 +122,7 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// TicketsMate's window: its own title and icon, no tab bar for its one
-    /// tab, and no terminal button.
+    /// tab, and no terminal button or strip.
     /// </summary>
     private void ApplyTicketsOnlyChrome()
     {
@@ -127,6 +130,7 @@ public partial class MainWindow : Window
         Icon = new System.Windows.Media.Imaging.BitmapImage(new Uri("pack://application:,,,/Assets/TicketsMate.ico"));
         TabBarBorder.Visibility = Visibility.Collapsed;
         TerminalToggleButton.Visibility = Visibility.Collapsed;
+        TerminalStrip.Visibility = Visibility.Collapsed;
     }
 
     /// <summary>Ctrl+`, Ctrl+T and Ctrl+Shift+Enter: the keys that open or size the terminal.</summary>
@@ -211,6 +215,19 @@ public partial class MainWindow : Window
         ApplyTerminalLayout();
     }
 
+    /// <summary>Released near the bottom, the panel folds into the strip and keeps its height for next time.</summary>
+    private void OnDividerDragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        if (_terminalLayout.EndDrag()) SetTerminalVisible(false);
+        else ApplyTerminalLayout();
+    }
+
+    private void OnDividerDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        SetTerminalVisible(false);
+        e.Handled = true;
+    }
+
     private void ToggleFullWindow()
     {
         if (Terminal.Visibility != Visibility.Visible) SetTerminalVisible(true);
@@ -218,16 +235,19 @@ public partial class MainWindow : Window
         ApplyTerminalLayout();
     }
 
-    /// <summary>Full-window mode hides the tab's page behind the terminal; otherwise the panel has its height.</summary>
+    /// <summary>
+    /// Full-window mode hides the tab's page behind the terminal; otherwise the
+    /// panel has its height. Closed, the row is as tall as the strip.
+    /// </summary>
     private void ApplyTerminalLayout()
     {
         var visible = Terminal.Visibility == Visibility.Visible;
         var full = visible && _terminalLayout.FullWindow;
         ContentFrame.Visibility = full ? Visibility.Hidden : Visibility.Visible;
         ContentRow.Height = full ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
-        TerminalRow.Height = !visible ? new GridLength(0)
+        TerminalRow.Height = !visible ? GridLength.Auto
             : full ? new GridLength(1, GridUnitType.Star)
-            : new GridLength(_terminalLayout.Height);
+            : new GridLength(_terminalLayout.DisplayHeight);
     }
 
     private void OnTerminalToggleClicked(object sender, RoutedEventArgs e) => ToggleTerminal();
@@ -238,16 +258,58 @@ public partial class MainWindow : Window
     /// Show or hide the panel. Showing it never opens a session: sessions
     /// open at launch, from Ctrl+T and from the New menu. The panel lives
     /// outside the page frame, so tab changes leave it and its sessions alone.
+    /// Closing it hands the keyboard back to whatever had it when it opened,
+    /// so typing never goes to a hidden pane.
     /// </summary>
     public void SetTerminalVisible(bool visible, bool takeFocus = true)
     {
+        var wasVisible = Terminal.Visibility == Visibility.Visible;
+        if (visible && !wasVisible) RememberContentFocus();
+        var terminalHadFocus = Terminal.IsKeyboardFocusWithin;
+
         Terminal.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         TerminalDivider.Visibility = Terminal.Visibility;
+        TerminalStrip.Visibility = visible || TicketsOnly ? Visibility.Collapsed : Visibility.Visible;
         TerminalToggleButton.IsChecked = visible;
+        var label = visible ? "Hide Agent Terminal" : "Show Agent Terminal";
+        TerminalToggleButton.ToolTip = $"{label} (Ctrl+`)";
+        System.Windows.Automation.AutomationProperties.SetName(TerminalToggleButton, label);
         ApplyTerminalLayout();
         Terminal.OnVisibilityChanged();
-        if (!visible) return;
+        if (!visible)
+        {
+            if (wasVisible && terminalHadFocus) ReturnFocusToContent();
+            return;
+        }
         if (takeFocus) Terminal.FocusActive();
+    }
+
+    /// <summary>What had the keyboard when the panel opened, to hand it back on close.</summary>
+    private WeakReference<IInputElement>? _contentFocus;
+
+    private void RememberContentFocus()
+    {
+        var focused = System.Windows.Input.Keyboard.FocusedElement;
+        if (focused is DependencyObject d && IsInsideTerminal(d)) return;
+        _contentFocus = focused == null ? null : new WeakReference<IInputElement>(focused);
+    }
+
+    private void ReturnFocusToContent()
+    {
+        if (_contentFocus?.TryGetTarget(out var previous) == true
+            && previous is UIElement { IsVisible: true } element
+            && GetWindow(element) == this
+            && element.Focus())
+            return;
+        ContentFrame.Focus();
+    }
+
+    private bool IsInsideTerminal(DependencyObject element)
+    {
+        for (var node = element; node != null;
+             node = node is System.Windows.Media.Visual ? System.Windows.Media.VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node))
+            if (ReferenceEquals(node, Terminal)) return true;
+        return false;
     }
 
     private void OnTabChecked(object sender, RoutedEventArgs e)
