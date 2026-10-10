@@ -29,6 +29,8 @@ public static class WidgetCatalog
         public const string Compliance = "Compliance";
         public const string AssetCategory = "Category";
         public const string Status = "Status";
+        /// <summary>Inventory: a status type (Deployable, Deployed…), which several status names share.</summary>
+        public const string StatusType = "Status Type";
         public const string Priority = "Priority";
         public const string Repository = "Repository";
 
@@ -462,18 +464,28 @@ public static class WidgetCatalog
 
     /// <summary>
     /// The status type an asset is counted under by the Asset Status widget
-    /// and filtered by in the Status filter: Snipe-IT's status meta (deployed,
-    /// deployable, pending, archived…), else the status name, else "Unknown".
-    /// Both read this, so a wedge always finds its assets — the Mac's rule.
+    /// and filtered by in the Status Type filter: Snipe-IT's status meta
+    /// (deployed, deployable, pending, archived…), else the status name, else
+    /// "Unknown". Both read this, so a wedge always finds its assets — the
+    /// Mac's rule.
     /// </summary>
     internal static string AssetStatusType(SnipeAsset asset) =>
         !string.IsNullOrEmpty(asset.StatusLabel?.StatusMeta) ? asset.StatusLabel.StatusMeta
         : !string.IsNullOrEmpty(asset.StatusLabel?.Name) ? asset.StatusLabel.Name
         : "Unknown";
 
-    /// <summary>The Status filter's value for an asset: its status type, capitalised for the list.</summary>
-    internal static string AssetStatusFilterValue(SnipeAsset asset) =>
+    /// <summary>The Status Type filter's value for an asset: its status type, capitalised for the list.</summary>
+    internal static string AssetStatusTypeFilterValue(SnipeAsset asset) =>
         CultureInfo.InvariantCulture.TextInfo.ToTitleCase(AssetStatusType(asset).ToLowerInvariant());
+
+    /// <summary>
+    /// The Status filter's value for an asset: its own status name ("Ready to
+    /// Deploy", "In Repair") exactly as Snipe-IT names it, or null when it has
+    /// none. Several names can share one status type, so this is the finer of
+    /// the two filters.
+    /// </summary>
+    internal static string? AssetStatusNameFilterValue(SnipeAsset asset) =>
+        string.IsNullOrWhiteSpace(asset.StatusLabel?.Name) ? null : asset.StatusLabel.Name.Trim();
 
     /// <summary>
     /// Assets per status type (see <see cref="AssetStatusType"/>), top five,
@@ -526,7 +538,7 @@ public static class WidgetCatalog
         var statuses = AssetStatusSlices(assets);
         cards.Add(WidgetCards.Card("Asset Status",
             WidgetCards.ChartOr(statuses.Count > 0, loading, empty,
-                () => WidgetCards.Donut(statuses, s => filter(Category.Status, s),
+                () => WidgetCards.Donut(statuses, s => filter(Category.StatusType, s),
                     statuses.Select((_, i) => P.Sk(AssetStatusColors[i % AssetStatusColors.Length])).ToList())),
             loading: loading));
 

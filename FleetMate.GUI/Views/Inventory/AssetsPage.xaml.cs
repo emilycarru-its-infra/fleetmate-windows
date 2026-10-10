@@ -162,11 +162,16 @@ public partial class AssetsPage : Page
         }
 
         // Apply filters
+        // Status holds the individual status names and Status Type the types
+        // they share, as on the Mac; the Asset Status widget's wedges set
+        // Status Type, so they select every asset of their type.
         var statusFilter = StatusFilterComboBox.SelectedItem?.ToString();
-        // The Status filter holds status types, as on the Mac, so the Asset
-        // Status widget's wedges select every asset of their type.
         if (!string.IsNullOrEmpty(statusFilter) && statusFilter != "All")
-            filtered = filtered.Where(a => WidgetCatalog.AssetStatusFilterValue(a) == statusFilter);
+            filtered = filtered.Where(a => WidgetCatalog.AssetStatusNameFilterValue(a) == statusFilter);
+
+        var statusTypeFilter = StatusTypeFilterComboBox.SelectedItem?.ToString();
+        if (!string.IsNullOrEmpty(statusTypeFilter) && statusTypeFilter != "All")
+            filtered = filtered.Where(a => WidgetCatalog.AssetStatusTypeFilterValue(a) == statusTypeFilter);
 
         var categoryFilter = CategoryFilterComboBox.SelectedItem?.ToString();
         if (!string.IsNullOrEmpty(categoryFilter) && categoryFilter != "All")
@@ -259,6 +264,7 @@ public partial class AssetsPage : Page
     private void ClearFilters()
     {
         StatusFilterComboBox.SelectedIndex = 0;
+        StatusTypeFilterComboBox.SelectedIndex = 0;
         CategoryFilterComboBox.SelectedIndex = 0;
         PlatformFilterComboBox.SelectedIndex = 0;
         ManufacturerFilterComboBox.SelectedIndex = 0;
@@ -273,6 +279,7 @@ public partial class AssetsPage : Page
     private void UpdateFilterOptions()
     {
         var statuses = new HashSet<string> { "All" };
+        var statusTypes = new HashSet<string> { "All" };
         var categories = new HashSet<string> { "All" };
         var platforms = new HashSet<string> { "All" };
         var manufacturers = new HashSet<string> { "All" };
@@ -283,7 +290,8 @@ public partial class AssetsPage : Page
 
         foreach (var asset in _allAssets)
         {
-            statuses.Add(WidgetCatalog.AssetStatusFilterValue(asset));
+            if (WidgetCatalog.AssetStatusNameFilterValue(asset) is { } statusName) statuses.Add(statusName);
+            statusTypes.Add(WidgetCatalog.AssetStatusTypeFilterValue(asset));
             if (!string.IsNullOrEmpty(asset.Category?.Name)) categories.Add(asset.Category.Name);
             if (!string.IsNullOrEmpty(asset.Manufacturer?.Name)) manufacturers.Add(asset.Manufacturer.Name);
             if (!string.IsNullOrEmpty(asset.Model?.Name)) models.Add(asset.Model.Name);
@@ -294,6 +302,7 @@ public partial class AssetsPage : Page
         }
 
         SetFilterItems(StatusFilterComboBox, statuses);
+        SetFilterItems(StatusTypeFilterComboBox, statusTypes);
         SetFilterItems(CategoryFilterComboBox, categories);
         SetFilterItems(PlatformFilterComboBox, platforms);
         SetFilterItems(ManufacturerFilterComboBox, manufacturers);
