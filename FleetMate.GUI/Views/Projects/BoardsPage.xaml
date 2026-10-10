@@ -4,6 +4,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.modernwpf.com/2019"
       xmlns:local="clr-namespace:FleetMate.GUI.Views.Projects"
+      xmlns:shared="clr-namespace:FleetMate.GUI.Views.Shared"
       Loaded="Page_Loaded"
       xmlns:widgets="clr-namespace:FleetMate.GUI.Views.Shared.Widgets">
 
@@ -120,17 +121,22 @@
         </Grid>
 
         <!-- Mine | Queries | Recent | Board (macOS BoardsViewMode). Queries
-             opens first: every Shared Query expanded. -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
-            <RadioButton x:Name="MineModeRadio" Content="Mine"
-                         GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
-            <RadioButton x:Name="ListModeRadio" Content="Queries" IsChecked="True"
-                         GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
-            <RadioButton x:Name="RecentModeRadio" Content="Recent"
-                         GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
-            <RadioButton x:Name="BoardModeRadio" Content="Board"
-                         GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
-        </StackPanel>
+             opens first: every Shared Query expanded. Too narrow for all
+             four, they fold into one pill naming the open one. -->
+        <Grid Grid.Row="1" Margin="0,8,0,0">
+            <StackPanel x:Name="ViewModeSegments" Orientation="Horizontal">
+                <RadioButton x:Name="MineModeRadio" Content="Mine"
+                             GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
+                <RadioButton x:Name="ListModeRadio" Content="Queries" IsChecked="True"
+                             GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
+                <RadioButton x:Name="RecentModeRadio" Content="Recent"
+                             GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
+                <RadioButton x:Name="BoardModeRadio" Content="Board"
+                             GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
+            </StackPanel>
+            <shared:SegmentMenuButton Segments="{Binding ElementName=ViewModeSegments}"
+                                      AutomationProperties.AutomationId="ProjectsViewModeMenu" />
+        </Grid>
 
         <!-- Search and filters (Board mode) -->
         <Border x:Name="BoardFilters" Grid.Row="2" Style="{StaticResource CardStyle}" Margin="0,16,0,0" Padding="12">

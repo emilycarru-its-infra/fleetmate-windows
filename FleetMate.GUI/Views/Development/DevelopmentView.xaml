@@ -169,23 +169,29 @@
             <DockPanel Grid.Row="0" Margin="0,0,0,8">
                 <ui:ProgressRing x:Name="LoadingRing" DockPanel.Dock="Right" IsActive="True" Width="14" Height="14"
                                  VerticalAlignment="Center" Visibility="Collapsed" />
-                <StackPanel Orientation="Horizontal">
-                    <!-- Inbox leads and appears only while it has unread notifications.
-                         It never shows a count, and neither does the Development tab. -->
-                    <RadioButton x:Name="InboxSegment" Content="Inbox" GroupName="DevelopmentSegment"
-                                 Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}"
-                                 Visibility="Collapsed" />
-                    <RadioButton x:Name="PullRequestsSegment" Content="Pulls" GroupName="DevelopmentSegment"
-                                 IsChecked="True" Checked="OnSegmentChanged"
-                                 Style="{StaticResource NavigationTabStyle}" />
-                    <RadioButton x:Name="CommitsSegment" Content="Commits" GroupName="DevelopmentSegment"
-                                 Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}" />
-                    <RadioButton x:Name="PipelinesSegment" Content="Pipelines" GroupName="DevelopmentSegment"
-                                 Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}" />
-                    <RadioButton x:Name="SkillsSegment" Content="Skills" GroupName="DevelopmentSegment"
-                                 Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}"
-                                 AutomationProperties.AutomationId="DevelopmentSkillsSegment" />
-                </StackPanel>
+                <!-- A column too narrow for every segment folds them into one
+                     pill naming the open one (SegmentMenuButton). -->
+                    <Grid>
+                    <StackPanel x:Name="DevelopmentSegments" Orientation="Horizontal">
+                        <!-- Inbox leads and appears only while it has unread notifications.
+                             It never shows a count, and neither does the Development tab. -->
+                        <RadioButton x:Name="InboxSegment" Content="Inbox" GroupName="DevelopmentSegment"
+                                     Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}"
+                                     Visibility="Collapsed" />
+                        <RadioButton x:Name="PullRequestsSegment" Content="Pulls" GroupName="DevelopmentSegment"
+                                     IsChecked="True" Checked="OnSegmentChanged"
+                                     Style="{StaticResource NavigationTabStyle}" />
+                        <RadioButton x:Name="CommitsSegment" Content="Commits" GroupName="DevelopmentSegment"
+                                     Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}" />
+                        <RadioButton x:Name="PipelinesSegment" Content="Pipelines" GroupName="DevelopmentSegment"
+                                     Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}" />
+                        <RadioButton x:Name="SkillsSegment" Content="Skills" GroupName="DevelopmentSegment"
+                                     Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}"
+                                     AutomationProperties.AutomationId="DevelopmentSkillsSegment" />
+                    </StackPanel>
+                    <shared:SegmentMenuButton Segments="{Binding ElementName=DevelopmentSegments}"
+                                              AutomationProperties.AutomationId="DevelopmentSegmentMenu" />
+                </Grid>
             </DockPanel>
 
             <!-- Pull request filters -->

@@ -22,4 +22,13 @@ public static class ToolbarSearch
         hits.GroupBy(h => h.Category)
             .Select(g => (g.Key, g.Take(perCategory).ToList()))
             .ToList();
+
+    /// <summary>
+    /// What the dropdown says when it has no hits: still searching while a
+    /// source is loading, otherwise no matches, or that search is not wired up.
+    /// </summary>
+    public static string EmptyMessage(bool provider, bool searching) =>
+        !provider ? "Search is not available yet."
+        : searching ? "Searching…"
+        : "No matches.";
 }

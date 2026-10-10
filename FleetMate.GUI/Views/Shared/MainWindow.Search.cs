@@ -171,21 +171,28 @@ public partial class MainWindow
         {
             // A short pause so a fast typist does not run a search per key.
             await Task.Delay(150, cts.Token);
+            SetSearchBusy(true);
 
-            IReadOnlyList<ToolbarSearchResult> hits = ToolbarSearch.Provider is { } provider
+            // ReportMate's devices load with the first search; until they
+            // arrive the dropdown says so rather than "No matches."
+            var provider = ToolbarSearch.Provider;
+            var loading = provider != null && FleetMate.GUI.Views.Reporting.ReportingDeviceList.NeedsLoad
+                ? "Reporting devices" : null;
+
+            IReadOnlyList<ToolbarSearchResult> hits = provider != null
                 ? await provider(query, cts.Token)
                 : Array.Empty<ToolbarSearchResult>();
 
             if (cts.IsCancellationRequested) return;
-            RenderSearchResults(hits, provider: ToolbarSearch.Provider != null);
+            RenderSearchResults(hits, provider: provider != null, loadingSource: loading);
 
-            // ReportMate's devices load with the first search; once they arrive,
-            // search again so they join the results already showing.
-            if (ToolbarSearch.Provider is { } again && FleetMate.GUI.Views.Reporting.ReportingDeviceList.NeedsLoad)
+            // Once the devices arrive, search again so they join the results
+            // already showing.
+            if (provider != null && loading != null)
             {
                 await FleetMate.GUI.Views.Reporting.ReportingDeviceList.LoadAsync();
                 if (cts.IsCancellationRequested) return;
-                RenderSearchResults(await again(query, cts.Token), provider: true);
+                RenderSearchResults(await provider(query, cts.Token), provider: true, loadingSource: null);
             }
         }
         catch (OperationCanceledException)
@@ -195,9 +202,22 @@ public partial class MainWindow
         {
             Log.Warning(ex, "[search] query failed");
         }
+        finally
+        {
+            // Only the newest search clears the busy state when it ends.
+            if (_searchCts == cts) SetSearchBusy(false);
+        }
     }
 
-    private void RenderSearchResults(IReadOnlyList<ToolbarSearchResult> hits, bool provider)
+    /// <summary>A ring in the magnifier's place while a search runs.</summary>
+    private void SetSearchBusy(bool busy)
+    {
+        SearchBusyRing.IsActive = busy;
+        SearchBusyRing.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        SearchGlyph.Visibility = busy ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void RenderSearchResults(IReadOnlyList<ToolbarSearchResult> hits, bool provider, string? loadingSource)
     {
         SearchResults.Children.Clear();
         _firstHit = hits.FirstOrDefault();
@@ -205,11 +225,8 @@ public partial class MainWindow
 
         if (hits.Count == 0)
         {
-            SearchResults.Children.Add(new TextBlock
-            {
-                Text = provider ? "No matches." : "Search is not available yet.",
-                Foreground = medium, Margin = new Thickness(4, 6, 4, 6),
-            });
+            SearchResults.Children.Add(SearchStatusRow(
+                ToolbarSearch.EmptyMessage(provider, loadingSource != null), loadingSource != null, medium));
         }
 
         foreach (var (category, group) in ToolbarSearch.Group(hits))
@@ -236,7 +253,24 @@ public partial class MainWindow
             }
         }
 
+        if (hits.Count > 0 && loadingSource != null)
+            SearchResults.Children.Add(SearchStatusRow($"Still loading {loadingSource}…", busy: true, medium));
+
         SearchPopup.IsOpen = true;
+    }
+
+    /// <summary>A line of status in the dropdown, with a ring while something is still loading.</summary>
+    private static UIElement SearchStatusRow(string text, bool busy, Brush foreground)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 6, 4, 6) };
+        if (busy)
+            row.Children.Add(new ModernWpf.Controls.ProgressRing
+            {
+                IsActive = true, Width = 12, Height = 12, Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+        row.Children.Add(new TextBlock { Text = text, Foreground = foreground, VerticalAlignment = VerticalAlignment.Center });
+        return row;
     }
 
     private void OnSearchKeyDown(object sender, KeyEventArgs e)
@@ -269,6 +303,7 @@ public partial class MainWindow
     private void ClearSearch()
     {
         _searchCts?.Cancel();
+        SetSearchBusy(false);
         SearchBox.Text = "";
         SearchPopup.IsOpen = false;
         _firstHit = null;

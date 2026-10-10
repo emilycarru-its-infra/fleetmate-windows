@@ -120,6 +120,7 @@
                          says whether the next elevated action will wait on it.
                          Click to re-check; it starts sessions that are not running. -->
                     <Button x:Name="ElevationButton" Click="OnElevationClicked" Visibility="Collapsed"
+                            AutomationProperties.AutomationId="ElevationButton" AutomationProperties.Name="Elevation"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
                             Style="{StaticResource ChromeIconButtonStyle}" Margin="0,0,4,0">
                         <StackPanel Orientation="Horizontal">
@@ -149,6 +150,7 @@
                          orange dot marks an app-level error, shown at the popover's top. -->
                     <Button x:Name="RecentActivityButton" ToolTip="Recent activity" Click="OnRecentActivityClicked"
                             AutomationProperties.AutomationId="RecentActivityButton"
+                            AutomationProperties.Name="Recent Activity"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
                             Style="{StaticResource ChromeIconButtonStyle}" Margin="0,0,4,0">
                         <Grid>
@@ -158,6 +160,7 @@
                         </Grid>
                     </Button>
                     <Button x:Name="AuthButton" ToolTip="Authentication status" Click="OnAuthClicked"
+                            AutomationProperties.AutomationId="AuthButton" AutomationProperties.Name="Authentication"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
                             Style="{StaticResource ChromeIconButtonStyle}">
                         <ui:FontIcon Glyph="&#xE72E;" FontFamily="Segoe Fluent Icons" FontSize="14" />
@@ -165,7 +168,7 @@
                     <!-- Settings opens its own window, like the Mac app's, so the
                          tab underneath stays put and Close or Esc returns to it. -->
                     <Button x:Name="SettingsButton" ToolTip="Settings (Ctrl+,)" Click="OnSettingsClicked"
-                            AutomationProperties.AutomationId="SettingsButton"
+                            AutomationProperties.AutomationId="SettingsButton" AutomationProperties.Name="Settings"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
                             Style="{StaticResource ChromeIconButtonStyle}" Margin="4,0,0,0">
                         <ui:FontIcon Glyph="&#xE713;" FontFamily="Segoe Fluent Icons" FontSize="14" />
@@ -173,9 +176,10 @@
                     <!-- The one search field: last in the toolbar on every tab. The
                          chip inside it says what it searches: the tab's own list
                          (Ctrl+F) or everything (Ctrl+K); clicking the chip switches.
-                         Enter opens the first hit, Esc clears. It keeps its full
-                         width on every window size. -->
-                    <Grid Width="320" Height="28" Margin="8,0,0,0" VerticalAlignment="Center"
+                         Enter opens the first hit, Esc clears. In a narrow window it
+                         narrows before the tab bar gives up any room
+                         (MainWindow.Toolbar.cs). -->
+                    <Grid x:Name="SearchField" Width="320" Height="28" Margin="8,0,0,0" VerticalAlignment="Center"
                           shell:WindowChrome.IsHitTestVisibleInChrome="True">
                         <TextBox x:Name="SearchBox" AutomationProperties.AutomationId="ToolbarSearchBox"
                                  AutomationProperties.Name="Search" MinHeight="28" Height="28" FontSize="12"
@@ -186,13 +190,20 @@
                                  ui:ControlHelper.PlaceholderText="Search everything"
                                  ui:ControlHelper.PlaceholderForeground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                                  TextChanged="OnSearchTextChanged" PreviewKeyDown="OnSearchKeyDown" />
-                        <ui:FontIcon Glyph="&#xE721;" FontFamily="Segoe Fluent Icons" FontSize="13"
+                        <ui:FontIcon x:Name="SearchGlyph" Glyph="&#xE721;" FontFamily="Segoe Fluent Icons" FontSize="13"
                                      HorizontalAlignment="Left" VerticalAlignment="Center" Margin="9,0,0,0"
                                      IsHitTestVisible="False"
                                      Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        <!-- Takes the magnifier's place while a search runs. -->
+                        <ui:ProgressRing x:Name="SearchBusyRing" Width="13" Height="13" IsActive="False"
+                                         Visibility="Collapsed" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                         Margin="9,0,0,0" IsHitTestVisible="False"
+                                         AutomationProperties.AutomationId="ToolbarSearchBusy"
+                                         AutomationProperties.Name="Searching" />
                         <Button x:Name="SearchScopeChip" HorizontalAlignment="Left" VerticalAlignment="Center"
                                 Margin="28,0,0,0" Padding="7,0" Height="20" MinHeight="0" MinWidth="0" FontSize="11"
                                 AutomationProperties.AutomationId="ToolbarSearchScopeChip"
+                                AutomationProperties.Name="Search scope"
                                 Click="OnSearchScopeChipClicked" SizeChanged="OnSearchScopeChipSizeChanged"
                                 ToolTip="Switch between this tab's list and everything"
                                 Background="{DynamicResource SubtleFillBrush}" BorderThickness="0" Content="All" />

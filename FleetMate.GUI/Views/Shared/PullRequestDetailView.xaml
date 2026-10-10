@@ -24,7 +24,7 @@
                 <StackPanel>
                     <DockPanel>
                         <TextBlock DockPanel.Dock="Right" Text="{Binding DateLabel}" FontSize="10"
-                                   Foreground="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                         <TextBlock Text="{Binding AuthorName}" FontWeight="SemiBold" FontSize="11" />
                     </DockPanel>
                     <TextBlock Text="{Binding Body}" FontSize="12" TextWrapping="Wrap" Margin="0,2,0,0"
