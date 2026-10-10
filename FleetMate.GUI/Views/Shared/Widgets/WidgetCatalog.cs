@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
 using FleetMate.Core.Models.Devices;
@@ -460,12 +461,26 @@ public static class WidgetCatalog
         .ToList();
 
     /// <summary>
-    /// Assets per status type (deployed, deployable, pending, archived…),
-    /// falling back to the status name and then "Unknown", top five, each
-    /// labelled "Status (count)" — the Mac's grouping.
+    /// The status type an asset is counted under by the Asset Status widget
+    /// and filtered by in the Status filter: Snipe-IT's status meta (deployed,
+    /// deployable, pending, archived…), else the status name, else "Unknown".
+    /// Both read this, so a wedge always finds its assets — the Mac's rule.
+    /// </summary>
+    internal static string AssetStatusType(SnipeAsset asset) =>
+        !string.IsNullOrEmpty(asset.StatusLabel?.StatusMeta) ? asset.StatusLabel.StatusMeta
+        : !string.IsNullOrEmpty(asset.StatusLabel?.Name) ? asset.StatusLabel.Name
+        : "Unknown";
+
+    /// <summary>The Status filter's value for an asset: its status type, capitalised for the list.</summary>
+    internal static string AssetStatusFilterValue(SnipeAsset asset) =>
+        CultureInfo.InvariantCulture.TextInfo.ToTitleCase(AssetStatusType(asset).ToLowerInvariant());
+
+    /// <summary>
+    /// Assets per status type (see <see cref="AssetStatusType"/>), top five,
+    /// each labelled "Status (count)" — the Mac's grouping.
     /// </summary>
     internal static List<ChartSlice> AssetStatusSlices(IEnumerable<SnipeAsset> assets) => assets
-        .GroupBy(a => a.StatusLabel?.StatusMeta ?? a.StatusLabel?.Name ?? "Unknown")
+        .GroupBy(AssetStatusType)
         .Select(g => (Status: g.Key, Count: g.Count()))
         .OrderByDescending(s => s.Count)
         .Take(5)

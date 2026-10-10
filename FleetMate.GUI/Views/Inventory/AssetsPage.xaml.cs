@@ -4,6 +4,7 @@ using System.Windows.Input;
 using FleetMate.Core.Config;
 using FleetMate.Core.Models.Inventory;
 using FleetMate.Core.Services.Inventory;
+using FleetMate.GUI.Views.Shared.Widgets;
 
 namespace FleetMate.GUI.Views.Inventory;
 
@@ -154,8 +155,10 @@ public partial class AssetsPage : Page
 
         // Apply filters
         var statusFilter = StatusFilterComboBox.SelectedItem?.ToString();
+        // The Status filter holds status types, as on the Mac, so the Asset
+        // Status widget's wedges select every asset of their type.
         if (!string.IsNullOrEmpty(statusFilter) && statusFilter != "All")
-            filtered = filtered.Where(a => a.StatusLabel?.Name == statusFilter);
+            filtered = filtered.Where(a => WidgetCatalog.AssetStatusFilterValue(a) == statusFilter);
 
         var categoryFilter = CategoryFilterComboBox.SelectedItem?.ToString();
         if (!string.IsNullOrEmpty(categoryFilter) && categoryFilter != "All")
@@ -272,7 +275,7 @@ public partial class AssetsPage : Page
 
         foreach (var asset in _allAssets)
         {
-            if (!string.IsNullOrEmpty(asset.StatusLabel?.Name)) statuses.Add(asset.StatusLabel.Name);
+            statuses.Add(WidgetCatalog.AssetStatusFilterValue(asset));
             if (!string.IsNullOrEmpty(asset.Category?.Name)) categories.Add(asset.Category.Name);
             if (!string.IsNullOrEmpty(asset.Manufacturer?.Name)) manufacturers.Add(asset.Manufacturer.Name);
             if (!string.IsNullOrEmpty(asset.Model?.Name)) models.Add(asset.Model.Name);

@@ -143,6 +143,40 @@ public class WidgetParityTests
     }
 
     [Fact]
+    public void AssetStatusType_PrefersMeta_ThenName_ThenUnknown()
+    {
+        Assert.Equal("deployable", WidgetCatalog.AssetStatusType(Asset("deployable", "Ready")));
+        Assert.Equal("Repair", WidgetCatalog.AssetStatusType(Asset(null, "Repair")));
+        Assert.Equal("Repair", WidgetCatalog.AssetStatusType(Asset("", "Repair")));
+        Assert.Equal("Unknown", WidgetCatalog.AssetStatusType(new SnipeAsset()));
+    }
+
+    [Fact]
+    public void StatusFilter_HoldsStatusTypes_Capitalised()
+    {
+        Assert.Equal("Deployable", WidgetCatalog.AssetStatusFilterValue(Asset("deployable", "Ready")));
+        Assert.Equal("Ready To Deploy", WidgetCatalog.AssetStatusFilterValue(Asset(null, "ready to deploy")));
+        Assert.Equal("Unknown", WidgetCatalog.AssetStatusFilterValue(new SnipeAsset()));
+    }
+
+    /// <summary>
+    /// A wedge is a status type, and the Status filter holds status types, so
+    /// every wedge resolves to a filter value that matches all assets of its type.
+    /// </summary>
+    [Fact]
+    public void AssetStatusWedge_SelectsEveryAssetOfItsType()
+    {
+        var assets = new[] { Asset("deployable", "Ready"), Asset("deployable", "Spare"), Asset("deployed", "In Use") };
+        var options = assets.Select(WidgetCatalog.AssetStatusFilterValue).Distinct().ToList();
+
+        var wedge = WidgetCatalog.AssetStatusSlices(assets).Single(s => s.Label.StartsWith("deployable"));
+        var selected = WidgetCatalog.MatchFilterValues(WidgetCatalog.FilterValue(wedge.Label), options).Single();
+
+        Assert.Equal("Deployable", selected);
+        Assert.Equal(2, assets.Count(a => WidgetCatalog.AssetStatusFilterValue(a) == selected));
+    }
+
+    [Fact]
     public void AssetCategories_TopEight_UncategorizedFallback()
     {
         var assets = Enumerable.Range(0, 10).SelectMany(i => Enumerable.Range(0, i + 1).Select(_ => Asset("deployed", "x", $"C{i}")))
