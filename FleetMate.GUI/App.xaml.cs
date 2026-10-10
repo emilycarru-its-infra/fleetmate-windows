@@ -165,6 +165,10 @@ public partial class App : Application
     /// <summary>The FLEETMATE_CONTEXT file every terminal session points at.</summary>
     public FleetMate.Core.Services.Terminal.AppContextFile Context { get; } =
         new(FleetMate.Core.Services.Terminal.AppContextFile.DefaultPath);
+
+    /// <summary>The agent brief, where sessions open, and the agent CLIs kept current.</summary>
+    public FleetMate.GUI.Views.Terminal.AgentSessions Agent => _agent ??= new(this);
+    private FleetMate.GUI.Views.Terminal.AgentSessions? _agent;
     
     // MARK: - Cached Data
     // Data caches with timestamps to avoid reloading on tab switches
@@ -611,6 +615,8 @@ public partial class App : Application
             return;
         }
 
+        // Before the window, whose launch session reads the brief.
+        Agent.Start();
         var mainWindow = new MainWindow();
         mainWindow.Show();
         // A first launch with nothing set up opens the setup wizard over the window.

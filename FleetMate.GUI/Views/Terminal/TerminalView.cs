@@ -38,6 +38,8 @@ public sealed class TerminalView : UserControl, IDisposable
     private readonly TerminalSignalScanner _scanner = new();
     private bool _focusWhenReady;
     private double _fontSize = TerminalFontSize.Base;
+    /// <summary>Names this session's own brief, removed when the pane closes.</summary>
+    private readonly string _sessionId = Guid.NewGuid().ToString("N");
 
     public event EventHandler? ToggleRequested;
     public event EventHandler? Exited;
@@ -200,17 +202,28 @@ public sealed class TerminalView : UserControl, IDisposable
             Write(output.Replace("\n", "\r\n"));
             if (!ok) { Write("\r\n\x1b[33mClone failed; starting in the repos folder instead.\x1b[0m\r\n"); workingDirectory = RepoLocator.DefaultRoot; }
         }
+        var app = (App)Application.Current;
         if (workingDirectory != null && !System.IO.Directory.Exists(workingDirectory))
         {
-            Write($"\x1b[33m{workingDirectory} does not exist; starting in your home folder.\x1b[0m\r\n");
-            workingDirectory = null;
+            Write($"\x1b[33m{workingDirectory} does not exist; starting in the repos folder instead.\x1b[0m\r\n");
+            workingDirectory = AgentSessions.WorkspaceDirectory();
+        }
+        // A session nothing pointed anywhere opens where the person is
+        // working, never the bare home folder.
+        workingDirectory ??= app.Agent.StartDirectory();
+        if (Directory == null)
+        {
+            Directory = workingDirectory;
+            StateChanged?.Invoke(this, EventArgs.Empty);
         }
 
         try
         {
-            var app = (App)Application.Current;
+            // The agent is handed its brief, with where it opened at the top.
+            var place = app.Agent.Whereabouts();
+            var prepared = await Task.Run(() => app.Agent.Prepare(_sessionId, _launch.Command, workingDirectory, place));
             var env = TerminalEnvironment.Build(Environment.GetEnvironmentVariables(), app.Context.Path,
-                TerminalEnvironment.FindCliDirectory(AppContext.BaseDirectory));
+                TerminalEnvironment.FindCliDirectory(AppContext.BaseDirectory), prepared.Environment);
             _session = new PseudoConsoleSession();
             _session.Output += Write;
             _session.Exited += code =>
@@ -223,8 +236,7 @@ public sealed class TerminalView : UserControl, IDisposable
                     StateChanged?.Invoke(this, EventArgs.Empty);
                 });
             };
-            _session.Start(_launch.Command.CommandLine,
-                workingDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), env, _cols, _rows);
+            _session.Start(prepared.Command.CommandLine, workingDirectory, env, _cols, _rows);
         }
         catch (Exception ex)
         {
@@ -301,6 +313,7 @@ public sealed class TerminalView : UserControl, IDisposable
     public void Dispose()
     {
         _session?.Dispose();
+        (Application.Current as App)?.Agent.Release(_sessionId);
         _web.Dispose();
     }
 }

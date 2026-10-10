@@ -5,20 +5,24 @@ namespace FleetMate.Core.Services.Terminal;
 
 /// <summary>
 /// The environment every terminal session starts with: the app's own, plus
-/// FLEETMATE_CONTEXT pointing at the live context file, and the fleetmate
-/// CLI's folder first on PATH so an agent can call it.
+/// FLEETMATE_CONTEXT pointing at the live context file, the session's own
+/// variables (FLEETMATE_AGENT_BRIEF, and the switches that keep the agent CLIs
+/// from updating themselves), and the fleetmate CLI's folder first on PATH so
+/// an agent can call it.
 /// </summary>
 public static class TerminalEnvironment
 {
     public const string ContextVariable = "FLEETMATE_CONTEXT";
 
-    public static Dictionary<string, string> Build(IDictionary baseEnvironment, string contextPath, string? cliDirectory)
+    public static Dictionary<string, string> Build(IDictionary baseEnvironment, string contextPath, string? cliDirectory,
+        IReadOnlyDictionary<string, string>? session = null)
     {
         var env = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (DictionaryEntry entry in baseEnvironment)
             if (entry.Key is string key && entry.Value is string value) env[key] = value;
 
         env[ContextVariable] = contextPath;
+        foreach (var (key, value) in session ?? new Dictionary<string, string>()) env[key] = value;
         if (!string.IsNullOrWhiteSpace(cliDirectory))
         {
             var path = env.TryGetValue("PATH", out var existing) ? existing : "";

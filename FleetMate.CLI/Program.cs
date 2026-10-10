@@ -209,6 +209,16 @@ class Program
             // ReportMate fleet reporting
             rootCommand.AddCommand(ReportMateCommand.Create(reportMate));
 
+            // Agent CLIs FleetMate's terminal runs
+            rootCommand.AddCommand(AgentCommand.Create());
+
+            // The command tree as JSON, which the GUI turns into the agent brief.
+            if (args.Length == 1 && args[0] == HelpDump.Flag)
+            {
+                Console.Out.Write(HelpDump.Serialize(rootCommand));
+                return 0;
+            }
+
             var result = await rootCommand.InvokeAsync(args);
             
             // Dispose services

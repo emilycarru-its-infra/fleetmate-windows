@@ -18,6 +18,24 @@ public static class ContextPublisher
 
     public static void Tab(string tab) => File?.SetTab(tab);
 
+    /// <summary>The segment a tab shows (Development: Pulls, Inbox, Commits, ...).</summary>
+    public static void Segment(string tab, string? segment) => File?.SetSegment(tab, segment);
+
+    public static void PullRequest(UnifiedPullRequest? pr) =>
+        File?.SetSelection("pullRequest", pr == null ? Array.Empty<ContextSelection>() : new[]
+        {
+            new ContextSelection("pullRequest", $"{pr.Repository}#{pr.Number}", new Dictionary<string, string?>
+            {
+                ["title"] = pr.Title,
+                ["repository"] = string.IsNullOrEmpty(pr.Container) ? pr.Repository : $"{pr.Container}/{pr.Repository}",
+                ["sourceBranch"] = pr.SourceBranch,
+                ["targetBranch"] = pr.TargetBranch,
+                ["author"] = pr.AuthorName,
+                ["url"] = pr.WebUrl,
+                ["source"] = pr.Source.ToString(),
+            })
+        });
+
     public static void Devices(IEnumerable<IntuneDevice> devices) =>
         File?.SetSelection("device", devices.Select(d => new ContextSelection("device", d.Id, new Dictionary<string, string?>
         {

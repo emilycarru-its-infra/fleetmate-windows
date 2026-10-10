@@ -133,6 +133,15 @@ public sealed class TerminalPanel : UserControl
 
     private static TerminalSettings Settings => ((App)Application.Current).Config.Terminal;
 
+    /// <summary>
+    /// What a new session runs: the setting, except that the built-in default
+    /// (Codex) gives way to the shell on a PC without Codex.
+    /// </summary>
+    private static string DefaultCommand =>
+        Settings.AgentCommandIsBuiltInDefault && AgentCommands.FindInstalled(Settings.AgentCommand) == null
+            ? AgentCommands.Shell
+            : Settings.AgentCommand;
+
     // ── Opening sessions ─────────────────────────────────────────────────
 
     /// <summary>
@@ -143,7 +152,7 @@ public sealed class TerminalPanel : UserControl
     /// launch, so it does not take the keyboard.
     /// </summary>
     public void OpenDefaultSession(bool takeFocus = true) =>
-        OpenSession(AgentLaunch(Settings.AgentCommand, null) with { TakeFocus = takeFocus });
+        OpenSession(AgentLaunch(DefaultCommand, null) with { TakeFocus = takeFocus });
 
     public void FocusActive() => _active?.Panes.FirstOrDefault()?.FocusTerminal();
 
@@ -170,7 +179,7 @@ public sealed class TerminalPanel : UserControl
         foreach (var entry in repos)
         {
             var repo = RepoLocator.Resolve(entry, RepoLocator.DefaultRoot);
-            repoMenu.Items.Add(MenuItem(repo.Name, (_, _) => OpenSession(AgentLaunch(Settings.AgentCommand, repo))));
+            repoMenu.Items.Add(MenuItem(repo.Name, (_, _) => OpenSession(AgentLaunch(DefaultCommand, repo))));
         }
         menu.Items.Add(repoMenu);
         menu.IsOpen = true;
@@ -204,7 +213,7 @@ public sealed class TerminalPanel : UserControl
         // Split needs a session to split; it never opens the first one.
         if (_active == null) return;
         if (_active.Panes.Count >= 2) return;
-        AddPane(_active, AgentLaunch(Settings.AgentCommand, null));
+        AddPane(_active, AgentLaunch(DefaultCommand, null));
         Show(_active);
     }
 

@@ -686,6 +686,11 @@ public class FleetMateConfig
                 if (fromPolicy) config.Terminal.PolicyAgentAutoStart = agentAutoStart;
                 else config.Terminal.UserAgentAutoStart = agentAutoStart;
             }
+            if (TerminalSettings.ParseBool(key.GetValue("AgentKeepClisCurrent")) is { } keepClisCurrent)
+            {
+                if (fromPolicy) config.Terminal.PolicyKeepClisCurrent = keepClisCurrent;
+                else config.Terminal.UserKeepClisCurrent = keepClisCurrent;
+            }
             if (!fromPolicy && key.GetValue("Repos") is { } repos)
                 config.Terminal.Repos = TerminalSettings.ParseList(repos);
             if (fromPolicy && key.GetValue("RepoDefaults") is { } repoDefaults)
