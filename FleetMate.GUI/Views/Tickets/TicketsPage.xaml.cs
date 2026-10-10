@@ -82,6 +82,8 @@ private bool _isInitialLoadDone;
     public TicketsPage()
     {
         InitializeComponent();
+        AgentContextMenu.Attach(TicketsListView);
+        AgentContextMenu.Attach(BoardColumnsControl);
 
         // Get services from App
         if (Application.Current is App app)

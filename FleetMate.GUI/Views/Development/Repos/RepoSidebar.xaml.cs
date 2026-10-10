@@ -73,6 +73,7 @@ public partial class RepoSidebar : UserControl
     public RepoSidebar()
     {
         InitializeComponent();
+        AgentContextMenu.Attach(RepoList);
         FilterBox.Text = RepoWorkspacePreferences.Read("sidebar.filter") ?? "";
         _timer.Tick += async (_, _) => { if (_model != null) await _model.RefreshStatusesAsync(); };
         IsVisibleChanged += async (_, _) =>

@@ -5,6 +5,7 @@ using FleetMate.Core.Config;
 using FleetMate.Core.Models.Inventory;
 using FleetMate.Core.Services.Inventory;
 using FleetMate.GUI.Views.Shared.Widgets;
+using FleetMate.GUI.Views.Shared;
 
 namespace FleetMate.GUI.Views.Inventory;
 
@@ -30,6 +31,7 @@ public partial class AssetsPage : Page
     public AssetsPage()
     {
         InitializeComponent();
+        AgentContextMenu.Attach(AssetListView);
         InitColumns();
         AssetListView.AddHandler(System.Windows.Controls.Primitives.ButtonBase.ClickEvent,
             new RoutedEventHandler(OnColumnHeaderClicked));

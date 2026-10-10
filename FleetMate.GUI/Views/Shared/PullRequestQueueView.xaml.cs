@@ -30,6 +30,7 @@ public partial class PullRequestQueueView : UserControl
     public PullRequestQueueView()
     {
         InitializeComponent();
+        AgentContextMenu.Attach(this);
         Loaded += OnLoaded;
     }
 

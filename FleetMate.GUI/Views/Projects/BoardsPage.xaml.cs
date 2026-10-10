@@ -12,6 +12,8 @@ using FleetMate.Core.Services.Devices;
 using FleetMate.Core.Services.Inventory;
 using FleetMate.Core.Services.Tickets;
 using FleetMate.Core.Services.Reporting;
+using FleetMate.Core.Shared;
+using FleetMate.GUI.Views.Shared;
 
 namespace FleetMate.GUI.Views.Projects;
 
@@ -49,6 +51,9 @@ public partial class BoardsPage : Page
     public BoardsPage()
     {
         InitializeComponent();
+        AgentContextMenu.Attach(TaskBoardColumnsControl);
+        AgentContextMenu.Attach(FlatTaskList);
+        AgentContextMenu.Attach(WorkItemsListView);
         _app = Application.Current as App;
         _config = _app?.Config ?? FleetMateConfig.Load();
 
@@ -72,6 +77,8 @@ public partial class BoardsPage : Page
             DetailPanel.Visibility = Visibility.Visible;
             DetailColumn.Width = new GridLength(2, GridUnitType.Star);
         };
+        QueriesList.QueryContext = (query, count) => AgentContexts.Query(query, _config.AzureDevOps?.Project,
+            _devOpsService?.StoredQueryWebUrl(query.Id), count);
         QueriesList.OpenQueryRequested += (_, query) =>
         {
             if (_devOpsService == null) return;

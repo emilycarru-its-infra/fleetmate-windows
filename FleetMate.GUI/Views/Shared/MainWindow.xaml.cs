@@ -54,6 +54,8 @@ public partial class MainWindow : Window
         Closed += (_, _) => Terminal.DisposeAll();
         Loaded += (_, _) => InitToolbarFit();
         InitPreferences();
+        // Search hits that stand for a record offer Copy and Send to Agent.
+        AgentContextMenu.Attach(SearchResults);
         // An agent session started at launch must not take the keyboard.
         // TicketsMate has no terminal.
         if (!TicketsOnly && Application.Current is App { Config.Terminal.AgentAutoStart: true })
@@ -253,6 +255,25 @@ public partial class MainWindow : Window
     private void OnTerminalToggleClicked(object sender, RoutedEventArgs e) => ToggleTerminal();
 
     public void ToggleTerminal() => SetTerminalVisible(Terminal.Visibility != Visibility.Visible);
+
+    /// <summary>
+    /// Hand <paramref name="text"/> to the agent: pasted into a running
+    /// agent's input, never submitted. With no agent running, nothing is
+    /// started on the person's behalf: the text is copied and the terminal
+    /// opens idle (a session running what Settings names, with no prompt), so
+    /// the person pastes it alongside their own request. Returns true when
+    /// the text was pasted, false when it was copied.
+    /// </summary>
+    public bool SendToAgent(string text)
+    {
+        if (TicketsOnly) return false;
+        SetTerminalVisible(true, takeFocus: false);
+        if (Terminal.Insert(text)) return true;
+        AgentContextClipboard.SetText(text);
+        if (Terminal.HasSessions) Terminal.FocusActive();
+        else Terminal.OpenDefaultSession();
+        return false;
+    }
 
     /// <summary>
     /// Show or hide the panel. Showing it never opens a session: sessions

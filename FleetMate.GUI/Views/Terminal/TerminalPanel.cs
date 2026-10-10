@@ -156,6 +156,29 @@ public sealed class TerminalPanel : UserControl
 
     public void FocusActive() => _active?.Panes.FirstOrDefault()?.FocusTerminal();
 
+    /// <summary>
+    /// Put <paramref name="text"/> into an agent's input without pressing
+    /// Return, activating and focusing that session. Only a pane running an
+    /// agent CLI that has asked for bracketed paste receives it, never a bare
+    /// shell; the active session is tried first. Returns false when no agent
+    /// is running, so the caller copies the text instead and nothing is ever
+    /// sent on the person's behalf.
+    /// </summary>
+    public bool Insert(string text)
+    {
+        var candidates = (_active == null ? _sessions : _sessions.Where(s => !ReferenceEquals(s, _active)).Prepend(_active))
+            .SelectMany(s => s.Panes.Select(p => (Session: s, Pane: p)));
+        foreach (var (session, pane) in candidates)
+        {
+            if (!pane.AcceptsBracketedPaste || !pane.AgentIsRunning) continue;
+            if (!pane.PasteText(text)) continue;
+            Activate(session, false);
+            Dispatcher.BeginInvoke(pane.FocusTerminal, DispatcherPriority.Input);
+            return true;
+        }
+        return false;
+    }
+
     private void OpenNewMenu(Button anchor)
     {
         var menu = new ContextMenu { PlacementTarget = anchor, Placement = PlacementMode.Bottom };

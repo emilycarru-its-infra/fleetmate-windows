@@ -13,6 +13,7 @@ using FleetMate.Core.Services.Terminal;
 using FleetMate.GUI.Views.Manage;
 using FleetMate.GUI.Views.Shared;
 using FleetMate.GUI.Views.Terminal;
+using FleetMate.Core.Shared;
 
 namespace FleetMate.GUI.Views.Development.Repos;
 
@@ -114,6 +115,8 @@ public partial class RepoWorkspaceView : UserControl
     public RepoWorkspaceView()
     {
         InitializeComponent();
+        AgentContextMenu.Attach(FilesList, o => o is FileRow row && _model?.Selected is { } record ? AgentContexts.File(row.Path, record) : null);
+        AgentContextMenu.Attach(GrepList, o => o is GrepRow row && _model?.Selected is { } record ? AgentContexts.File(row.Path, record, row.Match.Line) : null);
         ((Grid)Content).Children.Add(SearchBox);
         SearchBox.TextChanged += (_, _) => { if (_model != null) _model.FileFilter = SearchBox.Text; };
         _errorTimer.Tick += (_, _) => { _errorTimer.Stop(); ErrorBanner.Visibility = Visibility.Collapsed; };

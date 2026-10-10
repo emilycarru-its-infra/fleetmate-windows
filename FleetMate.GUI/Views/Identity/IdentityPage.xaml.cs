@@ -10,6 +10,8 @@ using FleetMate.Core.Services.Inventory;
 using FleetMate.Core.Services.Tickets;
 using FleetMate.Core.Services.Projects;
 using FleetMate.Core.Services.Reporting;
+using FleetMate.Core.Shared;
+using FleetMate.GUI.Views.Shared;
 
 namespace FleetMate.GUI.Views.Identity;
 
@@ -18,10 +20,22 @@ public partial class IdentityPage : Page
     private readonly App? _app;
     private readonly GraphService? _graphService;
     private bool _isInitialLoadDone;
+    /// <summary>The groups listed in the tree, by id, for the agent menu.</summary>
+    private readonly Dictionary<string, EntraGroup> _groups = new();
+
+    /// <summary>The group a top-level tree row stands for; its members' rows are not groups.</summary>
+    private AgentContext? GroupContext(object o) =>
+        o is TreeViewItem { Tag: string id } item
+        && ReferenceEquals(ItemsControl.ItemsControlFromItemContainer(item), GroupsTreeView)
+        && _groups.TryGetValue(id, out var group)
+            ? AgentContexts.Group(group)
+            : null;
 
     public IdentityPage()
     {
         InitializeComponent();
+        AgentContextMenu.Attach(UsersListView);
+        AgentContextMenu.Attach(GroupsTreeView, GroupContext);
 
         if (Application.Current is App app)
         {
@@ -69,8 +83,10 @@ public partial class IdentityPage : Page
             var groups = await _graphService.SearchGroupsAsync("Devices-", DeviceGroupFetch.Limit);
             
             GroupsTreeView.Items.Clear();
+            _groups.Clear();
             foreach (var group in groups.OrderBy(g => g.DisplayName))
             {
+                _groups[group.Id] = group;
                 var item = new TreeViewItem
                 {
                     Header = $"{group.DisplayName} ({group.Description ?? ""})",

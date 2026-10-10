@@ -66,16 +66,26 @@
       navigator.clipboard.writeText(term.getSelection()); term.clearSelection(); return false;
     }
     if (e.type === 'keydown' && e.ctrlKey && e.key === 'v') {
-      navigator.clipboard.readText().then(t => post({ type: 'input', data: t })); return false;
+      // term.paste brackets the text when the program asked for it, so a
+      // multi-line paste reaches an agent as one block rather than line by line.
+      navigator.clipboard.readText().then(t => term.paste(t)); return false;
     }
     // Ctrl+` belongs to the app: it toggles the panel.
     if (e.ctrlKey && e.key === '`') { if (e.type === 'keydown') post({ type: 'toggle' }); return false; }
     return true;
   });
 
+  // The host pastes only into a program that has asked for bracketed
+  // paste, so it is told whenever that mode turns on or off.
+  let bracketedPaste = false;
+  const reportModes = () => {
+    const on = !!term.modes.bracketedPasteMode;
+    if (on !== bracketedPaste) { bracketedPaste = on; post({ type: 'modes', bracketedPaste: on }); }
+  };
+
   window.chrome.webview.addEventListener('message', ev => {
     const m = ev.data;
-    if (m.type === 'output') term.write(m.data);
+    if (m.type === 'output') term.write(m.data, reportModes);
     else if (m.type === 'config') { chords = new Set(m.chords); setFont(m.fontSize); }
     else if (m.type === 'font') setFont(m.size);
     else if (m.type === 'clear') term.clear();

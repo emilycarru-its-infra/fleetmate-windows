@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using FleetMate.Core.Services.Terminal;
+using FleetMate.Core.Shared;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using Serilog;
@@ -57,6 +58,38 @@ public sealed class TerminalView : UserControl, IDisposable
     /// <summary>Whether this pane is on screen now; a bell from a hidden pane asks for attention.</summary>
     public bool IsShown { get; set; }
     public int ProcessId => _session?.ProcessId ?? 0;
+
+    /// <summary>
+    /// Whether the program in the terminal takes pasted text as one block
+    /// (Claude Code and Codex both ask for it once they are drawn), as the
+    /// page last reported.
+    /// </summary>
+    public bool AcceptsBracketedPaste { get; private set; }
+
+    /// <summary>
+    /// Whether an agent CLI, not a bare shell, is running in this pane now:
+    /// the pane's process or one of its descendants is one. Reads a process
+    /// snapshot, so it is not free; call it on a click, not on a timer.
+    /// </summary>
+    public bool AgentIsRunning => Activity.State(DateTime.UtcNow) != ActivityState.Exited && AgentProcessTree.IsAgentRunning(ProcessId);
+
+    /// <summary>
+    /// Type <paramref name="text"/> into the program's input as one bracketed
+    /// paste, never followed by Return. Control characters and escape
+    /// sequences are stripped first, so the text cannot end the paste early,
+    /// submit it or drive the terminal. Refuses (returns false) when the
+    /// program has not asked for bracketed paste, so nothing ever lands in a
+    /// bare shell line by line.
+    /// </summary>
+    public bool PasteText(string text)
+    {
+        if (_session == null || !AcceptsBracketedPaste) return false;
+        _session.Write(Paste(text));
+        return true;
+    }
+
+    /// <summary>The bracketed paste written for <paramref name="text"/>.</summary>
+    internal static string Paste(string text) => "\x1b[200~" + AgentContextSanitizer.PastePayload(text) + "\x1b[201~";
 
     public TerminalView(TerminalLaunch launch)
     {
@@ -186,6 +219,9 @@ public sealed class TerminalView : UserControl, IDisposable
                 break;
             case "toggle":
                 ToggleRequested?.Invoke(this, EventArgs.Empty);
+                break;
+            case "modes":
+                AcceptsBracketedPaste = m.GetProperty("bracketedPaste").GetBoolean();
                 break;
         }
     }

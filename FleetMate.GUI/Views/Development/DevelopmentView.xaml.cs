@@ -30,6 +30,9 @@ public partial class DevelopmentView : UserControl
     public DevelopmentView()
     {
         InitializeComponent();
+        AgentContextMenu.Attach(PullRequestList);
+        AgentContextMenu.Attach(CommitsList);
+        AgentContextMenu.Attach(PipelinesList);
         Loaded += OnLoaded;
         DetailView.StateChanged += async (_, _) => await RefreshAsync();
         RunView.RunChanged += async (_, _) => await LoadRunsAsync();

@@ -3,6 +3,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using FleetMate.Core.Models.Projects;
+using FleetMate.Core.Shared;
+using FleetMate.GUI.Views.Shared;
 
 namespace FleetMate.GUI.Views.Projects;
 
@@ -21,6 +23,13 @@ public partial class QueriesListControl : UserControl
     public event EventHandler<UnifiedTask>? TaskSelected;
     public event EventHandler<AdoSharedQuery>? OpenQueryRequested;
 
+    /// <summary>
+    /// The block "Copy for Agent" hands over for a query and its row count.
+    /// The page sets it to add the project and the query's web link.
+    /// </summary>
+    public Func<AdoSharedQuery, int, AgentContext> QueryContext { get; set; } =
+        (query, count) => AgentContexts.Query(query, null, null, count);
+
     /// <summary>Collapse state survives tab switches, not restarts.</summary>
     private static readonly HashSet<string> CollapsedQueryIds = new();
 
@@ -31,6 +40,7 @@ public partial class QueriesListControl : UserControl
     public QueriesListControl()
     {
         InitializeComponent();
+        AgentContextMenu.Attach(SectionsPanel, o => o is QueryRunDisplay run ? QueryContext(run.Query, run.Rows.Count) : null);
     }
 
     /// <summary>
@@ -141,7 +151,8 @@ public partial class QueriesListControl : UserControl
         expander.Expanded += (_, _) => CollapsedQueryIds.Remove(run.Query.Id);
         expander.Collapsed += (_, _) => CollapsedQueryIds.Add(run.Query.Id);
 
-        var headerPanel = new DockPanel { LastChildFill = true };
+        // Tagged with its run, so the header offers Copy and Send to Agent for the query.
+        var headerPanel = new DockPanel { LastChildFill = true, Tag = run };
         var openButton = new Button
         {
             Content = "",
