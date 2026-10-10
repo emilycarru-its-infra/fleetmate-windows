@@ -37,6 +37,18 @@ public class SnipeService : IDisposable
     public bool UsesOidc { get; }
 
     /// <summary>
+    /// True when requests carry a credential: an Entra audience or a legacy API
+    /// key. Without either, Snipe-IT answers every call 401, so the cause is
+    /// named here rather than left to read as a refused sign-in.
+    /// </summary>
+    public bool HasCredential { get; }
+
+    /// <summary>Why Snipe-IT cannot be reached as configured, or null when it can be tried.</summary>
+    public string? MissingCredentialReason => HasCredential
+        ? null
+        : "no Snipe-IT sign-in is set: SnipeOidcAudience (the Entra audience of the Snipe-IT API) is missing";
+
+    /// <summary>
     /// Build from config so every call site authenticates the same way — Entra
     /// SSO by default, the legacy API key only where no audience is configured.
     /// </summary>
@@ -52,6 +64,7 @@ public class SnipeService : IDisposable
     {
         BaseUrl = string.IsNullOrWhiteSpace(baseUrl) ? string.Empty : ServiceUri.Normalize(baseUrl);
         UsesOidc = !string.IsNullOrWhiteSpace(oidcAudience);
+        HasCredential = UsesOidc || !string.IsNullOrWhiteSpace(apiKey);
 
         // Prefer-bearer: an Entra audience beats a shared key wherever both are
         // set, so migrating an estate is a matter of setting the audience rather
@@ -102,6 +115,7 @@ public class SnipeService : IDisposable
     public async Task<string?> CheckAccessAsync(CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(BaseUrl)) return "no Snipe-IT address is set";
+        if (MissingCredentialReason is { } missing) return missing;
         try
         {
             using var response = await _client.GetAsync("/api/v1/hardware?limit=1", ct);
@@ -140,6 +154,12 @@ public class SnipeService : IDisposable
             return _assetCache;
         }
         
+        if (MissingCredentialReason is { } missing)
+        {
+            Log.Warning("Not fetching assets: {Reason}", missing);
+            return _assetCache ?? new List<SnipeAsset>();
+        }
+
         Log.Debug("Fetching assets from Snipe-IT...");
         var allAssets = new List<SnipeAsset>();
         var offset = 0;
