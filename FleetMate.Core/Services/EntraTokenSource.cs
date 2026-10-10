@@ -1,7 +1,4 @@
 using System.Collections.Concurrent;
-using System.Runtime.InteropServices;
-using System.Security.Principal;
-using System.Text;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Client.Broker;
 using Serilog;
@@ -204,8 +201,10 @@ public sealed class EntraTokenSource
         var headless = HeadlessOverride ?? HeadlessSignIn;
         if (headless is null) throw brokerFailure;
 
-        var upn = WindowsUpn();
-        Log.Information("[entra] Broker had no token for {Scope}; trying the hidden browser", scope);
+        // The same address the TeamDynamix sign-in checks against, so the hidden
+        // browser's login hint and account pick match it.
+        var upn = WindowsUpn() ?? await ResolveAccountUpnAsync(ct);
+        Log.Information("[entra] Broker had no token for {Scope}; trying the hidden browser as {Upn}", scope, upn ?? "(no address)");
         try
         {
             var result = await headless(new EntraHeadlessRequest(scope, ClientId, Tenant, upn), ct);
@@ -326,57 +325,46 @@ public sealed class EntraTokenSource
             $"no silent credential from the Windows sign-in broker ({string.Join("; ", tried)})");
     }
 
+    // The address once resolved, so every sign-in uses the same one and the
+    // broker is not asked again for each scope.
+    private string? _accountUpn;
+
     /// <summary>
-    /// The address of the account Windows is signed in with, from the logon
-    /// itself rather than the broker: <c>GetUserNameEx(NameUserPrincipal)</c>,
-    /// then the UPN claim on the logon token. Null for a local account.
+    /// The address of the account Windows is signed in with, without asking the
+    /// broker: the logon, then the registry (<see cref="WindowsAccount"/>), or
+    /// the address already resolved. Null when none is known.
     /// </summary>
     public string? WindowsUpn()
     {
-        if (UpnOverride is { } overridden) return Normalize(overridden());
-        return ResolveWindowsUpn();
+        if (UpnOverride is { } overridden) return WindowsAccount.Normalize(overridden());
+        return _accountUpn ?? WindowsAccount.ResolveWithoutBroker();
     }
 
-    /// <inheritdoc cref="WindowsUpn"/>
-    public static string? ResolveWindowsUpn()
+    /// <summary>
+    /// The address of the account Windows is signed in with, from every source
+    /// in order: the logon, the broker's operating-system account, the
+    /// registry. The first answer is kept for the life of this source.
+    /// </summary>
+    public async Task<string?> ResolveAccountUpnAsync(CancellationToken ct = default)
     {
-        if (!OperatingSystem.IsWindows()) return null;
-        try
-        {
-            var size = 256u;
-            var buffer = new StringBuilder((int)size);
-            if (GetUserNameEx(NameUserPrincipal, buffer, ref size) && Normalize(buffer.ToString()) is { } upn)
-                return upn;
-        }
-        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
-        {
-            Log.Debug(ex, "[entra] GetUserNameEx is unavailable");
-        }
+        if (UpnOverride is { } overridden) return WindowsAccount.Normalize(overridden());
+        if (_accountUpn is { } known) return known;
 
-        try
+        var (upn, from) = await WindowsAccount.FirstAsync(WindowsAccount.Sources(GetOperatingSystemAccountUpnAsync), ct);
+        if (upn != null)
         {
-            using var identity = WindowsIdentity.GetCurrent();
-            var claim = identity.Claims.FirstOrDefault(c =>
-                c.Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn");
-            return Normalize(claim?.Value) ?? Normalize(identity.Name);
+            Log.Information("[entra] Windows account {Upn} (from the {Source})", upn, from);
+            _accountUpn = upn;
         }
-        catch (Exception ex)
+        else
         {
-            Log.Debug(ex, "[entra] Could not read the Windows identity");
-            return null;
+            Log.Warning("[entra] No Windows work-account address from the logon, the sign-in broker or the registry");
         }
+        return upn;
     }
 
-    private static string? Normalize(string? value)
-    {
-        var trimmed = value?.Trim().ToLowerInvariant();
-        return string.IsNullOrEmpty(trimmed) || !trimmed.Contains('@') || trimmed.Contains('\\') ? null : trimmed;
-    }
-
-    private const int NameUserPrincipal = 8;
-
-    [DllImport("secur32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool GetUserNameEx(int nameFormat, StringBuilder userName, ref uint userNameSize);
+    /// <summary>The address from the logon and the registry, for callers with no token source.</summary>
+    public static string? ResolveWindowsUpn() => WindowsAccount.ResolveWithoutBroker();
 
     /// <summary>
     /// Turn an audience into a scope. Callers configure audiences (a GUID or an

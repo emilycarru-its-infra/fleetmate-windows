@@ -47,7 +47,7 @@ internal static class TdxHeadlessSso
         var upn = await TdxSsoIdentity.ResolveWindowsUpnAsync(ct);
         if (upn == null)
         {
-            Log.Error("[tdx-sso] No Windows work-account address found; the session's account cannot be checked, sign-in refused");
+            Log.Error("[tdx-sso] No Windows work-account address from the logon, the sign-in broker or the registry; the session's account cannot be checked, sign-in refused");
             return TdxSsoResult.Refused(TdxSsoResult.UnknownExpectedAddressReason);
         }
         Log.Information("[tdx-sso] Signing in as the Windows account {Upn}", upn);
@@ -112,7 +112,7 @@ internal static class TdxHeadlessSso
                         await core.ExecuteScriptAsync(EntraWebSignIn.KmsiScript);
                         if (!accountAnswered)
                             await core.ExecuteScriptAsync(EntraWebSignIn.AccountScript(upn));
-                        ScheduleMethodFallback(core, url, tcs.Task);
+                        EntraPageDriver.ScheduleMethodFallback(core, url, tcs.Task);
                         return;
                     }
 
@@ -172,83 +172,4 @@ internal static class TdxHeadlessSso
         Log.Information("[tdx-sso] JWT acquired in the hidden browser for {User}", result.UserName ?? result.UserEmail ?? "(unknown)");
         return result;
     }
-
-    /// <summary>
-    /// If an Entra page is still showing a few seconds after it loaded — a
-    /// passkey prompt the hidden browser cannot answer — offer Entra another
-    /// method. The script runs inside the page; nothing is shown.
-    /// </summary>
-    private static void ScheduleMethodFallback(CoreWebView2 core, string url, Task done)
-    {
-        _ = Task.Delay(3000).ContinueWith(async _ =>
-        {
-            if (done.IsCompleted) return;
-            try
-            {
-                if (!string.Equals(core.Source, url, StringComparison.Ordinal)) return;
-                await core.ExecuteScriptAsync(MethodFallbackScript);
-            }
-            catch { /* the browser has gone */ }
-        }, TaskScheduler.FromCurrentSynchronizationContext());
-    }
-
-    /// <summary>
-    /// Moves Entra off a passkey page: "Sign in another way", then a non-FIDO
-    /// method such as an Authenticator push. Never "Try again", which loops on
-    /// the failing passkey.
-    /// </summary>
-    private const string MethodFallbackScript = """
-        (function() {
-            if (window.__fleetmateFidoFallback) return;
-            window.__fleetmateFidoFallback = true;
-            var acted = false;
-            function post(m) { try { window.chrome.webview.postMessage({ debug: m }); } catch (e) {} }
-            function tryFallback() {
-                if (acted) return true;
-                var elems = document.querySelectorAll('a, button, [role="link"], [role="button"], input[type="submit"], span[tabindex], div[tabindex], li[tabindex]');
-                for (var i = 0; i < elems.length; i++) {
-                    var text = (elems[i].textContent || elems[i].value || '').trim().toLowerCase();
-                    if (text.indexOf('sign in another way') !== -1 ||
-                        text.indexOf('other ways to sign in') !== -1 ||
-                        text.indexOf('use another method') !== -1 ||
-                        text.indexOf('use a different method') !== -1 ||
-                        text.indexOf('try another way') !== -1 ||
-                        text.indexOf("i can't use") !== -1) {
-                        post('[FIDO] Clicking: ' + text);
-                        elems[i].click();
-                        acted = true;
-                        return true;
-                    }
-                }
-                var bodyText = (document.body && document.body.innerText) || '';
-                var isFidoPage = bodyText.indexOf('passkey') !== -1 ||
-                                 bodyText.indexOf('security key') !== -1 ||
-                                 bodyText.indexOf('FIDO') !== -1;
-                var isErrorPage = bodyText.indexOf("couldn’t sign you in") !== -1 ||
-                                  bodyText.indexOf("couldn't sign you in") !== -1 ||
-                                  bodyText.indexOf('Something went wrong') !== -1;
-                if (!isFidoPage && !isErrorPage) return false;
-                var tiles = document.querySelectorAll('[data-value]');
-                var preferred = ['PhoneAppNotification', 'PhoneAppOTP', 'OneWaySMS', 'TwoWayVoiceMobile'];
-                for (var p = 0; p < preferred.length; p++) {
-                    for (var t = 0; t < tiles.length; t++) {
-                        if ((tiles[t].getAttribute('data-value') || '') === preferred[p]) {
-                            post('[FIDO] Selecting method: ' + preferred[p]);
-                            tiles[t].click();
-                            acted = true;
-                            return true;
-                        }
-                    }
-                }
-                post('[FIDO] Page: ' + location.host + location.pathname + ' Body: ' + bodyText.slice(0, 160).replace(/\s+/g, ' '));
-                return false;
-            }
-            if (document.body) {
-                var observer = new MutationObserver(function() { tryFallback(); });
-                observer.observe(document.body, { childList: true, subtree: true });
-                setTimeout(function() { observer.disconnect(); }, 45000);
-            }
-            [0, 500, 1000, 2000, 4000, 8000, 13000, 20000].forEach(function(d) { setTimeout(tryFallback, d); });
-        })();
-        """;
 }

@@ -111,6 +111,7 @@ public class EntraSilentFallbackTests
         Assert.Contains("login_hint=operator%40example.edu", url);
         Assert.Contains("code_challenge_method=S256", url);
         Assert.Contains("redirect_uri=http%3A%2F%2Flocalhost", url);
+        Assert.Contains("domain_hint=organizations", url);
         Assert.DoesNotContain("prompt=", url);
     }
 

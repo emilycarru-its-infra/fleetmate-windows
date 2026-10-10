@@ -455,9 +455,7 @@ public partial class App : Application
 
         // Phase 3: the hidden browser.
         Log.Information("[devops-sso] Phase 3: hidden WebView2 SSO");
-        var upn = EntraTokenSource.Shared is { } source
-            ? await source.GetOperatingSystemAccountUpnAsync() ?? source.WindowsUpn()
-            : EntraTokenSource.ResolveWindowsUpn();
+        var upn = await TdxSsoIdentity.ResolveWindowsUpnAsync();
         var headless = await DevOpsHeadlessSso.SignInAsync(DevOpsSsoService, upn);
         if (headless is { Success: true, Token: not null })
         {

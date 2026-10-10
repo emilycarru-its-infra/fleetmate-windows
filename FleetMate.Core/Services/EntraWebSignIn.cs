@@ -149,4 +149,84 @@ public static partial class EntraWebSignIn
             return 'accepted';
         })();
         """;
+
+    /// <summary>
+    /// How long a hidden sign-in may sit on Entra's passkey page before it is
+    /// given up. The method fallback has had its chance by then; a passkey
+    /// needs a person at the machine, so waiting out the full
+    /// <see cref="HeadlessTimeout"/> there only delays the same failure.
+    /// </summary>
+    public static readonly TimeSpan PasskeyGiveUp = TimeSpan.FromSeconds(25);
+
+    /// <summary>True for Entra's passkey (FIDO) ceremony, e.g. <c>login.microsoft.com/{tenant}/fido/get</c>.</summary>
+    public static bool IsPasskeyPage(string? url) =>
+        IsEntraPage(url)
+        && Uri.TryCreate(url, UriKind.Absolute, out var uri)
+        && uri.AbsolutePath.Contains("/fido/", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The failure reported when a hidden sign-in is left on the passkey page.</summary>
+    public static string PasskeyReason(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            ? $"Entra asked for a passkey ({uri.Host}{uri.AbsolutePath}), which a hidden sign-in cannot answer"
+            : "Entra asked for a passkey, which a hidden sign-in cannot answer";
+
+    /// <summary>
+    /// Moves Entra off a passkey page: "Sign in another way", then a non-FIDO
+    /// method such as an Authenticator push. Never "Try again", which loops on
+    /// the failing passkey.
+    /// </summary>
+    public const string MethodFallbackScript = """
+        (function() {
+            if (window.__fleetmateFidoFallback) return;
+            window.__fleetmateFidoFallback = true;
+            var acted = false;
+            function post(m) { try { window.chrome.webview.postMessage({ debug: m }); } catch (e) {} }
+            function tryFallback() {
+                if (acted) return true;
+                var elems = document.querySelectorAll('a, button, [role="link"], [role="button"], input[type="submit"], span[tabindex], div[tabindex], li[tabindex]');
+                for (var i = 0; i < elems.length; i++) {
+                    var text = (elems[i].textContent || elems[i].value || '').trim().toLowerCase();
+                    if (text.indexOf('sign in another way') !== -1 ||
+                        text.indexOf('other ways to sign in') !== -1 ||
+                        text.indexOf('use another method') !== -1 ||
+                        text.indexOf('use a different method') !== -1 ||
+                        text.indexOf('try another way') !== -1 ||
+                        text.indexOf("i can't use") !== -1) {
+                        post('[FIDO] Clicking: ' + text);
+                        elems[i].click();
+                        acted = true;
+                        return true;
+                    }
+                }
+                var bodyText = (document.body && document.body.innerText) || '';
+                var isFidoPage = bodyText.indexOf('passkey') !== -1 ||
+                                 bodyText.indexOf('security key') !== -1 ||
+                                 bodyText.indexOf('FIDO') !== -1;
+                var isErrorPage = bodyText.indexOf("couldn’t sign you in") !== -1 ||
+                                  bodyText.indexOf("couldn't sign you in") !== -1 ||
+                                  bodyText.indexOf('Something went wrong') !== -1;
+                if (!isFidoPage && !isErrorPage) return false;
+                var tiles = document.querySelectorAll('[data-value]');
+                var preferred = ['PhoneAppNotification', 'PhoneAppOTP', 'OneWaySMS', 'TwoWayVoiceMobile'];
+                for (var p = 0; p < preferred.length; p++) {
+                    for (var t = 0; t < tiles.length; t++) {
+                        if ((tiles[t].getAttribute('data-value') || '') === preferred[p]) {
+                            post('[FIDO] Selecting method: ' + preferred[p]);
+                            tiles[t].click();
+                            acted = true;
+                            return true;
+                        }
+                    }
+                }
+                post('[FIDO] Page: ' + location.host + location.pathname + ' Body: ' + bodyText.slice(0, 160).replace(/\s+/g, ' '));
+                return false;
+            }
+            if (document.body) {
+                var observer = new MutationObserver(function() { tryFallback(); });
+                observer.observe(document.body, { childList: true, subtree: true });
+                setTimeout(function() { observer.disconnect(); }, 45000);
+            }
+            [0, 500, 1000, 2000, 4000, 8000, 13000, 20000].forEach(function(d) { setTimeout(tryFallback, d); });
+        })();
+        """;
 }

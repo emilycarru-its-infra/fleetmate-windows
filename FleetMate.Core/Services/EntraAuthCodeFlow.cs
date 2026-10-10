@@ -45,6 +45,8 @@ public sealed class EntraAuthCodeFlow
             qs.Append("&code_challenge=").Append(Uri.EscapeDataString(DevOpsSsoService.GenerateCodeChallenge(_verifier)));
             if (!string.IsNullOrWhiteSpace(_request.LoginHint))
                 qs.Append("&login_hint=").Append(Uri.EscapeDataString(_request.LoginHint));
+            // A work account: Entra skips asking whether it is a personal one.
+            qs.Append("&domain_hint=organizations");
             return new Uri(Endpoint("authorize") + qs);
         }
     }
