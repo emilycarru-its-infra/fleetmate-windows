@@ -766,8 +766,11 @@ public partial class App : Application
             if (!string.IsNullOrEmpty(Config.SnipeUrl))
             {
                 SnipeService = SnipeService.FromConfig(Config);
-                Log.Information("SnipeService initialized ({Auth})",
-                    SnipeService.UsesOidc ? "Entra SSO" : "legacy API key");
+                if (SnipeService.MissingCredentialReason is { } missing)
+                    Log.Warning("SnipeService initialized without a credential: {Reason}", missing);
+                else
+                    Log.Information("SnipeService initialized ({Auth})",
+                        SnipeService.UsesOidc ? "Entra SSO" : "legacy API key");
             }
 
             // Initialize TdxService if configured

@@ -15,6 +15,25 @@ public class AuthCardTruthTests
     }
 
     [Fact]
+    public async Task SnipeWithAnAddressButNoSignInNamesTheMissingAudience()
+    {
+        // With neither an audience nor a key, every request went out with no
+        // Authorization header and Snipe-IT's 401 read as a refused sign-in.
+        using var service = new SnipeService("https://snipe.example.edu");
+        Assert.False(service.HasCredential);
+        Assert.Contains("SnipeOidcAudience", await service.CheckAccessAsync());
+        Assert.Empty(await service.GetAssetsAsync());
+    }
+
+    [Fact]
+    public void SnipeWithAnAudienceHasACredential()
+    {
+        using var service = new SnipeService("https://snipe.example.edu", oidcAudience: "api://snipe");
+        Assert.True(service.HasCredential);
+        Assert.Null(service.MissingCredentialReason);
+    }
+
+    [Fact]
     public void ReportMateNamesTheSettingsItStillNeeds()
     {
         Assert.Contains("ReportMateOidcAudience", SettingsPage.ReportMateNeeds(hasUrl: true));
