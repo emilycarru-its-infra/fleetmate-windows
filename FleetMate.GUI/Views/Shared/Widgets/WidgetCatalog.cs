@@ -487,9 +487,21 @@ public static class WidgetCatalog
         .Select(s => new ChartSlice($"{s.Status} ({s.Count})", s.Count))
         .ToList();
 
+    /// <summary>
+    /// The few words a widget or the asset count shows when the assets could
+    /// not be loaded: a token that could not be had is a failed sign-in, which
+    /// the operator fixes differently from Snipe-IT itself failing.
+    /// </summary>
+    internal static string AssetsFailureHeadline(string? reason) =>
+        reason is null ? "No asset data"
+        : reason.StartsWith("Sign-in failed", StringComparison.OrdinalIgnoreCase)
+          || reason.Contains("refused the sign-in", StringComparison.OrdinalIgnoreCase) ? "Sign-in failed"
+        : "Could not load assets";
+
     private static List<UIElement> Inventory(App app, Action<string, string> filter)
     {
         var assets = app.CachedAssets;
+        var empty = AssetsFailureHeadline(app.AssetsLoadError);
         var loading = app.IsCacheLoading("Assets");
         var waiting = loading && assets.Count == 0;
 
@@ -506,14 +518,14 @@ public static class WidgetCatalog
 
         var categories = AssetCategorySlices(assets);
         cards.Add(WidgetCards.Card("Assets by Category",
-            WidgetCards.ChartOr(categories.Count > 0, loading, "No asset data",
+            WidgetCards.ChartOr(categories.Count > 0, loading, empty,
                 () => WidgetCards.HorizontalBars(categories, WidgetCards.ByIndex(categories, AssetCategoryColors),
                     c => filter(Category.AssetCategory, c))),
             loading: loading));
 
         var statuses = AssetStatusSlices(assets);
         cards.Add(WidgetCards.Card("Asset Status",
-            WidgetCards.ChartOr(statuses.Count > 0, loading, "No asset data",
+            WidgetCards.ChartOr(statuses.Count > 0, loading, empty,
                 () => WidgetCards.Donut(statuses, s => filter(Category.Status, s),
                     statuses.Select((_, i) => P.Sk(AssetStatusColors[i % AssetStatusColors.Length])).ToList())),
             loading: loading));

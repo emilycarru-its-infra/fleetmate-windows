@@ -197,8 +197,11 @@ public class ReportMateService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to fetch devices from ReportMate");
-            return _deviceCache ?? new List<Device>();
+            Log.Error(ex, "[reportmate] Failed to fetch devices from ReportMate");
+            // A stale list beats none, but with nothing held the failure is the
+            // answer: an empty list read as a fleet with no devices in it.
+            if (_deviceCache != null) return _deviceCache;
+            throw;
         }
     }
 

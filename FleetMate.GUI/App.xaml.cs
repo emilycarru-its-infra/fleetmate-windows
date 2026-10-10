@@ -242,11 +242,26 @@ public partial class App : Application
     /// <summary>Update assets cache</summary>
     public void UpdateAssetsCache(List<SnipeAsset> assets)
     {
+        AssetsLoadError = null;
         CachedAssets = assets;
         _assetsCacheTime = DateTime.Now;
         NotifyCacheChanged("Assets");
     }
     
+    /// <summary>
+    /// Why the assets could not be loaded, or null. The Inventory widgets show
+    /// it in place of "No asset data", so a failed sign-in does not read as an
+    /// empty inventory.
+    /// </summary>
+    public string? AssetsLoadError { get; private set; }
+
+    /// <summary>Record a failed asset load and redraw what shows the assets.</summary>
+    public void SetAssetsLoadError(string reason)
+    {
+        AssetsLoadError = reason;
+        NotifyCacheChanged("Assets");
+    }
+
     /// <summary>Update tickets cache</summary>
     public void UpdateTicketsCache(List<TdxTicket> tickets)
     {
@@ -440,7 +455,9 @@ public partial class App : Application
 
         // Phase 3: the hidden browser.
         Log.Information("[devops-sso] Phase 3: hidden WebView2 SSO");
-        var upn = EntraTokenSource.Shared is { } source ? await source.GetOperatingSystemAccountUpnAsync() : null;
+        var upn = EntraTokenSource.Shared is { } source
+            ? await source.GetOperatingSystemAccountUpnAsync() ?? source.WindowsUpn()
+            : EntraTokenSource.ResolveWindowsUpn();
         var headless = await DevOpsHeadlessSso.SignInAsync(DevOpsSsoService, upn);
         if (headless is { Success: true, Token: not null })
         {
@@ -521,6 +538,10 @@ public partial class App : Application
                 shared: true,
                 outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
             .CreateLogger();
+
+        // When the broker has no token for an API, the token source falls back
+        // to a never-shown browser carrying the device's sign-in.
+        FleetMate.GUI.Views.Shared.EntraHeadlessToken.Register(this);
 
         // Record every unhandled failure before the process dies. Without
         // these, a crash on the UI thread or a faulted background task leaves
@@ -693,7 +714,12 @@ public partial class App : Application
                     Dispatcher.Invoke(() => UpdateAssetsCache(assets));
                     Log.Information("Preloaded {Count} assets", assets.Count);
                 }
-                catch (Exception ex) { Log.Warning(ex, "Failed to preload assets"); }
+                catch (Exception ex)
+                {
+                    var reason = ex is SnipeException ? ex.Message : FleetMate.Core.Services.Inventory.SnipeService.Describe(ex);
+                    Log.Warning("[snipe] Failed to preload assets: {Reason}", reason);
+                    Dispatcher.Invoke(() => SetAssetsLoadError(reason));
+                }
             }));
         }
 

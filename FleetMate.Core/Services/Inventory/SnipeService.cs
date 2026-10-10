@@ -61,6 +61,12 @@ public class SnipeService : IDisposable
     }
 
     public SnipeService(string? baseUrl = null, string? apiKey = null, int cacheMinutes = 5, string? oidcAudience = null)
+        : this(baseUrl, apiKey, cacheMinutes, oidcAudience, transport: null)
+    {
+    }
+
+    /// <summary>Test seam: <paramref name="transport"/> stands in for the network and the token handler.</summary>
+    internal SnipeService(string? baseUrl, string? apiKey, int cacheMinutes, string? oidcAudience, HttpMessageHandler? transport)
     {
         BaseUrl = string.IsNullOrWhiteSpace(baseUrl) ? string.Empty : ServiceUri.Normalize(baseUrl);
         UsesOidc = !string.IsNullOrWhiteSpace(oidcAudience);
@@ -69,9 +75,11 @@ public class SnipeService : IDisposable
         // Prefer-bearer: an Entra audience beats a shared key wherever both are
         // set, so migrating an estate is a matter of setting the audience rather
         // than of racing to delete keys everywhere first.
-        _client = UsesOidc
-            ? new HttpClient(new ActivityLogHandler("Inventory", new EntraBearerHandler(oidcAudience!)))
-            : new HttpClient(new ActivityLogHandler("Inventory"));
+        _client = transport != null
+            ? new HttpClient(transport)
+            : UsesOidc
+                ? new HttpClient(new ActivityLogHandler("Inventory", new EntraBearerHandler(oidcAudience!)))
+                : new HttpClient(new ActivityLogHandler("Inventory"));
         _client.Timeout = TimeSpan.FromSeconds(120);
 
         if (!string.IsNullOrEmpty(BaseUrl))
@@ -109,8 +117,8 @@ public class SnipeService : IDisposable
     /// <summary>
     /// Whether Snipe-IT accepts this client's credentials: one asset is asked
     /// for, and anything but success is returned as the reason. The asset
-    /// list itself swallows a refusal and returns nothing, so it cannot tell
-    /// "no assets" from "not allowed".
+    /// response must also hold a list: a 200 carrying Snipe-IT's error envelope
+    /// or a web page is a failure too.
     /// </summary>
     public async Task<string?> CheckAccessAsync(CancellationToken ct = default)
     {
@@ -119,15 +127,155 @@ public class SnipeService : IDisposable
         try
         {
             using var response = await _client.GetAsync("/api/v1/hardware?limit=1", ct);
-            if (response.IsSuccessStatusCode) return null;
-            return response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden
-                ? $"Snipe-IT refused the {(UsesOidc ? "sign-in" : "API key")} ({(int)response.StatusCode})"
-                : $"Snipe-IT answered {(int)response.StatusCode}";
+            await ReadListBodyAsync(response);
+            return null;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            return ex.Message;
+            return Describe(ex);
         }
+    }
+
+    /// <summary>
+    /// Why the last Snipe-IT call failed, or null when the last list call
+    /// succeeded. The calls that predate exceptions still return an empty list
+    /// or null on failure; this is what lets their callers tell "nothing there"
+    /// from "could not ask", the way the asset and status lists now throw.
+    /// </summary>
+    public string? LastError { get; private set; }
+
+    /// <summary>Forget the last failure, before a call whose outcome is to be checked.</summary>
+    public void ClearLastError() => LastError = null;
+
+    /// <summary>
+    /// The body of a list response, or a <see cref="SnipeException"/> that says
+    /// why there is no list in it. Snipe-IT can answer 200 with no list at all:
+    /// its own error envelope (<c>{"status":"error","messages":…}</c>), or a
+    /// sign-in web page when the address reaches the site but not its API. Both
+    /// used to read as an empty inventory.
+    /// </summary>
+    internal static async Task<string> ReadListBodyAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        if (!response.IsSuccessStatusCode)
+        {
+            var reason = EnvelopeMessage(body);
+            var code = (int)response.StatusCode;
+            throw new SnipeException(response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden
+                ? $"Snipe-IT refused the sign-in ({code}){(reason is null ? "" : $": {reason}")}"
+                : $"Snipe-IT answered {code} {response.ReasonPhrase}{(reason is null ? "" : $": {reason}")}");
+        }
+
+        if (LooksLikeHtml(body))
+            throw new SnipeException(
+                $"Snipe-IT answered {response.RequestMessage?.RequestUri?.GetLeftPart(UriPartial.Path) ?? "the request"} with a web page, not JSON; " +
+                "check that SnipeUrl is the Snipe-IT site's address");
+
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty("rows", out var rows) && rows.ValueKind == JsonValueKind.Array)
+                return body;
+            throw new SnipeException(EnvelopeMessage(body) is { } message
+                ? $"Snipe-IT returned an error: {message}"
+                : "Snipe-IT returned JSON without a list of rows");
+        }
+        catch (JsonException ex)
+        {
+            throw new SnipeException($"Snipe-IT returned something that is not JSON: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary><see cref="ReadListBodyAsync"/>, parsed.</summary>
+    private async Task<SnipeListResponse<T>> ReadListAsync<T>(HttpResponseMessage response) =>
+        JsonSerializer.Deserialize<SnipeListResponse<T>>(await ReadListBodyAsync(response), _jsonOptions)
+        ?? new SnipeListResponse<T>();
+
+    private static bool LooksLikeHtml(string body)
+    {
+        var start = body.TrimStart();
+        return start.StartsWith('<');
+    }
+
+    /// <summary>Snipe-IT's own reason, from its error envelope or a guard's <c>{"error":…}</c>.</summary>
+    private static string? EnvelopeMessage(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body) || LooksLikeHtml(body)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return null;
+            foreach (var name in new[] { "messages", "message", "error" })
+            {
+                if (!root.TryGetProperty(name, out var value)) continue;
+                switch (value.ValueKind)
+                {
+                    case JsonValueKind.String when !string.IsNullOrWhiteSpace(value.GetString()):
+                        return value.GetString()!.Trim();
+                    case JsonValueKind.Object:
+                        // Validation errors: {"field": ["reason", …]}
+                        return string.Join("; ", value.EnumerateObject()
+                            .SelectMany(p => p.Value.ValueKind == JsonValueKind.Array
+                                ? p.Value.EnumerateArray().Select(v => v.ToString())
+                                : new[] { p.Value.ToString() }));
+                }
+            }
+        }
+        catch (JsonException) { }
+        return null;
+    }
+
+    /// <summary>
+    /// A failure in the words the Inventory tab and the CLI show. A token that
+    /// could not be had is a sign-in failure, not a Snipe-IT one.
+    /// </summary>
+    public static string Describe(Exception ex) => ex switch
+    {
+        EntraTokenException token => $"Sign-in failed: {token.Message}",
+        HttpRequestException http when http.InnerException is EntraTokenException token => $"Sign-in failed: {token.Message}",
+        TaskCanceledException => "Snipe-IT did not answer in time",
+        _ => ex.Message,
+    };
+
+    private SnipeException Failure(SnipeException ex, string what)
+    {
+        LastError = ex.Message;
+        Log.Warning(ex.InnerException, "[snipe] {What}: {Reason}", what, ex.Message);
+        return ex;
+    }
+
+    /// <summary>Log a failed call and keep its reason as <see cref="LastError"/>.</summary>
+    private void Warn(string template, params object?[] args)
+    {
+        Log.Warning("[snipe] " + template, args);
+        LastError = Render(template, args);
+    }
+
+    /// <summary>Log a call that threw and keep its reason as <see cref="LastError"/>.</summary>
+    private void Fail(Exception ex, string template, params object?[] args)
+    {
+        Log.Warning(ex, "[snipe] " + template, args);
+        LastError = $"{Render(template, args)}: {Describe(ex)}";
+    }
+
+    private static string Render(string template, object?[] args)
+    {
+        var i = 0;
+        return System.Text.RegularExpressions.Regex.Replace(template, @"\{[^}]+\}", _ =>
+        {
+            if (i >= args.Length) return "";
+            var value = args[i++];
+            var text = value switch
+            {
+                System.Net.HttpStatusCode code => $"{(int)code} {code}",
+                string str when LooksLikeHtml(str) => "(a web page)",
+                _ => value?.ToString() ?? "",
+            };
+            return text.Length > 300 ? text[..300] + "…" : text;
+        });
     }
 
     #region Hardware/Assets
@@ -155,16 +303,13 @@ public class SnipeService : IDisposable
         }
         
         if (MissingCredentialReason is { } missing)
-        {
-            Log.Warning("Not fetching assets: {Reason}", missing);
-            return _assetCache ?? new List<SnipeAsset>();
-        }
+            throw Failure(new SnipeException(missing), "Not fetching assets");
 
-        Log.Debug("Fetching assets from Snipe-IT...");
+        Log.Debug("[snipe] Fetching assets from Snipe-IT...");
         var allAssets = new List<SnipeAsset>();
         var offset = 0;
         const int limit = 500;
-        
+
         try
         {
             while (true)
@@ -174,7 +319,7 @@ public class SnipeService : IDisposable
                     $"limit={limit}",
                     $"offset={offset}"
                 };
-                
+
                 if (!string.IsNullOrEmpty(search))
                     queryParams.Add($"search={Uri.EscapeDataString(search)}");
                 if (statusId.HasValue)
@@ -187,81 +332,72 @@ public class SnipeService : IDisposable
                     queryParams.Add($"location_id={locationId}");
                 if (companyId.HasValue)
                     queryParams.Add($"company_id={companyId}");
-                
+
                 var url = $"/api/v1/hardware?{string.Join("&", queryParams)}";
-                var response = await _client.GetAsync(url);
-                
-                if (!response.IsSuccessStatusCode)
-                {
-                    var error = await response.Content.ReadAsStringAsync();
-                    Log.Warning("Failed to fetch assets: {Status} - {Error}", response.StatusCode, error);
-                    break;
-                }
-                
-                var rawJson = await response.Content.ReadAsStringAsync();
-                SnipeListResponse<SnipeAsset>? wrapper;
+                using var response = await _client.GetAsync(url);
+                var rawJson = await ReadListBodyAsync(response);
+
+                SnipeListResponse<SnipeAsset> wrapper;
                 try
                 {
-                    wrapper = JsonSerializer.Deserialize<SnipeListResponse<SnipeAsset>>(rawJson, _jsonOptions);
+                    wrapper = JsonSerializer.Deserialize<SnipeListResponse<SnipeAsset>>(rawJson, _jsonOptions)
+                              ?? new SnipeListResponse<SnipeAsset>();
                 }
                 catch (JsonException)
                 {
+                    // One malformed row must not cost the whole list: keep the rest.
                     wrapper = new SnipeListResponse<SnipeAsset>();
                     using var doc = JsonDocument.Parse(rawJson);
                     var root = doc.RootElement;
 
                     if (root.TryGetProperty("total", out var totalProp) && totalProp.TryGetInt32(out var total))
-                    {
                         wrapper.Total = total;
-                    }
 
-                    if (root.TryGetProperty("rows", out var rowsProp) && rowsProp.ValueKind == JsonValueKind.Array)
+                    foreach (var row in root.GetProperty("rows").EnumerateArray())
                     {
-                        foreach (var row in rowsProp.EnumerateArray())
+                        try
                         {
-                            try
-                            {
-                                var asset = row.Deserialize<SnipeAsset>(_jsonOptions);
-                                if (asset != null)
-                                {
-                                    wrapper.Rows.Add(asset);
-                                }
-                            }
-                            catch (JsonException)
-                            {
-                                // Skip invalid rows to avoid failing the entire response
-                            }
+                            if (row.Deserialize<SnipeAsset>(_jsonOptions) is { } asset)
+                                wrapper.Rows.Add(asset);
+                        }
+                        catch (JsonException ex)
+                        {
+                            Log.Debug(ex, "[snipe] Skipped an asset row that did not parse");
                         }
                     }
                 }
-                if (wrapper?.Rows == null || wrapper.Rows.Count == 0)
+                if (wrapper.Rows.Count == 0)
                     break;
-                
+
                 allAssets.AddRange(wrapper.Rows);
-                
+
                 if (wrapper.Rows.Count < limit || allAssets.Count >= wrapper.Total)
                     break;
-                
+
                 offset += limit;
             }
-            
-            // Cache only unfiltered results
-            if (!hasFilters)
-            {
-                _assetCache = allAssets;
-                _assetCacheExpiry = DateTime.UtcNow.Add(_cacheDuration);
-            }
-            
-            Log.Information("Retrieved {Count} assets from Snipe-IT", allAssets.Count);
-            return allAssets;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not SnipeException)
         {
-            Log.Error(ex, "Failed to fetch assets from Snipe-IT");
-            return _assetCache ?? new List<SnipeAsset>();
+            throw Failure(new SnipeException(Describe(ex), ex), "Failed to fetch assets");
         }
+        catch (SnipeException ex)
+        {
+            throw Failure(ex, "Failed to fetch assets");
+        }
+
+        // Cache only unfiltered results
+        if (!hasFilters)
+        {
+            _assetCache = allAssets;
+            _assetCacheExpiry = DateTime.UtcNow.Add(_cacheDuration);
+        }
+
+        LastError = null;
+        Log.Information("[snipe] Retrieved {Count} assets from Snipe-IT", allAssets.Count);
+        return allAssets;
     }
-    
+
     /// <summary>
     /// Get a specific asset by ID
     /// </summary>
@@ -272,14 +408,14 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync($"/api/v1/hardware/{id}");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get asset {Id}: {Status}", id, response.StatusCode);
+                Warn("Failed to get asset {Id}: {Status}", id, response.StatusCode);
                 return null;
             }
             return await response.Content.ReadFromJsonAsync<SnipeAsset>(_jsonOptions);
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to get asset {Id}", id);
+            Fail(ex, "Failed to get asset {Id}", id);
             return null;
         }
     }
@@ -294,14 +430,14 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync($"/api/v1/hardware/bytag/{Uri.EscapeDataString(assetTag)}");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get asset by tag {Tag}: {Status}", assetTag, response.StatusCode);
+                Warn("Failed to get asset by tag {Tag}: {Status}", assetTag, response.StatusCode);
                 return null;
             }
             return await response.Content.ReadFromJsonAsync<SnipeAsset>(_jsonOptions);
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to get asset by tag {Tag}", assetTag);
+            Fail(ex, "Failed to get asset by tag {Tag}", assetTag);
             return null;
         }
     }
@@ -316,14 +452,14 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync($"/api/v1/hardware/byserial/{Uri.EscapeDataString(serial)}");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get asset by serial {Serial}: {Status}", serial, response.StatusCode);
+                Warn("Failed to get asset by serial {Serial}: {Status}", serial, response.StatusCode);
                 return null;
             }
             return await response.Content.ReadFromJsonAsync<SnipeAsset>(_jsonOptions);
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to get asset by serial {Serial}", serial);
+            Fail(ex, "Failed to get asset by serial {Serial}", serial);
             return null;
         }
     }
@@ -342,7 +478,7 @@ public class SnipeService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to create asset");
+            Fail(ex, "Failed to create asset");
             return null;
         }
     }
@@ -361,7 +497,7 @@ public class SnipeService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to update asset {Id}", id);
+            Fail(ex, "Failed to update asset {Id}", id);
             return null;
         }
     }
@@ -383,7 +519,7 @@ public class SnipeService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to patch asset {Id} field {Field}", assetId, apiField);
+            Fail(ex, "Failed to patch asset {Id} field {Field}", assetId, apiField);
             return null;
         }
     }
@@ -402,7 +538,7 @@ public class SnipeService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to fetch field definitions");
+            Fail(ex, "Failed to fetch field definitions");
             return new List<SnipeFieldDef>();
         }
     }
@@ -419,7 +555,7 @@ public class SnipeService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to delete asset {Id}", id);
+            Fail(ex, "Failed to delete asset {Id}", id);
             return null;
         }
     }
@@ -438,7 +574,7 @@ public class SnipeService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to checkout asset {Id}", assetId);
+            Fail(ex, "Failed to checkout asset {Id}", assetId);
             return null;
         }
     }
@@ -457,7 +593,7 @@ public class SnipeService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to checkin asset {Id}", assetId);
+            Fail(ex, "Failed to checkin asset {Id}", assetId);
             return null;
         }
     }
@@ -476,7 +612,7 @@ public class SnipeService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to audit asset {Id}", assetId);
+            Fail(ex, "Failed to audit asset {Id}", assetId);
             return null;
         }
     }
@@ -491,15 +627,15 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync("/api/v1/hardware/audit/due");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get audit due assets: {Status}", response.StatusCode);
+                Warn("Failed to get audit due assets: {Status}", response.StatusCode);
                 return new List<SnipeAsset>();
             }
-            var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeAsset>>(_jsonOptions);
+            var wrapper = await ReadListAsync<SnipeAsset>(response);
             return wrapper?.Rows ?? new List<SnipeAsset>();
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to get audit due assets");
+            Fail(ex, "Failed to get audit due assets");
             return new List<SnipeAsset>();
         }
     }
@@ -514,15 +650,15 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync("/api/v1/hardware/audit/overdue");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get overdue audit assets: {Status}", response.StatusCode);
+                Warn("Failed to get overdue audit assets: {Status}", response.StatusCode);
                 return new List<SnipeAsset>();
             }
-            var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeAsset>>(_jsonOptions);
+            var wrapper = await ReadListAsync<SnipeAsset>(response);
             return wrapper?.Rows ?? new List<SnipeAsset>();
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to get overdue audit assets");
+            Fail(ex, "Failed to get overdue audit assets");
             return new List<SnipeAsset>();
         }
     }
@@ -549,7 +685,7 @@ public class SnipeService : IDisposable
             return _userCache;
         }
         
-        Log.Debug("Fetching users from Snipe-IT...");
+        Log.Debug("[snipe] Fetching users from Snipe-IT...");
         var allUsers = new List<SnipeUser>();
         var offset = 0;
         const int limit = 500;
@@ -579,11 +715,11 @@ public class SnipeService : IDisposable
                 if (!response.IsSuccessStatusCode)
                 {
                     var error = await response.Content.ReadAsStringAsync();
-                    Log.Warning("Failed to fetch users: {Status} - {Error}", response.StatusCode, error);
+                    Warn("Failed to fetch users: {Status} - {Error}", response.StatusCode, error);
                     break;
                 }
                 
-                var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeUser>>(_jsonOptions);
+                var wrapper = await ReadListAsync<SnipeUser>(response);
                 if (wrapper?.Rows == null || wrapper.Rows.Count == 0)
                     break;
                 
@@ -601,12 +737,12 @@ public class SnipeService : IDisposable
                 _userCacheExpiry = DateTime.UtcNow.Add(_cacheDuration);
             }
             
-            Log.Information("Retrieved {Count} users from Snipe-IT", allUsers.Count);
+            Log.Information("[snipe] Retrieved {Count} users from Snipe-IT", allUsers.Count);
             return allUsers;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to fetch users from Snipe-IT");
+            Fail(ex, "Failed to fetch users from Snipe-IT");
             return _userCache ?? new List<SnipeUser>();
         }
     }
@@ -621,14 +757,14 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync($"/api/v1/users/{id}");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get user {Id}: {Status}", id, response.StatusCode);
+                Warn("Failed to get user {Id}: {Status}", id, response.StatusCode);
                 return null;
             }
             return await response.Content.ReadFromJsonAsync<SnipeUser>(_jsonOptions);
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to get user {Id}", id);
+            Fail(ex, "Failed to get user {Id}", id);
             return null;
         }
     }
@@ -643,14 +779,14 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync("/api/v1/users/me");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get current user: {Status}", response.StatusCode);
+                Warn("Failed to get current user: {Status}", response.StatusCode);
                 return null;
             }
             return await response.Content.ReadFromJsonAsync<SnipeUser>(_jsonOptions);
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to get current user");
+            Fail(ex, "Failed to get current user");
             return null;
         }
     }
@@ -665,15 +801,15 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync($"/api/v1/users/{userId}/assets");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get user assets: {Status}", response.StatusCode);
+                Warn("Failed to get user assets: {Status}", response.StatusCode);
                 return new List<SnipeAsset>();
             }
-            var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeAsset>>(_jsonOptions);
+            var wrapper = await ReadListAsync<SnipeAsset>(response);
             return wrapper?.Rows ?? new List<SnipeAsset>();
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to get user {UserId} assets", userId);
+            Fail(ex, "Failed to get user {UserId} assets", userId);
             return new List<SnipeAsset>();
         }
     }
@@ -692,7 +828,7 @@ public class SnipeService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to create user");
+            Fail(ex, "Failed to create user");
             return null;
         }
     }
@@ -713,7 +849,7 @@ public class SnipeService : IDisposable
             return _locationCache;
         }
         
-        Log.Debug("Fetching locations from Snipe-IT...");
+        Log.Debug("[snipe] Fetching locations from Snipe-IT...");
         var allLocations = new List<SnipeLocation>();
         var offset = 0;
         const int limit = 500;
@@ -737,11 +873,11 @@ public class SnipeService : IDisposable
                 if (!response.IsSuccessStatusCode)
                 {
                     var error = await response.Content.ReadAsStringAsync();
-                    Log.Warning("Failed to fetch locations: {Status} - {Error}", response.StatusCode, error);
+                    Warn("Failed to fetch locations: {Status} - {Error}", response.StatusCode, error);
                     break;
                 }
                 
-                var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeLocation>>(_jsonOptions);
+                var wrapper = await ReadListAsync<SnipeLocation>(response);
                 if (wrapper?.Rows == null || wrapper.Rows.Count == 0)
                     break;
                 
@@ -759,12 +895,12 @@ public class SnipeService : IDisposable
                 _locationCacheExpiry = DateTime.UtcNow.Add(_cacheDuration);
             }
             
-            Log.Information("Retrieved {Count} locations from Snipe-IT", allLocations.Count);
+            Log.Information("[snipe] Retrieved {Count} locations from Snipe-IT", allLocations.Count);
             return allLocations;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to fetch locations from Snipe-IT");
+            Fail(ex, "Failed to fetch locations from Snipe-IT");
             return _locationCache ?? new List<SnipeLocation>();
         }
     }
@@ -779,14 +915,14 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync($"/api/v1/locations/{id}");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get location {Id}: {Status}", id, response.StatusCode);
+                Warn("Failed to get location {Id}: {Status}", id, response.StatusCode);
                 return null;
             }
             return await response.Content.ReadFromJsonAsync<SnipeLocation>(_jsonOptions);
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to get location {Id}", id);
+            Fail(ex, "Failed to get location {Id}", id);
             return null;
         }
     }
@@ -800,7 +936,7 @@ public class SnipeService : IDisposable
     /// </summary>
     public async Task<List<SnipeModel>> GetModelsAsync(string? search = null, int? categoryId = null, int? manufacturerId = null)
     {
-        Log.Debug("Fetching models from Snipe-IT...");
+        Log.Debug("[snipe] Fetching models from Snipe-IT...");
         var allModels = new List<SnipeModel>();
         var offset = 0;
         const int limit = 500;
@@ -828,11 +964,11 @@ public class SnipeService : IDisposable
                 if (!response.IsSuccessStatusCode)
                 {
                     var error = await response.Content.ReadAsStringAsync();
-                    Log.Warning("Failed to fetch models: {Status} - {Error}", response.StatusCode, error);
+                    Warn("Failed to fetch models: {Status} - {Error}", response.StatusCode, error);
                     break;
                 }
                 
-                var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeModel>>(_jsonOptions);
+                var wrapper = await ReadListAsync<SnipeModel>(response);
                 if (wrapper?.Rows == null || wrapper.Rows.Count == 0)
                     break;
                 
@@ -844,12 +980,12 @@ public class SnipeService : IDisposable
                 offset += limit;
             }
             
-            Log.Information("Retrieved {Count} models from Snipe-IT", allModels.Count);
+            Log.Information("[snipe] Retrieved {Count} models from Snipe-IT", allModels.Count);
             return allModels;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to fetch models from Snipe-IT");
+            Fail(ex, "Failed to fetch models from Snipe-IT");
             return new List<SnipeModel>();
         }
     }
@@ -863,7 +999,7 @@ public class SnipeService : IDisposable
     /// </summary>
     public async Task<List<SnipeLicense>> GetLicensesAsync(string? search = null, int? categoryId = null, int? manufacturerId = null)
     {
-        Log.Debug("Fetching licenses from Snipe-IT...");
+        Log.Debug("[snipe] Fetching licenses from Snipe-IT...");
         var allLicenses = new List<SnipeLicense>();
         var offset = 0;
         const int limit = 500;
@@ -891,11 +1027,11 @@ public class SnipeService : IDisposable
                 if (!response.IsSuccessStatusCode)
                 {
                     var error = await response.Content.ReadAsStringAsync();
-                    Log.Warning("Failed to fetch licenses: {Status} - {Error}", response.StatusCode, error);
+                    Warn("Failed to fetch licenses: {Status} - {Error}", response.StatusCode, error);
                     break;
                 }
                 
-                var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeLicense>>(_jsonOptions);
+                var wrapper = await ReadListAsync<SnipeLicense>(response);
                 if (wrapper?.Rows == null || wrapper.Rows.Count == 0)
                     break;
                 
@@ -907,12 +1043,12 @@ public class SnipeService : IDisposable
                 offset += limit;
             }
             
-            Log.Information("Retrieved {Count} licenses from Snipe-IT", allLicenses.Count);
+            Log.Information("[snipe] Retrieved {Count} licenses from Snipe-IT", allLicenses.Count);
             return allLicenses;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to fetch licenses from Snipe-IT");
+            Fail(ex, "Failed to fetch licenses from Snipe-IT");
             return new List<SnipeLicense>();
         }
     }
@@ -927,15 +1063,15 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync($"/api/v1/licenses/{licenseId}/seats");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to get license seats: {Status}", response.StatusCode);
+                Warn("Failed to get license seats: {Status}", response.StatusCode);
                 return new List<SnipeLicenseSeat>();
             }
-            var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeLicenseSeat>>(_jsonOptions);
+            var wrapper = await ReadListAsync<SnipeLicenseSeat>(response);
             return wrapper?.Rows ?? new List<SnipeLicenseSeat>();
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to get license {LicenseId} seats", licenseId);
+            Fail(ex, "Failed to get license {LicenseId} seats", licenseId);
             return new List<SnipeLicenseSeat>();
         }
     }
@@ -949,7 +1085,7 @@ public class SnipeService : IDisposable
     /// </summary>
     public async Task<List<SnipeCategory>> GetCategoriesAsync(string? search = null, string? categoryType = null)
     {
-        Log.Debug("Fetching categories from Snipe-IT...");
+        Log.Debug("[snipe] Fetching categories from Snipe-IT...");
         var allCategories = new List<SnipeCategory>();
         var offset = 0;
         const int limit = 500;
@@ -975,11 +1111,11 @@ public class SnipeService : IDisposable
                 if (!response.IsSuccessStatusCode)
                 {
                     var error = await response.Content.ReadAsStringAsync();
-                    Log.Warning("Failed to fetch categories: {Status} - {Error}", response.StatusCode, error);
+                    Warn("Failed to fetch categories: {Status} - {Error}", response.StatusCode, error);
                     break;
                 }
                 
-                var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeCategory>>(_jsonOptions);
+                var wrapper = await ReadListAsync<SnipeCategory>(response);
                 if (wrapper?.Rows == null || wrapper.Rows.Count == 0)
                     break;
                 
@@ -991,12 +1127,12 @@ public class SnipeService : IDisposable
                 offset += limit;
             }
             
-            Log.Information("Retrieved {Count} categories from Snipe-IT", allCategories.Count);
+            Log.Information("[snipe] Retrieved {Count} categories from Snipe-IT", allCategories.Count);
             return allCategories;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to fetch categories from Snipe-IT");
+            Fail(ex, "Failed to fetch categories from Snipe-IT");
             return new List<SnipeCategory>();
         }
     }
@@ -1010,7 +1146,7 @@ public class SnipeService : IDisposable
     /// </summary>
     public async Task<List<SnipeManufacturer>> GetManufacturersAsync(string? search = null)
     {
-        Log.Debug("Fetching manufacturers from Snipe-IT...");
+        Log.Debug("[snipe] Fetching manufacturers from Snipe-IT...");
         var allManufacturers = new List<SnipeManufacturer>();
         var offset = 0;
         const int limit = 500;
@@ -1034,11 +1170,11 @@ public class SnipeService : IDisposable
                 if (!response.IsSuccessStatusCode)
                 {
                     var error = await response.Content.ReadAsStringAsync();
-                    Log.Warning("Failed to fetch manufacturers: {Status} - {Error}", response.StatusCode, error);
+                    Warn("Failed to fetch manufacturers: {Status} - {Error}", response.StatusCode, error);
                     break;
                 }
                 
-                var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeManufacturer>>(_jsonOptions);
+                var wrapper = await ReadListAsync<SnipeManufacturer>(response);
                 if (wrapper?.Rows == null || wrapper.Rows.Count == 0)
                     break;
                 
@@ -1050,12 +1186,12 @@ public class SnipeService : IDisposable
                 offset += limit;
             }
             
-            Log.Information("Retrieved {Count} manufacturers from Snipe-IT", allManufacturers.Count);
+            Log.Information("[snipe] Retrieved {Count} manufacturers from Snipe-IT", allManufacturers.Count);
             return allManufacturers;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to fetch manufacturers from Snipe-IT");
+            Fail(ex, "Failed to fetch manufacturers from Snipe-IT");
             return new List<SnipeManufacturer>();
         }
     }
@@ -1069,11 +1205,14 @@ public class SnipeService : IDisposable
     /// </summary>
     public async Task<List<SnipeStatusLabelFull>> GetStatusLabelsAsync(string? statusType = null)
     {
-        Log.Debug("Fetching status labels from Snipe-IT...");
+        if (MissingCredentialReason is { } missing)
+            throw Failure(new SnipeException(missing), "Not fetching status labels");
+
+        Log.Debug("[snipe] Fetching status labels from Snipe-IT...");
         var allLabels = new List<SnipeStatusLabelFull>();
         var offset = 0;
         const int limit = 500;
-        
+
         try
         {
             while (true)
@@ -1083,40 +1222,37 @@ public class SnipeService : IDisposable
                     $"limit={limit}",
                     $"offset={offset}"
                 };
-                
+
                 if (!string.IsNullOrEmpty(statusType))
                     queryParams.Add($"status_type={statusType}");
-                
+
                 var url = $"/api/v1/statuslabels?{string.Join("&", queryParams)}";
-                var response = await _client.GetAsync(url);
-                
-                if (!response.IsSuccessStatusCode)
-                {
-                    var error = await response.Content.ReadAsStringAsync();
-                    Log.Warning("Failed to fetch status labels: {Status} - {Error}", response.StatusCode, error);
+                using var response = await _client.GetAsync(url);
+                var wrapper = JsonSerializer.Deserialize<SnipeListResponse<SnipeStatusLabelFull>>(
+                    await ReadListBodyAsync(response), _jsonOptions) ?? new SnipeListResponse<SnipeStatusLabelFull>();
+                if (wrapper.Rows.Count == 0)
                     break;
-                }
-                
-                var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeStatusLabelFull>>(_jsonOptions);
-                if (wrapper?.Rows == null || wrapper.Rows.Count == 0)
-                    break;
-                
+
                 allLabels.AddRange(wrapper.Rows);
-                
+
                 if (wrapper.Rows.Count < limit || allLabels.Count >= wrapper.Total)
                     break;
-                
+
                 offset += limit;
             }
-            
-            Log.Information("Retrieved {Count} status labels from Snipe-IT", allLabels.Count);
-            return allLabels;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not SnipeException)
         {
-            Log.Error(ex, "Failed to fetch status labels from Snipe-IT");
-            return new List<SnipeStatusLabelFull>();
+            throw Failure(new SnipeException(Describe(ex), ex), "Failed to fetch status labels");
         }
+        catch (SnipeException ex)
+        {
+            throw Failure(ex, "Failed to fetch status labels");
+        }
+
+        LastError = null;
+        Log.Information("[snipe] Retrieved {Count} status labels from Snipe-IT", allLabels.Count);
+        return allLabels;
     }
     
     #endregion
@@ -1128,7 +1264,7 @@ public class SnipeService : IDisposable
     /// </summary>
     public async Task<List<SnipeAccessory>> GetAccessoriesAsync(string? search = null)
     {
-        Log.Debug("Fetching accessories from Snipe-IT...");
+        Log.Debug("[snipe] Fetching accessories from Snipe-IT...");
         try
         {
             var queryParams = new List<string> { "limit=500" };
@@ -1138,15 +1274,15 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync($"/api/v1/accessories?{string.Join("&", queryParams)}");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to fetch accessories: {Status}", response.StatusCode);
+                Warn("Failed to fetch accessories: {Status}", response.StatusCode);
                 return new List<SnipeAccessory>();
             }
-            var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeAccessory>>(_jsonOptions);
+            var wrapper = await ReadListAsync<SnipeAccessory>(response);
             return wrapper?.Rows ?? new List<SnipeAccessory>();
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to fetch accessories from Snipe-IT");
+            Fail(ex, "Failed to fetch accessories from Snipe-IT");
             return new List<SnipeAccessory>();
         }
     }
@@ -1156,7 +1292,7 @@ public class SnipeService : IDisposable
     /// </summary>
     public async Task<List<SnipeConsumable>> GetConsumablesAsync(string? search = null)
     {
-        Log.Debug("Fetching consumables from Snipe-IT...");
+        Log.Debug("[snipe] Fetching consumables from Snipe-IT...");
         try
         {
             var queryParams = new List<string> { "limit=500" };
@@ -1166,15 +1302,15 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync($"/api/v1/consumables?{string.Join("&", queryParams)}");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to fetch consumables: {Status}", response.StatusCode);
+                Warn("Failed to fetch consumables: {Status}", response.StatusCode);
                 return new List<SnipeConsumable>();
             }
-            var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeConsumable>>(_jsonOptions);
+            var wrapper = await ReadListAsync<SnipeConsumable>(response);
             return wrapper?.Rows ?? new List<SnipeConsumable>();
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to fetch consumables from Snipe-IT");
+            Fail(ex, "Failed to fetch consumables from Snipe-IT");
             return new List<SnipeConsumable>();
         }
     }
@@ -1184,7 +1320,7 @@ public class SnipeService : IDisposable
     /// </summary>
     public async Task<List<SnipeComponent>> GetComponentsAsync(string? search = null)
     {
-        Log.Debug("Fetching components from Snipe-IT...");
+        Log.Debug("[snipe] Fetching components from Snipe-IT...");
         try
         {
             var queryParams = new List<string> { "limit=500" };
@@ -1194,15 +1330,15 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync($"/api/v1/components?{string.Join("&", queryParams)}");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to fetch components: {Status}", response.StatusCode);
+                Warn("Failed to fetch components: {Status}", response.StatusCode);
                 return new List<SnipeComponent>();
             }
-            var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeComponent>>(_jsonOptions);
+            var wrapper = await ReadListAsync<SnipeComponent>(response);
             return wrapper?.Rows ?? new List<SnipeComponent>();
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to fetch components from Snipe-IT");
+            Fail(ex, "Failed to fetch components from Snipe-IT");
             return new List<SnipeComponent>();
         }
     }
@@ -1221,7 +1357,7 @@ public class SnipeService : IDisposable
         string? targetType = null,
         int limit = 50)
     {
-        Log.Debug("Fetching activity from Snipe-IT...");
+        Log.Debug("[snipe] Fetching activity from Snipe-IT...");
         try
         {
             var queryParams = new List<string> { $"limit={limit}" };
@@ -1237,7 +1373,7 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync($"/api/v1/reports/activity?{string.Join("&", queryParams)}");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to fetch activity: {Status}", response.StatusCode);
+                Warn("Failed to fetch activity: {Status}", response.StatusCode);
                 return new List<SnipeActivity>();
             }
             // The activity report replies with "charset=utf8" (not "utf-8"),
@@ -1250,7 +1386,7 @@ public class SnipeService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to fetch activity from Snipe-IT");
+            Fail(ex, "Failed to fetch activity from Snipe-IT");
             return new List<SnipeActivity>();
         }
     }
@@ -1277,7 +1413,7 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync(url);
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Activity request {Url} failed: {Status}", url, response.StatusCode);
+                Warn("Activity request {Url} failed: {Status}", url, response.StatusCode);
                 return null;
             }
             // Same "charset=utf8" header as the activity report — read raw bytes.
@@ -1287,14 +1423,14 @@ public class SnipeService : IDisposable
             using var doc = JsonDocument.Parse(bytes);
             if (!doc.RootElement.TryGetProperty("rows", out var rows) || rows.ValueKind != JsonValueKind.Array)
             {
-                Log.Warning("Activity request {Url} returned no rows", url);
+                Warn("Activity request {Url} returned no rows", url);
                 return null;
             }
             return rows.Deserialize<List<SnipeActivity>>(_jsonOptions);
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Activity request {Url} failed", url);
+            Fail(ex, "Activity request {Url} failed", url);
             return null;
         }
     }
@@ -1304,7 +1440,7 @@ public class SnipeService : IDisposable
     /// </summary>
     public async Task<List<SnipeMaintenance>> GetMaintenancesAsync(int? assetId = null)
     {
-        Log.Debug("Fetching maintenances from Snipe-IT...");
+        Log.Debug("[snipe] Fetching maintenances from Snipe-IT...");
         try
         {
             var queryParams = new List<string> { "limit=500" };
@@ -1314,15 +1450,15 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync($"/api/v1/maintenances?{string.Join("&", queryParams)}");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to fetch maintenances: {Status}", response.StatusCode);
+                Warn("Failed to fetch maintenances: {Status}", response.StatusCode);
                 return new List<SnipeMaintenance>();
             }
-            var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeMaintenance>>(_jsonOptions);
+            var wrapper = await ReadListAsync<SnipeMaintenance>(response);
             return wrapper?.Rows ?? new List<SnipeMaintenance>();
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to fetch maintenances from Snipe-IT");
+            Fail(ex, "Failed to fetch maintenances from Snipe-IT");
             return new List<SnipeMaintenance>();
         }
     }
@@ -1336,7 +1472,7 @@ public class SnipeService : IDisposable
     /// </summary>
     public async Task<List<SnipeCompany>> GetCompaniesAsync(string? search = null)
     {
-        Log.Debug("Fetching companies from Snipe-IT...");
+        Log.Debug("[snipe] Fetching companies from Snipe-IT...");
         try
         {
             var queryParams = new List<string> { "limit=500" };
@@ -1346,15 +1482,15 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync($"/api/v1/companies?{string.Join("&", queryParams)}");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to fetch companies: {Status}", response.StatusCode);
+                Warn("Failed to fetch companies: {Status}", response.StatusCode);
                 return new List<SnipeCompany>();
             }
-            var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeCompany>>(_jsonOptions);
+            var wrapper = await ReadListAsync<SnipeCompany>(response);
             return wrapper?.Rows ?? new List<SnipeCompany>();
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to fetch companies from Snipe-IT");
+            Fail(ex, "Failed to fetch companies from Snipe-IT");
             return new List<SnipeCompany>();
         }
     }
@@ -1364,7 +1500,7 @@ public class SnipeService : IDisposable
     /// </summary>
     public async Task<List<SnipeDepartment>> GetDepartmentsAsync(string? search = null, int? companyId = null)
     {
-        Log.Debug("Fetching departments from Snipe-IT...");
+        Log.Debug("[snipe] Fetching departments from Snipe-IT...");
         try
         {
             var queryParams = new List<string> { "limit=500" };
@@ -1376,15 +1512,15 @@ public class SnipeService : IDisposable
             var response = await _client.GetAsync($"/api/v1/departments?{string.Join("&", queryParams)}");
             if (!response.IsSuccessStatusCode)
             {
-                Log.Warning("Failed to fetch departments: {Status}", response.StatusCode);
+                Warn("Failed to fetch departments: {Status}", response.StatusCode);
                 return new List<SnipeDepartment>();
             }
-            var wrapper = await response.Content.ReadFromJsonAsync<SnipeListResponse<SnipeDepartment>>(_jsonOptions);
+            var wrapper = await ReadListAsync<SnipeDepartment>(response);
             return wrapper?.Rows ?? new List<SnipeDepartment>();
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to fetch departments from Snipe-IT");
+            Fail(ex, "Failed to fetch departments from Snipe-IT");
             return new List<SnipeDepartment>();
         }
     }
@@ -1395,4 +1531,13 @@ public class SnipeService : IDisposable
     {
         _client.Dispose();
     }
+}
+
+/// <summary>
+/// A Snipe-IT call that could not produce what was asked for, with the reason
+/// in words the Inventory tab and the CLI can show as they are.
+/// </summary>
+public sealed class SnipeException : Exception
+{
+    public SnipeException(string message, Exception? inner = null) : base(message, inner) { }
 }

@@ -820,8 +820,15 @@ public partial class AssetDetailPanel : UserControl
         if (_service == null) return;
         if (_statusLabels.Count == 0)
         {
-            _statusLabels = await _service.GetStatusLabelsAsync();
-            if (_asset != null) Render();
+            try
+            {
+                _statusLabels = await _service.GetStatusLabelsAsync();
+                if (_asset != null) Render();
+            }
+            catch (SnipeException)
+            {
+                // Logged by the service; the status picker simply has no options.
+            }
         }
         if (!_optionsLoaded)
         {

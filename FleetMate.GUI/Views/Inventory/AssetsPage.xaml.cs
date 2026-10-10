@@ -111,6 +111,7 @@ public partial class AssetsPage : Page
             _isLoading = true;
             LoadingOverlay.Visibility = Visibility.Visible;
             _allAssets = await _snipeService.GetAssetsAsync(forceRefresh: true);
+            NotConfiguredText.Visibility = Visibility.Collapsed;
             UpdateFilterOptions();
             UpdateDisplay();
 
@@ -127,8 +128,15 @@ public partial class AssetsPage : Page
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Failed to load assets: {ex.Message}", "Error",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            // Said in the page, where the empty list would otherwise read as
+            // an inventory with nothing in it.
+            var reason = ex is SnipeException ? ex.Message : FleetMate.Core.Services.Inventory.SnipeService.Describe(ex);
+            _allAssets = new List<SnipeAsset>();
+            AssetListView.ItemsSource = _allAssets;
+            AssetCountLabel.Text = WidgetCatalog.AssetsFailureHeadline(reason);
+            NotConfiguredText.Text = reason;
+            NotConfiguredText.Visibility = Visibility.Visible;
+            if (Application.Current is App app) app.SetAssetsLoadError(reason);
         }
         finally
         {

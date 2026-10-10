@@ -1,5 +1,6 @@
 #nullable disable warnings
 using System.CommandLine;
+using FleetMate.Core.Services;
 using FleetMate.Core.Services.Reporting;
 using Spectre.Console;
 
@@ -25,7 +26,17 @@ public static class ReportMateCommand
         var cmd = new Command("devices", "List all fleet devices from ReportMate");
         cmd.SetHandler(async () =>
         {
-            var devices = await reportMate.GetDevicesAsync();
+            List<FleetMate.Core.Models.Reporting.Device> devices;
+            try
+            {
+                devices = await reportMate.GetDevicesAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"ReportMate: {(ex is EntraTokenException ? "Sign-in failed: " : "")}{ex.Message}");
+                Environment.ExitCode = 1;
+                return;
+            }
             if (devices.Count == 0)
             {
                 AnsiConsole.MarkupLine("[yellow]No devices found.[/]");

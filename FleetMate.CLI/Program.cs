@@ -147,7 +147,7 @@ class Program
 
             // Utility commands
             rootCommand.AddCommand(LoginCommand.Create(config));
-            rootCommand.AddCommand(StatusCommand.Create(config, reportMate));
+            rootCommand.AddCommand(StatusCommand.Create(config, reportMate, snipeService));
             rootCommand.AddCommand(ConfigureCommand.Create(config));
             
             // Snipe-IT asset management

@@ -456,7 +456,17 @@ public static class WipeCommand
                 }
             }
 
-            var assets = await snipe.GetAssetsAsync(locationId: locationId, modelId: modelId);
+            List<SnipeAsset> assets;
+            try
+            {
+                assets = await snipe.GetAssetsAsync(locationId: locationId, modelId: modelId);
+            }
+            catch (SnipeException ex)
+            {
+                AnsiConsole.MarkupLine($"[red]Snipe-IT: {Markup.Escape(ex.Message)}[/]");
+                Environment.ExitCode = 1;
+                return targets;
+            }
             var withSerials = assets.Where(a => !string.IsNullOrWhiteSpace(a.Serial)).ToList();
 
             // Assets with no serial cannot be matched to a device record; say so
