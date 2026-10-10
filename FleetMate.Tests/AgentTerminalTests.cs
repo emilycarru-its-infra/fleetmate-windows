@@ -112,6 +112,24 @@ public class AgentTerminalTests
     }
 
     [Fact]
+    public void InstalledChoices_OfferOnlyPresetsWhoseCliIsFound()
+    {
+        Assert.Equal(new[] { "shell", "claude", "claude-remote" },
+            AgentCommands.InstalledChoices(OnPath(@"C:\npm\claude.cmd")));
+        Assert.Equal(new[] { "shell" }, AgentCommands.InstalledChoices(_ => null));
+    }
+
+    [Fact]
+    public void Picker_ListsInstalledPresets_AndShowsAMissingOneAsCustom()
+    {
+        Func<string, bool> installed = key => AgentCommands.IsInstalled(key, OnPath(@"C:\bin\codex.exe"));
+        Assert.Equal(new[] { "", "codex", "codex-remote", "custom" },
+            AgentCommandPicker.InstalledChoices(installed).Select(c => c.Key));
+        Assert.Equal(("codex", ""), AgentCommandPicker.FromSetting("codex", installed));
+        Assert.Equal(("custom", "claude-remote"), AgentCommandPicker.FromSetting("claude-remote", installed));
+    }
+
+    [Fact]
     public void Defaults_AreShellAndAutoStartOn()
     {
         var terminal = new FleetMateConfig().Terminal;

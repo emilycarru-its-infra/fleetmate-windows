@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using FleetMate.Core.Config;
 using FleetMate.Core.Models;
+using FleetMate.Core.Services.Terminal;
 using ModernWpf;
 
 namespace FleetMate.GUI.Views.Shared;
@@ -113,9 +114,10 @@ public partial class SettingsPage : Page
         // Terminal. Repos starts from the managed defaults until the operator saves their own.
         var terminal = config.Terminal;
         _terminal = terminal;
-        AgentCommandPicker.ItemsSource = FleetMate.Core.Config.AgentCommandPicker.Choices
+        Func<string, bool> installed = key => AgentCommands.IsInstalled(key, AgentCommands.FindInstalled);
+        AgentCommandPicker.ItemsSource = FleetMate.Core.Config.AgentCommandPicker.InstalledChoices(installed)
             .Select(c => new { c.Key, c.Label }).ToList();
-        var (pickerKey, customCommand) = FleetMate.Core.Config.AgentCommandPicker.FromSetting(terminal.AgentCommand);
+        var (pickerKey, customCommand) = FleetMate.Core.Config.AgentCommandPicker.FromSetting(terminal.AgentCommand, installed);
         AgentCustomCommandTextBox.Text = customCommand;
         AgentCommandPicker.SelectedValue = pickerKey;
         AgentAutoStartCheckBox.IsChecked = terminal.AgentAutoStart;

@@ -128,7 +128,7 @@ public sealed class TerminalPanel : UserControl
     private void OpenNewMenu(Button anchor)
     {
         var menu = new ContextMenu { PlacementTarget = anchor, Placement = PlacementMode.Bottom };
-        foreach (var preset in AgentCommands.Choices)
+        foreach (var preset in AgentCommands.InstalledChoices(AgentCommands.FindInstalled))
         {
             var name = preset;
             menu.Items.Add(MenuItem(name, (_, _) =>
@@ -159,7 +159,7 @@ public sealed class TerminalPanel : UserControl
 
     private static TerminalLaunch AgentLaunch(string agentCommand, RepoLocation? repo)
     {
-        var command = AgentCommands.Resolve(agentCommand, AgentCommands.FindOnPath);
+        var command = AgentCommands.Resolve(agentCommand, AgentCommands.FindInstalled);
         var label = string.IsNullOrWhiteSpace(agentCommand) || agentCommand.Equals(AgentCommands.Shell, StringComparison.OrdinalIgnoreCase)
             ? AgentCommands.Shell
             : agentCommand.Split(' ')[0];
