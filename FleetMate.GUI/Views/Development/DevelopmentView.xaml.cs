@@ -252,6 +252,7 @@ public partial class DevelopmentView : UserControl
 
     private async Task ShowPullRequestAsync(UnifiedPullRequest pr)
     {
+        FleetMate.GUI.Views.Terminal.ContextPublisher.PullRequest(pr);
         ShowDetail(DetailView);
         await DetailView.ShowAsync(pr);
     }
@@ -318,6 +319,8 @@ public partial class DevelopmentView : UserControl
         SkillsList.Visibility = Show(skills);
         EmptyText.Visibility = Visibility.Collapsed;
         SearchScopeChanged?.Invoke(this, EventArgs.Empty);
+        FleetMate.GUI.Views.Terminal.ContextPublisher.Segment("Development",
+            pulls ? "Pulls" : inbox ? "Inbox" : commits ? "Commits" : pipelines ? "Pipelines" : skills ? "Skills" : null);
 
         if (inbox) RenderInbox();
         else if (pulls) Rerender();

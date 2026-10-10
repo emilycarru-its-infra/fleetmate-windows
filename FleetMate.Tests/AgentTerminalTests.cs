@@ -130,12 +130,15 @@ public class AgentTerminalTests
     }
 
     [Fact]
-    public void Defaults_AreShellAndAutoStartOn()
+    public void Defaults_AreCodexAndAutoStartOn()
     {
         var terminal = new FleetMateConfig().Terminal;
-        Assert.Equal("", terminal.AgentCommand);
+        Assert.Equal("codex", terminal.AgentCommand);
+        Assert.True(terminal.AgentCommandIsBuiltInDefault);
         Assert.True(terminal.AgentAutoStart);
         Assert.False(terminal.AgentCommandFromPolicy);
+        // Choosing Shell is the operator's own empty value, which differs from the default and is kept.
+        Assert.Equal("codex", terminal.AgentCommandFallback);
     }
 
     [Fact]

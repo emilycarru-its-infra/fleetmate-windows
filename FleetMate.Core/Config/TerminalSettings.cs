@@ -7,13 +7,16 @@ namespace FleetMate.Core.Config;
 ///
 /// AgentCommand and AgentAutoStart come in three layers: the operator's own
 /// value (HKCU\SOFTWARE\FleetMate) wins, then the managed value
-/// (SOFTWARE\Policies\FleetMate), then the built-in default (shell, on).
+/// (SOFTWARE\Policies\FleetMate), then the built-in default (codex, on).
 /// Unlike FleetMate's other managed settings, policy here supplies a default
 /// the operator can change.
 /// </summary>
 public sealed class TerminalSettings
 {
     public const bool DefaultAutoStart = true;
+    /// <summary>What sessions run when neither the operator nor policy says: Codex, as on the Mac.</summary>
+    public const string DefaultAgentCommand = "codex";
+    public const bool DefaultKeepClisCurrent = true;
 
     /// <summary>The operator's own AgentCommand; "" is an explicit choice of the shell. Null when unset.</summary>
     public string? UserAgentCommand { get; set; }
@@ -22,13 +25,24 @@ public sealed class TerminalSettings
     public bool? PolicyAgentAutoStart { get; set; }
 
     /// <summary>What sessions run: "" or "shell", a preset key, or a custom command line.</summary>
-    public string AgentCommand => (UserAgentCommand ?? PolicyAgentCommand ?? "").Trim();
+    public string AgentCommand => (UserAgentCommand ?? PolicyAgentCommand ?? DefaultAgentCommand).Trim();
+
+    /// <summary>True when AgentCommand is the built-in default, which falls back to the shell where Codex is not installed.</summary>
+    public bool AgentCommandIsBuiltInDefault => UserAgentCommand == null && PolicyAgentCommand == null;
+
+    /// <summary>
+    /// Keep codex and claude at their latest versions in the background, and
+    /// have sessions skip the CLIs' own update checks. On unless turned off.
+    /// </summary>
+    public bool? UserKeepClisCurrent { get; set; }
+    public bool? PolicyKeepClisCurrent { get; set; }
+    public bool KeepClisCurrent => UserKeepClisCurrent ?? PolicyKeepClisCurrent ?? DefaultKeepClisCurrent;
 
     /// <summary>Open a session when FleetMate starts.</summary>
     public bool AgentAutoStart => UserAgentAutoStart ?? PolicyAgentAutoStart ?? DefaultAutoStart;
 
     /// <summary>What AgentCommand falls back to without the operator's own value.</summary>
-    public string AgentCommandFallback => (PolicyAgentCommand ?? "").Trim();
+    public string AgentCommandFallback => (PolicyAgentCommand ?? DefaultAgentCommand).Trim();
     public bool AgentAutoStartFallback => PolicyAgentAutoStart ?? DefaultAutoStart;
 
     public bool AgentCommandFromPolicy => UserAgentCommand == null && PolicyAgentCommand != null;
