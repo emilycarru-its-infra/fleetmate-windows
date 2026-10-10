@@ -1,6 +1,4 @@
 using Microsoft.Win32;
-using System.Reflection;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -38,28 +36,33 @@ public partial class SettingsPage : Page
         var name = AppEdition.Current.Name;
         SettingsSubtitleText.Text = $"Configure {name}";
         GeneralSubtitleText.Text = AppEdition.Current.IsTicketsOnly
-            ? "Setup, configuration storage and application information."
-            : $"Setup, the tabs {name} shows, configuration storage and application information.";
+            ? "Setup and configuration storage."
+            : $"The modules {name} shows, setup and configuration storage.";
         AppearanceSubtitleText.Text = $"Choose how {name} looks on this PC.";
         if (AppEdition.Current.IsTicketsOnly) ApplyTicketsOnly();
         Loaded += (_, _) =>
         {
             LoadSettings();
+            AttachAuthUpdates();
             _ = RefreshAuthCardsAsync();
             UserPreferences.Changed += OnPreferencesChanged;
         };
-        Unloaded += (_, _) => UserPreferences.Changed -= OnPreferencesChanged;
+        Unloaded += (_, _) =>
+        {
+            UserPreferences.Changed -= OnPreferencesChanged;
+            DetachAuthUpdates();
+        };
     }
 
     /// <summary>
-    /// TicketsMate's settings: no module switches, no Manage, Apple or
+    /// TicketsMate's settings: no module switches, no Manage, Enrollment or
     /// Terminal tabs, and TeamDynamix alone under Authentication.
     /// </summary>
     private void ApplyTicketsOnly()
     {
         foreach (var element in new UIElement[]
                  {
-                     ModulesCard, ManageTab, AppleTab, TerminalTab,
+                     ModulesCard, ManageTab, EnrollmentTab, TerminalTab,
                      GraphCard, DevOpsCard, SnipeCard, ReportMateCard, HandbookCard,
                  })
             element.Visibility = Visibility.Collapsed;
@@ -133,12 +136,7 @@ public partial class SettingsPage : Page
             ? $"Key found at {manage.ResolvedSshKeyPath}. Sessions connect as {manage.ResolvedSshUser}."
             : $"No key at {manage.ResolvedSshKeyPath}. Machine details and command runs need the fleet admin key; sessions and scanning still work without it.";
 
-        // About
-        var version = Assembly.GetExecutingAssembly().GetName().Version;
-        VersionText.Text = version != null ? $"{version.Major}.{version.Minor}.{version.Build}" : "1.0.0";
-        PlatformText.Text = $"Windows {Environment.OSVersion.Version.Major}.{Environment.OSVersion.Version.Minor}";
-        ArchitectureText.Text = RuntimeInformation.ProcessArchitecture.ToString();
-        RuntimeText.Text = RuntimeInformation.FrameworkDescription;
+        BuildAboutPanel();
 
         using var appearanceKey = Registry.CurrentUser.OpenSubKey(RegistryPath);
         var theme = appearanceKey?.GetValue("UiTheme")?.ToString() ?? "System";
@@ -322,327 +320,6 @@ public partial class SettingsPage : Page
         if (dialog.ShowDialog() == true) target.Text = dialog.FileName;
     }
 
-    // ── Auth Status Cards ───────────────────────────────────────────────────
-
-    private void BuildAuthCards()
-    {
-        AuthCardsPanel.Children.Clear();
-
-        if (Application.Current is not App app) return;
-        var config = app.Config;
-
-        var graphConfigured = config.Graph != null && !string.IsNullOrEmpty(config.Graph.TenantId);
-        if (graphConfigured)
-        {
-            var (text, state) = BrokerState(app, AuthSystemId.Graph);
-            AddAuthCard(AuthSystemId.Graph, "Microsoft Graph", "Entra SSO · Windows Web Account Manager", text, state,
-                new (string label, string? value)[]
-                {
-                    ("Tenant ID", ShortId(config.Graph?.TenantId)),
-                    ("Client ID", ShortId(config.Graph?.ClientId)),
-                    ("Token source", "Windows broker (WAM / device PRT)"),
-                    ("Elevation", "managed identity (aze)")
-                });
-        }
-        else
-        {
-            // Shown rather than hidden, so a missing setting is visible instead of a missing card.
-            AddAuthCard(null, "Microsoft Graph", "Entra SSO · Windows Web Account Manager", "not configured", AuthState.NotConfigured,
-                new (string label, string? value)[]
-                {
-                    ("Needs", "Tenant ID (Microsoft Graph, above), or GraphTenantId in managed settings"),
-                    ("Used by", "Devices and Identity"),
-                });
-        }
-
-        var adoConfigured = config.AzureDevOps != null && !string.IsNullOrEmpty(config.AzureDevOps.Organization);
-        if (adoConfigured)
-        {
-            var (text, state) = BrokerState(app, AuthSystemId.DevOps);
-            AddAuthCard(AuthSystemId.DevOps, "Azure DevOps", "Entra SSO · Windows Web Account Manager", text, state,
-                new[]
-                {
-                    ("Organization", config.AzureDevOps?.Organization),
-                    ("Project", config.AzureDevOps?.Project),
-                    ("Token source", "Windows broker (operator identity)")
-                });
-        }
-
-        var tdxConfigured = config.Tdx != null && !string.IsNullOrEmpty(config.Tdx.BaseUrl);
-        if (tdxConfigured)
-        {
-            var (text, state) = BrokerState(app, AuthSystemId.Tdx);
-            AddAuthCard(AuthSystemId.Tdx, "TeamDynamix", "Integrated SSO · Entra / Shibboleth", text, state,
-                new[]
-                {
-                    ("Base URL", config.Tdx?.BaseUrl),
-                    ("Token source", "silent Windows SSO (operator identity)")
-                });
-        }
-        else if (AppEdition.Current.IsTicketsOnly)
-        {
-            // TeamDynamix is TicketsMate's only system, so its card always shows.
-            AddAuthCard(null, "TeamDynamix", "Integrated SSO · Entra / Shibboleth", "not configured", AuthState.NotConfigured,
-                new (string label, string? value)[]
-                {
-                    ("Needs", "Base URL and Ticketing App ID (TeamDynamix, above), or TdxBaseUrl in managed settings"),
-                });
-        }
-
-        var snipeConfigured = !string.IsNullOrEmpty(config.SnipeUrl);
-        if (snipeConfigured)
-        {
-            var (text, state) = BrokerState(app, AuthSystemId.Snipe);
-            // The card names the path the service actually uses: without an
-            // audience it falls back to the legacy API key, not SSO.
-            AddAuthCard(AuthSystemId.Snipe, "Snipe-IT",
-                config.SnipeUsesOidc ? "Entra SSO · brokered bearer" : "Legacy API key · no SSO audience set",
-                text, state,
-                config.SnipeUsesOidc
-                    ? new[]
-                    {
-                        ("Instance URL", config.SnipeUrl),
-                        ("Audience", ShortId(config.SnipeOidcAudience)),
-                        ("Token source", "Windows broker — no API key")
-                    }
-                    : new[]
-                    {
-                        ("Instance URL", config.SnipeUrl),
-                        ("Needs", "SnipeOidcAudience in managed settings, for SSO"),
-                        ("Token source", "stored API key")
-                    });
-        }
-
-        var rmConfigured = !string.IsNullOrEmpty(config.ReportMateUrl);
-        if (rmConfigured && config.ReportMateUsesOidc)
-        {
-            AddAuthCard(null, "ReportMate", "Entra SSO · brokered bearer", "ready for SSO", AuthState.Configured,
-                new[]
-                {
-                    ("API URL", config.ReportMateUrl),
-                    ("Audience", ShortId(config.ReportMateOidcAudience)),
-                    ("Token source", "Windows broker — no passphrase")
-                });
-        }
-        else
-        {
-            AddAuthCard(null, "ReportMate", "Entra SSO · brokered bearer", "not configured", AuthState.NotConfigured,
-                new[]
-                {
-                    ("API URL", rmConfigured ? config.ReportMateUrl : null),
-                    ("Needs", ReportMateNeeds(rmConfigured)),
-                    ("Used by", "Reporting"),
-                });
-        }
-
-        var ghConfig = config.Tasks?.Providers?.GitHub;
-        var ghState = app.AuthManager.Systems.GetValueOrDefault(AuthSystemId.GitHub)?.State;
-        if (ghConfig is { Enabled: true } || ghState?.Kind == AuthStateKind.Valid)
-        {
-            var (text, state) = BrokerState(app, AuthSystemId.GitHub);
-            AddAuthCard(AuthSystemId.GitHub, "GitHub", "GitHub CLI · OS credential store", text, state,
-                new[]
-                {
-                    ("Organization", ghConfig?.Organization),
-                    ("Project #", ghConfig?.ProjectNumber?.ToString()),
-                    ("Token source", "gh authenticated session — no config token")
-                });
-        }
-
-        if (AuthCardsPanel.Children.Count == 0)
-        {
-            AuthCardsPanel.Children.Add(new TextBlock
-            {
-                Text = "Add an endpoint above, then save. FleetMate will acquire the operator's session from Windows automatically.",
-                TextWrapping = TextWrapping.Wrap,
-                Padding = new Thickness(12),
-                Foreground = (Brush)FindResource("SystemControlForegroundBaseMediumBrush")
-            });
-        }
-    }
-
-    /// <summary>The settings Reporting still lacks, by the names they are set under.</summary>
-    internal static string ReportMateNeeds(bool hasUrl) => hasUrl
-        ? "ReportMateOidcAudience in managed settings"
-        : "API URL (ReportMate, above) and ReportMateOidcAudience in managed settings";
-
-    private static (string text, AuthState state) BrokerState(App app, AuthSystemId id)
-    {
-        var status = app.AuthManager.Systems.GetValueOrDefault(id);
-        if (status == null) return ("needs setup", AuthState.NotConfigured);
-        return status.State.Kind switch
-        {
-            AuthStateKind.Valid => ($"signed in as {status.State.User ?? status.User ?? "you"}", AuthState.Valid),
-            AuthStateKind.Authenticating => ("checking Windows session…", AuthState.Configured),
-            AuthStateKind.Failed => (id == AuthSystemId.Snipe ? "refused" : "SSO unavailable", AuthState.Failed),
-            AuthStateKind.ServicePrincipal => ("service principal blocked", AuthState.Failed),
-            _ => ("ready for SSO", AuthState.Configured)
-        };
-    }
-
-    private void AddAuthCard(AuthSystemId? systemId, string systemName, string authMethod, string statusText, AuthState state,
-        (string label, string? value)[] details)
-    {
-        // TicketsMate signs in to TeamDynamix and nothing else.
-        if (AppEdition.Current.IsTicketsOnly && systemName != "TeamDynamix") return;
-        // Never red: a failed sign-in is orange, as on the macOS client.
-        var color = state switch
-        {
-            AuthState.Valid => "#27ae60",
-            AuthState.Configured => "#f39c12",
-            AuthState.Failed => "#e67e22",
-            _ => "#666"
-        };
-        var borderColor = Color.FromArgb(50,
-            ((Color)ColorConverter.ConvertFromString(color)).R,
-            ((Color)ColorConverter.ConvertFromString(color)).G,
-            ((Color)ColorConverter.ConvertFromString(color)).B);
-
-        var card = new Border
-        {
-            Style = (Style)FindResource("CardStyle"),
-            Margin = new Thickness(0, 0, 0, 12),
-            BorderBrush = new SolidColorBrush(borderColor),
-            BorderThickness = new Thickness(1)
-        };
-
-        var outerStack = new StackPanel();
-
-        // Header: System name + status badge + action button
-        var header = new Grid();
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-        var nameBlock = new TextBlock
-        {
-            Text = systemName,
-            FontWeight = FontWeights.SemiBold,
-            FontSize = 14,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        Grid.SetColumn(nameBlock, 0);
-        header.Children.Add(nameBlock);
-
-        // Status badge
-        var badge = new Border
-        {
-            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color)),
-            CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(8, 2, 8, 2),
-            Margin = new Thickness(8, 0, 0, 0),
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        badge.Child = new TextBlock
-        {
-            Text = statusText,
-            FontSize = 11,
-            Foreground = Brushes.White,
-            FontWeight = FontWeights.SemiBold
-        };
-        Grid.SetColumn(badge, 1);
-        header.Children.Add(badge);
-
-        // Sign-in actions: Sign Out / Retry SSO, az login, gh auth login, Re-check.
-        if (systemId is { } id)
-        {
-            var actions = BuildAuthActions(id, state);
-            Grid.SetColumn(actions, 2);
-            header.Children.Add(actions);
-        }
-
-        outerStack.Children.Add(header);
-
-        // Auth method
-        outerStack.Children.Add(new TextBlock
-        {
-            Text = authMethod,
-            FontSize = 11,
-            Foreground = (Brush)FindResource("SystemControlForegroundBaseMediumBrush"),
-            Margin = new Thickness(0, 4, 0, 4)
-        });
-
-        // Detail rows
-        foreach (var (label, value) in details)
-        {
-            if (string.IsNullOrEmpty(value)) continue;
-
-            var row = new Grid { Margin = new Thickness(0, 1, 0, 1) };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-            var lbl = new TextBlock
-            {
-                Text = label,
-                FontSize = 11,
-                Foreground = (Brush)FindResource("SystemControlForegroundBaseMediumBrush")
-            };
-            Grid.SetColumn(lbl, 0);
-
-            var val = new TextBlock
-            {
-                Text = value,
-                FontSize = 11,
-                FontFamily = new FontFamily("Consolas"),
-                TextTrimming = TextTrimming.CharacterEllipsis
-            };
-            if (value.StartsWith("✗"))
-                val.Foreground = new SolidColorBrush(Colors.DarkOrange);
-            else if (value.StartsWith("●"))
-                val.Foreground = new SolidColorBrush(Colors.Green);
-            Grid.SetColumn(val, 1);
-
-            row.Children.Add(lbl);
-            row.Children.Add(val);
-            outerStack.Children.Add(row);
-        }
-
-        // What the last az or gh sign-in from this card reported.
-        if (systemId is { } resultId && _signInResults.TryGetValue(resultId, out var outcome))
-        {
-            outerStack.Children.Add(new TextBlock
-            {
-                Text = outcome.Message,
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 6, 0, 0),
-                Foreground = outcome.Succeeded
-                    ? (Brush)FindResource("SystemControlForegroundBaseMediumBrush")
-                    : new SolidColorBrush(Colors.DarkOrange)
-            });
-        }
-
-        card.Child = outerStack;
-        AuthCardsPanel.Children.Add(card);
-    }
-
-    private async void OnRefreshAuthClicked(object sender, RoutedEventArgs e)
-    {
-        await RefreshAuthCardsAsync();
-    }
-
-    private async Task RefreshAuthCardsAsync()
-    {
-        if (Application.Current is not App app) return;
-        try
-        {
-            await app.AuthManager.ProbeAllAsync(
-                app.GraphService, app.TdxService, app.SnipeService, app.DevOpsService);
-        }
-        catch
-        {
-            // Individual probes own their error states; keep rendering the rest.
-        }
-        BuildAuthCards();
-    }
-
-    // ── Auth Helpers ────────────────────────────────────────────────────────
-
-    private enum AuthState { Valid, Configured, Failed, NotConfigured }
-
-    private static string TdxAuthDescription(FleetMateConfig config, bool ssoActive)
-        => ssoActive ? "SSO — signed in" : "SSO (Entra ID / Shibboleth)";
-
     private static string ShortId(string? s)
     {
         if (string.IsNullOrEmpty(s)) return "";
@@ -652,10 +329,5 @@ public partial class SettingsPage : Page
         return s.Length > 14 ? $"{s[..14]}..." : s;
     }
 
-    private static string MaskedToken(string s)
-    {
-        if (s.Length <= 16) return new string('●', Math.Min(s.Length, 8));
-        return $"{s[..6]}...{s[^6..]}";
-    }
 }
 

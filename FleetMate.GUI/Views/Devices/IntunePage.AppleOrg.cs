@@ -18,6 +18,11 @@ public partial class IntunePage
 
     private async Task LoadAppleOrgsAsync()
     {
+        if (!EnrollmentOn)
+        {
+            _appleOrgs = new();
+            return;
+        }
         List<AppleOrgProfile> profiles;
         try { profiles = new AppleOrgCredentialStore().Profiles(); }
         catch (Exception ex)

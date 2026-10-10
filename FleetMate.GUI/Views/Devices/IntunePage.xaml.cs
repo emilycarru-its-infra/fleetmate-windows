@@ -155,9 +155,23 @@ public partial class IntunePage : Page
         await Task.WhenAll(autopilotTask, appleTask);
     }
 
+    /// <summary>
+    /// Enrollment records (Autopilot identities and Apple organizations) are
+    /// read only while the Enrollment module is on; switched off, Devices
+    /// lists management records alone.
+    /// </summary>
+    private static bool EnrollmentOn =>
+        AppModules.IsOn(Shared.UserPreferences.HiddenModules, AppModules.Enrollment);
+
     private async Task LoadAutopilotAsync()
     {
         if (_graphService == null) return;
+        if (!EnrollmentOn)
+        {
+            _autopilot = new();
+            if (_intuneReady) RebuildRows();
+            return;
+        }
         AutopilotLoadingText.Visibility = Visibility.Visible;
         try
         {

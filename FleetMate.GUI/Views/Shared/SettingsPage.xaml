@@ -20,31 +20,31 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
                     <StackPanel Margin="2" MaxWidth="860">
                         <TextBlock Text="General" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" />
-                        <TextBlock x:Name="GeneralSubtitleText" Text="Setup, the tabs FleetMate shows, configuration storage and application information."
+                        <TextBlock x:Name="GeneralSubtitleText" Text="The modules FleetMate shows, setup and configuration storage."
                                    Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,14" />
-
-                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,8">
-                            <DockPanel>
-                                <Button Content="Setup Wizard" DockPanel.Dock="Right" VerticalAlignment="Center"
-                                        Padding="16,6" Click="OnSetupWizardClicked"
-                                        AutomationProperties.AutomationId="SettingsSetupWizardButton" />
-                                <StackPanel Margin="0,0,20,0">
-                                    <TextBlock Text="Setup" FontWeight="SemiBold" FontSize="15" />
-                                    <TextBlock Text="Walk through choosing modules, entering endpoints and signing in to az and gh."
-                                               TextWrapping="Wrap" Margin="0,3,0,0"
-                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                </StackPanel>
-                            </DockPanel>
-                        </Border>
 
                         <Border x:Name="ModulesCard" Style="{StaticResource CardStyle}" Margin="0,0,0,8">
                             <StackPanel>
                                 <TextBlock Text="Enabled Modules" FontWeight="SemiBold" FontSize="15" />
-                                <TextBlock Text="A module switched off leaves the tab bar. Its endpoints and sign-in are kept, so switching it back on needs no setup."
+                                <TextBlock Text="Switched-off modules are hidden from the tab bar and stop loading. Their settings are kept, so switching one back on picks up where it left off."
                                            TextWrapping="Wrap" Margin="0,3,0,10"
                                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                 <StackPanel x:Name="ModulesPanel" AutomationProperties.AutomationId="SettingsModulesPanel" />
                             </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}" Margin="0,0,0,8">
+                            <DockPanel>
+                                <Button Content="Run Setup Wizard…" DockPanel.Dock="Right" VerticalAlignment="Center"
+                                        Padding="16,6" Click="OnSetupWizardClicked"
+                                        AutomationProperties.AutomationId="SettingsSetupWizardButton" />
+                                <StackPanel Margin="0,0,20,0">
+                                    <TextBlock Text="Setup Wizard" FontWeight="SemiBold" FontSize="15" />
+                                    <TextBlock Text="Walks through choosing modules and connecting each one."
+                                               TextWrapping="Wrap" Margin="0,3,0,0"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                </StackPanel>
+                            </DockPanel>
                         </Border>
 
                         <Border Style="{StaticResource CardStyle}">
@@ -60,29 +60,6 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Style="{StaticResource CardStyle}" Margin="0,8,0,10">
-                            <StackPanel>
-                                <TextBlock Text="About" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="130" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Grid.Row="0" Text="Version" Margin="0,3" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                    <TextBlock Grid.Row="0" Grid.Column="1" x:Name="VersionText" Text="1.0.0" Margin="0,3" />
-                                    <TextBlock Grid.Row="1" Text="Platform" Margin="0,3" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                    <TextBlock Grid.Row="1" Grid.Column="1" x:Name="PlatformText" Text="Windows" Margin="0,3" />
-                                    <TextBlock Grid.Row="2" Text="Architecture" Margin="0,3" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                    <TextBlock Grid.Row="2" Grid.Column="1" x:Name="ArchitectureText" Margin="0,3" />
-                                    <TextBlock Grid.Row="3" Text=".NET Runtime" Margin="0,3" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                    <TextBlock Grid.Row="3" Grid.Column="1" x:Name="RuntimeText" Margin="0,3" />
-                                </Grid>
-                            </StackPanel>
-                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -276,16 +253,30 @@
                 </ScrollViewer>
             </TabItem>
 
-            <TabItem Header="Apple" x:Name="AppleTab" Loaded="OnAppleTabLoaded">
+            <TabItem Header="Enrollment" x:Name="EnrollmentTab" Loaded="OnEnrollmentTabLoaded"
+                     AutomationProperties.AutomationId="SettingsEnrollmentTab">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
                     <StackPanel Margin="2" MaxWidth="860">
-                        <TextBlock Text="Apple School and Business Manager" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" />
-                        <TextBlock Text="API profiles for the organizations the Devices list reads. Each is kept in Windows Credential Manager for your account, never in a file or policy."
+                        <TextBlock Text="Enrollment" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" />
+                        <TextBlock Text="Where the enrollment records joined into Devices come from, so devices that are registered but not yet enrolled show up too."
                                    Style="{StaticResource SubtitleTextStyle}" TextWrapping="Wrap" Margin="0,0,0,14" />
 
                         <Border Style="{StaticResource CardStyle}">
                             <StackPanel>
-                                <TextBlock Text="Profiles" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <TextBlock Text="Enrollment Records" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <StackPanel x:Name="EnrollmentSourcesPanel" />
+                                <TextBlock Text="Enrollment records appear in Devices beside each device's management record. Switch Enrollment off in General to stop reading them."
+                                           TextWrapping="Wrap" FontSize="11" Margin="0,8,0,0"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Apple School and Business Manager" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,4" />
+                                <TextBlock Text="Every organization is read. Each API profile is kept in Windows Credential Manager for your account, never in a file or policy."
+                                           TextWrapping="Wrap" FontSize="11" Margin="0,0,0,10"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                 <ListBox x:Name="AppleProfilesList" MinHeight="60" MaxHeight="220" />
                                 <TextBlock x:Name="AppleProfilesEmptyText" Text="No profiles yet."
                                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,4,0,0" />
@@ -425,6 +416,12 @@
                             </StackPanel>
                         </Border>
                     </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="About" x:Name="AboutTab" AutomationProperties.AutomationId="SettingsAboutTab">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
+                    <StackPanel x:Name="AboutPanel" Margin="2" MaxWidth="860" />
                 </ScrollViewer>
             </TabItem>
         </TabControl>

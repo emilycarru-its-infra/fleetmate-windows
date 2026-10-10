@@ -192,15 +192,62 @@ public class AuthManager : INotifyPropertyChanged
     public bool HasServicePrincipalWarning =>
         _systems.Values.Any(s => s.State.Kind == AuthStateKind.ServicePrincipal);
 
+    // MARK: - CLI accounts
+
+    /// <summary>Who az is signed in as; null when signed out or not checked yet.</summary>
+    public CliAccount? AzAccount { get; private set; }
+
+    /// <summary>Who gh is signed in as; null when signed out or not checked yet.</summary>
+    public CliAccount? GhAccount { get; private set; }
+
+    /// <summary>True once the CLI accounts have been read at least once.</summary>
+    public bool CliAccountsChecked { get; private set; }
+
+    /// <summary>
+    /// Read who az and gh are signed in as: one shared check behind every
+    /// card that depends on either CLI.
+    /// </summary>
+    public async Task ProbeCliAccountsAsync()
+    {
+        if (_edition.IsTicketsOnly) return;
+        var az = CliAccountProbe.AzAccountAsync();
+        var gh = CliAccountProbe.GhAccountAsync();
+        AzAccount = await az;
+        GhAccount = await gh;
+        CliAccountsChecked = true;
+        OnPropertyChanged(nameof(AzAccount));
+        OnPropertyChanged(nameof(GhAccount));
+    }
+
     // MARK: - Probe All
 
-    public async Task ProbeAllAsync(
+    private Task? _probingAll;
+
+    /// <summary>True while <see cref="ProbeAllAsync"/> runs.</summary>
+    public bool IsProbingAll => _probingAll is { IsCompleted: false };
+
+    /// <summary>
+    /// Probe every system. A call made while one is already running joins
+    /// it, so opening Settings during the launch-time probe does not start a
+    /// second round.
+    /// </summary>
+    public Task ProbeAllAsync(
         GraphService? graphService,
         TdxService? tdxService,
         SnipeService? snipeService,
         AzureDevOpsService? devOpsService)
     {
-        var tasks = new List<Task>();
+        if (IsProbingAll) return _probingAll!;
+        return _probingAll = ProbeAllCoreAsync(graphService, tdxService, snipeService, devOpsService);
+    }
+
+    private async Task ProbeAllCoreAsync(
+        GraphService? graphService,
+        TdxService? tdxService,
+        SnipeService? snipeService,
+        AzureDevOpsService? devOpsService)
+    {
+        var tasks = new List<Task> { ProbeCliAccountsAsync() };
 
         // Each system runs the same probe a Re-check runs, so the two can never
         // disagree about what "healthy" means for that card.
@@ -289,7 +336,17 @@ public class AuthManager : INotifyPropertyChanged
 
         try
         {
+            // An elevated call that never reached Graph comes back as an empty
+            // list, which used to read as signed in. Ask the transport.
+            var before = graphService.Elevation.Snapshot();
             await graphService.GetManagedDevicesAsync(limit: 1);
+            if (graphService.Elevation.FailedSince(before))
+            {
+                var reason = graphService.Elevation.LastError ?? "The elevation session did not respond.";
+                Update(AuthSystemId.Graph, AuthTokenState.Failed(reason));
+                Update(AuthSystemId.Intune, AuthTokenState.Failed(reason));
+                return;
+            }
             Update(AuthSystemId.Graph, AuthTokenState.Valid("Entra SSO"));
             Update(AuthSystemId.Intune, AuthTokenState.Valid("Entra SSO"));
         }
@@ -306,7 +363,14 @@ public class AuthManager : INotifyPropertyChanged
 
         try
         {
+            var before = graphService.Elevation.Snapshot();
             await graphService.SearchGroupsAsync("test", 1);
+            if (graphService.Elevation.FailedSince(before))
+            {
+                Update(AuthSystemId.Entra, AuthTokenState.Failed(
+                    graphService.Elevation.LastError ?? "The elevation session did not respond."));
+                return;
+            }
             Update(AuthSystemId.Entra, AuthTokenState.Valid("Entra SSO"));
         }
         catch (Exception ex)
@@ -463,7 +527,7 @@ public class AuthManager : INotifyPropertyChanged
     /// A GUI process does not always inherit the shell's PATH, so relying on it
     /// alone is how the probe came to report a missing gh that was installed.
     /// </summary>
-    private static string ResolveGh()
+    internal static string ResolveGh()
     {
         var candidates = new[]
         {

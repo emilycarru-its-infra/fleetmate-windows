@@ -66,11 +66,21 @@ public sealed class ElevationSession
 
     private void EnsureConfigured()
     {
-        if (!_config.IsConfigured)
-            throw new ElevationException(
-                "aze elevation is not configured. Set elevation.resourceGroup, elevation.acrImage, " +
-                "elevation.transcriptAccount, and elevation.identityPrefix in your FleetMate config.");
+        if (!_config.IsConfigured) throw new ElevationException(_config.NotConfiguredMessage);
     }
+
+    /// <summary>
+    /// Minutes with nothing attached before an image that ships <c>aze-hold</c>
+    /// stops its own session, matching the aze script.
+    /// </summary>
+    internal const int IdleMinutes = 30;
+
+    /// <summary>
+    /// How long to wait for a container someone else is creating (another
+    /// FleetMate window, the CLI, the aze script) to reach Running. A cold
+    /// start is typically 30–75 seconds.
+    /// </summary>
+    internal static TimeSpan PendingWait = TimeSpan.FromSeconds(180);
 
     private string IdentityName(GraphDomain domain) => _config.IdentityPrefix + domain.DomainName();
 
@@ -105,9 +115,22 @@ public sealed class ElevationSession
     {
         var name = SessionName(domain);
 
-        var show = await RunAzAsync("container", "show", "--resource-group", _config.ResourceGroup!, "--name", name, "--query", "instanceView.state", "-o", "tsv");
-        var state = show.Out.Trim();
+        var state = await ContainerStateAsync(name);
         if (state == "Running") return;
+
+        // A container that is still coming up belongs to a create already in
+        // flight. Deleting it would throw away a cold start that is nearly
+        // done, so wait for it instead.
+        if (IsTransitional(state))
+        {
+            var deadline = DateTime.UtcNow + PendingWait;
+            while (IsTransitional(state) && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5));
+                state = await ContainerStateAsync(name);
+            }
+            if (state == "Running") return;
+        }
 
         RaiseCreating(domain, true);
         try
@@ -139,16 +162,22 @@ public sealed class ElevationSession
         if (!string.IsNullOrEmpty(state))
             await RunAzAsync("container", "delete", "--resource-group", _config.ResourceGroup!, "--name", name, "--yes", "-o", "none");
 
-        var idShow = await RunAzAsync("identity", "show", "--resource-group", _config.ResourceGroup!, "--name", IdentityName(domain), "--query", "[id,clientId]", "-o", "tsv");
+        // az has emitted the two-element tsv list both tab- and
+        // newline-separated across versions, so accept either.
+        var identityName = IdentityName(domain);
+        var idShow = await RunAzAsync("identity", "show", "--resource-group", _config.EffectiveIdentityResourceGroup!, "--name", identityName, "--query", "[id,clientId]", "-o", "tsv");
         var parts = idShow.Out.Split(new[] { '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 2) throw new ElevationException($"Could not resolve managed identity for domain {domain.Slug()}");
+        if (idShow.Code != 0 || parts.Length < 2)
+            throw new ElevationException(
+                $"Could not resolve the {identityName} managed identity for the {domain.Slug()} elevation session: {AzMessage(idShow)}");
         var identityId = parts[0];
         var clientId = parts[1];
 
         var sleepSeconds = ttlHours * 3600;
-        var commandLine = $"/bin/bash -c 'az login --identity --client-id {clientId} --allow-no-subscriptions -o none; sleep {sleepSeconds}'";
+        var commandLine = ContainerCommandLine(clientId, sleepSeconds, IdleMinutes * 60);
 
-        var create = await RunAzAsync(
+        var args = new List<string>
+        {
             "container", "create",
             "--resource-group", _config.ResourceGroup!,
             "--name", name,
@@ -160,10 +189,14 @@ public sealed class ElevationSession
             "--memory", "1.5",
             "--restart-policy", "Never",
             "--command-line", commandLine,
-            "--environment-variables", $"ELEVATION_CLIENT_ID={clientId}", $"ELEVATION_TRANSCRIPT_ACCOUNT={_config.TranscriptAccount}",
-            "--output", "none");
+            "--environment-variables", $"ELEVATION_CLIENT_ID={clientId}",
+        };
+        if (!string.IsNullOrWhiteSpace(_config.TranscriptAccount))
+            args.Add($"ELEVATION_TRANSCRIPT_ACCOUNT={_config.TranscriptAccount}");
+        args.AddRange(new[] { "--output", "none" });
+        var create = await RunAzAsync(args.ToArray());
         if (create.Code != 0)
-            throw new ElevationException($"Failed to create elevation session: {(string.IsNullOrEmpty(create.Err) ? create.Out : create.Err)}");
+            throw new ElevationException($"Could not start the elevation session: {AzMessage(create)}");
 
         var idLookup = await RunAzAsync("container", "show", "--resource-group", _config.ResourceGroup!, "--name", name, "--query", "id", "-o", "tsv");
         var containerId = idLookup.Out.Trim();
@@ -172,6 +205,43 @@ public sealed class ElevationSession
             var expires = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + sleepSeconds;
             await RunAzAsync("resource", "tag", "--ids", containerId, "--tags", "elevation=true", $"domain={domain.Slug()}", $"expires={expires}", "--output", "none");
         }
+    }
+
+    /// <summary><c>instanceView.state</c> of a session container, or "" when there is none.</summary>
+    private async Task<string> ContainerStateAsync(string name)
+    {
+        var show = await RunAzAsync("container", "show", "--resource-group", _config.ResourceGroup!, "--name", name, "--query", "instanceView.state", "-o", "tsv");
+        return show.Code == 0 ? show.Out.Trim() : "";
+    }
+
+    /// <summary>States a container passes through on its way to Running.</summary>
+    internal static bool IsTransitional(string? state) =>
+        state?.Trim().ToLowerInvariant() is "pending" or "creating" or "waiting" or "repairing";
+
+    /// <summary>
+    /// The container's entrypoint: sign in as the domain identity, then hold
+    /// the session open. Images that ship <c>aze-hold</c> stop themselves
+    /// after <paramref name="idleSeconds"/> with nothing attached; older
+    /// images sleep out the TTL.
+    /// </summary>
+    internal static string ContainerCommandLine(string clientId, int ttlSeconds, int idleSeconds) =>
+        $"/bin/bash -c 'az login --identity --client-id {clientId} --allow-no-subscriptions -o none; "
+        + $"if command -v aze-hold >/dev/null; then exec aze-hold {ttlSeconds} {idleSeconds}; fi; "
+        + $"sleep {ttlSeconds}'";
+
+    /// <summary>
+    /// The useful part of a failed az call: stderr without az's WARNING
+    /// noise, else stdout, else the exit code.
+    /// </summary>
+    internal static string AzMessage((string Out, string Err, int Code) result)
+    {
+        var lines = result.Err.Split('\n')
+            .Select(l => l.Trim())
+            .Where(l => l.Length > 0 && !l.StartsWith("WARNING:", StringComparison.Ordinal))
+            .ToList();
+        if (lines.Count > 0) return string.Join(" ", lines);
+        var output = result.Out.Trim();
+        return output.Length > 0 ? output : $"az exited with code {result.Code}";
     }
 
     /// <summary>
@@ -234,7 +304,7 @@ public sealed class ElevationSession
         if (await GetSessionStateAsync(domain) is null) return false;
         var delete = await RunAzAsync("container", "delete", "--resource-group", _config.ResourceGroup!, "--name", SessionName(domain), "--yes", "-o", "none");
         if (delete.Code != 0)
-            throw new ElevationException($"Failed to stop elevation session: {(string.IsNullOrEmpty(delete.Err) ? delete.Out : delete.Err)}");
+            throw new ElevationException($"Could not stop the elevation session: {AzMessage(delete)}");
         return true;
     }
 
@@ -268,7 +338,7 @@ public sealed class ElevationSession
         var account = await RunAzAsync("account", "show", "--query", "id", "-o", "tsv");
         var sub = account.Out.Trim();
         if (account.Code != 0 || string.IsNullOrEmpty(sub))
-            throw new ElevationException($"Not logged in to az (run az login). {account.Err.Trim()}");
+            throw new ElevationException($"Not signed in to az; run az login. {AzMessage(account)}");
         var uri = $"https://management.azure.com/subscriptions/{sub}/resourceGroups/{_config.ResourceGroup!}/providers/Microsoft.ContainerInstance/containerGroups/{name}/containers/{name}/exec?api-version={ExecApiVersion}";
         var body = "{\"command\":\"/bin/bash\",\"terminalSize\":{\"rows\":24,\"cols\":500}}";
 
@@ -281,7 +351,7 @@ public sealed class ElevationSession
             if (attempt > 1) await Task.Delay(250 * attempt);
             var execResp = await RunAzAsync("rest", "--method", "post", "--uri", uri, "--body", body);
             if (execResp.Code != 0)
-                throw new ElevationException($"Exec handshake failed: {(string.IsNullOrEmpty(execResp.Err) ? execResp.Out : execResp.Err)}");
+                throw new ElevationException($"Exec handshake failed: {AzMessage(execResp)}");
 
             using var doc = JsonDocument.Parse(execResp.Out);
             var wsUri = doc.RootElement.GetProperty("webSocketUri").GetString();

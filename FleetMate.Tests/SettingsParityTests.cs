@@ -10,7 +10,7 @@ public class SettingsParityTests
 {
     [Fact]
     public void ModulesFollowTheTabBar() =>
-        Assert.Equal(MainWindow.TabOrder, AppModules.All.Select(m => m.Tag));
+        Assert.Equal(MainWindow.TabOrder, AppModules.Tabs.Select(m => m.Tag));
 
     [Fact]
     public void HiddenModulesRoundTripInTabBarOrder()
