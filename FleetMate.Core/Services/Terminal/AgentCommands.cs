@@ -49,6 +49,19 @@ public static class AgentCommands
     public static IReadOnlyList<string> Choices { get; } = new[] { Shell }.Concat(Presets.Keys).ToList();
 
     /// <summary>
+    /// Whether a choice can run here: the shell always can, a preset only when
+    /// its CLI is installed, so a person without an agent is not offered one.
+    /// </summary>
+    public static bool IsInstalled(string choice, Func<string, string?> findInstalled) =>
+        choice.Equals(Shell, StringComparison.OrdinalIgnoreCase)
+        || !Presets.TryGetValue(choice, out var preset)
+        || findInstalled(preset[0]) != null;
+
+    /// <summary>The choices whose program is installed, in <see cref="Choices"/> order.</summary>
+    public static IReadOnlyList<string> InstalledChoices(Func<string, string?> findInstalled) =>
+        Choices.Where(c => IsInstalled(c, findInstalled)).ToList();
+
+    /// <summary>
     /// Resolve a setting value. <paramref name="findOnPath"/> returns the full
     /// path of an executable on PATH, or null.
     /// </summary>
@@ -70,14 +83,34 @@ public static class AgentCommands
     public static TerminalCommand DefaultShell(Func<string, string?> findOnPath) =>
         new(findOnPath("pwsh.exe") ?? findOnPath("powershell.exe") ?? "powershell.exe", new[] { "-NoLogo" });
 
+    /// <summary>
+    /// Find an executable on PATH, then in the folders the agent CLIs install
+    /// to (the native installer's %USERPROFILE%\.local\bin, npm's global
+    /// folder), which the app's PATH lacks when the CLI was installed after
+    /// sign-in.
+    /// </summary>
+    public static string? FindInstalled(string name) =>
+        FindOnPath(name) ?? FindIn(name, InstallFolders());
+
+    private static IEnumerable<string> InstallFolders()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        if (home.Length > 0) yield return Path.Combine(home, ".local", "bin");
+        if (appData.Length > 0) yield return Path.Combine(appData, "npm");
+    }
+
     /// <summary>Find an executable on PATH, trying PATHEXT extensions when none is given.</summary>
-    public static string? FindOnPath(string name)
+    public static string? FindOnPath(string name) =>
+        FindIn(name, (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator));
+
+    private static string? FindIn(string name, IEnumerable<string> folders)
     {
         if (Path.IsPathRooted(name)) return File.Exists(name) ? name : null;
         var extensions = Path.HasExtension(name)
             ? new[] { "" }
             : (Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD").Split(';');
-        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator))
+        foreach (var dir in folders)
         {
             if (string.IsNullOrWhiteSpace(dir)) continue;
             foreach (var ext in extensions)

@@ -79,13 +79,22 @@ public static class AgentCommandPicker
         (Custom, "Custom…"),
     };
 
-    /// <summary>The picker choice and custom text a stored AgentCommand shows as.</summary>
-    public static (string Key, string CustomCommand) FromSetting(string? agentCommand)
+    /// <summary>The choices to show: Shell, Custom, and each preset <paramref name="isInstalled"/> accepts.</summary>
+    public static IReadOnlyList<(string Key, string Label)> InstalledChoices(Func<string, bool> isInstalled) =>
+        Choices.Where(c => c.Key.Length == 0 || c.Key == Custom || isInstalled(c.Key)).ToList();
+
+    /// <summary>
+    /// The picker choice and custom text a stored AgentCommand shows as. A
+    /// preset that <paramref name="isInstalled"/> rejects is not in the picker,
+    /// so it shows as a custom command rather than a blank choice.
+    /// </summary>
+    public static (string Key, string CustomCommand) FromSetting(string? agentCommand, Func<string, bool>? isInstalled = null)
     {
         var value = agentCommand?.Trim() ?? "";
         if (value.Length == 0 || value.Equals("shell", StringComparison.OrdinalIgnoreCase)) return ("", "");
         foreach (var (key, _) in Choices)
-            if (key.Length > 0 && key != Custom && key.Equals(value, StringComparison.OrdinalIgnoreCase)) return (key, "");
+            if (key.Length > 0 && key != Custom && key.Equals(value, StringComparison.OrdinalIgnoreCase))
+                return isInstalled == null || isInstalled(key) ? (key, "") : (Custom, value);
         return (Custom, value);
     }
 
