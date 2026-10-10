@@ -229,7 +229,7 @@ public partial class RepoSidebar : UserControl
 
     private void OnSortClicked(object sender, RoutedEventArgs e)
     {
-        var menu = new ContextMenu { PlacementTarget = SortButton, Placement = PlacementMode.Top };
+        var menu = new ContextMenu { PlacementTarget = SortButton, Placement = PlacementMode.Bottom };
         menu.Items.Add(new MenuItem { Header = "Sort By", IsEnabled = false });
         foreach (var sort in Enum.GetValues<RepoSidebarSort>())
         {

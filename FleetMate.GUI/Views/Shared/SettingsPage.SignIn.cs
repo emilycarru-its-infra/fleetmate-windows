@@ -91,10 +91,20 @@ public partial class SettingsPage
         {
             case CredentialProvider.AzureCli:
             {
-                var signedOut = auth.CliAccountsChecked && auth.AzAccount == null;
-                var az = Action(signedOut ? "az login" : "Switch Account…", RunAzLogin, accent: signedOut);
-                az.ToolTip = CliSignIn.AzLoginCommandDescription(app.Config.Graph?.TenantId);
-                panel.Children.Add(az);
+                var azTip = CliSignIn.AzLoginCommandDescription(app.Config.Graph?.TenantId);
+                if (auth.CliAccountsChecked && auth.AzAccount == null)
+                {
+                    var az = Action("az login", RunAzLogin, accent: true);
+                    az.ToolTip = azTip;
+                    panel.Children.Add(az);
+                }
+                else
+                {
+                    // Signed in, changing account is rare and belongs to az:
+                    // kept in a menu rather than as a button on the card.
+                    panel.Children.Add(MoreMenu("More Azure CLI actions",
+                        ("Switch Account…", azTip, () => RunAction(RunAzLogin))));
+                }
                 break;
             }
             case CredentialProvider.GitHubCli when auth.CliAccountsChecked && auth.GhAccount == null:
@@ -119,7 +129,9 @@ public partial class SettingsPage
 
         // Every provider action ends by re-reading the sign-in and re-probing
         // each system under it, so the card shows the state the action left.
-        Button Action(string label, Func<Task> run, bool accent = false) => ActionButton(label, accent, async () =>
+        Button Action(string label, Func<Task> run, bool accent = false) => ActionButton(label, accent, () => RunAction(run));
+
+        async Task RunAction(Func<Task> run)
         {
             _busyProvider = provider;
             BuildAuthCards();
@@ -128,7 +140,26 @@ public partial class SettingsPage
             await RecheckProviderAsync(rows);
             _busyProvider = null;
             BuildAuthCards();
-        });
+        }
+    }
+
+    /// <summary>A small "…" button whose menu holds a card's rarely used actions.</summary>
+    private Button MoreMenu(string name, params (string Label, string Tip, Func<Task> Run)[] items)
+    {
+        var button = ActionButton("", accent: false, () => Task.CompletedTask);
+        button.FontFamily = new System.Windows.Media.FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets");
+        button.ToolTip = name;
+        System.Windows.Automation.AutomationProperties.SetName(button, name);
+        var menu = new ContextMenu { PlacementTarget = button, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        foreach (var (label, tip, run) in items)
+        {
+            var item = new MenuItem { Header = label, ToolTip = tip };
+            item.Click += async (_, _) => await run();
+            menu.Items.Add(item);
+        }
+        button.ContextMenu = menu;
+        button.Click += (_, _) => menu.IsOpen = true;
+        return button;
     }
 
     private Button ActionButton(string label, bool accent, Func<Task> onClick)

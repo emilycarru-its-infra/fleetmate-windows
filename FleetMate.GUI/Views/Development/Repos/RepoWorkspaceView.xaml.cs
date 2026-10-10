@@ -9,10 +9,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using FleetMate.Core.Services.Repos;
-using FleetMate.Core.Services.Terminal;
 using FleetMate.GUI.Views.Manage;
 using FleetMate.GUI.Views.Shared;
-using FleetMate.GUI.Views.Terminal;
 using FleetMate.Core.Shared;
 
 namespace FleetMate.GUI.Views.Development.Repos;
@@ -514,24 +512,6 @@ public partial class RepoWorkspaceView : UserControl
     private void OnReveal(object sender, RoutedEventArgs e)
     {
         if (_model?.SelectedPath is { } path) RepoShell.Reveal(path);
-    }
-
-    /// <summary>Opens an agent session in the checkout, in the app's terminal panel.</summary>
-    private void OnOpenTerminal(object sender, RoutedEventArgs e)
-    {
-        if (_model?.Selected is not { Local: { } local } record) return;
-        if (Window.GetWindow(this) is not MainWindow window) return;
-        // The terminal panel's own default: the configured agent, or the shell
-        // when the built-in default agent is not installed.
-        var settings = ((App)Application.Current).Config.Terminal;
-        var agent = settings.AgentCommandIsBuiltInDefault && AgentCommands.FindInstalled(settings.AgentCommand) == null
-            ? AgentCommands.Shell
-            : settings.AgentCommand;
-        var command = AgentCommands.Resolve(agent, AgentCommands.FindInstalled);
-        var label = string.IsNullOrWhiteSpace(agent) ? AgentCommands.Shell : agent.Split(' ')[0];
-        var location = new RepoLocation(record.Key.Name, local.Path, null);
-        window.SetTerminalVisible(true, takeFocus: false);
-        window.Terminal.OpenSession(new TerminalLaunch($"{label} · {record.Key.Name}", command, local.Path, location));
     }
 
     private void OpenInEditor(string relativePath)

@@ -1,8 +1,8 @@
 using System.Windows;
 using System.Windows.Automation;
-using System.Windows.Automation.Peers;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using FleetMate.Core.Services.Terminal;
 using ModernWpf.Controls;
@@ -10,10 +10,11 @@ using ModernWpf.Controls;
 namespace FleetMate.GUI.Views.Terminal;
 
 /// <summary>
-/// What shows across the bottom of the window while the terminal is closed:
-/// the agent, the sessions and how to bring them back. Clicking it or
-/// dragging it up opens the terminal. Plain text throughout; nothing here is
-/// a badge.
+/// The bar on the window's bottom edge, open or closed: the agent, the
+/// sessions, and the controls to show, hide or fill the window with the
+/// terminal. While the terminal is closed, clicking the bar or dragging it up
+/// opens it; while it is open, dragging the bar down hides it. Plain text
+/// throughout; nothing here is a badge.
 /// </summary>
 public sealed class TerminalStrip : UserControl
 {
@@ -22,13 +23,22 @@ public sealed class TerminalStrip : UserControl
     private readonly TextBlock _agent = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
     private readonly TextBlock _status = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
     private readonly Border _surface;
+    private readonly Button _fullWindow;
+    private readonly Button _toggle;
     // Session activity changes without the panel announcing it, so the strip
     // reads it on a slow tick while it is on screen.
     private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromSeconds(1.5) };
     private Point? _pressedAt;
+    private bool _showing;
 
-    /// <summary>Raised when the strip is clicked, dragged up or invoked by a screen reader.</summary>
+    /// <summary>Raised when the closed bar is clicked or dragged up, or its chevron is pressed.</summary>
     public event EventHandler? ShowRequested;
+
+    /// <summary>Raised when the open terminal's chevron is pressed or the bar is dragged down.</summary>
+    public event EventHandler? HideRequested;
+
+    /// <summary>Raised by the full-window button: fill the window with the terminal, or restore it.</summary>
+    public event EventHandler? FullWindowRequested;
 
     /// <summary>The panel whose sessions the strip describes.</summary>
     public TerminalPanel? Panel { get; set; }
@@ -37,18 +47,19 @@ public sealed class TerminalStrip : UserControl
     {
         AutomationProperties.SetAutomationId(this, "TerminalStrip");
         Height = StripHeight;
-        Cursor = Cursors.Hand;
-        ToolTip = "Show the Agent Terminal (Ctrl+`): click or drag up";
 
         var icon = new FontIcon { Glyph = "", FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
         icon.SetResourceReference(ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
         var title = new TextBlock { Text = "Agent", FontSize = 12, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
         _agent.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
         _status.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
-        var hint = new TextBlock { Text = "Ctrl+`", FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
-        hint.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumLowBrush");
-        var chevron = new FontIcon { Glyph = "", FontSize = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
-        chevron.SetResourceReference(ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
+        // The shortcuts are in the buttons' tooltips, not as hint text on the bar.
+        _fullWindow = BarButton("TerminalFullWindowButton", (_, _) => FullWindowRequested?.Invoke(this, EventArgs.Empty));
+        _toggle = BarButton("TerminalToggleBarButton", (_, _) =>
+        {
+            if (_showing) HideRequested?.Invoke(this, EventArgs.Empty);
+            else ShowRequested?.Invoke(this, EventArgs.Empty);
+        });
 
         var left = new StackPanel { Orientation = Orientation.Horizontal };
         left.Children.Add(icon);
@@ -56,10 +67,10 @@ public sealed class TerminalStrip : UserControl
         left.Children.Add(_agent);
         left.Children.Add(_status);
         var right = new StackPanel { Orientation = Orientation.Horizontal };
-        right.Children.Add(hint);
-        right.Children.Add(chevron);
+        right.Children.Add(_fullWindow);
+        right.Children.Add(_toggle);
 
-        var row = new DockPanel { Margin = new Thickness(12, 0, 12, 0), LastChildFill = false };
+        var row = new DockPanel { Margin = new Thickness(12, 0, 8, 0), LastChildFill = false };
         DockPanel.SetDock(right, Dock.Right);
         row.Children.Add(right);
         row.Children.Add(left);
@@ -69,15 +80,24 @@ public sealed class TerminalStrip : UserControl
         _surface.SetResourceReference(Border.BackgroundProperty, "AppBackgroundBrush");
         Content = _surface;
 
-        MouseEnter += (_, _) => _surface.SetResourceReference(Border.BackgroundProperty, "SubtleFillBrush");
+        MouseEnter += (_, _) => { if (!_showing) _surface.SetResourceReference(Border.BackgroundProperty, "SubtleFillBrush"); };
         MouseLeave += (_, _) => _surface.SetResourceReference(Border.BackgroundProperty, "AppBackgroundBrush");
+        // The buttons handle their own clicks, so a press reaches here only off them.
         MouseLeftButtonDown += (_, e) => { _pressedAt = e.GetPosition(this); CaptureMouse(); e.Handled = true; };
         MouseMove += (_, e) =>
         {
-            // Dragged up past a few pixels: open, as dragging the divider would.
-            if (_pressedAt is { } start && e.GetPosition(this).Y < start.Y - 8) Release(show: true);
+            if (_pressedAt is not { } start) return;
+            var y = e.GetPosition(this).Y;
+            // Dragged up past a few pixels while closed: open, as dragging the
+            // divider would. Dragged down while open: hide.
+            if (!_showing && y < start.Y - 8) Release(ShowRequested);
+            else if (_showing && y > start.Y + 8) Release(HideRequested);
         };
-        MouseLeftButtonUp += (_, e) => { if (_pressedAt != null) Release(show: true); e.Handled = true; };
+        MouseLeftButtonUp += (_, e) =>
+        {
+            if (_pressedAt != null) Release(_showing ? null : ShowRequested);
+            e.Handled = true;
+        };
         LostMouseCapture += (_, _) => _pressedAt = null;
 
         _tick.Tick += (_, _) => Refresh();
@@ -86,13 +106,26 @@ public sealed class TerminalStrip : UserControl
             if (IsVisible) { Refresh(); _tick.Start(); }
             else _tick.Stop();
         };
+        SetState(showing: false, fullWindow: false);
     }
 
-    private void Release(bool show)
+    private void Release(EventHandler? raise)
     {
         _pressedAt = null;
         ReleaseMouseCapture();
-        if (show) ShowRequested?.Invoke(this, EventArgs.Empty);
+        raise?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Follow the terminal: whether it is open, and whether it fills the window.</summary>
+    public void SetState(bool showing, bool fullWindow)
+    {
+        _showing = showing;
+        var controls = TerminalBarControls.For(showing, fullWindow);
+        Cursor = showing ? Cursors.Arrow : Cursors.Hand;
+        ToolTip = showing ? null : "Show the Agent Terminal (Ctrl+`): click or drag up";
+        if (showing) _surface.SetResourceReference(Border.BackgroundProperty, "AppBackgroundBrush");
+        SetButton(_fullWindow, controls.FullWindow ? "" : "", controls.FullWindowTip, controls.FullWindowName);
+        SetButton(_toggle, controls.Showing ? "" : "", controls.ToggleTip, controls.ToggleName);
     }
 
     /// <summary>Read the default agent and the sessions' state again.</summary>
@@ -103,18 +136,27 @@ public sealed class TerminalStrip : UserControl
         AutomationProperties.SetName(this, $"Agent Terminal, {_status.Text}");
     }
 
-    internal void Invoke() => ShowRequested?.Invoke(this, EventArgs.Empty);
-
-    protected override AutomationPeer OnCreateAutomationPeer() => new StripPeer(this);
-
-    /// <summary>Screen readers see the strip as a button that opens the terminal.</summary>
-    private sealed class StripPeer : FrameworkElementAutomationPeer, System.Windows.Automation.Provider.IInvokeProvider
+    private static Button BarButton(string automationId, RoutedEventHandler click)
     {
-        public StripPeer(TerminalStrip owner) : base(owner) { }
-        protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Button;
-        protected override string GetClassNameCore() => nameof(TerminalStrip);
-        public override object GetPattern(PatternInterface patternInterface) =>
-            patternInterface == PatternInterface.Invoke ? this : base.GetPattern(patternInterface);
-        public void Invoke() => ((TerminalStrip)Owner).Invoke();
+        var button = new Button
+        {
+            Content = new FontIcon { FontSize = 10 },
+            Padding = new Thickness(6, 2, 6, 2),
+            Margin = new Thickness(2, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Cursor = Cursors.Arrow
+        };
+        AutomationProperties.SetAutomationId(button, automationId);
+        button.Click += click;
+        return button;
+    }
+
+    private static void SetButton(Button button, string glyph, string tip, string name)
+    {
+        ((FontIcon)button.Content).Glyph = glyph;
+        button.ToolTip = tip;
+        AutomationProperties.SetName(button, name);
     }
 }

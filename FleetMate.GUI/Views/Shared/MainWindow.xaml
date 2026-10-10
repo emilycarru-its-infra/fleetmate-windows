@@ -30,6 +30,7 @@
             <RowDefinition x:Name="ContentRow" Height="*" />
             <RowDefinition Height="Auto" />
             <RowDefinition x:Name="TerminalRow" Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- Centered, segmented top navigation. The equal outer columns keep it
@@ -279,7 +280,7 @@
              the pointer's position in the window, so it tracks smoothly, and
              dragging it near the top switches to full-window mode. Dragging it
              to the bottom, or double-clicking it, folds the terminal into the
-             strip that stands in for it while it is closed. -->
+             bar below it. Full window, it is not drawn. -->
         <Thumb x:Name="TerminalDivider" Grid.Row="2" Height="5" Cursor="SizeNS" Visibility="Collapsed"
                AutomationProperties.AutomationId="TerminalDivider"
                AutomationProperties.Name="Agent Terminal divider"
@@ -293,6 +294,7 @@
             </Thumb.Template>
         </Thumb>
         <term:TerminalPanel x:Name="Terminal" Grid.Row="3" Visibility="Collapsed" />
-        <term:TerminalStrip x:Name="TerminalStrip" Grid.Row="3" />
+        <!-- The bar stays on the window edge, open or closed. -->
+        <term:TerminalStrip x:Name="TerminalStrip" Grid.Row="4" />
     </Grid>
 </Window>

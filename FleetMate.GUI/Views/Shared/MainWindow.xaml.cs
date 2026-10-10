@@ -48,9 +48,12 @@ public partial class MainWindow : Window
         // window, and with AgentAutoStart (on by default) open a session at launch.
         Terminal.HideRequested += (_, _) => SetTerminalVisible(false);
         Terminal.FullWindowRequested += (_, _) => ToggleFullWindow();
-        // While the panel is closed the strip stands in for it.
+        // The bar below the panel stays on the window edge and holds show,
+        // hide and full window.
         TerminalStrip.Panel = Terminal;
         TerminalStrip.ShowRequested += (_, _) => SetTerminalVisible(true);
+        TerminalStrip.HideRequested += (_, _) => SetTerminalVisible(false);
+        TerminalStrip.FullWindowRequested += (_, _) => ToggleFullWindow();
         Closed += (_, _) => Terminal.DisposeAll();
         Loaded += (_, _) => InitToolbarFit();
         InitPreferences();
@@ -200,7 +203,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private double AvailableHeight => Math.Max(0, RootGrid.ActualHeight - RootGrid.RowDefinitions[0].ActualHeight - TerminalDivider.ActualHeight);
+    private double AvailableHeight => Math.Max(0, RootGrid.ActualHeight - RootGrid.RowDefinitions[0].ActualHeight - TerminalDivider.ActualHeight - TerminalStrip.ActualHeight);
 
     private void OnDividerDragStarted(object sender, System.Windows.Controls.Primitives.DragStartedEventArgs e) =>
         _terminalLayout.BeginDrag();
@@ -212,7 +215,7 @@ public partial class MainWindow : Window
     private void OnDividerDragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
     {
         var pointer = System.Windows.Input.Mouse.GetPosition(RootGrid).Y;
-        var height = RootGrid.ActualHeight - pointer - TerminalDivider.ActualHeight / 2;
+        var height = RootGrid.ActualHeight - TerminalStrip.ActualHeight - pointer - TerminalDivider.ActualHeight / 2;
         _terminalLayout.Drag(height, AvailableHeight);
         ApplyTerminalLayout();
     }
@@ -239,12 +242,16 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Full-window mode hides the tab's page behind the terminal; otherwise the
-    /// panel has its height. Closed, the row is as tall as the strip.
+    /// panel has its height. Closed, the row is empty and only the bar shows.
+    /// Filling the window there is nothing above to resize against, so the
+    /// divider is not drawn and the terminal reaches the top.
     /// </summary>
     private void ApplyTerminalLayout()
     {
         var visible = Terminal.Visibility == Visibility.Visible;
         var full = visible && _terminalLayout.FullWindow;
+        TerminalDivider.Visibility = visible && !full ? Visibility.Visible : Visibility.Collapsed;
+        TerminalStrip.SetState(visible, full);
         ContentFrame.Visibility = full ? Visibility.Hidden : Visibility.Visible;
         ContentRow.Height = full ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
         TerminalRow.Height = !visible ? GridLength.Auto
@@ -289,8 +296,6 @@ public partial class MainWindow : Window
         var terminalHadFocus = Terminal.IsKeyboardFocusWithin;
 
         Terminal.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        TerminalDivider.Visibility = Terminal.Visibility;
-        TerminalStrip.Visibility = visible || TicketsOnly ? Visibility.Collapsed : Visibility.Visible;
         TerminalToggleButton.IsChecked = visible;
         var label = visible ? "Hide Agent Terminal" : "Show Agent Terminal";
         TerminalToggleButton.ToolTip = $"{label} (Ctrl+`)";

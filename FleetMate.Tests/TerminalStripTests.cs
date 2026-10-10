@@ -117,4 +117,28 @@ public class TerminalStripTests
     public void CtrlShiftMinus_StillReachesTheShell() =>
         // Ctrl+_ is undo in readline-style shells.
         Assert.Equal(TerminalAction.None, TerminalKeyBindings.Map("Minus", ctrl: true, shift: true, alt: false, out _));
+
+    // ── The bar's controls ──────────────────────────────────────────────
+
+    [Fact]
+    public void ClosedBar_OffersShowAndFullWindow()
+    {
+        var bar = TerminalBarControls.For(showing: false, fullWindow: true);
+        Assert.False(bar.FullWindow);
+        Assert.Equal("Full Window", bar.FullWindowName);
+        Assert.Equal("Show Agent Terminal", bar.ToggleName);
+        Assert.Contains("Ctrl+`", bar.ToggleTip);
+    }
+
+    [Fact]
+    public void OpenBar_OffersHide_AndRestoreWhenFillingTheWindow()
+    {
+        var open = TerminalBarControls.For(showing: true, fullWindow: false);
+        Assert.Equal("Hide Agent Terminal", open.ToggleName);
+        Assert.Equal("Full Window", open.FullWindowName);
+        var full = TerminalBarControls.For(showing: true, fullWindow: true);
+        Assert.True(full.FullWindow);
+        Assert.Equal("Restore", full.FullWindowName);
+        Assert.Contains("Ctrl+Shift+Enter", full.FullWindowTip);
+    }
 }
