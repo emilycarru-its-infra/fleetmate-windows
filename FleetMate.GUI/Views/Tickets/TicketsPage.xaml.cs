@@ -152,35 +152,19 @@ private bool _isInitialLoadDone;
         };
     }
     
+    /// <summary>
+    /// No signed-in indicator: when sign-in works the tickets load, and that
+    /// is all anyone needs to see. Sign In shows only when silent sign-in
+    /// failed, so the failure stays visible and can be retried.
+    /// </summary>
     private void UpdateSsoState()
     {
         if (_app == null || _tdxService == null) return;
-        
-        // Check if SSO should be shown
-        if (_tdxService.ShouldAttemptSso)
-        {
-            if (_tdxService.IsSsoAuthenticated)
-            {
-                // Show user info
-                SsoUserBorder.Visibility = Visibility.Visible;
-                SsoUserNameText.Text = _tdxService.AuthenticatedUserName ?? "Signed In";
-                SsoLoginButton.Visibility = Visibility.Collapsed;
-            }
-            else
-            {
-                // Show login button
-                SsoUserBorder.Visibility = Visibility.Collapsed;
-                SsoLoginButton.Visibility = Visibility.Visible;
-            }
-        }
-        else
-        {
-            // SSO not enabled, hide both
-            SsoUserBorder.Visibility = Visibility.Collapsed;
-            SsoLoginButton.Visibility = Visibility.Collapsed;
-        }
+        SsoLoginButton.Visibility = _tdxService.ShouldAttemptSso && !_tdxService.IsSsoAuthenticated
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
-    
+
     private async void OnSsoLoginClicked(object sender, RoutedEventArgs e)
     {
         if (_app == null) return;
@@ -230,15 +214,6 @@ private bool _isInitialLoadDone;
         _app.ServicesReloaded -= DetachFromApp;
     }
     
-    private void OnSsoSignOutClicked(object sender, RoutedEventArgs e)
-    {
-        _app?.SignOutTdxSso();
-        UpdateSsoState();
-        _me = null;
-        UpdateAssignedToMeToggle();
-        ApplyFiltersAndSort();
-    }
-
     private async Task LoadTicketsAsync()
     {
         // Reachable during BAML load: LimitComboBox marks an item IsSelected in
@@ -493,6 +468,8 @@ private bool _isInitialLoadDone;
 
         ListViewPanel.Visibility = _isBoardView ? Visibility.Collapsed : Visibility.Visible;
         BoardViewPanel.Visibility = _isBoardView ? Visibility.Visible : Visibility.Collapsed;
+        // The column picker only means something on the board, as on Mac.
+        BoardGroupComboBox.Visibility = _isBoardView ? Visibility.Visible : Visibility.Collapsed;
 
         if (_isBoardView)
         {
@@ -640,7 +617,8 @@ private bool _isInitialLoadDone;
         // Column dimension mirrors the macOS BoardGroupBy options: Status,
         // Responsible (default), Priority, Group. Groupless tickets always have
         // a column — "No Group" — so none can fall off the board.
-        var paletteIndex = 0;
+        // Columns are neutral, as on Mac: only Status mode gives the header dot
+        // a colour (the status's own); every other mode leaves it grey.
         BoardColumn ToColumn(string key, IEnumerable<TdxTicket> tickets, SolidColorBrush header)
         {
             var list = tickets.ToList();
@@ -657,8 +635,6 @@ private bool _isInitialLoadDone;
                     .ToList(),
             };
         }
-        SolidColorBrush NextColor() => ColumnPalette[paletteIndex++ % ColumnPalette.Length];
-
         List<BoardBlock> blocks;
         switch (_boardGroupBy)
         {
@@ -679,7 +655,7 @@ private bool _isInitialLoadDone;
                     new BoardBlock(null, _filteredTickets
                         .GroupBy(t => t.PriorityName ?? "No Priority")
                         .OrderBy(g => GetPriorityOrder(g.Key))
-                        .Select(g => ToColumn(g.Key, g, GetPriorityColor(g.Key)))
+                        .Select(g => ToColumn(g.Key, g, NeutralColumnDot))
                         .ToList()),
                 };
                 break;
@@ -689,7 +665,7 @@ private bool _isInitialLoadDone;
                 {
                     new BoardBlock(null, TicketBoardLayout
                         .Columns(_filteredTickets, TicketBoardLayout.GroupKey, TicketBoardLayout.NoGroup)
-                        .Select(c => ToColumn(c.Key, c.Tickets, NextColor()))
+                        .Select(c => ToColumn(c.Key, c.Tickets, NeutralColumnDot))
                         .ToList()),
                 };
                 break;
@@ -697,7 +673,7 @@ private bool _isInitialLoadDone;
             default: // Responsible: people inside their group's block
                 blocks = TicketBoardLayout.ResponsibleBlocks(_filteredTickets)
                     .Select(b => new BoardBlock(b.Header, b.Columns
-                        .Select(c => ToColumn(c.Key, c.Tickets, NextColor()))
+                        .Select(c => ToColumn(c.Key, c.Tickets, NeutralColumnDot))
                         .ToList()))
                     .ToList();
                 break;
@@ -706,27 +682,13 @@ private bool _isInitialLoadDone;
         BoardColumnsControl.ItemsSource = blocks;
     }
 
-    private static readonly SolidColorBrush[] ColumnPalette =
-    {
-        new(Color.FromRgb(0x3A, 0x6E, 0xA5)), new(Color.FromRgb(0x5B, 0x8C, 0x5A)),
-        new(Color.FromRgb(0x8E, 0x6B, 0xA5)), new(Color.FromRgb(0xA5, 0x7C, 0x3A)),
-        new(Color.FromRgb(0x4C, 0x8C, 0x8C)), new(Color.FromRgb(0xA5, 0x5A, 0x6E)),
-    };
+    private static readonly SolidColorBrush NeutralColumnDot = new(Color.FromRgb(0x8E, 0x8E, 0x93));
 
     private static int GetPriorityOrder(string priority) => priority.ToLower() switch
     {
         "emergency" => 0, "high" => 1, "medium" => 2, "low" => 3, _ => 4
     };
 
-    private static SolidColorBrush GetPriorityColor(string priority) => priority.ToLower() switch
-    {
-        "emergency" => new SolidColorBrush(Color.FromRgb(0xC0, 0x40, 0x40)),
-        "high" => new SolidColorBrush(Color.FromRgb(0xE0, 0x70, 0x30)),
-        "medium" => new SolidColorBrush(Color.FromRgb(0xE0, 0xA8, 0x30)),
-        "low" => new SolidColorBrush(Color.FromRgb(0x40, 0xA0, 0x60)),
-        _ => new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80))
-    };
-    
     private static SolidColorBrush GetStatusColor(string status)
     {
         return StatusColors.TryGetValue(status, out var color) 

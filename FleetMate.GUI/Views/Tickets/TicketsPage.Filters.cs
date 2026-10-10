@@ -30,7 +30,7 @@ public partial class TicketsPage
 
         foreach (var category in FilterCategories)
         {
-            var button = new Button { Margin = new Thickness(0, 0, 8, 4), Padding = new Thickness(10, 4, 10, 4) };
+            var button = new Button { Margin = new Thickness(0, 0, 8, 4), Padding = new Thickness(10, 0, 10, 0), Height = 32, MinHeight = 0 };
             button.Click += (_, _) => OpenFilterMenu(category, button);
             _filterButtons[category] = button;
             FilterButtonsPanel.Children.Add(button);
@@ -38,7 +38,7 @@ public partial class TicketsPage
 
         _clearFiltersButton = new Button
         {
-            Content = "Clear Filters", Margin = new Thickness(0, 0, 8, 4), Padding = new Thickness(10, 4, 10, 4),
+            Content = "Clear Filters", Margin = new Thickness(0, 0, 8, 4), Padding = new Thickness(10, 0, 10, 0), Height = 32, MinHeight = 0,
             ToolTip = "Clear every filter",
         };
         _clearFiltersButton.Click += (_, _) => _filters.ClearAll();
@@ -115,6 +115,9 @@ public partial class TicketsPage
         if (on == _assignedToMe) return;
         _assignedToMe = on;
         UserPreferences.SetTicketsAssignedToMe(on);
+        // My tickets read best as a list, so turning the filter on switches to
+        // it, as the Mac app does. Switching back to Board stays possible.
+        if (on && ListViewRadio.IsChecked != true) ListViewRadio.IsChecked = true;
         ApplyFiltersAndSort();
     }
 

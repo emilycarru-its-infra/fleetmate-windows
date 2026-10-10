@@ -19,107 +19,116 @@
             <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
-        <!-- Header -->
-        <StackPanel Grid.Row="0" Grid.Column="0">
-            <TextBlock Text="Tickets" Style="{StaticResource TitleTextStyle}" />
-            <TextBlock x:Name="TicketCountText" Text="0 of 0" Style="{StaticResource SubtitleTextStyle}" />
-        </StackPanel>
+        <!-- Toolbar, left-aligned as on Mac: List|Board first, then the board's
+             column picker, sort, Assigned to Me and the actions. Every control
+             is the same height so the row reads as one strip. The count sits at
+             the right edge. -->
+        <DockPanel Grid.Row="0" Grid.ColumnSpan="2" LastChildFill="True">
+            <DockPanel.Resources>
+                <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                    <Setter Property="Height" Value="32" />
+                    <Setter Property="MinHeight" Value="0" />
+                    <Setter Property="Padding" Value="10,0" />
+                    <Setter Property="VerticalAlignment" Value="Center" />
+                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                </Style>
+                <Style TargetType="ToggleButton" BasedOn="{StaticResource {x:Type ToggleButton}}">
+                    <Setter Property="Height" Value="32" />
+                    <Setter Property="MinHeight" Value="0" />
+                    <Setter Property="Padding" Value="10,0" />
+                    <Setter Property="VerticalAlignment" Value="Center" />
+                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                </Style>
+                <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                    <Setter Property="Height" Value="32" />
+                    <Setter Property="MinHeight" Value="0" />
+                    <Setter Property="VerticalAlignment" Value="Center" />
+                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                </Style>
+            </DockPanel.Resources>
 
-        <!-- Toolbar -->
-        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
-            <!-- SSO Login/User Info -->
-            <Border x:Name="SsoUserBorder" Visibility="Collapsed" Background="{DynamicResource SystemControlBackgroundAccentBrush}" 
-                    CornerRadius="4" Padding="8,4" Margin="0,0,16,0">
-                <StackPanel Orientation="Horizontal">
-                    <ui:FontIcon Glyph="&#xE77B;" FontSize="14" Foreground="White" Margin="0,0,6,0"/>
-                    <TextBlock x:Name="SsoUserNameText" Text="" Foreground="White" VerticalAlignment="Center" FontSize="12"/>
-                    <Button x:Name="SsoSignOutButton" Content="" FontFamily="Segoe Fluent Icons" FontSize="10" Padding="4,2" Margin="8,0,0,0" 
-                            ToolTip="Sign out of TDX SSO" Click="OnSsoSignOutClicked" 
-                            Background="Transparent" Foreground="White"/>
-                </StackPanel>
-            </Border>
-            <Button x:Name="SsoLoginButton" Content="Sign In" Margin="0,0,16,0" 
-                    ToolTip="Sign in with SSO for user context" Click="OnSsoLoginClicked" Visibility="Collapsed"/>
-            
-            <!-- View Mode Toggle -->
-            <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
-                <RadioButton x:Name="ListViewRadio" Content="List" GroupName="ViewMode"
-                             Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
-                <RadioButton x:Name="BoardViewRadio" Content="Board" IsChecked="True" GroupName="ViewMode"
-                             Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
-            </StackPanel>
+            <!-- Sign In appears only when silent sign-in failed; a signed-in
+                 user needs no indicator, since the tickets loading says it. -->
+            <Button x:Name="SsoLoginButton" DockPanel.Dock="Right" Content="Sign In" Margin="8,0,0,0"
+                    ToolTip="Sign-in to TeamDynamix failed. Try the silent sign-in again." Click="OnSsoLoginClicked" Visibility="Collapsed"/>
+            <TextBlock x:Name="TicketCountText" DockPanel.Dock="Right" Text="0 of 0" VerticalAlignment="Center" Margin="12,0,0,0"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
 
-            <!-- Board column dimension, mirroring the macOS BoardGroupBy options. -->
-            <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
-                <TextBlock Text="Columns:" VerticalAlignment="Center" Margin="0,0,4,0"
-                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                <ComboBox x:Name="BoardGroupComboBox" Width="130" SelectionChanged="OnBoardGroupChanged">
+            <WrapPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                <!-- View Mode Toggle -->
+                <Border Height="32" Margin="0,0,12,0" CornerRadius="8" Padding="2" VerticalAlignment="Center"
+                        BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton x:Name="ListViewRadio" Content="List" GroupName="ViewMode" Padding="11,0"
+                                     Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
+                        <RadioButton x:Name="BoardViewRadio" Content="Board" IsChecked="True" GroupName="ViewMode" Padding="11,0"
+                                     Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Board column dimension, mirroring the macOS BoardGroupBy
+                     options; shown only on the board, as on Mac. -->
+                <ComboBox x:Name="BoardGroupComboBox" Width="150" Margin="0,0,8,0" ToolTip="Group board columns by"
+                          SelectionChanged="OnBoardGroupChanged">
                     <ComboBoxItem Content="Status" />
                     <ComboBoxItem Content="Responsible" IsSelected="True" />
                     <ComboBoxItem Content="Priority" />
                     <ComboBoxItem Content="Group" />
                 </ComboBox>
-            </StackPanel>
 
-            <!-- Fold controls sit with view-mode and sort, not with the filters:
-                 they change how rows are drawn, not which rows are there. -->
-            <StackPanel Orientation="Horizontal" Margin="0,0,16,0">
-                <Button x:Name="CollapseAllButton" Content="▸" FontFamily="Segoe UI Symbol" FontSize="10"
-                        ToolTip="Collapse all" Click="OnCollapseAllClicked" Padding="6,2" Margin="0,0,4,0" />
-                <Button x:Name="ExpandAllButton" Content="▾" FontFamily="Segoe UI Symbol" FontSize="10"
-                        ToolTip="Expand all" Click="OnExpandAllClicked" Padding="6,2" />
-            </StackPanel>
-            <ComboBox x:Name="SortComboBox" Width="110" Margin="0,0,8,0" SelectionChanged="OnSortChanged">
-                <ComboBoxItem Content="Modified" IsSelected="True" />
-                <ComboBoxItem Content="Created" />
-                <ComboBoxItem Content="ID" />
-                <ComboBoxItem Content="Age" />
-                <ComboBoxItem Content="Title" />
-                <ComboBoxItem Content="Status" />
-                <ComboBoxItem Content="Priority" />
-                <ComboBoxItem Content="Requestor" />
-                <ComboBoxItem Content="Responsible" />
-            </ComboBox>
-            <Button x:Name="SortDirectionButton" Content="↓" Width="32" Margin="0,0,8,0" Click="OnSortDirectionClicked" ToolTip="Toggle sort direction" />
-            <!-- Assigned to Me narrows the list to tickets the signed-in TDX
-                 person is responsible for; the choice is remembered. -->
-            <ToggleButton x:Name="AssignedToMeToggle" Margin="0,0,8,0" IsEnabled="False"
-                          ToolTip="Waiting to identify you in TeamDynamix"
-                          Checked="OnAssignedToMeChanged" Unchecked="OnAssignedToMeChanged">
-                <StackPanel Orientation="Horizontal">
-                    <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE77B;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
-                    <TextBlock Text="Assigned to Me" VerticalAlignment="Center" />
-                </StackPanel>
-            </ToggleButton>
-            <Button x:Name="DetailPanelButton" Margin="0,0,8,0" Click="OnToggleDetailPanel"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE89F;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="Details" VerticalAlignment="Center" /></StackPanel></Button>
-            <Button x:Name="NewTicketButton" Margin="0,0,8,0" Click="OnNewTicketClicked" ToolTip="Create a ticket"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE710;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="New Ticket" VerticalAlignment="Center" /></StackPanel></Button>
-            <Button x:Name="RefreshButton" Click="OnRefreshClicked"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="Refresh" VerticalAlignment="Center" /></StackPanel></Button>
-        </StackPanel>
+                <ComboBox x:Name="SortComboBox" Width="130" Margin="0,0,4,0" ToolTip="Sort by" SelectionChanged="OnSortChanged">
+                    <ComboBoxItem Content="Modified" IsSelected="True" />
+                    <ComboBoxItem Content="Created" />
+                    <ComboBoxItem Content="ID" />
+                    <ComboBoxItem Content="Age" />
+                    <ComboBoxItem Content="Title" />
+                    <ComboBoxItem Content="Status" />
+                    <ComboBoxItem Content="Priority" />
+                    <ComboBoxItem Content="Requestor" />
+                    <ComboBoxItem Content="Responsible" />
+                </ComboBox>
+                <Button x:Name="SortDirectionButton" Content="↓" Width="32" Padding="0" Margin="0,0,8,0" Click="OnSortDirectionClicked" ToolTip="Toggle sort direction" />
 
-        <!-- Filters and Search -->
-        <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,16,0,8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+                <!-- Fold controls change how rows are drawn, not which rows are there. -->
+                <Button x:Name="CollapseAllButton" Content="▸" FontFamily="Segoe UI Symbol" FontSize="10" Width="32" Padding="0"
+                        ToolTip="Collapse all" Click="OnCollapseAllClicked" Margin="0,0,4,0" />
+                <Button x:Name="ExpandAllButton" Content="▾" FontFamily="Segoe UI Symbol" FontSize="10" Width="32" Padding="0"
+                        ToolTip="Expand all" Click="OnExpandAllClicked" Margin="0,0,12,0" />
 
-            <!-- Hide Closed → Show Closed (unchecked by default) -->
-            <CheckBox Grid.Column="0" x:Name="ShowClosedCheckBox" Content="Show Closed" IsChecked="False" Margin="0,0,16,0" Checked="OnShowClosedChanged" Unchecked="OnShowClosedChanged" />
+                <!-- Assigned to Me narrows the list to tickets the signed-in TDX
+                     person is responsible for; the choice is remembered. -->
+                <ToggleButton x:Name="AssignedToMeToggle" Margin="0,0,8,0" IsEnabled="False"
+                              ToolTip="Waiting to identify you in TeamDynamix"
+                              Checked="OnAssignedToMeChanged" Unchecked="OnAssignedToMeChanged">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE77B;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                        <TextBlock Text="Assigned to Me" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
+                <Button x:Name="DetailPanelButton" Margin="0,0,8,0" Click="OnToggleDetailPanel"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE89F;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="Details" VerticalAlignment="Center" /></StackPanel></Button>
+                <Button x:Name="NewTicketButton" Margin="0,0,8,0" Click="OnNewTicketClicked" ToolTip="Create a ticket"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE710;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="New Ticket" VerticalAlignment="Center" /></StackPanel></Button>
+                <Button x:Name="RefreshButton" Click="OnRefreshClicked"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="Refresh" VerticalAlignment="Center" /></StackPanel></Button>
+            </WrapPanel>
+        </DockPanel>
 
+        <!-- Filters, left-aligned under the toolbar: the created-date window,
+             one dropdown per category, then Show Closed. -->
+        <DockPanel Grid.Row="1" Grid.ColumnSpan="2" Margin="0,10,0,8" LastChildFill="True">
+            <!-- Created-date window, same presets as macOS. Up to 5000
+                 tickets load per window, so there is no separate limit. -->
+            <ComboBox x:Name="DateRangeComboBox" DockPanel.Dock="Left" Width="170" Height="32" MinHeight="0" Margin="0,0,8,4"
+                      VerticalAlignment="Top" VerticalContentAlignment="Center" ToolTip="Tickets created in"
+                      DisplayMemberPath="Label" SelectionChanged="OnDateRangeChanged" />
+            <TextBox x:Name="SearchBox" DockPanel.Dock="Left" Visibility="Collapsed" Width="160" ui:ControlHelper.PlaceholderText="Search..." TextChanged="OnSearchChanged" />
             <!-- One dropdown per filter category. Each holds any number of
-                 values, which the widgets above also toggle. -->
-            <WrapPanel Grid.Column="1" x:Name="FilterButtonsPanel" VerticalAlignment="Center" />
-
-            <!-- Search -->
-            <ui:SimpleStackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
-                <!-- Created-date window, same presets as macOS. Up to 5000
-                     tickets load per window, so there is no separate limit. -->
-                <ComboBox x:Name="DateRangeComboBox" Width="140" ToolTip="Tickets created in"
-                          DisplayMemberPath="Label" SelectionChanged="OnDateRangeChanged" />
-                <TextBox x:Name="SearchBox" Visibility="Collapsed" Width="160" ui:ControlHelper.PlaceholderText="Search..." TextChanged="OnSearchChanged" />
-            </ui:SimpleStackPanel>
-        </Grid>
+                 values, which the widgets above also toggle. Show Closed rides
+                 at the end of the same wrap so it stays with the filters. -->
+            <WrapPanel x:Name="FilterRowPanel" HorizontalAlignment="Left" VerticalAlignment="Top">
+                <WrapPanel x:Name="FilterButtonsPanel" VerticalAlignment="Center" />
+                <CheckBox x:Name="ShowClosedCheckBox" Content="Show Closed" IsChecked="False" VerticalAlignment="Center" Margin="4,0,0,4"
+                          Checked="OnShowClosedChanged" Unchecked="OnShowClosedChanged" />
+            </WrapPanel>
+        </DockPanel>
 
         <!-- Main Content -->
         <Grid Grid.Row="2" Grid.ColumnSpan="2">
@@ -274,7 +283,7 @@
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                             <Border Background="{DynamicResource SubtleFillBrush}"
-                                    CornerRadius="8" Width="280" Margin="0,0,16,0" VerticalAlignment="Top"
+                                    CornerRadius="12" Width="280" Margin="0,0,16,0" VerticalAlignment="Top"
                                     AllowDrop="True" Drop="OnBoardColumnDrop" DragOver="OnBoardColumnDragOver"
                                     Tag="{Binding StatusName}">
                                 <Grid>
@@ -284,14 +293,15 @@
                                     </Grid.RowDefinitions>
                                     
                                     <!-- Column Header -->
-                                    <Border Grid.Row="0" Background="{Binding HeaderColor}" Padding="12,10" CornerRadius="8,8,0,0">
-                                        <DockPanel>
-                                            <Border DockPanel.Dock="Right" Background="#40000000" Padding="8,2" CornerRadius="10">
-                                                <TextBlock Text="{Binding Count}" FontSize="12" Foreground="White" />
-                                            </Border>
-                                            <TextBlock Text="{Binding StatusName}" FontWeight="SemiBold" FontSize="14" Foreground="White" />
-                                        </DockPanel>
-                                    </Border>
+                                    <!-- Neutral, as on Mac: a small dot (the status colour when
+                                         grouping by status, grey otherwise), the name and a count. -->
+                                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="12,10,12,4">
+                                        <Ellipse Width="10" Height="10" Fill="{Binding HeaderColor}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <TextBlock Text="{Binding StatusName}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" MaxWidth="200" />
+                                        <TextBlock Text="{Binding Count, StringFormat='({0})'}" FontSize="13" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    </StackPanel>
                                     
                                     <!-- Cards -->
                                     <!-- No fixed cap: the column fills the board's height and scrolls internally. -->
@@ -372,12 +382,12 @@
 
                     <!-- Panel Header, laid out like the macOS detail header: a
                          chevron that closes the pane, pointing the way it goes; the
-                         ticket number (click to copy), copy-link and open-in-TDX;
-                         actions on their own row so they wrap in a narrow pane
-                         instead of clipping. -->
+                         ticket number (click to copy), copy-link and open-in-TDX,
+                         then the actions on the same row. The actions wrap under
+                         themselves in a narrow pane instead of clipping. -->
                     <StackPanel Grid.Row="0" Margin="12,12,12,8">
                         <DockPanel>
-                            <StackPanel Orientation="Horizontal">
+                            <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Top" Margin="0,0,8,0">
                                 <Button x:Name="CloseDetailButton" Click="OnCloseDetailPanel" ToolTip="Close the ticket (Esc)"
                                         AutomationProperties.Name="Close the ticket"
                                         Style="{StaticResource ChromeIconButtonStyle}" MinWidth="0" Padding="2,5,6,5">
@@ -398,13 +408,14 @@
                                     <ui:FontIcon Glyph="&#xE774;" FontFamily="Segoe Fluent Icons" FontSize="14" />
                                 </Button>
                             </StackPanel>
-                        </DockPanel>
 
-                        <WrapPanel x:Name="DetailActionsPanel" Margin="0,6,0,0">
+                        <WrapPanel x:Name="DetailActionsPanel" VerticalAlignment="Center">
                             <WrapPanel.Resources>
                                 <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-                                    <Setter Property="Padding" Value="10,4" />
-                                    <Setter Property="Margin" Value="0,0,6,6" />
+                                    <Setter Property="Padding" Value="10,0" />
+                                    <Setter Property="Height" Value="30" />
+                                    <Setter Property="MinHeight" Value="0" />
+                                    <Setter Property="Margin" Value="0,2,6,2" />
                                     <Setter Property="FontSize" Value="12" />
                                 </Style>
                             </WrapPanel.Resources>
@@ -446,6 +457,7 @@
                                 </StackPanel>
                             </Button>
                         </WrapPanel>
+                        </DockPanel>
 
                         <!-- Reallocate popover, anchored to its button: search people,
                              pick one, and the ticket's responsible changes. -->
@@ -554,73 +566,101 @@
                                 </Border>
                             </StackPanel>
 
-                            <!-- Status, Priority and Classification change the ticket as soon
-                                 as a new value is picked, like Reallocate. -->
-                            <Grid Margin="0,0,0,12">
+                            <!-- Two columns to save height: the editable fields on the
+                                 left, the read-only facts on the right. Status, Priority
+                                 and Classification change the ticket as soon as a new
+                                 value is picked, like Reallocate. -->
+                            <Grid Margin="0,0,0,4">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="90" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="24" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Text="Status:" FontSize="13" VerticalAlignment="Center"
-                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                <ComboBox Grid.Row="0" Grid.Column="1" x:Name="DetailStatusCombo" HorizontalAlignment="Stretch"
-                                          DisplayMemberPath="Value" SelectedValuePath="Key" SelectionChanged="OnDetailFieldChanged" Tag="StatusID" />
-                                <TextBlock Grid.Row="1" Text="Priority:" FontSize="13" VerticalAlignment="Center" Margin="0,4,0,0"
-                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                <ComboBox Grid.Row="1" Grid.Column="1" x:Name="DetailPriorityCombo" HorizontalAlignment="Stretch" Margin="0,4,0,0"
-                                          DisplayMemberPath="Value" SelectedValuePath="Key" SelectionChanged="OnDetailFieldChanged" Tag="PriorityID" />
-                                <TextBlock Grid.Row="2" Text="Class:" FontSize="13" VerticalAlignment="Center" Margin="0,4,0,0"
-                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                <ComboBox Grid.Row="2" Grid.Column="1" x:Name="DetailClassificationCombo" HorizontalAlignment="Stretch" Margin="0,4,0,0"
-                                          DisplayMemberPath="Value" SelectedValuePath="Key" SelectionChanged="OnDetailFieldChanged" Tag="Classification" />
-                            </Grid>
+                                <Grid Grid.Column="0" VerticalAlignment="Top">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid.Resources>
+                                        <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                                            <Setter Property="Width" Value="190" />
+                                            <Setter Property="Height" Value="30" />
+                                            <Setter Property="MinHeight" Value="0" />
+                                            <Setter Property="HorizontalAlignment" Value="Left" />
+                                            <Setter Property="VerticalContentAlignment" Value="Center" />
+                                            <Setter Property="FontSize" Value="13" />
+                                        </Style>
+                                    </Grid.Resources>
+                                    <TextBlock Grid.Row="0" Text="Status:" FontSize="13" VerticalAlignment="Center" Margin="0,0,10,0"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    <ComboBox Grid.Row="0" Grid.Column="1" x:Name="DetailStatusCombo"
+                                              DisplayMemberPath="Value" SelectedValuePath="Key" SelectionChanged="OnDetailFieldChanged" Tag="StatusID" />
+                                    <TextBlock Grid.Row="1" Text="Priority:" FontSize="13" VerticalAlignment="Center" Margin="0,4,10,0"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    <ComboBox Grid.Row="1" Grid.Column="1" x:Name="DetailPriorityCombo" Margin="0,4,0,0"
+                                              DisplayMemberPath="Value" SelectedValuePath="Key" SelectionChanged="OnDetailFieldChanged" Tag="PriorityID" />
+                                    <TextBlock Grid.Row="2" Text="Class:" FontSize="13" VerticalAlignment="Center" Margin="0,4,10,0"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    <ComboBox Grid.Row="2" Grid.Column="1" x:Name="DetailClassificationCombo" Margin="0,4,0,0"
+                                              DisplayMemberPath="Value" SelectedValuePath="Key" SelectionChanged="OnDetailFieldChanged" Tag="Classification" />
+                                </Grid>
 
-                            <Separator Margin="0,0,0,12" />
+                                <Grid Grid.Column="2" VerticalAlignment="Top">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid.Resources>
+                                        <Style x:Key="DetailLabel" TargetType="TextBlock">
+                                            <Setter Property="FontSize" Value="12" />
+                                            <Setter Property="Margin" Value="0,2,10,0" />
+                                            <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                        </Style>
+                                        <Style x:Key="DetailValue" TargetType="TextBlock">
+                                            <Setter Property="FontSize" Value="12" />
+                                            <Setter Property="Margin" Value="0,2,0,0" />
+                                            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                        </Style>
+                                    </Grid.Resources>
 
-                            <!-- Details Grid -->
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="90" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Requestor:" Style="{StaticResource DetailLabel}" />
+                                    <TextBlock Grid.Row="0" Grid.Column="1" x:Name="DetailRequestorText" Style="{StaticResource DetailValue}" />
 
-                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Requestor:" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                <TextBlock Grid.Row="0" Grid.Column="1" x:Name="DetailRequestorText" FontSize="13" TextWrapping="Wrap" />
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Email:" Style="{StaticResource DetailLabel}" />
+                                    <TextBlock Grid.Row="1" Grid.Column="1" x:Name="DetailEmailText" Style="{StaticResource DetailValue}" />
 
-                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Email:" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,4,0,0" />
-                                <TextBlock Grid.Row="1" Grid.Column="1" x:Name="DetailEmailText" FontSize="13" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Group:" Style="{StaticResource DetailLabel}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="1" x:Name="DetailGroupText" Style="{StaticResource DetailValue}" />
 
-                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Group:" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,4,0,0" />
-                                <TextBlock Grid.Row="2" Grid.Column="1" x:Name="DetailGroupText" FontSize="13" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Responsible:" Style="{StaticResource DetailLabel}" />
+                                    <TextBlock Grid.Row="3" Grid.Column="1" x:Name="DetailResponsibleText" Style="{StaticResource DetailValue}" />
 
-                                <TextBlock Grid.Row="3" Grid.Column="0" Text="Responsible:" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,4,0,0" />
-                                <TextBlock Grid.Row="3" Grid.Column="1" x:Name="DetailResponsibleText" FontSize="13" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Created:" Style="{StaticResource DetailLabel}" />
+                                    <TextBlock Grid.Row="4" Grid.Column="1" x:Name="DetailCreatedText" Style="{StaticResource DetailValue}" />
 
-                                <TextBlock Grid.Row="4" Grid.Column="0" Text="Created:" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,4,0,0" />
-                                <TextBlock Grid.Row="4" Grid.Column="1" x:Name="DetailCreatedText" FontSize="13" Margin="0,4,0,0" />
-
-                                <TextBlock Grid.Row="5" Grid.Column="0" Text="Modified:" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,4,0,0" />
-                                <TextBlock Grid.Row="5" Grid.Column="1" x:Name="DetailModifiedText" FontSize="13" Margin="0,4,0,0" />
+                                    <TextBlock Grid.Row="5" Grid.Column="0" Text="Modified:" Style="{StaticResource DetailLabel}" />
+                                    <TextBlock Grid.Row="5" Grid.Column="1" x:Name="DetailModifiedText" Style="{StaticResource DetailValue}" />
+                                </Grid>
                             </Grid>
 
                             <!-- Description -->
                             <StackPanel x:Name="DescriptionSection" Visibility="Collapsed" Margin="0,12,0,0">
                                 <Separator Margin="0,0,0,8" />
                                 <TextBlock Text="Description" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,4" />
-                                <TextBlock x:Name="DetailDescriptionText" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" TextWrapping="Wrap" />
+                                <TextBlock x:Name="DetailDescriptionText" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" TextWrapping="Wrap" />
                             </StackPanel>
 
                             <!-- Attachments: open the viewable ones, save any -->
@@ -717,7 +757,7 @@
                                                     </DockPanel>
                                                     <!-- Uncapped: a clipped comment reads as a rendering fault,
                                                          and the detail you need is often at the bottom. -->
-                                                    <TextBlock Text="{Binding StrippedBody}" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                                    <TextBlock Text="{Binding StrippedBody}" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
                                                 </StackPanel>
                                             </Border>
                                         </DataTemplate>
