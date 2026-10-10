@@ -75,6 +75,10 @@
                         <ComboBox x:Name="StatusFilterComboBox" MinWidth="120" SelectionChanged="OnFilterChanged" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+                        <TextBlock Text="Status Type:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <ComboBox x:Name="StatusTypeFilterComboBox" MinWidth="120" SelectionChanged="OnFilterChanged" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
                         <TextBlock Text="Category:" VerticalAlignment="Center" Margin="0,0,4,0" />
                         <ComboBox x:Name="CategoryFilterComboBox" MinWidth="120" SelectionChanged="OnFilterChanged" />
                     </StackPanel>

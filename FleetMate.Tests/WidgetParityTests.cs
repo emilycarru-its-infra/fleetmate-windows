@@ -152,28 +152,52 @@ public class WidgetParityTests
     }
 
     [Fact]
-    public void StatusFilter_HoldsStatusTypes_Capitalised()
+    public void StatusTypeFilter_HoldsStatusTypes_Capitalised()
     {
-        Assert.Equal("Deployable", WidgetCatalog.AssetStatusFilterValue(Asset("deployable", "Ready")));
-        Assert.Equal("Ready To Deploy", WidgetCatalog.AssetStatusFilterValue(Asset(null, "ready to deploy")));
-        Assert.Equal("Unknown", WidgetCatalog.AssetStatusFilterValue(new SnipeAsset()));
+        Assert.Equal("Deployable", WidgetCatalog.AssetStatusTypeFilterValue(Asset("deployable", "Ready")));
+        Assert.Equal("Ready To Deploy", WidgetCatalog.AssetStatusTypeFilterValue(Asset(null, "ready to deploy")));
+        Assert.Equal("Unknown", WidgetCatalog.AssetStatusTypeFilterValue(new SnipeAsset()));
+    }
+
+    [Fact]
+    public void StatusFilter_HoldsStatusNames_AsSnipeNamesThem()
+    {
+        Assert.Equal("Ready to Deploy", WidgetCatalog.AssetStatusNameFilterValue(Asset("deployable", "Ready to Deploy")));
+        Assert.Equal("In Repair", WidgetCatalog.AssetStatusNameFilterValue(Asset(null, " In Repair ")));
+        Assert.Null(WidgetCatalog.AssetStatusNameFilterValue(Asset("deployable", "")));
+        Assert.Null(WidgetCatalog.AssetStatusNameFilterValue(new SnipeAsset()));
     }
 
     /// <summary>
-    /// A wedge is a status type, and the Status filter holds status types, so
-    /// every wedge resolves to a filter value that matches all assets of its type.
+    /// A wedge is a status type and lands on the Status Type filter, so every
+    /// wedge resolves to a value that matches all assets of its type, whatever
+    /// their names.
     /// </summary>
     [Fact]
     public void AssetStatusWedge_SelectsEveryAssetOfItsType()
     {
-        var assets = new[] { Asset("deployable", "Ready"), Asset("deployable", "Spare"), Asset("deployed", "In Use") };
-        var options = assets.Select(WidgetCatalog.AssetStatusFilterValue).Distinct().ToList();
+        var assets = new[] { Asset("deployable", "Ready to Deploy"), Asset("deployable", "Spare"), Asset("deployed", "In Use") };
+        var options = assets.Select(WidgetCatalog.AssetStatusTypeFilterValue).Distinct().ToList();
 
         var wedge = WidgetCatalog.AssetStatusSlices(assets).Single(s => s.Label.StartsWith("deployable"));
         var selected = WidgetCatalog.MatchFilterValues(WidgetCatalog.FilterValue(wedge.Label), options).Single();
 
         Assert.Equal("Deployable", selected);
-        Assert.Equal(2, assets.Count(a => WidgetCatalog.AssetStatusFilterValue(a) == selected));
+        Assert.Equal(2, assets.Count(a => WidgetCatalog.AssetStatusTypeFilterValue(a) == selected));
+    }
+
+    /// <summary>
+    /// The Status filter still offers each name, so one name narrows within a
+    /// type that several names share.
+    /// </summary>
+    [Fact]
+    public void StatusName_SelectsOnlyThatName()
+    {
+        var assets = new[] { Asset("deployable", "Ready to Deploy"), Asset("deployable", "Spare"), Asset("deployed", "In Use") };
+        var options = assets.Select(WidgetCatalog.AssetStatusNameFilterValue).OfType<string>().ToHashSet();
+
+        Assert.Equal(new HashSet<string> { "Ready to Deploy", "Spare", "In Use" }, options);
+        Assert.Single(assets, a => WidgetCatalog.AssetStatusNameFilterValue(a) == "Spare");
     }
 
     [Fact]
