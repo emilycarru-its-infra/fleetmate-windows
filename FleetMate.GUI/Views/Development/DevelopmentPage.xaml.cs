@@ -10,10 +10,29 @@ namespace FleetMate.GUI.Views.Development;
 /// </summary>
 public partial class DevelopmentPage : Page, IWidgetFilterHost
 {
-    /// <summary>A Pull Requests by Repository bar opens Pulls filtered to that repository.</summary>
+    /// <summary>
+    /// Each Development widget opens the segment and filter it counts: a
+    /// repository bar opens Pulls for that repository, the Inbox and pull
+    /// request figures their segment and source, the pipeline figures
+    /// Pipelines with that status.
+    /// </summary>
     public void ApplyWidgetFilter(string category, string value)
     {
-        if (category == WidgetCatalog.Category.Repository) View.ShowRepository(value);
+        switch (category)
+        {
+            case WidgetCatalog.Category.Repository:
+                View.ShowRepository(value);
+                break;
+            case WidgetCatalog.Category.Segment when value == WidgetCatalog.InboxSegment:
+                View.ShowInbox();
+                break;
+            case WidgetCatalog.Category.Source when Enum.TryParse<DevelopmentSourceFilter>(value, out var source):
+                View.ShowPullRequests(source);
+                break;
+            case WidgetCatalog.Category.PipelineStatus when Enum.TryParse<PipelineStatusFilter>(value, out var status):
+                View.ShowPipelines(status);
+                break;
+        }
     }
 
     public DevelopmentPage()

@@ -174,6 +174,7 @@ public partial class DevelopmentView
         if (_loadingRuns || AppInstance is not { } app) return;
         _loadingRuns = true;
         LoadingRing.Visibility = Visibility.Visible;
+        using var tracking = app.TrackCacheLoad("Runs");
 
         try
         {
@@ -282,6 +283,17 @@ public partial class DevelopmentView
         RunsStatusRunning.IsChecked = _runsStatus == PipelineStatusFilter.Running;
         RunsStatusFailed.IsChecked = _runsStatus == PipelineStatusFilter.Failed;
         RunsStatusSucceeded.IsChecked = _runsStatus == PipelineStatusFilter.Succeeded;
+        RenderRuns();
+    }
+
+    /// <summary>Open Pipelines filtered to one status — the Failing and Running figures' click.</summary>
+    public void ShowPipelines(PipelineStatusFilter status)
+    {
+        _runsStatus = status;
+        RunsStatusRunning.IsChecked = status == PipelineStatusFilter.Running;
+        RunsStatusFailed.IsChecked = status == PipelineStatusFilter.Failed;
+        RunsStatusSucceeded.IsChecked = status == PipelineStatusFilter.Succeeded;
+        PipelinesSegment.IsChecked = true;
         RenderRuns();
     }
 

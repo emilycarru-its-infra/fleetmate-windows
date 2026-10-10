@@ -1,13 +1,15 @@
 using System.Diagnostics;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Media;
+using FleetMate.Core.Models.Devices;
+using FleetMate.Core.Models.Inventory;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Models.Reporting;
 using FleetMate.Core.Services.Projects;
 using FleetMate.GUI.Views.Development;
 using Serilog;
 using SkiaSharp;
+using P = FleetMate.GUI.Views.Shared.Widgets.WidgetPalette;
 
 namespace FleetMate.GUI.Views.Shared.Widgets;
 
@@ -15,11 +17,11 @@ namespace FleetMate.GUI.Views.Shared.Widgets;
 /// Which widgets each tab shows, in order — the old Dashboard's cards, each
 /// moved to the tab it belongs to, matching the macOS app. Everything is drawn
 /// from data the app already holds; only the Projects GitHub-issues list and
-/// the Devices ReportMate errors fetch anything of their own.
+/// the Devices ReportMate figures fetch anything of their own.
 /// </summary>
 public static class WidgetCatalog
 {
-    /// <summary>Filter categories a chart click hands to its tab, as the macOS module filters name them.</summary>
+    /// <summary>Filter categories a widget click hands to its tab, as the macOS module filters name them.</summary>
     public static class Category
     {
         public const string Platform = "Platform";
@@ -28,7 +30,16 @@ public static class WidgetCatalog
         public const string Status = "Status";
         public const string Priority = "Priority";
         public const string Repository = "Repository";
+
+        /// <summary>Development: open a segment ("Inbox").</summary>
+        public const string Segment = "Segment";
+        /// <summary>Development: open Pulls filtered to a source (a <see cref="DevelopmentSourceFilter"/> name).</summary>
+        public const string Source = "Source";
+        /// <summary>Development: open Pipelines filtered to a status (a <see cref="PipelineStatusFilter"/> name).</summary>
+        public const string PipelineStatus = "PipelineStatus";
     }
+
+    public const string InboxSegment = "Inbox";
 
     /// <summary>Tabs with no widgets get no section at all.</summary>
     public static bool HasWidgets(string tab) =>
@@ -40,7 +51,7 @@ public static class WidgetCatalog
         "Devices" => cacheKey is "Devices",
         "Inventory" => cacheKey is "Assets",
         "Tickets" => cacheKey is "Tickets",
-        "Projects" => cacheKey is "WorkItems" or "Sprints" or "Issues",
+        "Projects" => cacheKey is "WorkItems" or "Sprints" or "Issues" or App.MyWorkItemsKey,
         "Development" => cacheKey is "PullRequests" or "Runs" or "Inbox",
         _ => false,
     };
@@ -57,8 +68,6 @@ public static class WidgetCatalog
         _ => new(),
     };
 
-    private static string Count(int value, bool loaded) => loaded ? value.ToString() : "--";
-
     /// <summary>
     /// Whether a provider failed this load (rate-limited, unreachable). Its
     /// count is unknown, so the tile shows "--": a 0 would read as nothing open.
@@ -67,49 +76,98 @@ public static class WidgetCatalog
     internal static bool Failed(PullRequestQueue? queue, PullRequestSource? source = null) =>
         queue?.Errors.Any(e => (source == null || e.Source == source) && !PullRequestQueueView.IsExpectedSignedOut(e)) == true;
 
+    /// <summary>A count, or "--" when its provider failed.</summary>
+    internal static string CountOrUnknown(int value, bool failed) => failed ? "--" : value.ToString("N0");
+
+    /// <summary>
+    /// The value a widget click hands its tab: a label ending in "(count)"
+    /// filters on the name before it, as on the Mac.
+    /// </summary>
+    internal static string FilterValue(string label)
+    {
+        var cut = label.IndexOf(" (", StringComparison.Ordinal);
+        return cut < 0 ? label : label[..cut];
+    }
+
+    /// <summary>
+    /// The filter values a widget click selects: every value in
+    /// <paramref name="available"/> whose label (through <paramref name="display"/>,
+    /// when given) matches <paramref name="incoming"/>, ignoring case and
+    /// punctuation — "Non-Compliant" finds "Noncompliant", and "Macintosh"
+    /// finds "macOS". With no match the incoming value is used as it is.
+    /// </summary>
+    internal static string[] MatchFilterValues(string incoming, IEnumerable<string> available, Func<string, string>? display = null)
+    {
+        static string Norm(string s) => new(s.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+        var want = Norm(incoming);
+        var matches = available.Where(v => Norm(display?.Invoke(v) ?? v) == want).ToArray();
+        return matches.Length > 0 ? matches : new[] { incoming };
+    }
+
     // MARK: - Development
+
+    private static readonly Color[] RepositoryColors = { P.Blue, P.Purple, P.Orange, P.Teal, P.Green, P.Indigo, P.Brown, P.Pink };
+
+    /// <summary>The Unread in Inbox tile opens the Inbox when anything is unread, and Pull Requests otherwise.</summary>
+    internal static (string Category, string Value) UnreadTarget(int unread) =>
+        unread > 0 ? (Category.Segment, InboxSegment) : (Category.Source, nameof(DevelopmentSourceFilter.All));
+
+    /// <summary>Open pull requests per repository, most first, top eight.</summary>
+    internal static List<ChartSlice> RepositorySlices(IEnumerable<UnifiedPullRequest> prs) => prs
+        .GroupBy(DevelopmentFilter.RepositoryKey)
+        .Select(g => new ChartSlice(g.Key, g.Count()))
+        .OrderByDescending(s => s.Value)
+        .ThenBy(s => s.Label, StringComparer.Ordinal)
+        .Take(8)
+        .ToList();
 
     private static List<UIElement> Development(App app, Action<string, string> filter)
     {
-        var prs = app.DevelopmentPullRequests?.PullRequests ?? new List<UnifiedPullRequest>();
-        var runs = app.DevelopmentRuns ?? new List<PipelineRun>();
         var queue = app.DevelopmentPullRequests;
-        var prsLoaded = queue != null;
-        var runsLoaded = app.DevelopmentRuns != null;
+        var prs = queue?.PullRequests ?? new List<UnifiedPullRequest>();
+        var runs = app.DevelopmentRuns ?? new List<PipelineRun>();
+        var prLoading = app.IsCacheLoading("PullRequests") && prs.Count == 0;
+        var runsLoading = app.IsCacheLoading("Runs") && runs.Count == 0;
+        var inboxLoading = app.Inbox.IsRefreshing && app.Inbox.Notifications.Count == 0;
+        var unread = app.Inbox.UnreadCount;
+
+        void Pulls(DevelopmentSourceFilter source) => filter(Category.Source, source.ToString());
+        void Pipelines(PipelineStatusFilter status) => filter(Category.PipelineStatus, status.ToString());
 
         var cards = new List<UIElement>
         {
             WidgetCards.KpiStack(new[]
             {
-                new KpiTile("Unread in Inbox", app.Inbox.UnreadCount.ToString(), "", "#FF2196F3"),
+                new KpiTile("Unread in Inbox", unread.ToString("N0"), "", P.Hex(P.Blue), inboxLoading,
+                    () => { var (c, v) = UnreadTarget(app.Inbox.UnreadCount); filter(c, v); }),
                 new KpiTile("Review Requested",
-                    Count(prs.Count(p => p.Relations.Contains(PullRequestRelation.AssignedToMe)), prsLoaded), "", "#FF9C27B0"),
+                    CountOrUnknown(prs.Count(p => p.Relations.Contains(PullRequestRelation.AssignedToMe)), Failed(queue)),
+                    "", P.Hex(P.Purple), prLoading, () => Pulls(DevelopmentSourceFilter.All)),
             }),
             WidgetCards.KpiStack(new[]
             {
-                new KpiTile("DevOps Pull Requests", Count(prs.Count(p => p.Source == PullRequestSource.AzureDevOps), prsLoaded && !Failed(queue, PullRequestSource.AzureDevOps)), "", "#FF3F51B5"),
-                new KpiTile("GitHub Pull Requests", Count(prs.Count(p => p.Source == PullRequestSource.GitHub), prsLoaded && !Failed(queue, PullRequestSource.GitHub)), "", "#FF607D8B"),
+                new KpiTile($"{PullRequestSource.AzureDevOps.ShortName()} Pull Requests",
+                    CountOrUnknown(prs.Count(p => p.Source == PullRequestSource.AzureDevOps), Failed(queue, PullRequestSource.AzureDevOps)),
+                    "", P.Hex(P.Blue), prLoading, () => Pulls(DevelopmentSourceFilter.DevOps)),
+                new KpiTile($"{PullRequestSource.GitHub.ShortName()} Pull Requests",
+                    CountOrUnknown(prs.Count(p => p.Source == PullRequestSource.GitHub), Failed(queue, PullRequestSource.GitHub)),
+                    "", P.Hex(P.Indigo), prLoading, () => Pulls(DevelopmentSourceFilter.GitHub)),
             }),
             WidgetCards.KpiStack(new[]
             {
-                new KpiTile("Failing Pipelines", Count(CommitsAndPipelinesFilter.FailingCount(runs), runsLoaded), "", "#FFE07A1F"),
-                new KpiTile("Running Pipelines", Count(runs.Count(r => r.Status.IsActive()), runsLoaded), "", "#FFD99E0B"),
+                new KpiTile("Failing Pipelines", CommitsAndPipelinesFilter.FailingCount(runs).ToString("N0"), "",
+                    P.Hex(P.Orange), runsLoading, () => Pipelines(PipelineStatusFilter.Failed)),
+                new KpiTile("Running Pipelines", runs.Count(r => r.Status.IsActive()).ToString("N0"), "",
+                    P.Hex(P.Teal), runsLoading, () => Pipelines(PipelineStatusFilter.Running)),
             }),
         };
 
-        var byRepo = prs
-            .GroupBy(DevelopmentFilter.RepositoryKey)
-            .Select(g => new ChartSlice(g.Key, g.Count()))
-            .OrderByDescending(s => s.Value)
-            .ThenBy(s => s.Label, StringComparer.OrdinalIgnoreCase)
-            .Take(8)
-            .ToList();
-
-        if (byRepo.Count > 0)
-        {
-            cards.Add(WidgetCards.Card("Pull Requests by Repository",
-                WidgetCards.Bars(byRepo, repo => filter(Category.Repository, repo)), units: 2));
-        }
+        var byRepo = RepositorySlices(prs);
+        cards.Add(WidgetCards.Card("Pull Requests by Repository",
+            WidgetCards.ChartOr(byRepo.Count > 0, app.IsCacheLoading("PullRequests"), "No open pull requests",
+                () => WidgetCards.HorizontalBars(byRepo, WidgetCards.ByIndex(byRepo, RepositoryColors),
+                    repo => filter(Category.Repository, repo))),
+            loading: app.IsCacheLoading("PullRequests")));
 
         return cards;
     }
@@ -150,44 +208,55 @@ public static class WidgetCatalog
     /// work is done and only awaits closing, so it is not something to do.
     /// </summary>
     private static readonly HashSet<string> FinishedStates =
-        new(StringComparer.OrdinalIgnoreCase) { "Closed", "Removed", "Done", "Completed", "Resolved" };
+        new(AzureDevOpsService.FinishedStates, StringComparer.OrdinalIgnoreCase);
 
     internal static bool IsClosed(string? state) => state is not null && FinishedStates.Contains(state);
+
+    private static readonly Color[] WorkItemColors = { P.Blue, P.Green, P.Orange, P.Purple, P.Gray, P.Brown };
+
+    /// <summary>The user's open items by state, most first, each labelled "State (count)".</summary>
+    internal static List<ChartSlice> WorkItemSlices(IEnumerable<WorkItem> items) => items
+        .GroupBy(w => string.IsNullOrEmpty(w.State) ? "Unknown" : w.State)
+        .Select(g => (State: g.Key, Count: g.Count()))
+        .OrderByDescending(s => s.Count)
+        .Select(s => new ChartSlice($"{s.State} ({s.Count})", s.Count))
+        .ToList();
+
+    /// <summary>"Sprint: Name · N open" — the user's open items in the current sprint.</summary>
+    internal static string SprintCaption(string sprintName, IEnumerable<WorkItem> items) =>
+        $"Sprint: {sprintName} · {items.Count(w => w.IterationPath?.EndsWith(sprintName, StringComparison.Ordinal) == true)} open";
 
     private static List<UIElement> Projects(App app)
     {
         EnsureIssues(app);
+        _ = app.LoadMyWorkItemsAsync();
 
-        var items = app.CachedWorkItems;
-        var loaded = items.Count > 0;
-        var active = items.Where(w => !IsClosed(w.State)).ToList();
+        // The signed-in user's open items across the organization, as on the Mac.
+        var mine = app.CachedMyWorkItems ?? new List<WorkItem>();
+        var loading = app.IsCacheLoading(App.MyWorkItemsKey);
 
         var cards = new List<UIElement>
         {
-            WidgetCards.KpiStack(new[] { new KpiTile("Active Work Items", Count(active.Count, loaded), "", "#FF3F51B5") }),
+            WidgetCards.KpiStack(new[]
+            {
+                new KpiTile("Active Work Items", mine.Count.ToString("N0"), "", P.Hex(P.Indigo), loading && mine.Count == 0),
+            }),
         };
 
-        if (loaded)
+        var slices = WorkItemSlices(mine);
+        cards.Add(WidgetCards.Card("Work Items", WidgetCards.ChartOr(slices.Count > 0, loading, "No work item data", () =>
         {
-            // Open work only: finished states would dwarf what is left to do.
-            var states = active.GroupBy(w => string.IsNullOrEmpty(w.State) ? "Unknown" : w.State)
-                .Select(g => new ChartSlice(g.Key, g.Count()))
-                .OrderByDescending(s => s.Value)
-                .ToList();
-
-            var body = new StackPanel { Children = { WidgetCards.Donut(states) } };
-            if (app.CachedSprints.FirstOrDefault(s => s.IsCurrent) is { } sprint)
+            var body = new System.Windows.Controls.StackPanel
             {
-                var inSprint = items.Where(w => w.IterationPath?.EndsWith(sprint.Name) == true).ToList();
-                body.Children.Add(WidgetCards.Caption(
-                    $"Sprint: {sprint.Name} - {inSprint.Count(w => IsClosed(w.State))}/{inSprint.Count} done"));
-            }
-            cards.Add(WidgetCards.Card("Work Items", body));
-        }
+                Children = { WidgetCards.Donut(slices, colors: slices.Select((_, i) => P.Sk(WorkItemColors[i % WorkItemColors.Length])).ToList()) },
+            };
+            if (app.CachedSprints.FirstOrDefault(s => s.IsCurrent) is { } sprint)
+                body.Children.Add(WidgetCards.Caption(SprintCaption(string.IsNullOrEmpty(sprint.Name) ? "Current" : sprint.Name, mine)));
+            return body;
+        }), loading: loading));
 
         var orgRoot = app.Config.AzureDevOps?.BaseUrl?.TrimEnd('/');
-        var workRows = active
-            .OrderByDescending(w => w.ChangedDate ?? DateTime.MinValue)
+        var workRows = mine
             .Select(w => new ListRow($"#{w.Id}  {w.Title}", $"{w.State} · {w.WorkItemType}",
                 orgRoot == null ? null : () => OpenUrl($"{orgRoot}/_workitems/edit/{w.Id}")))
             .ToList();
@@ -196,45 +265,100 @@ public static class WidgetCatalog
         var issueRows = (_issues ?? new())
             .Select(i => new ListRow($"#{i.Number}  {i.Title}", i.Repository, () => OpenUrl(i.WebUrl)))
             .ToList();
-        cards.Add(WidgetCards.Card("GitHub Issues", WidgetCards.List("GitHub Issues", issueRows), units: 2));
+        cards.Add(WidgetCards.Card("GitHub Issues", WidgetCards.List("GitHub Issues", issueRows), units: 2, loading: _loadingIssues));
 
         return cards;
     }
 
     // MARK: - Devices
 
+    /// <summary>Each platform's own colour, so a platform keeps it whatever its rank.</summary>
+    private static readonly Dictionary<string, Color> PlatformColors = new()
+    {
+        ["Macintosh"] = P.Orange,
+        ["Windows"] = P.Blue,
+        ["iOS/iPadOS"] = P.Purple,
+        ["Android"] = P.Green,
+        ["Linux"] = P.Teal,
+        ["ChromeOS"] = P.Brown,
+    };
+
+    private static readonly Color[] PlatformFallbackColors = { P.Blue, P.Purple, P.Orange, P.Teal, P.Brown, P.Gray };
+
+    /// <summary>The platform name the widgets show for an Intune operating system.</summary>
+    internal static string PlatformLabel(string? operatingSystem) => operatingSystem switch
+    {
+        "macOS" => "Macintosh",
+        "iOS" or "iPadOS" => "iOS/iPadOS",
+        _ => operatingSystem ?? "",
+    };
+
+    /// <summary>Devices per platform, most first, top six, each with its fixed colour.</summary>
+    internal static List<(ChartSlice Slice, Color Color)> PlatformBreakdown(IEnumerable<IntuneDevice> devices) => devices
+        .GroupBy(d => PlatformLabel(d.OperatingSystem))
+        .Where(g => g.Key.Length > 0)
+        .Select(g => new ChartSlice(g.Key, g.Count()))
+        .OrderByDescending(s => s.Value)
+        .Take(6)
+        .Select((s, i) => (s, PlatformColors.TryGetValue(s.Label, out var c) ? c : PlatformFallbackColors[i % PlatformFallbackColors.Length]))
+        .ToList();
+
+    /// <summary>Non-compliant is Intune's own "noncompliant"; every other state counts as compliant, as on the Mac.</summary>
+    internal static bool IsNonCompliant(IntuneDevice device) =>
+        string.Equals(device.ComplianceState, "noncompliant", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Compliant and Non-Compliant, leaving out a side with no devices.</summary>
+    internal static List<(ChartSlice Slice, Color Color)> ComplianceBreakdown(IReadOnlyCollection<IntuneDevice> devices)
+    {
+        var nonCompliant = devices.Count(IsNonCompliant);
+        return new List<(ChartSlice, Color)>
+        {
+            (new ChartSlice("Compliant", devices.Count - nonCompliant), P.Green),
+            (new ChartSlice("Non-Compliant", nonCompliant), P.Orange),
+        }.Where(x => x.Item1.Value > 0).ToList();
+    }
+
     private static List<ErrorSummary>? _errors;
+    private static int? _reportMateDevices;
     private static bool _loadingErrors;
+
+    /// <summary>Errors per category, summed over the devices each error hits, top eight.</summary>
+    internal static List<ChartSlice> ErrorCategorySlices(IEnumerable<ErrorSummary> errors) => errors
+        .GroupBy(e => e.Category)
+        .Select(g => new ChartSlice(CategoryLabel(g.Key), g.Sum(e => e.DeviceCount)))
+        .OrderByDescending(s => s.Value)
+        .Take(8)
+        .ToList();
 
     private static List<UIElement> Devices(App app, Action<string, string> filter)
     {
         var devices = app.CachedDevices;
-        var loaded = devices.Count > 0;
+        var loading = app.IsCacheLoading("Devices");
+        var waiting = loading && devices.Count == 0;
 
         var cards = new List<UIElement>
         {
             WidgetCards.KpiStack(new[]
             {
-                new KpiTile("Managed Devices", Count(devices.Count, loaded), "", "#FF2196F3"),
-                new KpiTile("Non-Compliant", Count(devices.Count(d => !d.IsCompliant), loaded), "", "#FFE07A1F"),
+                new KpiTile("Managed Devices", devices.Count.ToString("N0"), "", P.Hex(P.Blue), waiting),
+                new KpiTile("Non-Compliant", devices.Count(IsNonCompliant).ToString("N0"), "", P.Hex(P.Orange), waiting,
+                    () => filter(Category.Compliance, "Non-Compliant")),
             }),
         };
 
-        if (loaded)
-        {
-            var platforms = devices.GroupBy(d => d.OperatingSystem ?? "Unknown")
-                .Select(g => new ChartSlice(g.Key, g.Count()))
-                .OrderByDescending(s => s.Value)
-                .ToList();
-            cards.Add(WidgetCards.Card("Platform Distribution",
-                WidgetCards.Treemap(platforms, p => filter(Category.Platform, p))));
+        var platforms = PlatformBreakdown(devices);
+        cards.Add(WidgetCards.Card("Platform Distribution",
+            WidgetCards.ChartOr(platforms.Count > 0, loading, "No device data",
+                () => WidgetCards.Treemap(platforms.Select(p => p.Slice).ToList(), p => filter(Category.Platform, p),
+                    platforms.Select(p => p.Color).ToList())),
+            loading: loading));
 
-            var compliant = devices.Count(d => d.IsCompliant);
-            cards.Add(WidgetCards.Card("Compliance",
-                WidgetCards.Donut(new[] { new ChartSlice("Compliant", compliant), new ChartSlice("Non-Compliant", devices.Count - compliant) },
-                    c => filter(Category.Compliance, c),
-                    new SKColor[] { new(76, 175, 80), new(224, 122, 31) })));
-        }
+        var compliance = ComplianceBreakdown(devices);
+        cards.Add(WidgetCards.Card("Compliance",
+            WidgetCards.ChartOr(compliance.Count > 0, loading, "No device data",
+                () => WidgetCards.Donut(compliance.Select(c => c.Slice).ToList(), c => filter(Category.Compliance, c),
+                    compliance.Select(c => P.Sk(c.Color)).ToList())),
+            loading: loading));
 
         // Errors by Category only when ReportMate is configured.
         if (app.ReportMateService is { } reportMate)
@@ -244,7 +368,14 @@ public static class WidgetCatalog
                 _loadingErrors = true;
                 _ = Task.Run(async () =>
                 {
-                    try { _errors = await reportMate.GetErrorsByItemAsync(false); }
+                    try
+                    {
+                        var devicesTask = reportMate.GetDevicesAsync();
+                        var errorsTask = reportMate.GetErrorsByItemAsync(false);
+                        await Task.WhenAll(devicesTask, errorsTask);
+                        _reportMateDevices = devicesTask.Result.Count;
+                        _errors = errorsTask.Result;
+                    }
                     catch (Exception ex) { Log.Debug(ex, "[widgets] ReportMate errors unavailable"); _errors = new(); }
                     finally
                     {
@@ -254,21 +385,51 @@ public static class WidgetCatalog
                 });
             }
 
-            var cats = (_errors ?? new())
-                .GroupBy(e => e.Category)
-                .Select(g => new ChartSlice(CategoryLabel(g.Key), g.Sum(e => e.DeviceCount)))
-                .OrderByDescending(s => s.Value)
-                .Take(8)
-                .ToList();
-
-            UIElement body = _errors == null
-                ? WidgetCards.Caption("Loading…")
-                : cats.Count == 0 ? WidgetCards.Caption("No errors found") : WidgetCards.Bars(cats);
-            cards.Add(WidgetCards.Card("Errors by Category", body));
+            var errors = _errors ?? new();
+            var cats = ErrorCategorySlices(errors);
+            var errorCount = errors.Count;
+            var stats = new System.Windows.Controls.StackPanel
+            {
+                Orientation = System.Windows.Controls.Orientation.Horizontal,
+                Margin = new Thickness(0, 0, 0, 6),
+                Children =
+                {
+                    MiniStat("Managed", (_reportMateDevices ?? 0).ToString("N0"), P.Blue),
+                    MiniStat("Errors", errorCount.ToString("N0"), errorCount > 0 ? P.Orange : P.Green),
+                },
+            };
+            var body = new System.Windows.Controls.StackPanel
+            {
+                Children =
+                {
+                    stats,
+                    WidgetCards.ChartOr(cats.Count > 0, _loadingErrors, "No errors found",
+                        () => WidgetCards.HorizontalBars(cats, _ => P.Orange)),
+                },
+            };
+            cards.Add(WidgetCards.Card("Errors by Category", body, loading: _loadingErrors));
         }
 
         return cards;
     }
+
+    /// <summary>A small coloured figure over its label.</summary>
+    private static UIElement MiniStat(string label, string value, Color color) => new System.Windows.Controls.StackPanel
+    {
+        Margin = new Thickness(0, 0, 12, 0),
+        Children =
+        {
+            new System.Windows.Controls.TextBlock
+            {
+                Text = value, FontSize = 16, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(color),
+            },
+            new System.Windows.Controls.TextBlock
+            {
+                Text = label, FontSize = 10,
+                Foreground = (Brush)Application.Current.FindResource("SystemControlForegroundBaseMediumBrush"),
+            },
+        },
+    };
 
     private static string CategoryLabel(ErrorCategory category) => category switch
     {
@@ -287,40 +448,60 @@ public static class WidgetCatalog
 
     // MARK: - Inventory
 
+    private static readonly Color[] AssetCategoryColors = { P.Orange, P.Blue, P.Purple, P.Teal, P.Green, P.Pink, P.Brown, P.Indigo };
+    private static readonly Color[] AssetStatusColors = { P.Green, P.Blue, P.Orange, P.Purple, P.Gray };
+
+    /// <summary>Assets per category, most first, top eight.</summary>
+    internal static List<ChartSlice> AssetCategorySlices(IEnumerable<SnipeAsset> assets) => assets
+        .GroupBy(a => a.Category?.Name ?? "Uncategorized")
+        .Select(g => new ChartSlice(g.Key, g.Count()))
+        .OrderByDescending(s => s.Value)
+        .Take(8)
+        .ToList();
+
+    /// <summary>
+    /// Assets per status type (deployed, deployable, pending, archived…),
+    /// falling back to the status name and then "Unknown", top five, each
+    /// labelled "Status (count)" — the Mac's grouping.
+    /// </summary>
+    internal static List<ChartSlice> AssetStatusSlices(IEnumerable<SnipeAsset> assets) => assets
+        .GroupBy(a => a.StatusLabel?.StatusMeta ?? a.StatusLabel?.Name ?? "Unknown")
+        .Select(g => (Status: g.Key, Count: g.Count()))
+        .OrderByDescending(s => s.Count)
+        .Take(5)
+        .Select(s => new ChartSlice($"{s.Status} ({s.Count})", s.Count))
+        .ToList();
+
     private static List<UIElement> Inventory(App app, Action<string, string> filter)
     {
         var assets = app.CachedAssets;
-        var loaded = assets.Count > 0;
+        var loading = app.IsCacheLoading("Assets");
+        var waiting = loading && assets.Count == 0;
 
         var cards = new List<UIElement>
         {
             WidgetCards.KpiStack(new[]
             {
-                new KpiTile("Assets", Count(assets.Count, loaded), "", "#FFFF9800"),
-                new KpiTile("Deployed", Count(assets.Count(a =>
-                    a.StatusLabel?.StatusMeta?.Equals("deployed", StringComparison.OrdinalIgnoreCase) == true), loaded), "", "#FF4CAF50"),
-                new KpiTile("Unassigned", Count(assets.Count(a => a.AssignedTo == null), loaded), "", "#FF9E9E9E"),
+                new KpiTile("Assets", assets.Count.ToString("N0"), "", P.Hex(P.Orange), waiting),
+                new KpiTile("Deployed", assets.Count(a =>
+                    a.StatusLabel?.StatusMeta?.Equals("deployed", StringComparison.OrdinalIgnoreCase) == true).ToString("N0"), "", P.Hex(P.Green), waiting),
+                new KpiTile("Unassigned", assets.Count(a => a.AssignedTo == null).ToString("N0"), "", P.Hex(P.Blue), waiting),
             }),
         };
 
-        if (loaded)
-        {
-            var categories = assets.GroupBy(a => a.Category?.Name ?? "Uncategorized")
-                .Select(g => new ChartSlice(g.Key, g.Count()))
-                .OrderByDescending(s => s.Value)
-                .Take(8)
-                .ToList();
-            cards.Add(WidgetCards.Card("Assets by Category",
-                WidgetCards.Bars(categories, c => filter(Category.AssetCategory, c))));
+        var categories = AssetCategorySlices(assets);
+        cards.Add(WidgetCards.Card("Assets by Category",
+            WidgetCards.ChartOr(categories.Count > 0, loading, "No asset data",
+                () => WidgetCards.HorizontalBars(categories, WidgetCards.ByIndex(categories, AssetCategoryColors),
+                    c => filter(Category.AssetCategory, c))),
+            loading: loading));
 
-            var statuses = assets.GroupBy(a => string.IsNullOrEmpty(a.StatusLabel?.Name) ? "Unknown" : a.StatusLabel!.Name!)
-                .Select(g => new ChartSlice(g.Key, g.Count()))
-                .OrderByDescending(s => s.Value)
-                .Take(6)
-                .ToList();
-            cards.Add(WidgetCards.Card("Asset Status",
-                WidgetCards.Donut(statuses, s => filter(Category.Status, s))));
-        }
+        var statuses = AssetStatusSlices(assets);
+        cards.Add(WidgetCards.Card("Asset Status",
+            WidgetCards.ChartOr(statuses.Count > 0, loading, "No asset data",
+                () => WidgetCards.Donut(statuses, s => filter(Category.Status, s),
+                    statuses.Select((_, i) => P.Sk(AssetStatusColors[i % AssetStatusColors.Length])).ToList())),
+            loading: loading));
 
         return cards;
     }

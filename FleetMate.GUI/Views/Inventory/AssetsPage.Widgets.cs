@@ -16,7 +16,11 @@ public partial class AssetsPage : IWidgetFilterHost
         };
         if (combo == null) return;
 
-        var match = combo.Items.Cast<object>().FirstOrDefault(i => i?.ToString() == value);
+        // Case and punctuation drift is tolerated, as on the Mac: a status
+        // type ("deployed") finds the status of that name ("Deployed").
+        var items = combo.Items.Cast<object>().Where(i => i != null).ToList();
+        var wanted = WidgetCatalog.MatchFilterValues(value, items.Select(i => i.ToString() ?? ""))[0];
+        var match = items.FirstOrDefault(i => i.ToString() == wanted);
         if (match != null) combo.SelectedItem = match;
     }
 }

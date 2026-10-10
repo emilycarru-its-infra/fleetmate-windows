@@ -135,6 +135,7 @@ public partial class IntunePage : Page
         if (!(_app.IsDevicesCacheValid && _app.CachedDevices.Count > 0))
         {
             LoadingPanel.Visibility = Visibility.Visible;
+            using var loading = _app.TrackCacheLoad("Devices");
             try
             {
                 _app.UpdateDevicesCache(await _graphService.GetManagedDevicesAsync(limit: 10000));

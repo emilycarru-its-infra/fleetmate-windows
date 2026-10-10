@@ -461,6 +461,9 @@ public partial class App : Application
     {
         DevOpsService?.SetSsoToken(result.Token!, result.Expiry, result.UserName);
         AuthManager.Update(AuthSystemId.DevOps, AuthTokenState.Valid(result.UserName, result.Expiry));
+
+        // The Projects widgets count the signed-in user's items, which need the token.
+        Dispatcher.BeginInvoke(() => _ = LoadMyWorkItemsAsync(force: true));
         
         // Auto-discover a default project (for sprints/boards, which are project-scoped)
         _ = DiscoverDevOpsProjectAsync();
@@ -654,6 +657,7 @@ public partial class App : Application
         {
             tasks.Add(Task.Run(async () =>
             {
+                using var loading = TrackCacheLoad("Devices");
                 try
                 {
                     // The whole fleet: the Devices list trusts this cache, so a
@@ -682,6 +686,7 @@ public partial class App : Application
         {
             tasks.Add(Task.Run(async () =>
             {
+                using var loading = TrackCacheLoad("Assets");
                 try
                 {
                     var assets = await SnipeService.GetAssetsAsync();
@@ -729,6 +734,8 @@ public partial class App : Application
                 }
                 catch (Exception ex) { Log.Warning(ex, "Failed to preload sprints"); }
             }));
+
+            tasks.Add(LoadMyWorkItemsAsync());
         }
 
         if (tasks.Count > 0)

@@ -53,6 +53,18 @@ public partial class AzureDevOpsService
         }
     }
 
+    /// <summary>
+    /// Every open work item assigned to the signed-in user, in every project
+    /// of the organization, most recently changed first.
+    /// </summary>
+    public async Task<List<WorkItem>> GetMyOpenWorkItemsAsync(int top = 1000)
+    {
+        var ids = await GetMyOpenWorkItemIdsAsync(top);
+        var items = await GetWorkItemsByIdsAsync(ids.ToList());
+        // The batch fetch does not promise the query's order.
+        return items.OrderByDescending(w => w.ChangedDate ?? DateTime.MinValue).ToList();
+    }
+
     internal static HashSet<int> ParseWiqlIds(JsonElement root)
     {
         var ids = new HashSet<int>();
