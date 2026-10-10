@@ -20,6 +20,7 @@ namespace FleetMate.Core.Services;
 public class AuthManager : INotifyPropertyChanged
 {
     private readonly FleetMateConfig _config;
+    private readonly AppEdition _edition;
     private Dictionary<AuthSystemId, AuthSystemStatus> _systems = new();
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -30,9 +31,10 @@ public class AuthManager : INotifyPropertyChanged
         private set { _systems = value; OnPropertyChanged(); }
     }
 
-    public AuthManager(FleetMateConfig config)
+    public AuthManager(FleetMateConfig config, AppEdition? edition = null)
     {
         _config = config;
+        _edition = edition ?? AppEdition.Current;
         BootstrapFromConfig();
     }
 
@@ -41,6 +43,24 @@ public class AuthManager : INotifyPropertyChanged
     public void BootstrapFromConfig()
     {
         var systems = new Dictionary<AuthSystemId, AuthSystemStatus>();
+
+        // TicketsMate signs in to TeamDynamix and nothing else. It always lists
+        // TeamDynamix, configured or not, so its one system can be set up from
+        // the panel; DevOps, GitHub, Entra and the rest are never listed, so
+        // they are never probed or signed in to.
+        if (_edition.IsTicketsOnly)
+        {
+            var tdxConfigured = _config.Tdx != null && !string.IsNullOrEmpty(_config.Tdx.BaseUrl);
+            systems[AuthSystemId.Tdx] = new AuthSystemStatus
+            {
+                SystemId = AuthSystemId.Tdx,
+                State = tdxConfigured ? AuthTokenState.Configured() : AuthTokenState.NotConfigured()
+            };
+            Systems = systems;
+            OnPropertyChanged(nameof(ConfiguredSystems));
+            OnPropertyChanged(nameof(HasServicePrincipalWarning));
+            return;
+        }
 
         // Devices — Graph / Intune
         if (_config.Graph != null && !string.IsNullOrEmpty(_config.Graph.TenantId))
