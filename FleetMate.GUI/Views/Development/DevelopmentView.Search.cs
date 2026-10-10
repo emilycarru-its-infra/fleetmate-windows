@@ -9,7 +9,8 @@ namespace FleetMate.GUI.Views.Development;
 public partial class DevelopmentView
 {
     public TabSearchScope? SearchScope =>
-        PullRequestsSegment.IsChecked == true ? new(SearchBox, "Search pull requests")
+        ReposSegment.IsChecked == true ? new(ReposWorkspace.SearchBox, "Filter files · Enter searches contents", ReposWorkspace.SubmitSearch)
+        : PullRequestsSegment.IsChecked == true ? new(SearchBox, "Search pull requests")
         : CommitsSegment.IsChecked == true ? new(CommitsSearchBox, "Search commits")
         : PipelinesSegment.IsChecked == true ? new(PipelinesSearchBox, "Search pipeline runs")
         : SkillsSegment.IsChecked == true ? new(SkillsSearchBox, "Filter skills")

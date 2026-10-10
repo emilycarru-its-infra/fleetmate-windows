@@ -3,7 +3,8 @@
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.modernwpf.com/2019"
-      xmlns:terminal="clr-namespace:FleetMate.GUI.Views.Terminal">
+      xmlns:terminal="clr-namespace:FleetMate.GUI.Views.Terminal"
+      xmlns:repos="clr-namespace:FleetMate.GUI.Views.Development.Repos">
 
     <Grid Margin="24,18,24,24" MaxWidth="980" HorizontalAlignment="Center">
         <Grid.RowDefinitions>
@@ -361,6 +362,11 @@
                                 Style="{StaticResource AccentButtonStyle}" Padding="22,7" Click="OnSaveClicked" />
                     </StackPanel>
                 </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Repositories" AutomationProperties.AutomationId="SettingsRepositoriesTab"
+                     Visibility="{x:Static repos:RepositoriesSettingsView.TabVisibility}">
+                <repos:RepositoriesSettingsView />
             </TabItem>
 
             <TabItem Header="Appearance">
