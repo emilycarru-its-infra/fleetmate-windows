@@ -10,7 +10,8 @@ namespace FleetMate.GUI.Views.Shared;
 /// code + PKCE sign-in for one API scope (Snipe-IT, ReportMate, …) in a WebView2
 /// that is never shown, carried by the browser profile's Entra session and the
 /// device's primary refresh token, with the account picker answered by exact
-/// address. It is what the TeamDynamix and Azure DevOps sign-ins already do, and
+/// address and Entra's pages handled as the TeamDynamix sign-in handles them
+/// (<see cref="EntraPageDriver"/>). It is what the TeamDynamix and Azure DevOps sign-ins already do, and
 /// it is how the APIs still get a token when the broker will not hand one over,
 /// as it can refuse in a disconnected remote session. Nothing is ever shown;
 /// a flow that cannot finish on its own fails.
@@ -86,9 +87,8 @@ internal static class EntraHeadlessToken
             if (!e.IsSuccess || !EntraWebSignIn.IsEntraPage(url)) return;
             try
             {
-                await core.ExecuteScriptAsync(EntraWebSignIn.KmsiScript);
-                if (!accountAnswered && request.LoginHint is { } upn)
-                    await core.ExecuteScriptAsync(EntraWebSignIn.AccountScript(upn));
+                await EntraPageDriver.HandleAsync(core, url, request.LoginHint, accountAnswered, tcs.Task,
+                    reason => tcs.TrySetException(new InvalidOperationException(reason)));
             }
             catch (Exception ex)
             {

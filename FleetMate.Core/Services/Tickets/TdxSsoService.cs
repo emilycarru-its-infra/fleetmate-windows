@@ -349,38 +349,17 @@ public static class TdxSsoIdentity
     }
 
     /// <summary>
-    /// The Windows account's address: the broker's operating-system account
-    /// first (the identity behind the device's primary refresh token), then the
-    /// UPN claim on the Windows logon token.
+    /// The Windows account's address, from the logon first (<c>GetUserNameEx</c>),
+    /// then the broker's operating-system account, then the Entra account in the
+    /// registry (<see cref="WindowsAccount"/>). Null only when every source is empty.
     /// </summary>
     public static async Task<string?> ResolveWindowsUpnAsync(CancellationToken ct = default)
     {
-        if (EntraTokenSource.Shared is { } broker)
-        {
-            try
-            {
-                var upn = await broker.GetOperatingSystemAccountUpnAsync(ct);
-                if (upn != null) return upn.ToLowerInvariant();
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                Log.Debug(ex, "[tdx-sso] Could not read the broker's account");
-            }
-        }
-
-        try
-        {
-            using var identity = WindowsIdentity.GetCurrent();
-            var claim = identity.Claims.FirstOrDefault(c =>
-                c.Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn");
-            if (claim?.Value.Contains('@') == true) return claim.Value.ToLowerInvariant();
-            if (identity.Name?.Contains('@') == true) return identity.Name.ToLowerInvariant();
-        }
-        catch (Exception ex)
-        {
-            Log.Debug(ex, "[tdx-sso] Could not read the Windows identity");
-        }
-        return null;
+        if (EntraTokenSource.Shared is { } source)
+            return await source.ResolveAccountUpnAsync(ct);
+        var (upn, from) = await WindowsAccount.FirstAsync(WindowsAccount.Sources(broker: null), ct);
+        if (upn != null) Log.Information("[tdx-sso] Windows account {Upn} (from the {Source})", upn, from);
+        return upn;
     }
 
     /// <summary>A trimmed, lower-cased address, or null for anything that is not one.</summary>

@@ -84,9 +84,8 @@ internal static class DevOpsHeadlessSso
                 if (!e.IsSuccess || !EntraWebSignIn.IsEntraPage(url)) return;
                 try
                 {
-                    await core.ExecuteScriptAsync(EntraWebSignIn.KmsiScript);
-                    if (!accountAnswered && upn != null)
-                        await core.ExecuteScriptAsync(EntraWebSignIn.AccountScript(upn));
+                    await EntraPageDriver.HandleAsync(core, url, upn, accountAnswered, tcs.Task,
+                        reason => tcs.TrySetResult(DevOpsSsoResult.Failed(reason)));
                 }
                 catch (Exception ex)
                 {
