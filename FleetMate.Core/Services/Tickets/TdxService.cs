@@ -103,19 +103,6 @@ public class TdxService : IDisposable
     }
     
     /// <summary>
-    /// Clear SSO authentication state
-    /// </summary>
-    public void ClearSsoToken()
-    {
-        _ssoToken = null;
-        _ssoTokenExpiry = DateTime.MinValue;
-        _ssoUserId = null;
-        _ssoUserName = null;
-        _me = null;
-        Log.Debug("TDX SSO token cleared");
-    }
-
-    /// <summary>
     /// Authenticate and get JWT bearer token
     /// </summary>
     private async Task<string?> GetAccessTokenAsync()
@@ -846,7 +833,7 @@ public class TdxService : IDisposable
     #region People
 
     /// <summary>
-    /// Look people up by name or email, for the Reallocate picker. Empty on any
+    /// Look people up by name or email, for the Reassign picker. Empty on any
     /// failure — a picker with no matches is the honest outcome of a failed
     /// lookup, and the operator can retry.
     /// </summary>

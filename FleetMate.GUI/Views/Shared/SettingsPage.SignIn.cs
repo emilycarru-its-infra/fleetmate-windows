@@ -10,7 +10,7 @@ namespace FleetMate.GUI.Views.Shared;
 /// The sign-in buttons on the Authentication cards, matching the macOS
 /// client. az login and gh auth login sit on their provider's card, with a
 /// Re-check that re-reads the sign-in and every system under it. Each system
-/// row keeps its own Sign Out or Retry SSO and a Re-check, because sign-ins
+/// row keeps its own Retry SSO (when not signed in) and a Re-check, because sign-ins
 /// finish outside the app. Retry SSO is always the silent path; no card opens
 /// a sign-in window.
 /// </summary>
@@ -37,12 +37,10 @@ public partial class SettingsPage
         switch (id)
         {
             case AuthSystemId.DevOps:
-                if (signedIn) panel.Children.Add(Action("Sign Out", () => { CurrentApp?.SignOutDevOpsSso(); return Task.CompletedTask; }));
-                else panel.Children.Add(Action("Retry SSO", () => CurrentApp?.AttemptSilentDevOpsSsoAsync() ?? Task.CompletedTask, accent: true));
+                if (!signedIn) panel.Children.Add(Action("Retry SSO", () => CurrentApp?.AttemptSilentDevOpsSsoAsync() ?? Task.CompletedTask, accent: true));
                 break;
             case AuthSystemId.Tdx:
-                if (signedIn) panel.Children.Add(Action("Sign Out", () => { CurrentApp?.SignOutTdxSso(); return Task.CompletedTask; }));
-                else panel.Children.Add(Action("Retry SSO", () => CurrentApp?.AttemptSilentTdxSsoAsync() ?? Task.CompletedTask, accent: true));
+                if (!signedIn) panel.Children.Add(Action("Retry SSO", () => CurrentApp?.AttemptSilentTdxSsoAsync() ?? Task.CompletedTask, accent: true));
                 break;
             case AuthSystemId.Snipe:
             case AuthSystemId.Intune or AuthSystemId.Graph or AuthSystemId.Entra when !elevated:

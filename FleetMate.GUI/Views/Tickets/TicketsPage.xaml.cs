@@ -177,7 +177,7 @@ private bool _isInitialLoadDone;
     /// <summary>
     /// TeamDynamix sign-in changed. On success: hide Sign In, find the TDX
     /// person so Assigned to Me works, and load the board if the cache does not
-    /// already hold it. On sign-out: forget the person and redraw.
+    /// already hold it. Otherwise: forget the person and redraw.
     /// </summary>
     private async void OnTdxSignInChanged()
     {
@@ -1385,11 +1385,11 @@ private bool _isInitialLoadDone;
     }
 
     // ── Responsible actions ───────────────────────────────────────
-    // Assign to me, Reallocate (anchored people picker) and Unassign, as in
+    // Assign to me, Reassign (anchored people picker) and Unassign, as in
     // the macOS detail pane. Each one PATCHes ResponsibleUid and refreshes the
     // ticket in place.
 
-    private CancellationTokenSource? _reallocateSearchCts;
+    private CancellationTokenSource? _reassignSearchCts;
 
     private async void OnAssignToMeClicked(object sender, RoutedEventArgs e)
     {
@@ -1409,32 +1409,32 @@ private bool _isInitialLoadDone;
         await SetResponsibleAsync(null, null);
     }
 
-    private void OnReallocateClicked(object sender, RoutedEventArgs e)
+    private void OnReassignClicked(object sender, RoutedEventArgs e)
     {
         if (_selectedTicket == null) return;
-        ReallocatePopup.IsOpen = !ReallocatePopup.IsOpen;
+        ReassignPopup.IsOpen = !ReassignPopup.IsOpen;
     }
 
-    private void OnReallocatePopupOpened(object? sender, EventArgs e)
+    private void OnReassignPopupOpened(object? sender, EventArgs e)
     {
-        ReallocateSearchBox.Text = "";
-        ReallocateResultsList.ItemsSource = null;
-        ReallocateStatusText.Text = "Type at least two characters.";
-        ReallocateSearchBox.Focus();
+        ReassignSearchBox.Text = "";
+        ReassignResultsList.ItemsSource = null;
+        ReassignStatusText.Text = "Type at least two characters.";
+        ReassignSearchBox.Focus();
     }
 
-    private async void OnReallocateSearchChanged(object sender, TextChangedEventArgs e)
+    private async void OnReassignSearchChanged(object sender, TextChangedEventArgs e)
     {
         if (_tdxService == null) return;
 
-        _reallocateSearchCts?.Cancel();
-        var cts = _reallocateSearchCts = new CancellationTokenSource();
-        var query = ReallocateSearchBox.Text?.Trim() ?? "";
+        _reassignSearchCts?.Cancel();
+        var cts = _reassignSearchCts = new CancellationTokenSource();
+        var query = ReassignSearchBox.Text?.Trim() ?? "";
 
         if (query.Length < 2)
         {
-            ReallocateResultsList.ItemsSource = null;
-            ReallocateStatusText.Text = "Type at least two characters.";
+            ReassignResultsList.ItemsSource = null;
+            ReassignStatusText.Text = "Type at least two characters.";
             return;
         }
 
@@ -1442,53 +1442,53 @@ private bool _isInitialLoadDone;
         try { await Task.Delay(300, cts.Token); }
         catch (TaskCanceledException) { return; }
 
-        ReallocateStatusText.Text = "Searching…";
+        ReassignStatusText.Text = "Searching…";
         var people = await _tdxService.SearchPeopleAsync(query, 15);
         if (cts.IsCancellationRequested) return;
 
         var pickable = people.Where(p => p.Uid is { } u && u != Guid.Empty).ToList();
-        ReallocateResultsList.ItemsSource = pickable;
-        ReallocateStatusText.Text = pickable.Count == 0 ? "No matching people." : "Pick a person.";
+        ReassignResultsList.ItemsSource = pickable;
+        ReassignStatusText.Text = pickable.Count == 0 ? "No matching people." : "Pick a person.";
     }
 
-    private void OnReallocateSearchKeyDown(object sender, KeyEventArgs e)
+    private void OnReassignSearchKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Down && ReallocateResultsList.Items.Count > 0)
+        if (e.Key == Key.Down && ReassignResultsList.Items.Count > 0)
         {
-            ReallocateResultsList.SelectedIndex = 0;
-            (ReallocateResultsList.ItemContainerGenerator.ContainerFromIndex(0) as ListBoxItem)?.Focus();
+            ReassignResultsList.SelectedIndex = 0;
+            (ReassignResultsList.ItemContainerGenerator.ContainerFromIndex(0) as ListBoxItem)?.Focus();
             e.Handled = true;
         }
         else if (e.Key == Key.Escape)
         {
-            ReallocatePopup.IsOpen = false;
+            ReassignPopup.IsOpen = false;
             e.Handled = true;
         }
     }
 
-    private async void OnReallocateResultsKeyDown(object sender, KeyEventArgs e)
+    private async void OnReassignResultsKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && ReallocateResultsList.SelectedItem is TdxPerson person)
+        if (e.Key == Key.Enter && ReassignResultsList.SelectedItem is TdxPerson person)
         {
             e.Handled = true;
-            await PickReallocateAsync(person);
+            await PickReassignAsync(person);
         }
         else if (e.Key == Key.Escape)
         {
-            ReallocatePopup.IsOpen = false;
+            ReassignPopup.IsOpen = false;
             e.Handled = true;
         }
     }
 
-    private async void OnReallocateResultPicked(object sender, MouseButtonEventArgs e)
+    private async void OnReassignResultPicked(object sender, MouseButtonEventArgs e)
     {
-        if (ReallocateResultsList.SelectedItem is TdxPerson person)
-            await PickReallocateAsync(person);
+        if (ReassignResultsList.SelectedItem is TdxPerson person)
+            await PickReassignAsync(person);
     }
 
-    private async Task PickReallocateAsync(TdxPerson person)
+    private async Task PickReassignAsync(TdxPerson person)
     {
-        ReallocatePopup.IsOpen = false;
+        ReassignPopup.IsOpen = false;
         if (person.Uid is { } uid) await SetResponsibleAsync(uid, person.DisplayName);
     }
 
@@ -1497,7 +1497,7 @@ private bool _isInitialLoadDone;
         if (_selectedTicket == null || _tdxService == null || _app == null) return;
         var ticketId = _selectedTicket.Id;
 
-        ShowActionMessage(uid == null ? "Unassigning…" : $"Reallocating to {name}…", isLoading: true);
+        ShowActionMessage(uid == null ? "Unassigning…" : $"Reassigning to {name}…", isLoading: true);
         // TDX clears the responsible on an empty UID, as the board drop does.
         var updated = await _tdxService.UpdateTicketAsync(ticketId, new Dictionary<string, object?>
         {
@@ -1518,7 +1518,7 @@ private bool _isInitialLoadDone;
             UpdateDetailPanel(updated);
         }
         ApplyFiltersAndSort();
-        ShowActionMessage(uid == null ? "Unassigned" : $"Reallocated to {updated.ResponsibleFullName ?? name}");
+        ShowActionMessage(uid == null ? "Unassigned" : $"Reassigned to {updated.ResponsibleFullName ?? name}");
     }
 
     private async void OnRefreshDetailClicked(object sender, RoutedEventArgs e)

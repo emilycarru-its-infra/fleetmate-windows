@@ -494,31 +494,15 @@ public partial class MainWindow : Window
         switch (system.SystemId)
         {
             case AuthSystemId.Tdx:
-                var tdxBtn = new Button { FontSize = 11, Padding = new Thickness(8, 4, 8, 4), VerticalAlignment = VerticalAlignment.Top };
-                if (system.State.IsHealthy)
-                {
-                    tdxBtn.Content = "Sign Out";
-                    tdxBtn.Click += (_, _) => { app.SignOutTdxSso(); PopulateAuthPopup(); };
-                }
-                else
-                {
-                    tdxBtn.Content = "Sign In";
-                    tdxBtn.Click += async (_, _) => { await app.RetryTdxSsoAsync(); PopulateAuthPopup(); };
-                }
+                if (system.State.IsHealthy) return null;
+                var tdxBtn = new Button { FontSize = 11, Padding = new Thickness(8, 4, 8, 4), VerticalAlignment = VerticalAlignment.Top, Content = "Sign In" };
+                tdxBtn.Click += async (_, _) => { await app.RetryTdxSsoAsync(); PopulateAuthPopup(); };
                 return tdxBtn;
 
             case AuthSystemId.DevOps:
-                var devOpsBtn = new Button { FontSize = 11, Padding = new Thickness(8, 4, 8, 4), VerticalAlignment = VerticalAlignment.Top };
-                if (system.State.IsHealthy)
-                {
-                    devOpsBtn.Content = "Sign Out";
-                    devOpsBtn.Click += (_, _) => { app.SignOutDevOpsSso(); PopulateAuthPopup(); };
-                }
-                else
-                {
-                    devOpsBtn.Content = "Sign In";
-                    devOpsBtn.Click += async (_, _) => { await app.AttemptSilentDevOpsSsoAsync(); PopulateAuthPopup(); };
-                }
+                if (system.State.IsHealthy) return null;
+                var devOpsBtn = new Button { FontSize = 11, Padding = new Thickness(8, 4, 8, 4), VerticalAlignment = VerticalAlignment.Top, Content = "Sign In" };
+                devOpsBtn.Click += async (_, _) => { await app.AttemptSilentDevOpsSsoAsync(); PopulateAuthPopup(); };
                 return devOpsBtn;
 
             default:

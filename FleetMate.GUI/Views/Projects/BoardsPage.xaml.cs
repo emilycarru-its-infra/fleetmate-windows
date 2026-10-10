@@ -1019,22 +1019,16 @@ public partial class BoardsPage : Page
     {
         if (_app == null) return;
 
+        // Signed in already: nothing to do. Otherwise retry the silent
+        // sign-in; no window opens.
+        if (_app.IsDevOpsSsoAuthenticated) return;
+
+        await _app.AttemptSilentDevOpsSsoAsync();
+        UpdateSsoButtonState();
         if (_app.IsDevOpsSsoAuthenticated)
         {
-            // Already signed in — sign out
-            _app.SignOutDevOpsSso();
-            UpdateSsoButtonState();
-        }
-        else
-        {
-            // Retry the silent sign-in; no window opens.
-            await _app.AttemptSilentDevOpsSsoAsync();
-            UpdateSsoButtonState();
-            if (_app.IsDevOpsSsoAuthenticated)
-            {
-                // Reload work items with new auth
-                _ = LoadWorkItemsAsync();
-            }
+            // Reload work items with new auth
+            _ = LoadWorkItemsAsync();
         }
     }
 
@@ -1046,7 +1040,7 @@ public partial class BoardsPage : Page
         {
             SsoIcon.Text = "🔓";
             SsoLabel.Text = _app.DevOpsAuthenticatedUserName ?? "Signed In";
-            SsoButton.ToolTip = "Click to sign out of Azure DevOps SSO";
+            SsoButton.ToolTip = "Signed in to Azure DevOps via SSO";
         }
         else
         {

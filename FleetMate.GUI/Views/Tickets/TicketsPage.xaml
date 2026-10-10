@@ -425,10 +425,10 @@
                                     <TextBlock Text="Assign to me" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>
-                            <Button x:Name="ReallocateButton" Click="OnReallocateClicked" ToolTip="Reallocate to someone else">
+                            <Button x:Name="ReassignButton" Click="OnReassignClicked" ToolTip="Reassign to someone else">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:FontIcon Glyph="&#xE716;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
-                                    <TextBlock Text="Reallocate" VerticalAlignment="Center" />
+                                    <TextBlock Text="Reassign" VerticalAlignment="Center" />
                                     <ui:FontIcon Glyph="&#xE70D;" FontFamily="Segoe Fluent Icons" FontSize="9" Margin="6,0,0,0" />
                                 </StackPanel>
                             </Button>
@@ -459,11 +459,11 @@
                         </WrapPanel>
                         </DockPanel>
 
-                        <!-- Reallocate popover, anchored to its button: search people,
+                        <!-- Reassign popover, anchored to its button: search people,
                              pick one, and the ticket's responsible changes. -->
-                        <Popup x:Name="ReallocatePopup" PlacementTarget="{Binding ElementName=ReallocateButton}"
+                        <Popup x:Name="ReassignPopup" PlacementTarget="{Binding ElementName=ReassignButton}"
                                Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
-                               Opened="OnReallocatePopupOpened">
+                               Opened="OnReassignPopupOpened">
                             <Border Background="{DynamicResource CardBackgroundBrush}"
                                     BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1"
                                     CornerRadius="8" Padding="12" Width="320" Margin="0,4,8,8"
@@ -472,15 +472,15 @@
                                     <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.25" />
                                 </Border.Effect>
                                 <StackPanel>
-                                    <TextBlock Text="Reallocate to" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8" />
-                                    <TextBox x:Name="ReallocateSearchBox" ui:ControlHelper.PlaceholderText="Search people by name or email"
-                                             TextChanged="OnReallocateSearchChanged" PreviewKeyDown="OnReallocateSearchKeyDown" />
-                                    <TextBlock x:Name="ReallocateStatusText" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                                    <TextBlock Text="Reassign to" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8" />
+                                    <TextBox x:Name="ReassignSearchBox" ui:ControlHelper.PlaceholderText="Search people by name or email"
+                                             TextChanged="OnReassignSearchChanged" PreviewKeyDown="OnReassignSearchKeyDown" />
+                                    <TextBlock x:Name="ReassignStatusText" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
                                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                                                Text="Type at least two characters." />
-                                    <ListBox x:Name="ReallocateResultsList" MaxHeight="240" Margin="0,6,0,0"
+                                    <ListBox x:Name="ReassignResultsList" MaxHeight="240" Margin="0,6,0,0"
                                              BorderThickness="0" Background="Transparent"
-                                             MouseLeftButtonUp="OnReallocateResultPicked" KeyDown="OnReallocateResultsKeyDown">
+                                             MouseLeftButtonUp="OnReassignResultPicked" KeyDown="OnReassignResultsKeyDown">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>
                                                 <StackPanel Margin="0,2">
@@ -569,7 +569,7 @@
                             <!-- Two columns to save height: the editable fields on the
                                  left, the read-only facts on the right. Status, Priority
                                  and Classification change the ticket as soon as a new
-                                 value is picked, like Reallocate. -->
+                                 value is picked, like Reassign. -->
                             <Grid Margin="0,0,0,4">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
