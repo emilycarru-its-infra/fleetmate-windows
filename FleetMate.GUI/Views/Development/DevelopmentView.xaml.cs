@@ -91,6 +91,7 @@ public partial class DevelopmentView : UserControl
     {
         if (_loading || AppInstance is not { } app) return;
         _loading = true;
+        using var tracking = app.TrackCacheLoad("PullRequests");
         LoadingRing.Visibility = Visibility.Visible;
 
         try
@@ -187,6 +188,26 @@ public partial class DevelopmentView : UserControl
         _repository = repository;
         PullRequestsSegment.IsChecked = true;
         Rerender();
+    }
+
+    /// <summary>Show Pulls filtered to one source, any repository — the pull request figures' click.</summary>
+    public void ShowPullRequests(DevelopmentSourceFilter source)
+    {
+        _source = source;
+        _repository = null;
+        SourceAll.IsChecked = source == DevelopmentSourceFilter.All;
+        SourceDevOps.IsChecked = source == DevelopmentSourceFilter.DevOps;
+        SourceGitHub.IsChecked = source == DevelopmentSourceFilter.GitHub;
+        PullRequestsSegment.IsChecked = true;
+        Rerender();
+    }
+
+    /// <summary>Open the Inbox — the Unread in Inbox figure's click when anything is unread.</summary>
+    public void ShowInbox()
+    {
+        InboxSegment.Visibility = Visibility.Visible;
+        InboxSegment.IsChecked = true;
+        RenderInbox();
     }
 
     private void OnPullsRepoChanged(object sender, SelectionChangedEventArgs e)

@@ -32,6 +32,8 @@ public sealed class DevelopmentInbox
     public IReadOnlyList<GitHubNotification> Notifications { get; private set; } = Array.Empty<GitHubNotification>();
     public int UnreadCount => Notifications.Count(n => n.Unread);
     public string? LastError { get; private set; }
+    /// <summary>Whether a refresh is in flight.</summary>
+    public bool IsRefreshing => _refreshing;
     public DateTime? LastRefreshed { get; private set; }
 
     /// <summary>Raised on the UI thread after every refresh or local change.</summary>

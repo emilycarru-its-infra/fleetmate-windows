@@ -195,8 +195,9 @@ public sealed class WidgetsSection : StackPanel
         }
     }
 
-    private void ApplyFilter(string category, string value)
+    private void ApplyFilter(string category, string label)
     {
+        var value = WidgetCatalog.FilterValue(label);
         var host = FindHost(this);
         if (host != null) host.ApplyWidgetFilter(category, value);
         else Log.Debug("[widgets] {Tab} has no filter for {Category}={Value}", Tab, category, value);

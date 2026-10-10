@@ -30,12 +30,14 @@ public static class TicketWidgets
         var cards = new List<UIElement> { KpiGrid(Tiles(tickets, filters, stats), waiting) };
 
         var byStatus = new TicketStats(tickets(TicketFilterCategory.Status)).ByStatus;
+        // The legend is a filter too: a row toggles its status and fades with the selection, as a wedge does.
         cards.Add(Stretch(WidgetCards.Card("By Status", byStatus.Count == 0
             ? Empty(loading)
             : WidgetCards.Donut(
                 byStatus.Select(c => new ChartSlice(c.Label, c.Value)).ToList(),
                 v => filters.Toggle(TicketFilterCategory.Status, v),
-                byStatus.Select(c => Fade(ToSk(StatusColor(c.Label)), Faded(filters, TicketFilterCategory.Status, c.Label))).ToList()))));
+                byStatus.Select(c => Fade(ToSk(StatusColor(c.Label)), Faded(filters, TicketFilterCategory.Status, c.Label))).ToList(),
+                size: 110), loading: loading)));
 
         cards.Add(BarCard("By Priority", new TicketStats(tickets(TicketFilterCategory.Priority)).ByPriority,
             TicketFilterCategory.Priority, filters, loading, PriorityColor));
@@ -120,7 +122,9 @@ public static class TicketWidgets
             VerticalAlignment = VerticalAlignment.Center,
             Children =
             {
-                new TextBlock { Text = waiting ? "--" : t.Value.ToString("N0"), FontSize = 18, FontWeight = FontWeights.Bold },
+                waiting
+                    ? WidgetCards.SkeletonBlock(36, 18, new Thickness(0, 2, 0, 3))
+                    : new TextBlock { Text = t.Value.ToString("N0"), FontSize = 18, FontWeight = FontWeights.Bold },
                 new TextBlock { Text = t.Title, FontSize = 11, Foreground = medium, TextTrimming = TextTrimming.CharacterEllipsis },
             },
         });
@@ -153,7 +157,7 @@ public static class TicketWidgets
                 counts.Select(c => new ChartSlice(c.Label, c.Value)).ToList(),
                 colorOf,
                 v => filters.Toggle(category, v),
-                v => Faded(filters, category, v))));
+                v => Faded(filters, category, v)), loading: loading));
 
     /// <summary>Cards in a row share its height (see <see cref="WidgetFlowPanel.EqualHeights"/>).</summary>
     private static Border Stretch(Border card)
@@ -162,7 +166,7 @@ public static class TicketWidgets
         return card;
     }
 
-    private static UIElement Empty(bool loading) => WidgetCards.Caption(loading ? "Loading tickets..." : "No tickets match");
+    private static UIElement Empty(bool loading) => loading ? WidgetCards.Skeleton() : WidgetCards.Empty("No tickets match");
 
     /// <summary>Values outside an active selection fade, so a chart shows what is picked and what else could be.</summary>
     internal static bool Faded(TicketFilters filters, TicketFilterCategory category, string value)
