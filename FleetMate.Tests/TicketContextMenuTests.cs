@@ -92,7 +92,7 @@ public class TicketContextMenuTests
     {
         var plan = Build(Ticket(Someone), Me);
         var statuses = Entry(plan, TicketMenuCommand.Status).Choices!;
-        Assert.Equal(new[] { "In Process", "New", "Resolved" }, statuses.Select(c => c.Name));
+        Assert.Equal(new[] { "New", "In Process", "Resolved" }, statuses.Select(c => c.Name));
         Assert.Equal(2, Assert.Single(statuses, c => c.IsCurrent).Id);
         var priorities = Entry(plan, TicketMenuCommand.Priority).Choices!;
         Assert.Equal(20, Assert.Single(priorities, c => c.IsCurrent).Id);
@@ -104,6 +104,20 @@ public class TicketContextMenuTests
         var choices = TicketMenuPlan.Choices(new Dictionary<int, string> { [1] = "New" }, 9, "Waiting on Vendor");
         Assert.Equal(new[] { "New", "Waiting on Vendor" }, choices.Select(c => c.Name));
         Assert.True(choices.Single(c => c.Id == 9).IsCurrent);
+    }
+
+    [Fact]
+    public void Choices_RunInWorkflowAndUrgencyOrder()
+    {
+        var statuses = TicketMenuPlan.Choices(
+            new Dictionary<int, string> { [1] = "Closed", [2] = "In Process", [3] = "New", [4] = "On Hold", [5] = "Triage" },
+            null, null, TicketMenuPlan.StatusOrder);
+        Assert.Equal(new[] { "New", "In Process", "On Hold", "Closed", "Triage" }, statuses.Select(c => c.Name));
+
+        var priorities = TicketMenuPlan.Choices(
+            new Dictionary<int, string> { [1] = "Emergency", [2] = "High", [3] = "Low", [4] = "Medium" },
+            null, null, TicketMenuPlan.PriorityOrder);
+        Assert.Equal(new[] { "Low", "Medium", "High", "Emergency" }, priorities.Select(c => c.Name));
     }
 
     [Fact]

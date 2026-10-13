@@ -63,8 +63,8 @@ public static class TicketMenuPlan
         IReadOnlyDictionary<int, string> statuses,
         IReadOnlyDictionary<int, string> priorities)
     {
-        var statusChoices = Choices(statuses, ticket.StatusId > 0 ? ticket.StatusId : null, ticket.StatusName);
-        var priorityChoices = Choices(priorities, ticket.PriorityId, ticket.PriorityName);
+        var statusChoices = Choices(statuses, ticket.StatusId > 0 ? ticket.StatusId : null, ticket.StatusName, StatusOrder);
+        var priorityChoices = Choices(priorities, ticket.PriorityId, ticket.PriorityName, PriorityOrder);
 
         var entries = new List<TicketMenuEntry>
         {
@@ -102,21 +102,40 @@ public static class TicketMenuPlan
     public static bool CanUnassign(TdxTicket ticket) =>
         ticket.ResponsibleUid is { } uid && uid != Guid.Empty;
 
+    /// <summary>Statuses in the order a ticket moves through them, as the board's columns run.</summary>
+    public static readonly IReadOnlyList<string> StatusOrder =
+        ["new", "open", "in pro", "on hold", "pending", "waiting", "resolved", "completed", "closed", "cancel"];
+
+    /// <summary>Priorities from least to most urgent, as the board's columns run.</summary>
+    public static readonly IReadOnlyList<string> PriorityOrder =
+        ["low", "medium", "high", "urgent", "critical", "emergency"];
+
     /// <summary>
-    /// The known values ordered by name, the ticket's own checked. The ticket's
-    /// value is kept even when the known list lacks it, so the submenu never
-    /// hides where the ticket stands.
+    /// The known values in <paramref name="order"/> (the first fragment each
+    /// name contains; names matching none go last, by name), the ticket's own
+    /// checked. The ticket's value is kept even when the known list lacks it,
+    /// so the submenu never hides where the ticket stands.
     /// </summary>
     public static IReadOnlyList<TicketMenuChoice> Choices(
-        IReadOnlyDictionary<int, string> known, int? currentId, string? currentName)
+        IReadOnlyDictionary<int, string> known, int? currentId, string? currentName,
+        IReadOnlyList<string>? order = null)
     {
         var all = new Dictionary<int, string>(known.Where(kv => kv.Key > 0));
         if (currentId is int id && id > 0 && !all.ContainsKey(id))
             all[id] = string.IsNullOrWhiteSpace(currentName) ? $"#{id}" : currentName;
         return all
-            .OrderBy(kv => kv.Value, StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(kv => Rank(kv.Value, order))
+            .ThenBy(kv => kv.Value, StringComparer.CurrentCultureIgnoreCase)
             .Select(kv => new TicketMenuChoice(kv.Key, kv.Value, kv.Key == currentId))
             .ToList();
+    }
+
+    private static int Rank(string name, IReadOnlyList<string>? order)
+    {
+        if (order == null) return 0;
+        for (var i = 0; i < order.Count; i++)
+            if (name.Contains(order[i], StringComparison.OrdinalIgnoreCase)) return i;
+        return order.Count;
     }
 
     /// <summary>

@@ -109,7 +109,9 @@ public partial class TicketsPage
             var field = entry.Command == TicketMenuCommand.Status ? "StatusID" : "PriorityID";
             foreach (var choice in choices)
             {
-                var sub = new MenuItem { Header = choice.Name, IsCheckable = false, IsChecked = choice.IsCurrent };
+                // Checkable, so screen readers hear which value is current; the
+                // menu is rebuilt each time it opens, so a click never leaves it toggled.
+                var sub = new MenuItem { Header = choice.Name, IsCheckable = true, IsChecked = choice.IsCurrent };
                 AutomationProperties.SetAutomationId(sub, $"{entry.AutomationId}_{choice.Id}");
                 sub.Click += async (_, _) => await UpdateTicketFieldAsync(ticket.Id, field, choice.Id);
                 item.Items.Add(sub);

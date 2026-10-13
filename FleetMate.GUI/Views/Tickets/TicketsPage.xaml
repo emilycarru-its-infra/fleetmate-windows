@@ -315,6 +315,9 @@
                                                             MouseLeftButtonUp="OnBoardCardClick" Cursor="Hand"
                                                             PreviewMouseLeftButtonDown="OnBoardCardPreviewMouseDown"
                                                             MouseMove="OnBoardCardMouseMove"
+                                                            Focusable="True" KeyboardNavigation.IsTabStop="True"
+                                                            KeyDown="OnBoardCardKeyDown"
+                                                            AutomationProperties.Name="{Binding Title}"
                                                             Tag="{Binding Id}">
                                                         <Border.Effect>
                                                             <DropShadowEffect BlurRadius="4" ShadowDepth="1" Opacity="0.2" />
