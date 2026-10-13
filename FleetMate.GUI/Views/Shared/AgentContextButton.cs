@@ -12,7 +12,7 @@ namespace FleetMate.GUI.Views.Shared;
 /// pastes the record's block into a running agent's input without pressing
 /// Return, or copies it and opens the terminal when none is running. Its
 /// right-click menu offers Copy for Agent and Send to Agent. TicketsMate has
-/// no terminal, so there a click copies and there is no menu. The view sets <see cref="Context"/>
+/// no agent terminal, so there the button is hidden. The view sets <see cref="Context"/>
 /// to the record it shows (with none the button is disabled), or
 /// <see cref="Source"/> where the record shown changes in many places.
 /// </summary>
@@ -26,6 +26,7 @@ public sealed class AgentContextButton : Button
         AutomationProperties.SetAutomationId(this, "AgentContextButton");
         AutomationProperties.SetName(this, "Agent");
         IsEnabled = false;
+        if (AppEdition.Current.IsTicketsOnly) Visibility = Visibility.Collapsed;
         ToolTip = ToolTipFor(null, CopyOnly);
         Click += (_, _) =>
         {
