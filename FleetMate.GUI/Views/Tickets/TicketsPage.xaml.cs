@@ -82,9 +82,7 @@ private bool _isInitialLoadDone;
     public TicketsPage()
     {
         InitializeComponent();
-        AgentContextMenu.Attach(TicketsListView);
-        // Cards drag between columns; that drag carries the block too.
-        AgentContextMenu.Attach(BoardColumnsControl, drag: false);
+        AttachTicketMenus();
         AgentButton.Source = () => _selectedTicket is { } ticket ? AgentContextMenu.Resolve(ticket) : null;
 
         // Get services from App
@@ -143,6 +141,7 @@ private bool _isInitialLoadDone;
                 _isInitialLoadDone = true;
                 UpdateSsoState();
                 await LoadTicketsAsync();
+                _ = WarmTicketChoicesAsync();
             }
             // Signing in can finish after the first visit, so try again
             // until the TDX person is known.
@@ -720,24 +719,33 @@ private bool _isInitialLoadDone;
     private async void OnBoardCardClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         _cardPress = null;
-        if (sender is Border border && border.Tag is int ticketId)
-        {
-            var ticket = _filteredTickets.FirstOrDefault(t => t.Id == ticketId);
-            if (ticket != null)
-            {
-                _selectedTicket = ticket;
-                FleetMate.GUI.Views.Terminal.ContextPublisher.Ticket(ticket);
+        if (sender is Border border && border.Tag is int ticketId
+            && _filteredTickets.FirstOrDefault(t => t.Id == ticketId) is { } ticket)
+            await OpenTicketInDetailAsync(ticket);
+    }
 
-                // Show detail panel
-                if (!_detailPanelVisible)
-                {
-                    _detailPanelVisible = true;
-                    OpenDetailPanel();
-                }
-                
-                await LoadTicketDetailAsync(ticket.Id);
-            }
+    /// <summary>
+    /// Show a ticket in the detail pane without going through the list's
+    /// selection: a board card, or the card menu's Reassign and parent items.
+    /// The open ticket's unsent comment is stashed first, as the list does.
+    /// </summary>
+    private async Task OpenTicketInDetailAsync(TdxTicket ticket)
+    {
+        if (_selectedTicket?.Id != ticket.Id)
+        {
+            StashCommentDraft();
+            _selectedTicket = ticket;
+            RestoreCommentDraft(ticket.Id);
         }
+        FleetMate.GUI.Views.Terminal.ContextPublisher.Ticket(ticket);
+
+        if (!_detailPanelVisible)
+        {
+            _detailPanelVisible = true;
+            OpenDetailPanel();
+        }
+
+        await LoadTicketDetailAsync(ticket.Id);
     }
 
     private void OnSearchChanged(object sender, TextChangedEventArgs e)
@@ -800,11 +808,14 @@ private bool _isInitialLoadDone;
 
     private void OnOpenInWebClicked(object sender, RoutedEventArgs e)
     {
-        if (_selectedTicket == null || _app?.Config?.Tdx == null) return;
-        
-        var url = GetTicketUrl();
+        if (_selectedTicket != null) OpenTicketInWeb(_selectedTicket.Id);
+    }
+
+    private void OpenTicketInWeb(int ticketId)
+    {
+        var url = TicketUrl(ticketId);
         if (string.IsNullOrEmpty(url)) return;
-        
+
         try
         {
             Process.Start(new ProcessStartInfo
@@ -821,32 +832,12 @@ private bool _isInitialLoadDone;
 
     private void OnCopyTicketIdClicked(object sender, RoutedEventArgs e)
     {
-        if (_selectedTicket == null) return;
-        try
-        {
-            Clipboard.SetText(_selectedTicket.Id.ToString());
-            ShowActionMessage("Ticket number copied");
-        }
-        catch (Exception ex)
-        {
-            ShowActionMessage($"Copy failed: {ex.Message}", isError: true);
-        }
+        if (_selectedTicket != null) CopyToClipboard(_selectedTicket.Id.ToString(), "Ticket number copied");
     }
 
     private void OnCopyTicketLinkClicked(object sender, RoutedEventArgs e)
     {
-        if (_selectedTicket == null) return;
-        var url = GetTicketUrl();
-        if (string.IsNullOrEmpty(url)) return;
-        try
-        {
-            Clipboard.SetText(url);
-            ShowActionMessage("Ticket link copied");
-        }
-        catch (Exception ex)
-        {
-            ShowActionMessage($"Copy failed: {ex.Message}", isError: true);
-        }
+        if (_selectedTicket != null && TicketUrl(_selectedTicket.Id) is { } url) CopyToClipboard(url, "Ticket link copied");
     }
 
     /// <summary>
@@ -854,10 +845,10 @@ private bool _isInitialLoadDone;
     /// from the ticket's <c>Uri</c>, which is an API path, and never from a
     /// hardcoded host.
     /// </summary>
-    private string? GetTicketUrl()
+    private string? TicketUrl(int ticketId)
     {
-        if (_selectedTicket == null || _app?.Config?.Tdx == null) return null;
-        var url = _app.Config.Tdx.GetTicketWebUrl(_selectedTicket.Id);
+        if (_app?.Config?.Tdx == null) return null;
+        var url = _app.Config.Tdx.GetTicketWebUrl(ticketId);
         if (url == null) ShowActionMessage("No TeamDynamix URL is configured.", isError: true);
         return url;
     }
@@ -1097,6 +1088,8 @@ private bool _isInitialLoadDone;
         if (_tdxService == null) return;
         var statuses = new Dictionary<int, string>(await _tdxService.GetStatusesAsync());
         var priorities = new Dictionary<int, string>(await _tdxService.GetPrioritiesAsync());
+        _statusChoices = new Dictionary<int, string>(statuses);
+        _priorityChoices = new Dictionary<int, string>(priorities);
         if (_selectedTicket?.Id != ticket.Id) return;
 
         if (ticket.StatusId > 0) statuses.TryAdd(ticket.StatusId, ticket.StatusName ?? $"Status {ticket.StatusId}");
@@ -1132,18 +1125,38 @@ private bool _isInitialLoadDone;
             _ => _selectedTicket.Classification,
         };
         if (current == value) return;
+        await UpdateTicketFieldAsync(_selectedTicket.Id, field, value);
+    }
+
+    /// <summary>
+    /// Save one of Status, Priority or Classification on a ticket at once, from
+    /// the detail editors or the ticket menu, then redraw the list and, when it
+    /// is open there, the detail pane.
+    /// </summary>
+    private async Task UpdateTicketFieldAsync(int ticketId, string field, int value)
+    {
+        if (_tdxService == null || _app == null) return;
+        var cached = _allTickets.FirstOrDefault(t => t.Id == ticketId);
+        var current = field switch
+        {
+            "StatusID" => (int?)cached?.StatusId,
+            "PriorityID" => cached?.PriorityId,
+            _ => cached?.Classification,
+        };
+        if (cached != null && current == value) return;
 
         var label = field switch { "StatusID" => "status", "PriorityID" => "priority", _ => "classification" };
-        ShowActionMessage($"Changing {label}…", isLoading: true);
-        var updated = await _tdxService.UpdateTicketAsync(_selectedTicket.Id, new Dictionary<string, object?> { [field] = value });
+        ShowActionMessage($"Changing the {label} of #{ticketId}…", isLoading: true);
+        var updated = await _tdxService.UpdateTicketAsync(ticketId, new Dictionary<string, object?> { [field] = value });
         if (updated == null)
         {
             ShowActionMessage($"TeamDynamix did not accept the {label}. See the log for the response.", isError: true);
-            UpdateDetailPanel(_selectedTicket);
+            // Put the detail editor back on the saved value.
+            if (_selectedTicket?.Id == ticketId) UpdateDetailPanel(_selectedTicket);
             return;
         }
         ReplaceCachedTicket(updated);
-        ShowActionMessage($"Changed {label}");
+        ShowActionMessage($"Changed the {label} of #{ticketId}");
     }
 
     private void ReplaceCachedTicket(TdxTicket updated)
@@ -1349,6 +1362,12 @@ private bool _isInitialLoadDone;
 
     private void UpdateNotifyOptions(TdxTicket ticket)
     {
+        // A redraw of the same ticket (a menu action, a refresh) keeps the
+        // boxes already ticked for the comment being written.
+        var ticked = _notifyOptionsTicketId == ticket.Id
+            ? NotifyCheckboxesPanel.Children.OfType<CheckBox>().Where(c => c.IsChecked == true).Select(c => c.Tag as string).ToHashSet()
+            : new HashSet<string?>();
+        _notifyOptionsTicketId = ticket.Id;
         NotifyCheckboxesPanel.Children.Clear();
         
         // Build notify options from ticket properties
@@ -1382,6 +1401,7 @@ private bool _isInitialLoadDone;
             {
                 Content = label,
                 Tag = id,
+                IsChecked = ticked.Contains(id),
                 Margin = new Thickness(0, 0, 8, 0),
                 FontSize = 12
             };
@@ -1396,6 +1416,9 @@ private bool _isInitialLoadDone;
 
     private CancellationTokenSource? _reassignSearchCts;
 
+    /// <summary>The ticket the notify boxes were drawn for.</summary>
+    private int? _notifyOptionsTicketId;
+
     private async void OnAssignToMeClicked(object sender, RoutedEventArgs e)
     {
         if (_selectedTicket == null || _tdxService == null) return;
@@ -1405,13 +1428,13 @@ private bool _isInitialLoadDone;
             ShowActionMessage("Could not resolve your TeamDynamix person. Sign in to TDX first.", isError: true);
             return;
         }
-        await SetResponsibleAsync(uid, me.DisplayName);
+        await SetResponsibleAsync(_selectedTicket.Id, uid, me.DisplayName);
     }
 
     private async void OnUnassignClicked(object sender, RoutedEventArgs e)
     {
         if (_selectedTicket == null) return;
-        await SetResponsibleAsync(null, null);
+        await SetResponsibleAsync(_selectedTicket.Id, null, null);
     }
 
     private void OnReassignClicked(object sender, RoutedEventArgs e)
@@ -1494,13 +1517,17 @@ private bool _isInitialLoadDone;
     private async Task PickReassignAsync(TdxPerson person)
     {
         ReassignPopup.IsOpen = false;
-        if (person.Uid is { } uid) await SetResponsibleAsync(uid, person.DisplayName);
+        if (person.Uid is { } uid && _selectedTicket != null) await SetResponsibleAsync(_selectedTicket.Id, uid, person.DisplayName);
     }
 
-    private async Task SetResponsibleAsync(Guid? uid, string? name)
+    /// <summary>
+    /// Make <paramref name="uid"/> the ticket's responsible, or clear it with
+    /// null. Used by the detail pane and the ticket menu alike. The PATCH sends
+    /// no notification.
+    /// </summary>
+    private async Task SetResponsibleAsync(int ticketId, Guid? uid, string? name)
     {
-        if (_selectedTicket == null || _tdxService == null || _app == null) return;
-        var ticketId = _selectedTicket.Id;
+        if (_tdxService == null || _app == null) return;
 
         ShowActionMessage(uid == null ? "Unassigning…" : $"Reassigning to {name}…", isLoading: true);
         // TDX clears the responsible on an empty UID, as the board drop does.
@@ -1515,14 +1542,7 @@ private bool _isInitialLoadDone;
             return;
         }
 
-        var idx = _app.CachedTickets.FindIndex(t => t.Id == ticketId);
-        if (idx >= 0) _app.CachedTickets[idx] = updated;
-        if (_selectedTicket?.Id == ticketId)
-        {
-            _selectedTicket = updated;
-            UpdateDetailPanel(updated);
-        }
-        ApplyFiltersAndSort();
+        ReplaceCachedTicket(updated);
         ShowActionMessage(uid == null ? "Unassigned" : $"Reassigned to {updated.ResponsibleFullName ?? name}");
     }
 
