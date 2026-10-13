@@ -725,6 +725,19 @@ private bool _isInitialLoadDone;
     }
 
     /// <summary>
+    /// A focused card opens with Enter or Space, as a click does; Shift+F10
+    /// and the Menu key open its ticket menu, so a card works without a mouse.
+    /// </summary>
+    private async void OnBoardCardKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key is not (System.Windows.Input.Key.Enter or System.Windows.Input.Key.Space)) return;
+        e.Handled = true;
+        if (sender is Border border && border.Tag is int ticketId
+            && _filteredTickets.FirstOrDefault(t => t.Id == ticketId) is { } ticket)
+            await OpenTicketInDetailAsync(ticket);
+    }
+
+    /// <summary>
     /// Show a ticket in the detail pane without going through the list's
     /// selection: a board card, or the card menu's Reassign and parent items.
     /// The open ticket's unsent comment is stashed first, as the list does.
