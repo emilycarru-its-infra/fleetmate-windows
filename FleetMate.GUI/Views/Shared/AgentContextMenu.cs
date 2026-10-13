@@ -70,14 +70,20 @@ public static class AgentContextMenu
         else AgentContextClipboard.SetText(text);
     }
 
-    /// <summary>The two menu items, for a menu built in code.</summary>
-    public static IEnumerable<MenuItem> Items(Func<IReadOnlyList<AgentContext>> contexts)
+    /// <summary>
+    /// The two menu items, for a menu built in code. None in TicketsMate,
+    /// which has no agent terminal to send to or work alongside.
+    /// </summary>
+    public static IEnumerable<MenuItem> Items(Func<IReadOnlyList<AgentContext>> contexts) =>
+        Items(contexts, AppEdition.Current.IsTicketsOnly);
+
+    internal static IEnumerable<MenuItem> Items(Func<IReadOnlyList<AgentContext>> contexts, bool ticketsOnly)
     {
+        if (ticketsOnly) yield break;
         var copy = new MenuItem { Header = "Copy for Agent", Icon = new FontIcon { Glyph = "" }, Tag = AgentTag };
         AutomationProperties.SetAutomationId(copy, "CopyForAgentMenuItem");
         copy.Click += (_, _) => Copy(contexts());
         yield return copy;
-        if (AppEdition.Current.IsTicketsOnly) yield break;
         var send = new MenuItem { Header = "Send to Agent", Icon = new FontIcon { Glyph = "" }, Tag = AgentTag };
         AutomationProperties.SetAutomationId(send, "SendToAgentMenuItem");
         send.ToolTip = "Paste into the running agent's input without pressing Return; with none running, copy and open the terminal";
@@ -144,6 +150,8 @@ public static class AgentContextMenu
     {
         if (e.OriginalSource is not DependencyObject source) return;
         if (Targets(host, source, extra) is not { } targets) return;
+        var items = Items(() => targets).ToList();
+        if (items.Count == 0) return;
 
         // The menu that will open: the nearest one up to the host.
         ContextMenu? owner = null;
@@ -158,13 +166,13 @@ public static class AgentContextMenu
             foreach (var old in owner.Items.OfType<Control>().Where(c => Equals(c.Tag, AgentTag)).ToList())
                 owner.Items.Remove(old);
             var index = 0;
-            foreach (var menuItem in Items(() => targets)) owner.Items.Insert(index++, menuItem);
+            foreach (var menuItem in items) owner.Items.Insert(index++, menuItem);
             if (owner.Items.Count > index) owner.Items.Insert(index, new Separator { Tag = AgentTag });
             return;
         }
 
         var own = new ContextMenu { PlacementTarget = source as UIElement ?? host, Placement = PlacementMode.MousePoint };
-        foreach (var menuItem in Items(() => targets)) own.Items.Add(menuItem);
+        foreach (var menuItem in items) own.Items.Add(menuItem);
         own.IsOpen = true;
         e.Handled = true;
     }
