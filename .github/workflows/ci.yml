@@ -67,26 +67,49 @@ jobs:
           if (-not $exe) { throw "TicketsMate.exe was not built" }
           Write-Host "Built $($exe.FullName)"
 
-      # Package that build, so the TicketsMate installer is checked on every
-      # pull request rather than first at release, including its Start Menu
-      # shortcut and icon.
-      - name: Build TicketsMate MSI
+      # Package both products for both architectures and check the MSIs
+      # themselves: the summary Template Windows Installer enforces, the product
+      # name, the Start Menu shortcut (and TicketsMate's icon), and that each
+      # payload's PE machine matches. An ARM64 MSI that still declared x64 got
+      # through once because nothing read the built package.
+      #
+      # The payloads here are CI fixtures, never shipped: framework-dependent
+      # builds for each runtime, packaged only so the installer's own metadata
+      # can be read. Release packages come from build.ps1's published payloads.
+      - name: Build and check MSIs (x64 and ARM64)
         shell: pwsh
         run: |
-          $exe = Get-ChildItem FleetMate.GUI/bin/TicketsMate -Recurse -Filter TicketsMate.exe | Select-Object -First 1
-          dotnet build TicketsMate.Installer/TicketsMate.Installer.wixproj --configuration Release -p:Platform=x64 -p:BinDir=$($exe.DirectoryName) --verbosity minimal
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $msi = (Resolve-Path TicketsMate.Installer/bin/x64/Release/TicketsMate-x64.msi).Path
-          $installer = New-Object -ComObject WindowsInstaller.Installer
-          $db = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @($msi, 0))
-          $view = $db.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $db, @("SELECT ``Name``, ``Directory_``, ``Icon_`` FROM ``Shortcut``"))
-          $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
-          $record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
-          if (-not $record) { throw 'The TicketsMate MSI has no Start Menu shortcut' }
-          $field = { param($i) $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, @($i)) }
-          $name = & $field 1; $dir = & $field 2; $icon = & $field 3
-          Write-Host "Shortcut: $name in $dir, icon $icon"
-          if ($name -notlike '*TicketsMate' -or $dir -ne 'ProgramMenuFolder' -or $icon -ne 'TicketsMate.ico') { throw 'The TicketsMate shortcut is not as expected' }
+          $ErrorActionPreference = 'Stop'
+          $fixtures = Join-Path $env:RUNNER_TEMP 'msi-fixture'
+          foreach ($arch in 'x64', 'arm64') {
+            $rid = "win-$arch"
+            dotnet build FleetMate.CLI/FleetMate.CLI.csproj --configuration Release -r $rid --self-contained false --verbosity minimal
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            dotnet build FleetMate.GUI/FleetMate.GUI.csproj --configuration Release -r $rid --self-contained false --verbosity minimal
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            dotnet build FleetMate.GUI/FleetMate.GUI.csproj --configuration Release -r $rid --self-contained false -p:Edition=TicketsMate --verbosity minimal
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            $find = { param($dir, $name) Get-ChildItem $dir -Recurse -Filter $name | Where-Object { $_.DirectoryName -like "*\$rid" } | Select-Object -First 1 }
+            $cli = & $find FleetMate.CLI/bin/Release fleetmate.exe
+            $gui = & $find FleetMate.GUI/bin/Release fleetmate-gui.exe
+            $tickets = & $find FleetMate.GUI/bin/TicketsMate/Release TicketsMate.exe
+            if (-not $cli -or -not $gui -or -not $tickets) { throw "A $rid payload was not built" }
+
+            $stage = Join-Path $fixtures $arch
+            New-Item -ItemType Directory -Force $stage | Out-Null
+            Copy-Item $cli.FullName, $gui.FullName $stage
+
+            dotnet build FleetMate.Installer/FleetMate.Installer.wixproj --configuration Release -p:Platform=$arch -p:BinDir=$stage --verbosity minimal
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            ./scripts/Test-MsiPackage.ps1 -Msi "FleetMate.Installer/bin/$arch/Release/FleetMate-$arch.msi" -Architecture $arch `
+              -ProductName FleetMate -Shortcut FleetMate -Payload (Join-Path $stage fleetmate.exe), (Join-Path $stage fleetmate-gui.exe)
+
+            dotnet build TicketsMate.Installer/TicketsMate.Installer.wixproj --configuration Release -p:Platform=$arch -p:BinDir=$($tickets.DirectoryName) --verbosity minimal
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            ./scripts/Test-MsiPackage.ps1 -Msi "TicketsMate.Installer/bin/$arch/Release/TicketsMate-$arch.msi" -Architecture $arch `
+              -ProductName TicketsMate -Shortcut TicketsMate -ShortcutIcon TicketsMate.ico -Payload $tickets.FullName
+          }
 
   # A run started by workflow_dispatch (reportmate-sync does this for its pull
   # request) is not counted toward the pull request's required check, so this

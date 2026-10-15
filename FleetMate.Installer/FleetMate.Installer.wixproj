@@ -6,8 +6,13 @@
     <OutputType>Package</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- x64 unless the build asks otherwise (build.ps1 passes -p:Platform=<arch>,
+         which wins over this default). -->
     <Platform>x64</Platform>
-    <InstallerPlatform>x64</InstallerPlatform>
+    <!-- The MSI's own architecture, its summary Template, follows the requested
+         platform. Pinned to x64, an ARM64 package carrying an ARM64 payload still
+         declared x64 and could be offered to the wrong hosts. -->
+    <InstallerPlatform>$(Platform)</InstallerPlatform>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -36,6 +41,8 @@
 
   <!-- Fail early with an actionable message if the payload hasn't been published. -->
   <Target Name="BeforeBuild">
+    <Error Text="Unsupported installer platform '$(Platform)'. Build with -p:Platform=x64 or -p:Platform=arm64."
+           Condition="'$(Platform)' != 'x64' and '$(Platform)' != 'arm64'" />
     <Error Text="FleetMate CLI executable not found at $(BinDir)\fleetmate.exe. Run build.ps1 -Msi (which publishes the self-contained CLI and GUI) before building the MSI."
            Condition="!Exists('$(BinDir)\fleetmate.exe')" />
     <Error Text="FleetMate GUI executable not found at $(BinDir)\fleetmate-gui.exe. Run build.ps1 -Msi (which publishes the self-contained CLI and GUI) before building the MSI."
