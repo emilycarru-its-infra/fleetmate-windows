@@ -15,7 +15,7 @@ namespace FleetMate.Core.Services.Tickets;
 /// TeamDynamix (TDX) service for ticket management
 /// Uses JWT authentication via SSO, username/password, or BEID
 /// </summary>
-public class TdxService : IDisposable
+public class TdxService : IDisposable, ITicketWorkflowApi
 {
     private readonly HttpClient _client;
     private readonly TdxConfig _config;
@@ -62,7 +62,10 @@ public class TdxService : IDisposable
     /// </summary>
     public bool ShouldAttemptSso => _config.SsoEnabled;
 
-    public TdxService(TdxConfig config)
+    public TdxService(TdxConfig config) : this(config, null) { }
+
+    /// <summary>Tests pass a handler that answers in place of TeamDynamix.</summary>
+    internal TdxService(TdxConfig config, HttpMessageHandler? handler)
     {
         _config = config;
         _cacheDuration = TimeSpan.FromMinutes(config.CacheMinutes);
@@ -70,7 +73,7 @@ public class TdxService : IDisposable
         var baseUrl = ServiceUri.Normalize(config.BaseUrl);
         if (!baseUrl.EndsWith("/TDWebApi", StringComparison.OrdinalIgnoreCase))
             baseUrl += "/TDWebApi";
-        _client = new HttpClient(new ActivityLogHandler("Tickets"))
+        _client = new HttpClient(new ActivityLogHandler("Tickets", handler))
         {
             BaseAddress = new Uri(baseUrl + "/"),
             Timeout = TimeSpan.FromSeconds(60)
@@ -826,6 +829,145 @@ public class TdxService : IDisposable
 
         Log.Debug("Added comment to ticket {Id}", ticketId);
         return await response.Content.ReadFromJsonAsync<TdxFeedEntry>(_jsonOptions);
+    }
+
+    #endregion
+
+    #region Workflow
+
+    // The workflow routes, against the documented TDWebApi contract:
+    //   GET  api/{appId}/tickets/{id}/workflow                  → TicketWorkflow, or null
+    //   GET  api/{appId}/tickets/{id}/workflow/actions?stepId=  → actions for the signed-in user
+    //   POST api/{appId}/tickets/{id}/workflow/approve          → TicketWorkflowStepActionResult
+    // All of them take the ticketing application's ID, never the assets one.
+    // Reassigning a step (workflow/reassign) needs an admin service account
+    // and is deliberately absent: every call here runs as the signed-in user.
+
+    /// <inheritdoc />
+    public async Task<TdxTicketWorkflow?> GetTicketWorkflowAsync(int ticketId, CancellationToken ct = default)
+    {
+        using var response = await SendWorkflowAsync(
+            () => new HttpRequestMessage(HttpMethod.Get, _config.GetTicketsUrl($"{ticketId}/workflow")),
+            "read the workflow of", ticketId, ct);
+        return await ReadWorkflowJsonAsync<TdxTicketWorkflow>(response, "workflow", ticketId, ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<TdxWorkflowStepAction>> GetWorkflowStepActionsAsync(
+        int ticketId, string stepId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(stepId))
+            throw new ArgumentException("A workflow step ID is required.", nameof(stepId));
+
+        // stepId is a required query parameter; without it the route answers
+        // for no step at all.
+        var url = _config.GetTicketsUrl($"{ticketId}/workflow/actions") + "?stepId=" + Uri.EscapeDataString(stepId);
+        using var response = await SendWorkflowAsync(
+            () => new HttpRequestMessage(HttpMethod.Get, url), "read the workflow actions of", ticketId, ct);
+        var actions = await ReadWorkflowJsonAsync<List<TdxWorkflowStepAction>>(response, "workflow actions", ticketId, ct);
+
+        // An action without an ID cannot be performed, so it is not offered.
+        return (actions ?? new()).Where(a => !string.IsNullOrEmpty(a.Id)).ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<TdxWorkflowActionResult> PerformWorkflowActionAsync(
+        int ticketId, TdxWorkflowApproveRequest request, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.StepId) || string.IsNullOrEmpty(request.ActionId))
+            throw new ArgumentException("A workflow action needs both a step and an action ID.", nameof(request));
+
+        using var response = await SendWorkflowAsync(
+            () => BuildWorkflowApproveRequest(ticketId, request), "perform a workflow action on", ticketId, ct);
+        var result = await ReadWorkflowJsonAsync<TdxWorkflowActionResult>(response, "workflow action result", ticketId, ct)
+            ?? throw new TdxWorkflowException(
+                $"TeamDynamix answered the workflow action on ticket {ticketId} with no result, so it is unknown whether it happened.",
+                (int)response.StatusCode);
+
+        if (result.IsSuccessful)
+            Log.Information("[tdx] Workflow action performed on ticket {Id} (workflow updated: {Updated})",
+                ticketId, result.WasWorkflowUpdated);
+        else
+            Log.Warning("[tdx] Workflow action refused on ticket {Id}: {Reason}", ticketId, result.FailureSummary());
+        return result;
+    }
+
+    /// <summary>
+    /// The approve POST: the step and action IDs exactly as TeamDynamix gave
+    /// them, and the comments only when there are some.
+    /// </summary>
+    internal HttpRequestMessage BuildWorkflowApproveRequest(int ticketId, TdxWorkflowApproveRequest request)
+    {
+        var body = new TdxWorkflowApproveRequest
+        {
+            StepId = request.StepId,
+            ActionId = request.ActionId,
+            Comments = string.IsNullOrWhiteSpace(request.Comments) ? null : request.Comments,
+        };
+        return new HttpRequestMessage(HttpMethod.Post, _config.GetTicketsUrl($"{ticketId}/workflow/approve"))
+        {
+            Content = new StringContent(JsonSerializer.Serialize(body, _jsonOptions), Encoding.UTF8, "application/json"),
+        };
+    }
+
+    private async Task<HttpResponseMessage> SendWorkflowAsync(
+        Func<HttpRequestMessage> build, string what, int ticketId, CancellationToken ct)
+    {
+        if (!await SetAuthorizationAsync())
+            throw new TdxWorkflowException("Sign in to TeamDynamix to see this ticket's workflow.", 401);
+
+        using var request = build();
+        HttpResponseMessage response;
+        try
+        {
+            response = await _client.SendAsync(request, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[tdx] Could not {What} ticket {Id}", what, ticketId);
+            throw new TdxWorkflowException($"Could not {what} ticket {ticketId}: {ex.Message}", null, ex);
+        }
+
+        if (response.IsSuccessStatusCode) return response;
+
+        var status = (int)response.StatusCode;
+        var detail = Truncate(await response.Content.ReadAsStringAsync(ct), 300);
+        response.Dispose();
+        Log.Warning("[tdx] Could not {What} ticket {Id}: {Status} {Detail}", what, ticketId, status, detail);
+        throw new TdxWorkflowException(status switch
+        {
+            401 => "TeamDynamix sign-in has expired. Sign in again to use the workflow.",
+            403 => $"You do not have permission to {what} ticket {ticketId}.",
+            404 => $"TeamDynamix could not find ticket {ticketId} or its workflow.",
+            _ => $"Could not {what} ticket {ticketId} ({status}){(detail.Length > 0 ? ": " + detail : ".")}",
+        }, status);
+    }
+
+    private async Task<T?> ReadWorkflowJsonAsync<T>(HttpResponseMessage response, string what, int ticketId, CancellationToken ct)
+        where T : class
+    {
+        var text = await response.Content.ReadAsStringAsync(ct);
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<T>(text, _jsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            Log.Warning(ex, "[tdx] Unreadable {What} for ticket {Id}", what, ticketId);
+            throw new TdxWorkflowException(
+                $"TeamDynamix sent a {what} for ticket {ticketId} that FleetMate could not read.", (int)response.StatusCode, ex);
+        }
+    }
+
+    private static string Truncate(string text, int max)
+    {
+        var flat = text.ReplaceLineEndings(" ").Trim();
+        return flat.Length <= max ? flat : flat[..max] + "…";
     }
 
     #endregion

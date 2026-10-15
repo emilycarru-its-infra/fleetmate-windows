@@ -4,6 +4,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.modernwpf.com/2019"
       xmlns:shared="clr-namespace:FleetMate.GUI.Views.Shared"
+      xmlns:tickets="clr-namespace:FleetMate.GUI.Views.Tickets"
       xmlns:widgets="clr-namespace:FleetMate.GUI.Views.Shared.Widgets">
 
     <!-- Widgets sit above the page; the DockPanel keeps the page's own grid untouched. -->
@@ -704,6 +705,9 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                             </StackPanel>
+
+                            <!-- Workflow: active steps and the actions the signed-in user may take -->
+                            <tickets:TicketWorkflowPanel x:Name="WorkflowPanel" />
 
                             <!-- Add Comment (moved BEFORE Activity) -->
                             <Separator Margin="0,12,0,8" />

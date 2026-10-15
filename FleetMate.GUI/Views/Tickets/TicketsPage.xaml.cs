@@ -90,6 +90,11 @@ private bool _isInitialLoadDone;
         {
             _app = app;
             _tdxService = app.TdxService;
+            if (_tdxService != null)
+            {
+                WorkflowPanel.Attach(_tdxService);
+                WorkflowPanel.ActionFinished += OnWorkflowActionFinished;
+            }
 
             // Silent SSO can finish after this page has loaded, and the preload
             // can fill the cache after the page drew it empty; follow both.
@@ -947,6 +952,7 @@ private bool _isInitialLoadDone;
         StashCommentDraft();
         _selectedTicket = null;
         TicketsListView.SelectedItem = null;
+        WorkflowPanel.Clear();
         DetailContent.Visibility = Visibility.Collapsed;
         NoSelectionPanel.Visibility = Visibility.Visible;
         _detailPanelVisible = false;
@@ -1051,11 +1057,18 @@ private bool _isInitialLoadDone;
         DetailContent.Visibility = Visibility.Visible;
         
         DetailTicketIdText.Text = $"#{ticketId}";
-        
+
+        // The workflow loads beside the ticket and feed; the panel drops its
+        // own answer if another ticket is opened first.
+        var workflowLoad = WorkflowPanel.LoadAsync(ticketId);
+
         try
         {
             // Get fresh ticket details
             var ticket = await _tdxService.GetTicketAsync(ticketId);
+            // The operator may have moved on while this was in flight; a slow
+            // answer for the previous ticket must not paint over the next.
+            if (_selectedTicket?.Id != ticketId) return;
             if (ticket != null)
             {
                 _selectedTicket = ticket;
@@ -1063,13 +1076,40 @@ private bool _isInitialLoadDone;
             }
             
             // Get feed/comments
-            _ticketFeed = await _tdxService.GetTicketFeedAsync(ticketId);
+            var feed = await _tdxService.GetTicketFeedAsync(ticketId);
+            if (_selectedTicket?.Id != ticketId) return;
+            _ticketFeed = feed;
             UpdateFeedPanel();
         }
         catch (Exception ex)
         {
             ShowActionMessage($"Error loading details: {ex.Message}", isError: true);
         }
+        finally
+        {
+            await workflowLoad;
+        }
+    }
+
+    /// <summary>
+    /// After a workflow action: a successful one has changed the ticket, its
+    /// feed (the comments land there) and the workflow itself, so all three
+    /// are read again. A failure on a ticket no longer open is reported here,
+    /// since its panel is gone.
+    /// </summary>
+    private async void OnWorkflowActionFinished(TicketWorkflowSubmitOutcome outcome)
+    {
+        if (_tdxService == null) return;
+
+        if (_selectedTicket?.Id != outcome.TicketId)
+        {
+            ShowActionMessage($"Ticket #{outcome.TicketId}: {outcome.Message}", isError: !outcome.Succeeded);
+            return;
+        }
+        if (!outcome.Succeeded) return;
+
+        await LoadTicketDetailAsync(outcome.TicketId);
+        if (_selectedTicket is { } ticket && ticket.Id == outcome.TicketId) ReplaceCachedTicket(ticket);
     }
 
     private void UpdateDetailPanel(TdxTicket ticket)
