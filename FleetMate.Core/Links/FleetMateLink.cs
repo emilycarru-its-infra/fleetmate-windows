@@ -70,6 +70,14 @@ public abstract record FleetMateLink
     public static FleetMateLink Parse(string link)
     {
         var text = link.Trim().Trim('"');
+        if (text.StartsWith("ticketsmate:", StringComparison.OrdinalIgnoreCase))
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(text,
+                @"^ticketsmate://ticket/([1-9][0-9]*)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (!match.Success || !int.TryParse(match.Groups[1].Value, out var ticketId))
+                throw Bad(text, "ticketsmate://ticket/<positive number>");
+            return new Ticket(ticketId);
+        }
         var prefix = Scheme + ":";
         if (!text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             throw new FleetMateLinkException(FleetMateLinkError.NotFleetMate, text);

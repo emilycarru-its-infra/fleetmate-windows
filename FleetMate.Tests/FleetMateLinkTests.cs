@@ -6,6 +6,29 @@ namespace FleetMate.Tests;
 
 public class FleetMateLinkTests
 {
+    [Fact]
+    public void TicketsMateOwnsItsScheme()
+    {
+        Assert.Equal("ticketsmate", FleetMate.Core.Config.AppEdition.TicketsMate.LinkScheme);
+        Assert.Equal("fleetmate", FleetMate.Core.Config.AppEdition.FleetMate.LinkScheme);
+        Assert.Equal(new L.Ticket(1234567), L.Parse("ticketsmate://ticket/1234567"));
+    }
+
+    [Theory]
+    [InlineData("ticketsmate://ticket/0")]
+    [InlineData("ticketsmate://ticket/-1")]
+    [InlineData("ticketsmate://ticket/2147483648")]
+    [InlineData("ticketsmate://ticket/1/extra")]
+    [InlineData("ticketsmate://ticket/%31")]
+    [InlineData("ticketsmate://ticket/1?x=2")]
+    [InlineData("ticketsmate://ticket/1#feed")]
+    [InlineData("ticketsmate://user@ticket/1")]
+    [InlineData("ticketsmate://ticket:9/1")]
+    [InlineData("ticketsmate://device/1")]
+    [InlineData("ticketsmate://open?url=https://example.com")]
+    public void TicketsMateRejectsOtherRoutes(string value) =>
+        Assert.Throws<FleetMateLinkException>(() => L.Parse(value));
+
     private const string Sha = "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0";
 
     [Fact]

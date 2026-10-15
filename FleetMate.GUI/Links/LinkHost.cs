@@ -28,7 +28,7 @@ public static class LinkHost
 
     /// <summary>The link among the command-line arguments, if Windows passed one.</summary>
     public static string? LinkFromArgs(IEnumerable<string> args) =>
-        args.FirstOrDefault(a => a.TrimStart('"').StartsWith(FleetMateLink.Scheme + ":", StringComparison.OrdinalIgnoreCase));
+        args.FirstOrDefault(a => a.TrimStart('"').StartsWith(FleetMate.Core.Config.AppEdition.Current.LinkScheme + ":", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// True when this process is the first FleetMate for this user. Otherwise
@@ -134,11 +134,18 @@ public static class LinkHost
             }
 
             var command = $"\"{exe}\" \"%1\"";
-            using var root = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{FleetMateLink.Scheme}");
+            // An MSI owns the machine registration and removes it on uninstall.
+            // Do not leave a per-user override behind for an installed TicketsMate.
+            if (FleetMate.Core.Config.AppEdition.Current.IsTicketsOnly)
+            {
+                using var machine = Registry.LocalMachine.OpenSubKey(@"Software\Classes\ticketsmate\shell\open\command");
+                if (string.Equals(machine?.GetValue(null) as string, command, StringComparison.OrdinalIgnoreCase)) return;
+            }
+            using var root = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{FleetMate.Core.Config.AppEdition.Current.LinkScheme}");
             using var open = root.CreateSubKey(@"shell\open\command");
             if (string.Equals(open.GetValue(null) as string, command, StringComparison.OrdinalIgnoreCase)) return;
 
-            root.SetValue(null, "URL:FleetMate");
+            root.SetValue(null, $"URL:{FleetMate.Core.Config.AppEdition.Current.Name}");
             root.SetValue("URL Protocol", "");
             open.SetValue(null, command);
             Log.Information("Registered fleetmate: links to {Exe}", exe);

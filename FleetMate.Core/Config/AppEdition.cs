@@ -31,6 +31,9 @@ public sealed class AppEdition
     /// <summary>True when the app shows only the Tickets tab.</summary>
     public bool IsTicketsOnly => ReferenceEquals(this, TicketsMate);
 
+    /// <summary>Each edition owns its protocol; the two apps never compete for links.</summary>
+    public string LinkScheme => IsTicketsOnly ? "ticketsmate" : "fleetmate";
+
     /// <summary>The operator's own settings and endpoints, under HKCU.</summary>
     public string UserRegistryPath => $@"SOFTWARE\{Name}";
 
