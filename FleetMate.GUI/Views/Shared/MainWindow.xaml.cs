@@ -393,6 +393,13 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>Deliver ticket links directly, including when the Tickets tab is already selected.</summary>
+    public void OpenTicketLink(int ticketId)
+    {
+        NavigateToTab("Tickets");
+        if (GetOrCreatePage("Tickets") is TicketsPage page) _ = page.OpenLinkedTicketAsync(ticketId);
+    }
+
     /// <summary>Show the Reporting tab on a <c>reportmate://</c> page.</summary>
     public void OpenReportingLink(string url)
     {

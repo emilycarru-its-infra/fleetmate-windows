@@ -68,8 +68,7 @@ public partial class App
                 window.NavigateToTab("Inventory");
                 break;
             case FleetMateLink.Ticket ticket:
-                PendingNavigateTicketId = ticket.Id;
-                window.NavigateToTab("Tickets");
+                window.OpenTicketLink(ticket.Id);
                 break;
             case FleetMateLink.Reporting reporting:
                 window.OpenReportingLink(reporting.ToReportMateUrl());

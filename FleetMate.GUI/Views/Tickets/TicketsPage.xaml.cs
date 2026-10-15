@@ -150,7 +150,7 @@ private bool _isInitialLoadDone;
             if (_app?.PendingNavigateTicketId is { } ticketId)
             {
                 _app.PendingNavigateTicketId = null;
-                RevealTicket(ticketId);
+                await OpenLinkedTicketAsync(ticketId);
             }
         };
     }
@@ -394,6 +394,28 @@ private bool _isInitialLoadDone;
         {
             var match = _ticketRows.FirstOrDefault(r => r.Id == id);
             if (match != null) TicketsListView.SelectedItem = match;
+        }
+    }
+
+    /// <summary>Open external links even when Tickets is already visible or the ticket is outside the board filters.</summary>
+    public async Task OpenLinkedTicketAsync(int ticketId)
+    {
+        if (!IsLoaded || !_isInitialLoadDone)
+        {
+            if (_app != null) _app.PendingNavigateTicketId = ticketId;
+            return;
+        }
+        if (_tdxService == null) return;
+        try
+        {
+            var ticket = _allTickets.FirstOrDefault(t => t.Id == ticketId)
+                ?? await _tdxService.GetTicketAsync(ticketId);
+            if (ticket != null) ShowTicket(ticket);
+            else ShowActionMessage($"Ticket #{ticketId} could not be opened.", isError: true);
+        }
+        catch (Exception ex)
+        {
+            ShowActionMessage($"Error opening ticket #{ticketId}: {ex.Message}", isError: true);
         }
     }
 
