@@ -15,7 +15,7 @@ namespace FleetMate.Core.Services.Tickets;
 /// TeamDynamix (TDX) service for ticket management
 /// Uses JWT authentication via SSO, username/password, or BEID
 /// </summary>
-public class TdxService : IDisposable
+public class TdxService : IDisposable, ITicketWorkflowApi
 {
     private readonly HttpClient _client;
     private readonly TdxConfig _config;
@@ -26,6 +26,10 @@ public class TdxService : IDisposable
     // SSO authentication state
     private string? _ssoToken;
     private DateTime _ssoTokenExpiry = DateTime.MinValue;
+    // The token and its expiry as one value, so a caller that must act as the
+    // operator captures both at once without racing SetSsoToken.
+    private volatile SsoSession? _ssoSession;
+    private sealed record SsoSession(string Token, DateTime ExpiryUtc);
     private string? _ssoUserId;
     private string? _ssoUserName;
 
@@ -62,7 +66,10 @@ public class TdxService : IDisposable
     /// </summary>
     public bool ShouldAttemptSso => _config.SsoEnabled;
 
-    public TdxService(TdxConfig config)
+    public TdxService(TdxConfig config) : this(config, null) { }
+
+    /// <summary>Tests pass a handler that answers in place of TeamDynamix.</summary>
+    internal TdxService(TdxConfig config, HttpMessageHandler? handler)
     {
         _config = config;
         _cacheDuration = TimeSpan.FromMinutes(config.CacheMinutes);
@@ -70,7 +77,7 @@ public class TdxService : IDisposable
         var baseUrl = ServiceUri.Normalize(config.BaseUrl);
         if (!baseUrl.EndsWith("/TDWebApi", StringComparison.OrdinalIgnoreCase))
             baseUrl += "/TDWebApi";
-        _client = new HttpClient(new ActivityLogHandler("Tickets"))
+        _client = new HttpClient(new ActivityLogHandler("Tickets", handler))
         {
             BaseAddress = new Uri(baseUrl + "/"),
             Timeout = TimeSpan.FromSeconds(60)
@@ -97,6 +104,7 @@ public class TdxService : IDisposable
     {
         _ssoToken = token;
         _ssoTokenExpiry = expiry;
+        _ssoSession = string.IsNullOrEmpty(token) ? null : new SsoSession(token, expiry);
         _ssoUserId = userId;
         _ssoUserName = userName;
         Log.Information("TDX SSO token set for user: {UserName}", userName ?? "(unknown)");
@@ -826,6 +834,187 @@ public class TdxService : IDisposable
 
         Log.Debug("Added comment to ticket {Id}", ticketId);
         return await response.Content.ReadFromJsonAsync<TdxFeedEntry>(_jsonOptions);
+    }
+
+    #endregion
+
+    #region Workflow
+
+    // The workflow routes, against the documented TDWebApi contract:
+    //   GET  api/{appId}/tickets/{id}/workflow                  → TicketWorkflow, or null
+    //   GET  api/{appId}/tickets/{id}/workflow/actions?stepId=  → actions for the signed-in user
+    //   POST api/{appId}/tickets/{id}/workflow/approve          → TicketWorkflowStepActionResult
+    // All of them take the ticketing application's ID, never the assets one.
+    // Reassigning a step (workflow/reassign) needs an admin service account
+    // and is deliberately absent.
+    //
+    // Every workflow request runs as the operator and nobody else: it carries
+    // the operator's own unexpired SSO token, captured once and set on that
+    // request. It does not go through the general token resolver and does not
+    // inherit the client's default Authorization header, so no other
+    // credential can widen what an approval is attributed to. No token, or an
+    // expired one, means no request at all.
+    //
+    // Logs name the operation, the ticket and the status or failure kind only —
+    // never a response body, a URL or an exception, which can carry ticket
+    // content or a sign-in page.
+
+    /// <inheritdoc />
+    public async Task<TdxTicketWorkflow?> GetTicketWorkflowAsync(int ticketId, CancellationToken ct = default)
+    {
+        using var response = await SendWorkflowAsync(
+            () => new HttpRequestMessage(HttpMethod.Get, _config.GetTicketsUrl($"{ticketId}/workflow")),
+            WorkflowOperation.ReadWorkflow, ticketId, ct);
+        return await ReadWorkflowJsonAsync<TdxTicketWorkflow>(response, WorkflowOperation.ReadWorkflow, ticketId, ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<TdxWorkflowStepAction>> GetWorkflowStepActionsAsync(
+        int ticketId, string stepId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(stepId))
+            throw new ArgumentException("A workflow step ID is required.", nameof(stepId));
+
+        // stepId is a required query parameter; without it the route answers
+        // for no step at all.
+        var url = _config.GetTicketsUrl($"{ticketId}/workflow/actions") + "?stepId=" + Uri.EscapeDataString(stepId);
+        using var response = await SendWorkflowAsync(
+            () => new HttpRequestMessage(HttpMethod.Get, url), WorkflowOperation.ReadActions, ticketId, ct);
+        var actions = await ReadWorkflowJsonAsync<List<TdxWorkflowStepAction>>(response, WorkflowOperation.ReadActions, ticketId, ct);
+
+        // An action without an ID cannot be performed, so it is not offered.
+        return (actions ?? new()).Where(a => !string.IsNullOrEmpty(a.Id)).ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<TdxWorkflowActionResult> PerformWorkflowActionAsync(
+        int ticketId, TdxWorkflowApproveRequest request, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.StepId) || string.IsNullOrEmpty(request.ActionId))
+            throw new ArgumentException("A workflow action needs both a step and an action ID.", nameof(request));
+
+        using var response = await SendWorkflowAsync(
+            () => BuildWorkflowApproveRequest(ticketId, request), WorkflowOperation.PerformAction, ticketId, ct);
+        var result = await ReadWorkflowJsonAsync<TdxWorkflowActionResult>(response, WorkflowOperation.PerformAction, ticketId, ct)
+            ?? throw new TdxWorkflowException(
+                $"TeamDynamix answered the workflow action on ticket {ticketId} with no result, so it is unknown whether it happened.",
+                (int)response.StatusCode);
+
+        if (result.IsSuccessful)
+            Log.Information("[tdx] Workflow action performed on ticket {Id} (workflow updated: {Updated})",
+                ticketId, result.WasWorkflowUpdated);
+        else
+            Log.Warning("[tdx] Workflow action refused on ticket {Id} ({Count} validation errors)",
+                ticketId, result.Errors?.Count ?? 0);
+        return result;
+    }
+
+    /// <summary>
+    /// The approve POST: the step and action IDs exactly as TeamDynamix gave
+    /// them, and the comments only when there are some.
+    /// </summary>
+    internal HttpRequestMessage BuildWorkflowApproveRequest(int ticketId, TdxWorkflowApproveRequest request)
+    {
+        var body = new TdxWorkflowApproveRequest
+        {
+            StepId = request.StepId,
+            ActionId = request.ActionId,
+            Comments = string.IsNullOrWhiteSpace(request.Comments) ? null : request.Comments,
+        };
+        return new HttpRequestMessage(HttpMethod.Post, _config.GetTicketsUrl($"{ticketId}/workflow/approve"))
+        {
+            Content = new StringContent(JsonSerializer.Serialize(body, _jsonOptions), Encoding.UTF8, "application/json"),
+        };
+    }
+
+    private enum WorkflowOperation { ReadWorkflow, ReadActions, PerformAction }
+
+    private static string Describe(WorkflowOperation operation, int ticketId) => operation switch
+    {
+        WorkflowOperation.ReadWorkflow => $"read the workflow of ticket {ticketId}",
+        WorkflowOperation.ReadActions => $"read the workflow actions of ticket {ticketId}",
+        _ => $"perform the workflow action on ticket {ticketId}",
+    };
+
+    /// <summary>
+    /// The operator's own SSO token, captured with its expiry as one value, or
+    /// null when there is none or it has expired. Never resolves, refreshes or
+    /// substitutes a credential.
+    /// </summary>
+    private string? CaptureOperatorToken()
+    {
+        var session = _ssoSession;
+        return session != null && DateTime.UtcNow < session.ExpiryUtc ? session.Token : null;
+    }
+
+    private async Task<HttpResponseMessage> SendWorkflowAsync(
+        Func<HttpRequestMessage> build, WorkflowOperation operation, int ticketId, CancellationToken ct)
+    {
+        var token = CaptureOperatorToken();
+        if (token == null)
+        {
+            Log.Information("[tdx] Workflow {Operation} for ticket {Id} not sent: no signed-in TeamDynamix session",
+                operation, ticketId);
+            throw new TdxWorkflowException(
+                "Your TeamDynamix sign-in has expired or is missing. Sign in again to use the workflow.", 401);
+        }
+
+        using var request = build();
+        // Per request, so the client's default header — whatever set it last —
+        // is never what authorizes a workflow call.
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _client.SendAsync(request, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var timedOut = ex is TaskCanceledException or TimeoutException;
+            Log.Warning("[tdx] Workflow {Operation} for ticket {Id} failed: {Kind}",
+                operation, ticketId, timedOut ? "timeout" : ex.GetType().Name);
+            throw new TdxWorkflowException(timedOut
+                ? $"TeamDynamix did not answer in time when asked to {Describe(operation, ticketId)}."
+                : $"Could not reach TeamDynamix to {Describe(operation, ticketId)}.", null, ex);
+        }
+
+        if (response.IsSuccessStatusCode) return response;
+
+        var status = (int)response.StatusCode;
+        response.Dispose();
+        Log.Warning("[tdx] Workflow {Operation} for ticket {Id} failed: HTTP {Status}", operation, ticketId, status);
+        throw new TdxWorkflowException(status switch
+        {
+            401 => "Your TeamDynamix sign-in has expired. Sign in again to use the workflow.",
+            403 => $"You do not have permission to {Describe(operation, ticketId)}.",
+            404 => $"TeamDynamix could not find ticket {ticketId} or its workflow.",
+            429 => "TeamDynamix is limiting requests right now. Wait a minute and try again.",
+            _ => $"TeamDynamix could not {Describe(operation, ticketId)} (HTTP {status}).",
+        }, status);
+    }
+
+    private async Task<T?> ReadWorkflowJsonAsync<T>(
+        HttpResponseMessage response, WorkflowOperation operation, int ticketId, CancellationToken ct)
+        where T : class
+    {
+        var text = await response.Content.ReadAsStringAsync(ct);
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<T>(text, _jsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            Log.Warning("[tdx] Workflow {Operation} for ticket {Id}: unreadable response", operation, ticketId);
+            throw new TdxWorkflowException(
+                $"TeamDynamix sent an answer FleetMate could not read when asked to {Describe(operation, ticketId)}.",
+                (int)response.StatusCode, ex);
+        }
     }
 
     #endregion
