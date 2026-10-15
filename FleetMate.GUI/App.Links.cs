@@ -22,8 +22,7 @@ public partial class App
     private void StartLinks(string? startupLink)
     {
         LinkHost.Listen(message => Dispatcher.BeginInvoke(() => OpenLink(message)));
-        // fleetmate: links belong to FleetMate; TicketsMate never takes them over.
-        if (!FleetMate.Core.Config.AppEdition.Current.IsTicketsOnly) _ = Task.Run(LinkHost.RegisterProtocol);
+        _ = Task.Run(LinkHost.RegisterProtocol);
         if (startupLink != null)
             Dispatcher.BeginInvoke(() => OpenLink(startupLink), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }
@@ -37,6 +36,9 @@ public partial class App
         if (MainWindow is not MainWindow window) return;
         BringToFront(window);
         if (string.IsNullOrWhiteSpace(link)) return;
+
+        if (!link.Trim().Trim('"').StartsWith(FleetMate.Core.Config.AppEdition.Current.LinkScheme + ":", StringComparison.OrdinalIgnoreCase))
+            return;
 
         if (FleetMateLink.TryParse(link, out var error) is not { } parsed)
         {

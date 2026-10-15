@@ -68,7 +68,14 @@
       <RegistryValue Root="HKLM" Key="SOFTWARE\TicketsMate" Name="LastRunVersion" Value="$(var.CalendarVersion)" Type="string" />
     </Component>
 
+    <Component Id="TicketsMateProtocol" Directory="INSTALLDIR" Guid="{DFB8393C-CA3F-469B-8743-2B51155D868A}">
+      <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\ticketsmate" Value="URL:TicketsMate" Type="string" KeyPath="yes" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\ticketsmate" Name="URL Protocol" Value="" Type="string" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\ticketsmate\shell\open\command" Value="&quot;[#TicketsMateExe]&quot; &quot;%1&quot;" Type="string" />
+    </Component>
+
     <Feature Id="DefaultFeature" Level="1">
+      <ComponentRef Id="TicketsMateProtocol" />
       <ComponentRef Id="TicketsMateExecutable" />
       <ComponentRef Id="RegistryEntries" />
     </Feature>
