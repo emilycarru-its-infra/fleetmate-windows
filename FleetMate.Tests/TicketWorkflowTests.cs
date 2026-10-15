@@ -548,4 +548,227 @@ public class TicketWorkflowTests
         Assert.Empty(rows[1].Actions);
         Assert.Equal("No actions available to you on this step.", rows[1].Note);
     }
+
+    // ── Acting only as the signed-in operator ──────────────────────────
+
+    private static TdxService Unsigned(StubHandler handler) => new(new TdxConfig
+    {
+        BaseUrl = "https://service.example.com",
+        AppId = 1,
+        TicketingAppId = 7,
+    }, handler);
+
+    public static TheoryData<string> WorkflowCalls => new() { "workflow", "actions", "approve" };
+
+    private static Task Call(TdxService service, string which) => which switch
+    {
+        "workflow" => service.GetTicketWorkflowAsync(42),
+        "actions" => service.GetWorkflowStepActionsAsync(42, StepA),
+        _ => service.PerformWorkflowActionAsync(42, new TdxWorkflowApproveRequest { StepId = StepA, ActionId = "a" }),
+    };
+
+    [Theory]
+    [MemberData(nameof(WorkflowCalls))]
+    public async Task WithoutASignInNothingIsSent(string which)
+    {
+        var handler = new StubHandler(_ => Json("""{"IsSuccessful": true}"""));
+        using var service = Unsigned(handler);
+
+        var ex = await Assert.ThrowsAsync<TdxWorkflowException>(() => Call(service, which));
+
+        // No silent sign-in, no other credential, no request of any kind.
+        Assert.Empty(handler.Requests);
+        Assert.Equal(401, ex.StatusCode);
+        Assert.Contains("Sign in", ex.Message);
+    }
+
+    [Theory]
+    [MemberData(nameof(WorkflowCalls))]
+    public async Task AnExpiredSignInSendsNothing(string which)
+    {
+        var handler = new StubHandler(_ => Json("""{"IsSuccessful": true}"""));
+        using var service = Unsigned(handler);
+        service.SetSsoToken(Token, DateTime.UtcNow.AddMinutes(-1));
+
+        var ex = await Assert.ThrowsAsync<TdxWorkflowException>(() => Call(service, which));
+
+        Assert.Empty(handler.Requests);
+        Assert.Contains("expired", ex.Message);
+    }
+
+    [Fact]
+    public async Task AStaleDefaultAuthorizationIsNeverInherited()
+    {
+        // An earlier, unrelated call leaves a bearer on the client's default
+        // headers. Once the operator's session expires, a workflow call must
+        // not ride on it.
+        var handler = new StubHandler(r => r.RequestUri!.AbsolutePath.EndsWith("/tickets/42") ? Json("""{"ID": 42}""") : Json("null"));
+        using var service = Unsigned(handler);
+        service.SetSsoToken("earlier-session-token", DateTime.UtcNow.AddHours(1));
+        await service.GetTicketAsync(42);
+        service.SetSsoToken("earlier-session-token", DateTime.UtcNow.AddMinutes(-1));
+
+        await Assert.ThrowsAsync<TdxWorkflowException>(() => service.GetTicketWorkflowAsync(42));
+
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task EachWorkflowRequestCarriesTheCurrentOperatorToken()
+    {
+        var handler = new StubHandler(r => r.RequestUri!.AbsolutePath.EndsWith("/tickets/42") ? Json("""{"ID": 42}""") : Json("null"));
+        using var service = Unsigned(handler);
+        service.SetSsoToken("earlier-session-token", DateTime.UtcNow.AddHours(1));
+        await service.GetTicketAsync(42);
+        service.SetSsoToken(Token, DateTime.UtcNow.AddHours(1));
+
+        await service.GetTicketWorkflowAsync(42);
+
+        var auth = handler.Requests[^1].Request.Headers.Authorization!;
+        Assert.Equal("Bearer", auth.Scheme);
+        Assert.Equal(Token, auth.Parameter);
+    }
+
+    // ── What failures say and log ──────────────────────────────────────
+
+    private const string PrivateBody = "<html><title>Sign in</title>private-marker ticket text</html>";
+
+    private sealed class CaptureSink : Serilog.Core.ILogEventSink
+    {
+        public List<string> Lines { get; } = new();
+        public void Emit(Serilog.Events.LogEvent e)
+        {
+            lock (Lines) Lines.Add(e.RenderMessage() + " " + e.Exception);
+        }
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.OK)]
+    public async Task NeitherTheMessageNorTheLogCarriesTheResponseBody(HttpStatusCode status)
+    {
+        var sink = new CaptureSink();
+        var previous = Serilog.Log.Logger;
+        Serilog.Log.Logger = new Serilog.LoggerConfiguration().MinimumLevel.Verbose().WriteTo.Sink(sink).CreateLogger();
+        try
+        {
+            using var service = Service(new StubHandler(_ => new HttpResponseMessage(status)
+            {
+                Content = new StringContent(PrivateBody, Encoding.UTF8, "text/html"),
+            }));
+
+            var ex = await Assert.ThrowsAsync<TdxWorkflowException>(() => service.GetTicketWorkflowAsync(42));
+
+            Assert.DoesNotContain("private-marker", ex.Message);
+            Assert.DoesNotContain("<html", ex.Message);
+            Assert.True(ex.Message.Length < 200);
+        }
+        finally
+        {
+            Serilog.Log.Logger = previous;
+        }
+
+        lock (sink.Lines)
+        {
+            // The workflow lines: operation, ticket and status, and nothing
+            // from the request or the response.
+            var workflowLines = sink.Lines.Where(l => l.Contains("Workflow")).ToList();
+            Assert.Contains(workflowLines, l => l.Contains("ticket 42"));
+            Assert.DoesNotContain(workflowLines, l => l.Contains("service.example.com"));
+            Assert.DoesNotContain(sink.Lines, l => l.Contains("private-marker"));
+            Assert.DoesNotContain(sink.Lines, l => l.Contains(Token));
+        }
+    }
+
+    [Fact]
+    public async Task ARefusedActionLogsNoServerText()
+    {
+        var sink = new CaptureSink();
+        var previous = Serilog.Log.Logger;
+        Serilog.Log.Logger = new Serilog.LoggerConfiguration().MinimumLevel.Verbose().WriteTo.Sink(sink).CreateLogger();
+        try
+        {
+            using var service = Service(new StubHandler(_ => Json(
+                """{"IsSuccessful": false, "Message": "private-marker reason", "Errors": [{"Message": "private-marker detail"}]}""")));
+
+            var result = await service.PerformWorkflowActionAsync(42, new TdxWorkflowApproveRequest { StepId = StepA, ActionId = "a" });
+            Assert.False(result.IsSuccessful);
+        }
+        finally
+        {
+            Serilog.Log.Logger = previous;
+        }
+
+        lock (sink.Lines) Assert.DoesNotContain(sink.Lines, l => l.Contains("private-marker"));
+    }
+
+    [Fact]
+    public async Task ATimeoutSaysSoWithoutTheUrl()
+    {
+        using var service = Service(new StubHandler(_ => throw new TaskCanceledException("https://service.example.com/secret-path")));
+
+        var ex = await Assert.ThrowsAsync<TdxWorkflowException>(() => service.GetTicketWorkflowAsync(42));
+
+        Assert.Contains("did not answer in time", ex.Message);
+        Assert.DoesNotContain("service.example.com", ex.Message);
+    }
+
+    // ── No blind resubmit ──────────────────────────────────────────────
+
+    public static TheoryData<string> AttemptOutcomes => new() { "refused", "transport", "succeeded" };
+
+    [Theory]
+    [MemberData(nameof(AttemptOutcomes))]
+    public async Task TheSameLoadedActionCannotBeSentTwice(string how)
+    {
+        var api = ApiWithParallelSteps();
+        api.Perform = (_, _) => how switch
+        {
+            "refused" => Task.FromResult(new TdxWorkflowActionResult { IsSuccessful = false, Message = "No." }),
+            // A timeout after TeamDynamix may already have committed the action.
+            "transport" => Task.FromException<TdxWorkflowActionResult>(new TdxWorkflowException("TeamDynamix did not answer in time.")),
+            _ => Task.FromResult(new TdxWorkflowActionResult { IsSuccessful = true }),
+        };
+        var controller = new TicketWorkflowController(api);
+        await controller.LoadAsync(42);
+
+        var first = await controller.SubmitAsync(42, StepA, "approve-a", "comment");
+        var again = await controller.SubmitAsync(42, StepA, "approve-a", "comment");
+        var otherStep = await controller.SubmitAsync(42, StepB, "approve-b", null);
+
+        Assert.NotEqual(TicketWorkflowSubmitStatus.NotSent, first.Status);
+        Assert.Equal(TicketWorkflowSubmitStatus.NotSent, again.Status);
+        Assert.Equal(TicketWorkflowSubmitStatus.NotSent, otherStep.Status);
+        Assert.Single(api.Performed);
+        Assert.Null(controller.Current);
+
+        // A fresh load offers the actions again, and only then can one be sent.
+        await controller.LoadAsync(42);
+        var retried = await controller.SubmitAsync(42, StepA, "approve-a", "comment");
+        Assert.NotEqual(TicketWorkflowSubmitStatus.NotSent, retried.Status);
+        Assert.Equal(2, api.Performed.Count);
+    }
+
+    [Fact]
+    public async Task NothingIsSentWhileTheWorkflowIsReloading()
+    {
+        // During a refresh the buttons on screen may describe a workflow that
+        // is already gone, so nothing is sendable until the refresh lands.
+        var slow = new TaskCompletionSource<TdxTicketWorkflow?>();
+        var api = ApiWithParallelSteps();
+        var controller = new TicketWorkflowController(api);
+        await controller.LoadAsync(42);
+        api.Workflow = (_, _) => slow.Task;
+
+        var refresh = controller.LoadAsync(42);
+        // The refresh has replaced the loaded snapshot with a Loading one.
+        Assert.Equal(TicketWorkflowPhase.Loading, controller.Current!.Phase);
+        var blocked = await controller.SubmitAsync(42, StepA, "approve-a", null);
+        slow.SetResult(TwoParallelSteps());
+        await refresh;
+
+        Assert.Equal(TicketWorkflowSubmitStatus.NotSent, blocked.Status);
+        Assert.Empty(api.Performed);
+    }
 }

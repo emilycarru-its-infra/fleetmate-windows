@@ -1092,10 +1092,11 @@ private bool _isInitialLoadDone;
     }
 
     /// <summary>
-    /// After a workflow action: a successful one has changed the ticket, its
-    /// feed (the comments land there) and the workflow itself, so all three
-    /// are read again. A failure on a ticket no longer open is reported here,
-    /// since its panel is gone.
+    /// After a workflow action, whatever its outcome: the ticket, its feed
+    /// (the comments land there) and the workflow are read again. A failure is
+    /// no proof nothing changed — a timeout can follow a committed action — so
+    /// the old actions are never offered again without this reload. An outcome
+    /// on a ticket no longer open is reported here, since its panel is gone.
     /// </summary>
     private async void OnWorkflowActionFinished(TicketWorkflowSubmitOutcome outcome)
     {
@@ -1106,7 +1107,6 @@ private bool _isInitialLoadDone;
             ShowActionMessage($"Ticket #{outcome.TicketId}: {outcome.Message}", isError: !outcome.Succeeded);
             return;
         }
-        if (!outcome.Succeeded) return;
 
         await LoadTicketDetailAsync(outcome.TicketId);
         if (_selectedTicket is { } ticket && ticket.Id == outcome.TicketId) ReplaceCachedTicket(ticket);

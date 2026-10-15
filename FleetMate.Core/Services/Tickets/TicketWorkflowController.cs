@@ -41,7 +41,11 @@ public enum TicketWorkflowSubmitStatus
     Succeeded,
     /// <summary>TeamDynamix answered and said no (IsSuccessful false), or the request failed.</summary>
     Failed,
-    /// <summary>Not sent: another action is in flight, or the choice no longer matches the loaded workflow.</summary>
+    /// <summary>
+    /// Not sent: another action is in flight, or the choice no longer matches
+    /// the loaded workflow. Only this status leaves the loaded actions usable;
+    /// after the other two the workflow has to be loaded again.
+    /// </summary>
     NotSent,
 }
 
@@ -89,7 +93,9 @@ public sealed class TicketWorkflowController
     }
 
     /// <summary>Forget the ticket and abandon any load in flight.</summary>
-    public void Clear()
+    public void Clear() => Invalidate();
+
+    private void Invalidate()
     {
         lock (_gate)
         {
@@ -211,6 +217,12 @@ public sealed class TicketWorkflowController
                 ActionId = action.Id,
                 Comments = string.IsNullOrWhiteSpace(comments) ? null : comments.Trim(),
             };
+
+            // Whatever happens next, the loaded actions are spent. A timeout
+            // or refusal can still follow a change TeamDynamix committed, so
+            // the old choice must not be sendable again: a retry needs a fresh
+            // load, fresh actions and a fresh confirmation.
+            Invalidate();
 
             TdxWorkflowActionResult result;
             try

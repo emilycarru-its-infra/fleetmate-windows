@@ -48,11 +48,14 @@ public partial class TicketWorkflowPanel : UserControl
     private TicketWorkflowController? _controller;
     private WorkflowActionRow? _pending;
     private int? _ticketId;
+    private bool _loading;
+    private bool _submitting;
 
     /// <summary>
-    /// Raised after an action is answered, whether or not this ticket is still
-    /// on screen, so the page can refresh the ticket and its feed or report
-    /// the outcome elsewhere.
+    /// Raised after an action was attempted, whether or not this ticket is
+    /// still on screen. Whatever the outcome, the loaded actions are spent:
+    /// the page reloads the ticket, its feed and the workflow before anything
+    /// can be offered again.
     /// </summary>
     public event Action<TicketWorkflowSubmitOutcome>? ActionFinished;
 
@@ -68,9 +71,11 @@ public partial class TicketWorkflowPanel : UserControl
     {
         _controller?.Clear();
         _ticketId = null;
+        _loading = false;
         HideConfirm();
         ResultBorder.Visibility = Visibility.Collapsed;
         Visibility = Visibility.Collapsed;
+        UpdateInteractivity();
     }
 
     /// <summary>
@@ -94,11 +99,17 @@ public partial class TicketWorkflowPanel : UserControl
         }
         _ticketId = ticketId;
 
-        SetLoading(true);
+        // While actions load, the buttons on screen describe a workflow that
+        // may already be gone, so none of them can be pressed.
+        _loading = true;
+        UpdateInteractivity();
+
         var snapshot = await _controller.LoadAsync(ticketId);
         if (snapshot == null || _ticketId != ticketId) return;
-        SetLoading(false);
+
+        _loading = false;
         Render(snapshot);
+        UpdateInteractivity();
     }
 
     private void Render(TicketWorkflowSnapshot snapshot)
@@ -147,11 +158,24 @@ public partial class TicketWorkflowPanel : UserControl
         WorkflowMessageText.Visibility = Visibility.Visible;
     }
 
-    private void SetLoading(bool loading)
+    /// <summary>
+    /// One place decides what can be pressed: nothing while the workflow loads
+    /// or an action is in flight, and Confirm only while a live choice is
+    /// pending. A spent confirmation stays readable but cannot be sent.
+    /// </summary>
+    private void UpdateInteractivity()
     {
-        WorkflowProgress.IsActive = loading;
-        WorkflowProgress.Visibility = loading ? Visibility.Visible : Visibility.Collapsed;
-        RefreshWorkflowButton.IsEnabled = !loading && _controller?.IsSubmitting != true;
+        var busy = _loading || _submitting;
+        WorkflowProgress.IsActive = _loading;
+        WorkflowProgress.Visibility = _loading ? Visibility.Visible : Visibility.Collapsed;
+        SubmitProgress.IsActive = _submitting;
+        SubmitProgress.Visibility = _submitting ? Visibility.Visible : Visibility.Collapsed;
+
+        RefreshWorkflowButton.IsEnabled = !busy;
+        StepsList.IsEnabled = !busy;
+        ConfirmButton.IsEnabled = !busy && _pending != null;
+        ConfirmCancelButton.IsEnabled = !_submitting;
+        ConfirmCommentsBox.IsReadOnly = busy || _pending == null;
     }
 
     private async void OnRefreshClicked(object sender, RoutedEventArgs e)
@@ -161,8 +185,13 @@ public partial class TicketWorkflowPanel : UserControl
 
     private void OnActionClicked(object sender, RoutedEventArgs e)
     {
-        if (sender is not FrameworkElement { Tag: WorkflowActionRow action } || _controller?.IsSubmitting == true) return;
-        if (action.TicketId != _ticketId) return;
+        if (sender is not FrameworkElement { Tag: WorkflowActionRow action } || _loading || _submitting) return;
+        if (action.TicketId != _ticketId || _controller?.Current is not { Phase: TicketWorkflowPhase.Loaded } current
+            || current.TicketId != action.TicketId) return;
+
+        // Comments from an earlier attempt on this ticket are kept, so a retry
+        // after a failure does not mean retyping them; anything else starts empty.
+        var keepComments = ConfirmPanel.Visibility == Visibility.Visible && _pending == null;
 
         _pending = action;
         ResultBorder.Visibility = Visibility.Collapsed;
@@ -170,8 +199,9 @@ public partial class TicketWorkflowPanel : UserControl
         ConfirmTooltipText.Text = action.Tooltip ?? "";
         ConfirmTooltipText.Visibility = action.Tooltip == null ? Visibility.Collapsed : Visibility.Visible;
         ConfirmButton.Content = action.Name;
-        ConfirmCommentsBox.Text = "";
+        if (!keepComments) ConfirmCommentsBox.Text = "";
         ConfirmPanel.Visibility = Visibility.Visible;
+        UpdateInteractivity();
         ConfirmCommentsBox.Focus();
     }
 
@@ -181,13 +211,17 @@ public partial class TicketWorkflowPanel : UserControl
     {
         _pending = null;
         ConfirmPanel.Visibility = Visibility.Collapsed;
+        UpdateInteractivity();
     }
 
     private async void OnConfirmClicked(object sender, RoutedEventArgs e)
     {
-        if (_controller == null || _pending is not { } action || _controller.IsSubmitting) return;
+        if (_controller == null || _pending is not { } action || _loading || _submitting) return;
 
-        SetSubmitting(true);
+        // The choice is used up the moment it is sent; it is never sendable twice.
+        _pending = null;
+        _submitting = true;
+        UpdateInteractivity();
         TicketWorkflowSubmitOutcome outcome;
         try
         {
@@ -195,29 +229,31 @@ public partial class TicketWorkflowPanel : UserControl
         }
         finally
         {
-            SetSubmitting(false);
+            _submitting = false;
         }
 
         if (_ticketId == outcome.TicketId)
         {
-            // On failure the confirmation and its comments stay, so the
-            // operator can correct and retry without retyping.
-            if (outcome.Succeeded) HideConfirm();
-            ShowResult(outcome.Message, isError: !outcome.Succeeded);
+            if (outcome.Succeeded)
+            {
+                HideConfirm();
+                ShowResult(outcome.Message, isError: false);
+            }
+            else
+            {
+                // The confirmation stays on screen, spent: the message and the
+                // comments remain readable, but a retry needs the refreshed
+                // workflow and a fresh choice — the failed request may still
+                // have been applied.
+                ConfirmPromptText.Text = $"{action.Name} “{action.StepName}” was not confirmed.";
+                ConfirmTooltipText.Text = "The workflow is being refreshed. Choose an action again to retry; your comments are kept.";
+                ConfirmTooltipText.Visibility = Visibility.Visible;
+                ShowResult(outcome.Message, isError: true);
+            }
         }
+        UpdateInteractivity();
 
         ActionFinished?.Invoke(outcome);
-    }
-
-    private void SetSubmitting(bool submitting)
-    {
-        SubmitProgress.IsActive = submitting;
-        SubmitProgress.Visibility = submitting ? Visibility.Visible : Visibility.Collapsed;
-        ConfirmButton.IsEnabled = !submitting;
-        ConfirmCancelButton.IsEnabled = !submitting;
-        ConfirmCommentsBox.IsReadOnly = submitting;
-        StepsList.IsEnabled = !submitting;
-        RefreshWorkflowButton.IsEnabled = !submitting;
     }
 
     private void ShowResult(string message, bool isError)
