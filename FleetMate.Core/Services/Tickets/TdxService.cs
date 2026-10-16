@@ -1236,6 +1236,16 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
 
     #endregion
 
+    private TdxTicketTaskService? _tasks;
+
+    /// <summary>
+    /// The ticket-task routes, as the signed-in operator only: they share this
+    /// client but authorize each request with the captured operator token.
+    /// </summary>
+    public TdxTicketTaskService Tasks =>
+        _tasks ??= new TdxTicketTaskService(_client, _config, _jsonOptions, CaptureOperatorToken,
+            () => IsSsoAuthenticated ? _ssoUserId : null);
+
     public void Dispose()
     {
         _client.Dispose();
