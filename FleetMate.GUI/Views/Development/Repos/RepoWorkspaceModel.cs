@@ -419,6 +419,8 @@ public sealed class RepoInsightsModel : RepoObservable
     private InsightsScope _scope = RepoWorkspacePreferences.ReadEnum("insights.scope", InsightsScope.Repository);
     private InsightsPeriod _period = RepoWorkspacePreferences.ReadEnum("insights.period", InsightsPeriod.Days90);
     private InsightsGranularity _granularity = RepoWorkspacePreferences.ReadEnum("insights.granularity", InsightsGranularity.Automatic);
+    private RepoChurnScale _churnScale = RepoChurnScale.Automatic;
+    public RepoChurnScale ChurnScale { get => _churnScale; set => Set(ref _churnScale, value); }
     private RepoStatsReport? _report;
     private RepoStatsSummary? _summary;
     private bool _isLoading;

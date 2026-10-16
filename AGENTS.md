@@ -116,3 +116,8 @@ feature here names its Mac counterpart issue, or opens one, so the two apps stay
 Use anchored popovers for session names, section names and other lightweight naming edits.
 Do not open modal naming dialogs. Focus and select the current text; Return saves, Escape
 cancels, and clicking away dismisses the editor.
+
+## Insights layout
+
+Adjacent summary cards share the same height. Ranked rows distribute through the available
+vertical space so shorter lists use their card instead of leaving an unused lower section.
