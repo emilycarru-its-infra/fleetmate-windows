@@ -117,6 +117,9 @@ private bool _isInitialLoadDone;
         // filter left out, and clicking them changes the filters.
         TicketWidgetsSection.Builder = () => TicketWidgets.Build(TicketsMatching, _filters, _isLoading);
         TicketWidgetsSection.EqualHeights = true;
+        // The six figures and five charts stay on one row at laptop widths;
+        // the cards narrow instead of By Group wrapping onto a second row.
+        TicketWidgetsSection.SingleRow = true;
         _filters.Changed += () =>
         {
             UpdateFilterButtons();

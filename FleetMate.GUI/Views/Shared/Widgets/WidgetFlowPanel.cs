@@ -10,6 +10,8 @@ namespace FleetMate.GUI.Views.Shared.Widgets;
 /// wraps otherwise. Cards keep their natural height (capped by their own
 /// MaxHeight) unless <see cref="EqualHeights"/> is set, which gives every
 /// card in a row the row's tallest height so the row reads as one band.
+/// With <see cref="SingleRow"/> every card shares one row at any width, each
+/// unit taking an equal share, so nothing wraps beneath it.
 /// </summary>
 public sealed class WidgetFlowPanel : Panel
 {
@@ -17,6 +19,14 @@ public sealed class WidgetFlowPanel : Panel
     public const double Gap = 12;
 
     private bool _equalHeights;
+    private bool _singleRow;
+
+    /// <summary>Keep every card on one row, narrowing them rather than wrapping.</summary>
+    public bool SingleRow
+    {
+        get => _singleRow;
+        set { _singleRow = value; InvalidateMeasure(); }
+    }
 
     /// <summary>Offer every card its row's tallest height. Cards must stretch vertically to use it.</summary>
     public bool EqualHeights
@@ -34,10 +44,14 @@ public sealed class WidgetFlowPanel : Panel
 
     /// <summary>
     /// Rows of child indices. A unit is never narrower than <see cref="MinUnitWidth"/>;
-    /// a card wider than the whole row still gets a row of its own.
+    /// a card wider than the whole row still gets a row of its own. With
+    /// <paramref name="singleRow"/> every card is on the one row.
     /// </summary>
-    internal static List<List<int>> Rows(IReadOnlyList<int> units, double width)
+    internal static List<List<int>> Rows(IReadOnlyList<int> units, double width, bool singleRow = false)
     {
+        if (singleRow)
+            return units.Count == 0 ? new List<List<int>>() : new List<List<int>> { Enumerable.Range(0, units.Count).ToList() };
+
         var perRow = Math.Max(1, (int)Math.Floor((width + Gap) / (MinUnitWidth + Gap)));
         var rows = new List<List<int>>();
         var current = new List<int>();
@@ -64,7 +78,7 @@ public sealed class WidgetFlowPanel : Panel
     {
         var children = InternalChildren.Cast<UIElement>().ToList();
         var visible = children.Select((c, i) => (c, i)).Where(x => x.c.Visibility != Visibility.Collapsed).ToList();
-        var rows = Rows(visible.Select(x => GetUnits(x.c)).ToList(), width);
+        var rows = Rows(visible.Select(x => GetUnits(x.c)).ToList(), width, SingleRow);
 
         var slots = new List<(int, Rect)>();
         var y = 0.0;

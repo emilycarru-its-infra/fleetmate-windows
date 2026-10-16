@@ -17,6 +17,76 @@ public class WidgetsTests
         Assert.Single(WidgetFlowPanel.Rows(new[] { 1, 1, 2 }, 1000));
     }
 
+    [Theory]
+    [InlineData(1000)]
+    [InlineData(1200)]
+    [InlineData(600)]
+    public void Rows_SingleRowKeepsTheTicketCardsTogetherWhereTheyWouldWrap(double width)
+    {
+        // The Tickets strip: the figures card and five charts.
+        var units = new[] { 1, 1, 1, 1, 1, 1 };
+
+        Assert.True(WidgetFlowPanel.Rows(units, width).Count > 1);
+        var row = Assert.Single(WidgetFlowPanel.Rows(units, width, singleRow: true));
+        Assert.Equal(new[] { 0, 1, 2, 3, 4, 5 }, row);
+        Assert.Empty(WidgetFlowPanel.Rows(Array.Empty<int>(), width, singleRow: true));
+    }
+
+    [Fact]
+    public void SingleRowPanel_ArrangesEveryCardSideBySideWithinTheWidth()
+    {
+        RunSta(() =>
+        {
+            var panel = new WidgetFlowPanel { SingleRow = true, EqualHeights = true };
+            for (var i = 0; i < 6; i++)
+                panel.Children.Add(new System.Windows.Controls.Border { Height = 40 + i * 10, VerticalAlignment = VerticalAlignment.Stretch });
+
+            panel.Measure(new Size(1100, double.PositiveInfinity));
+            panel.Arrange(new Rect(panel.DesiredSize));
+
+            var slots = panel.Children.Cast<FrameworkElement>()
+                .Select(c => System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot(c)).ToList();
+            Assert.All(slots, s => Assert.Equal(0, s.Y));
+            Assert.All(slots, s => Assert.Equal(slots[0].Width, s.Width, 3));
+            Assert.All(slots, s => Assert.Equal(90, s.Height, 3));
+            Assert.True(slots[^1].Right <= 1100 + 0.001);
+            Assert.Equal(90, panel.DesiredSize.Height, 3);
+        });
+    }
+
+    [Fact]
+    public void KpiTiles_GoFromThreeColumnsToTwoCompactColumnsWhenNarrow()
+    {
+        RunSta(() =>
+        {
+            var panel = new KpiTilePanel();
+            for (var i = 0; i < 6; i++) panel.Children.Add(new System.Windows.Controls.Border { Height = 30 });
+
+            panel.Measure(new Size(300, double.PositiveInfinity));
+            Assert.Equal(60, panel.DesiredSize.Height, 3);
+
+            panel.Measure(new Size(150, double.PositiveInfinity));
+            Assert.Equal(90, panel.DesiredSize.Height, 3);
+            panel.Arrange(new Rect(0, 0, 150, 120));
+            var last = System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot((FrameworkElement)panel.Children[5]);
+            Assert.Equal(new Rect(75, 80, 75, 40), last);
+        });
+    }
+
+    private static void RunSta(Action action)
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try { action(); }
+            catch (Exception ex) { failure = ex; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
+    }
+
     [Fact]
     public void Rows_NarrowWindowGivesOneCardPerRow()
     {

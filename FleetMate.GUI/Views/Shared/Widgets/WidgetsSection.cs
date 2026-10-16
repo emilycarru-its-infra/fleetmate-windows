@@ -90,6 +90,13 @@ public sealed class WidgetsSection : StackPanel
     /// </summary>
     public Func<List<UIElement>>? Builder { get; set; }
 
+    /// <summary>Keep every card on one row; see <see cref="WidgetFlowPanel.SingleRow"/>.</summary>
+    public bool SingleRow
+    {
+        get => _flow.SingleRow;
+        set => _flow.SingleRow = value;
+    }
+
     /// <summary>Give every card in a row the row's tallest height.</summary>
     public bool EqualHeights
     {
