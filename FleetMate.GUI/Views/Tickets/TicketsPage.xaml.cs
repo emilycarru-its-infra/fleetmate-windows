@@ -102,7 +102,7 @@ private bool _isInitialLoadDone;
                 WorkflowPanel.ActionFinished += OnWorkflowActionFinished;
                 WorkflowPanel.ChangeFinished += OnWorkflowChangeFinished;
                 TasksPanel.Attach(_tdxService.Tasks, (ticketId, ct) => TaskTemplateCatalog.LoadAsync(
-                    app.Config.Tdx ?? throw new TdxTicketTaskException("TeamDynamix is not configured."), ticketId, ct));
+                    app.Config?.Tdx ?? throw new TdxTicketTaskException("TeamDynamix is not configured."), ticketId, ct));
                 TasksPanel.TasksChanged += OnTasksChanged;
             }
 
