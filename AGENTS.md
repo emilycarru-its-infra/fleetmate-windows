@@ -121,3 +121,6 @@ cancels, and clicking away dismisses the editor.
 
 Adjacent summary cards share the same height. Ranked rows distribute through the available
 vertical space so shorter lists use their card instead of leaving an unused lower section.
+
+Repository Insights history always reads `refs/remotes/origin/main`, never the checked-out
+branch or local `main`. A missing remote ref is an error; do not silently fall back to HEAD.

@@ -32,6 +32,71 @@ public class RepoWorkspaceGuiTests
         if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
     }
 
+    [Fact]
+    public void InsightsReadsOriginMainWhenHeadAndLocalMainAreStale()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() => {
+            var key = $@"SOFTWARE\FleetMate.Tests.{Guid.NewGuid():N}";
+            var parent = Path.Combine(Path.GetTempPath(), "fleetmate-insights-" + Guid.NewGuid().ToString("N"));
+            try {
+                SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
+                RepoWorkspacePreferences.KeyPathOverride = key;
+                var root = Path.Combine(parent, "repo");
+                Directory.CreateDirectory(root);
+                var copy = new GitWorkingCopy(root);
+                foreach (var args in new[] {
+                    new[] { "init", "-q", "-b", "main" }, new[] { "config", "user.email", "dev@example.com" },
+                    new[] { "config", "user.name", "Dev" }, new[] { "config", "commit.gpgsign", "false" },
+                    new[] { "config", "core.autocrlf", "false" },
+                    new[] { "remote", "add", "origin", "https://github.com/example-org/example-repo.git" }
+                }) Pump(copy.GitAsync(args));
+                copy.WriteFile("old.txt", "old\n"u8.ToArray());
+                Pump(copy.CommitAsync("Old history", null, new HashSet<string>(), allowProtected: true));
+                var old = copy.GitAsync(new[] { "rev-parse", "HEAD" }).GetAwaiter().GetResult().StandardOutput.Trim();
+                copy.WriteFile("remote.txt", "one\ntwo\nthree\nfour\n"u8.ToArray());
+                Pump(copy.CommitAsync("New remote history", null, new HashSet<string>(), allowProtected: true));
+                Pump(copy.GitAsync(new[] { "update-ref", RepoInsightsModel.HistoryReference, "HEAD" }));
+                Pump(copy.GitAsync(new[] { "checkout", "-b", "feature/stale", old }));
+                Pump(copy.GitAsync(new[] { "update-ref", "refs/heads/main", old }));
+                var manager = new RepoManager(new RepoRegistryStore(Path.Combine(parent, "registry", "repos.json")));
+                Pump(manager.LinkAsync(root));
+                var record = Assert.Single(manager.Records());
+                var model = new RepoInsightsModel { Scope = RepoInsightsModel.InsightsScope.Repository, Period = RepoInsightsModel.InsightsPeriod.All };
+                Pump(model.LoadAsync(manager, record, new[] { record }));
+                Assert.Equal(2, model.Report!.Total.Commits);
+                Assert.Equal(5, model.Report.Total.Added);
+                Assert.Equal(2, model.Report.Timeline.Sum(p => p.Commits));
+                Assert.Equal(5, model.Report.Timeline.Sum(p => p.Added));
+                Assert.Contains(model.Report.Files, f => f.Path == "remote.txt");
+                Assert.Equal(1, manager.StatsAsync(record, null).GetAwaiter().GetResult().Total.Commits);
+                model.Scope = RepoInsightsModel.InsightsScope.All;
+                Pump(model.LoadAsync(manager, record, new[] { record }));
+                Assert.Equal(2, model.Summary!.Combined.Total.Commits);
+                Pump(copy.GitAsync(new[] { "update-ref", "-d", RepoInsightsModel.HistoryReference }));
+                model.Scope = RepoInsightsModel.InsightsScope.Repository;
+                Pump(model.LoadAsync(manager, record, new[] { record }));
+                Assert.Null(model.Report);
+                Assert.Contains("origin/main", model.Error);
+                model.Scope = RepoInsightsModel.InsightsScope.All;
+                Pump(model.LoadAsync(manager, record, new[] { record }));
+                Assert.Equal(0, model.Summary!.Combined.Total.Commits);
+                Assert.Contains("origin/main", Assert.Single(model.Summary.Rows).Error);
+            } catch (Exception ex) { failure = ex; }
+            finally {
+                RepoWorkspacePreferences.KeyPathOverride = null;
+                Registry.CurrentUser.DeleteSubKeyTree(key, throwOnMissingSubKey: false);
+                if (Directory.Exists(parent)) {
+                    foreach (var file in Directory.EnumerateFiles(parent, "*", SearchOption.AllDirectories)) File.SetAttributes(file, FileAttributes.Normal);
+                    Directory.Delete(parent, true);
+                }
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start(); thread.Join();
+        if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
+    }
+
     private static void Pump(Task task)
     {
         var frame = new DispatcherFrame();
@@ -145,6 +210,7 @@ public class RepoWorkspaceGuiTests
             Assert.Equal("src/app.cs", Assert.Single(model.GrepResults).Path);
             Layout(view);
 
+            Pump(copy.GitAsync(new[] { "update-ref", RepoInsightsModel.HistoryReference, "HEAD" }));
             // Insights for this repository and for every tracked one.
             model.Git.Panel = RepoPanel.Insights;
             Layout(view, 4000);
