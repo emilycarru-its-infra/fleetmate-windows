@@ -24,6 +24,24 @@ public class AgentWorkspaceTests
     }
 
     [Fact]
+    public void SessionMetadataIgnoresInvalidFieldsAndAcceptsPartialUpdates()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(path, "{\"title\":\"Task\",\"section\":\"Work\"}");
+            Assert.Equal(new AgentSessionMetadata("Task", "Work"), AgentSessionMetadata.Read(path));
+            File.WriteAllText(path, "{\"title\":\"\"}");
+            Assert.Equal(new AgentSessionMetadata("", null), AgentSessionMetadata.Read(path));
+            File.WriteAllText(path, "{\"section\":42}");
+            Assert.Null(AgentSessionMetadata.Read(path)!.Section);
+            File.WriteAllText(path, "{");
+            Assert.Null(AgentSessionMetadata.Read(path));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
     public void SplitViewExitsFullWindowAndUsesHalfTheAvailableHeight()
     {
         var layout = new TerminalLayoutState();

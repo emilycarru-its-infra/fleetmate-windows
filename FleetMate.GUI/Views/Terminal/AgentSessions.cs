@@ -135,12 +135,21 @@ public sealed class AgentSessions
         var prepared = AgentSessionLaunch.Prepare(command, brief, managed, _codexNoDaemon, AgentCommands.FindOnPath);
         var workspace = WorkspaceDirectory();
         var instructions = AgentWorkspace.Prepare(workspace, Brief.BriefPath, _app.Context.Path);
+        PrivateFile.EnsureDirectory(AgentSessionMetadata.Directory);
+        var metadata = AgentSessionMetadata.FilePath(sessionId);
+        PrivateFile.Write(metadata, "{}");
+        prepared.Environment["FLEETMATE_SESSION"] = metadata;
         prepared.Environment["FLEETMATE_WORKSPACE"] = workspace;
         prepared.Environment["FLEETMATE_INSTRUCTIONS"] = instructions;
         return prepared;
     }
 
-    public void Release(string sessionId) => Brief.RemoveSessionBrief(sessionId);
+    public void Release(string sessionId)
+    {
+        Brief.RemoveSessionBrief(sessionId);
+        try { File.Delete(AgentSessionMetadata.FilePath(sessionId)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
 
     /// <summary>Tab → the selection kind it publishes.</summary>
     private static readonly Dictionary<string, string> SelectionKinds = new()

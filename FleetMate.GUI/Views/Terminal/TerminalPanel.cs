@@ -24,6 +24,7 @@ public sealed class TerminalPanel : UserControl
     {
         public required string Label { get; init; }
         public string? CustomName { get; set; }
+        public string? AutomaticName { get; set; }
         public string Section { get; set; } = "Sessions";
         public required Grid Body { get; init; }
         public List<TerminalView> Panes { get; } = new();
@@ -114,7 +115,23 @@ public sealed class TerminalPanel : UserControl
         {
             if (++_tickCount % 4 == 0)
                 foreach (var pane in _sessions.SelectMany(s => s.Panes)) pane.PollDirectory();
-            foreach (var session in _sessions) Refresh(session);
+            var sectionsChanged = false;
+            foreach (var session in _sessions)
+            {
+                foreach (var pane in session.Panes)
+                {
+                    if (pane.ReadMetadataChange() is not { } metadata) continue;
+                    if (metadata.Title != null) session.AutomaticName = metadata.Title.Length == 0 ? null : metadata.Title;
+                    if (!string.IsNullOrWhiteSpace(metadata.Section) && metadata.Section != session.Section)
+                    {
+                        if (!_sections.Contains(metadata.Section)) _sections.Add(metadata.Section);
+                        session.Section = metadata.Section;
+                        sectionsChanged = true;
+                    }
+                }
+                Refresh(session);
+            }
+            if (sectionsChanged) RebuildRows();
         };
         _tick.Start();
 
@@ -439,7 +456,7 @@ public sealed class TerminalPanel : UserControl
             ActivityState.Attention => new SolidColorBrush(Color.FromRgb(0xE8, 0x89, 0x0C)),
             _ => Brushes.Gray,
         };
-        var displayName = session.CustomName ?? lead.Title;
+        var displayName = session.CustomName ?? session.AutomaticName ?? lead.Title;
         session.TitleText.Text = displayName;
         session.DirectoryText.Text = TerminalPathDisplay.Compact(lead.Directory,
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
