@@ -79,27 +79,11 @@ public sealed class AgentSessions
     // ── Where a session opens ────────────────────────────────────────────
 
     /// <summary>
-    /// Where a session opens when nothing chose a folder: the checkout of the
-    /// selected pull request's repository while Development is on screen,
-    /// else the folder repositories are cloned into, else FleetMate's own
-    /// folder. Never the bare home folder, which tells an agent nothing.
+    /// Sessions without an explicit repository open in the shared per-user
+    /// workspace, where the generated guide and operator instructions live.
     /// </summary>
     public string StartDirectory()
     {
-        var context = _app.Context.Current;
-        if (context.Tab == "Development"
-            && context.Selection.TryGetValue("pullRequest", out var pulls) && pulls.FirstOrDefault() is { } pr
-            && pr.Fields.TryGetValue("repository", out var name) && name != null)
-        {
-            var repoName = name.Split('/').Last();
-            var registered = (Registry()?.Entries ?? Array.Empty<RepoRegistryEntry>())
-                .Where(e => string.Equals(e.Key.Name, repoName, StringComparison.OrdinalIgnoreCase))
-                .Select(e => e.Path);
-            var listed = TrackedRepositories()
-                .Where(r => string.Equals(r.Name.Split('/').Last(), repoName, StringComparison.OrdinalIgnoreCase))
-                .Select(r => r.Path);
-            if (registered.Concat(listed).FirstOrDefault(Directory.Exists) is { } checkout) return checkout;
-        }
         return WorkspaceDirectory();
     }
 
@@ -111,16 +95,13 @@ public sealed class AgentSessions
     }
 
     /// <summary>
-    /// The clone root repositories live under, else the terminal's repos
-    /// folder, else FleetMate's per-user folder.
+    /// The stable per-user workspace; repository sessions choose their own directory.
     /// </summary>
     public static string WorkspaceDirectory()
     {
-        if (Registry()?.Settings.CloneRoot is { } root && Directory.Exists(RepoSettings.Expand(root))) return RepoSettings.Expand(root);
-        if (Directory.Exists(RepoLocator.DefaultRoot)) return RepoLocator.DefaultRoot;
-        var own = AppEdition.Current.UserDirectory;
-        try { Directory.CreateDirectory(own); } catch (IOException) { } catch (UnauthorizedAccessException) { }
-        return own;
+        var workspace = AgentWorkspace.DefaultDirectory;
+        Directory.CreateDirectory(workspace);
+        return workspace;
     }
 
     // ── What a session is told ───────────────────────────────────────────
@@ -137,7 +118,12 @@ public sealed class AgentSessions
         var brief = Brief.WriteSessionBrief(sessionId, place with { WorkingDirectory = workingDirectory });
         var managed = Settings.KeepClisCurrent;
         if (managed && AgentBrief.AgentOf(command.FileName) != null) Updater.UpdateIfStale();
-        return AgentSessionLaunch.Prepare(command, brief, managed, _codexNoDaemon, AgentCommands.FindOnPath);
+        var prepared = AgentSessionLaunch.Prepare(command, brief, managed, _codexNoDaemon, AgentCommands.FindOnPath);
+        var workspace = WorkspaceDirectory();
+        var instructions = AgentWorkspace.Prepare(workspace, Brief.BriefPath, _app.Context.Path);
+        prepared.Environment["FLEETMATE_WORKSPACE"] = workspace;
+        prepared.Environment["FLEETMATE_INSTRUCTIONS"] = instructions;
+        return prepared;
     }
 
     public void Release(string sessionId) => Brief.RemoveSessionBrief(sessionId);

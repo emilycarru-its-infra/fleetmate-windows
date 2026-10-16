@@ -54,6 +54,11 @@ public partial class MainWindow : Window
         TerminalStrip.Panel = Terminal;
         TerminalStrip.ShowRequested += (_, _) => SetTerminalVisible(true);
         TerminalStrip.HideRequested += (_, _) => SetTerminalVisible(false);
+        TerminalStrip.SplitViewRequested += (_, _) => {
+            SetTerminalVisible(true, takeFocus: false);
+            _terminalLayout.Split(AvailableHeight);
+            ApplyTerminalLayout();
+        };
         TerminalStrip.FullWindowRequested += (_, _) => ToggleFullWindow();
         Closed += (_, _) => Terminal.DisposeAll();
         Loaded += (_, _) => InitToolbarFit();
@@ -269,6 +274,8 @@ public partial class MainWindow : Window
             : full ? new GridLength(1, GridUnitType.Star)
             : new GridLength(_terminalLayout.DisplayHeight);
     }
+
+    private void OnTabClicked(object sender, RoutedEventArgs e) => SetTerminalVisible(false);
 
     private void OnTerminalToggleClicked(object sender, RoutedEventArgs e) => ToggleTerminal();
 

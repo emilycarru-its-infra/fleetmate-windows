@@ -29,8 +29,8 @@
             <RowDefinition Height="48" />
             <RowDefinition x:Name="ContentRow" Height="*" />
             <RowDefinition Height="Auto" />
-            <RowDefinition x:Name="TerminalRow" Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition x:Name="TerminalRow" Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- Centered, segmented top navigation. The equal outer columns keep it
@@ -50,7 +50,7 @@
                         BorderThickness="1" Padding="2">
                     <StackPanel Orientation="Horizontal" x:Name="TabBar">
                         <RadioButton x:Name="TabDevelopment" Tag="Development" GroupName="FleetMateTabs" IsChecked="True"
-                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                                     Click="OnTabClicked" Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xE943;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <!-- No count here: tabs and segments never carry a number. -->
@@ -58,49 +58,49 @@
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabBoards" Tag="Projects" GroupName="FleetMateTabs"
-                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                                     Click="OnTabClicked" Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xF0E3;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Projects" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabDevices" Tag="Devices" GroupName="FleetMateTabs"
-                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                                     Click="OnTabClicked" Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xE7F8;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Devices" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabReporting" Tag="Reporting" GroupName="FleetMateTabs"
-                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                                     Click="OnTabClicked" Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xE9F9;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Reporting" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabManage" Tag="Manage" GroupName="FleetMateTabs"
-                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                                     Click="OnTabClicked" Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xEC7A;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Manage" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabInventory" Tag="Inventory" GroupName="FleetMateTabs"
-                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                                     Click="OnTabClicked" Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xF158;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Inventory" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabIdentity" Tag="Identity" GroupName="FleetMateTabs"
-                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                                     Click="OnTabClicked" Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xE716;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Identity" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="TabTickets" Tag="Tickets" GroupName="FleetMateTabs"
-                                     Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                                     Click="OnTabClicked" Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">
                                 <ui:FontIcon Glyph="&#xE8EC;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
                                 <TextBlock Text="Tickets" VerticalAlignment="Center" />
@@ -293,8 +293,8 @@
                 </ControlTemplate>
             </Thumb.Template>
         </Thumb>
-        <term:TerminalPanel x:Name="Terminal" Grid.Row="3" Visibility="Collapsed" />
+        <term:TerminalPanel x:Name="Terminal" Grid.Row="4" Visibility="Collapsed" />
         <!-- The bar stays on the window edge, open or closed. -->
-        <term:TerminalStrip x:Name="TerminalStrip" Grid.Row="4" />
+        <term:TerminalStrip x:Name="TerminalStrip" Grid.Row="3" />
     </Grid>
 </Window>

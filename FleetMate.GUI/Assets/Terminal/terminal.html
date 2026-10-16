@@ -49,6 +49,12 @@
     sendSize();
   };
 
+  document.getElementById('term').addEventListener('wheel', e => {
+    if (!e.shiftKey) return;
+    e.preventDefault(); e.stopPropagation();
+    term.scrollLines(Math.sign(e.deltaY) * 3);
+  }, { capture: true, passive: false });
+
   term.onData(data => post({ type: 'input', data }));
   // Panel chords (new, close, split, clear, select, cycle, full window) come
   // from the host as "ctrl shift alt:code" and go back to it; every other
@@ -57,6 +63,18 @@
   const chord = e => `${e.ctrlKey ? 1 : 0}${e.shiftKey ? 1 : 0}${e.altKey ? 1 : 0}:${e.code}`;
   // Ctrl+C copies when there is a selection; otherwise it reaches the program.
   term.attachCustomKeyEventHandler(e => {
+    if (e.shiftKey && !e.ctrlKey && !e.altKey && e.code === 'Enter') {
+      if (e.type === 'keydown') post({ type: 'input', data: '\n' });
+      e.preventDefault(); return false;
+    }
+    if (e.shiftKey && !e.ctrlKey && !e.altKey && ['PageUp', 'PageDown', 'Home', 'End'].includes(e.code)) {
+      if (e.type === 'keydown') {
+        if (e.code === 'Home') term.scrollToTop();
+        else if (e.code === 'End') term.scrollToBottom();
+        else term.scrollPages(e.code === 'PageUp' ? -1 : 1);
+      }
+      e.preventDefault(); return false;
+    }
     if (chords.has(chord(e))) {
       if (e.type === 'keydown') post({ type: 'key', code: e.code, ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey });
       e.preventDefault();

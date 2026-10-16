@@ -23,6 +23,8 @@ public sealed class TerminalPanel : UserControl
     private sealed class Session
     {
         public required string Label { get; init; }
+        public string? CustomName { get; set; }
+        public string Section { get; set; } = "Sessions";
         public required Grid Body { get; init; }
         public List<TerminalView> Panes { get; } = new();
         public Border Row { get; set; } = null!;
@@ -43,6 +45,8 @@ public sealed class TerminalPanel : UserControl
     private readonly StackPanel _headerNarrow = new() { Orientation = Orientation.Vertical, Visibility = Visibility.Collapsed };
     private readonly List<Session> _sessions = new();
     private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private readonly List<string> _sections = new() { "Sessions" };
+    private readonly HashSet<string> _collapsedSections = new();
     private Session? _active;
     private bool _collapsed;
     private int _tickCount;
@@ -68,6 +72,10 @@ public sealed class TerminalPanel : UserControl
         newMenu.Padding = new Thickness(2, 4, 4, 4);
         _headerWide.Children.Add(newButton);
         _headerWide.Children.Add(newMenu);
+        _headerWide.Children.Add(IconButton("", "New section", "TerminalNewSectionButton", (_, _) => {
+            var name = AskName("New section", "");
+            if (!string.IsNullOrWhiteSpace(name) && !_sections.Contains(name)) { _sections.Add(name); RebuildRows(); }
+        }));
         _headerWide.Children.Add(IconButton("", "Split (Alt+Shift+D)", "TerminalSplitButton", (_, _) => SplitActive()));
         _headerWide.Children.Add(IconButton("", "Collapse the list", "TerminalCollapseButton", (_, _) => SetCollapsed(true)));
 
@@ -234,7 +242,8 @@ public sealed class TerminalPanel : UserControl
         var session = new Session { Label = launch.Title, Body = new Grid() };
         _sessions.Add(session);
         _body.Children.Add(session.Body);
-        _rows.Children.Add(BuildRow(session));
+        BuildRow(session);
+        RebuildRows();
         AddPane(session, launch);
         Activate(session, launch.TakeFocus);
         RenumberRows();
@@ -345,10 +354,68 @@ public sealed class TerminalPanel : UserControl
 
         var row = new Border { Child = grid, Padding = new Thickness(4, 5, 2, 5), Margin = new Thickness(4, 1, 4, 1), CornerRadius = new CornerRadius(6), Background = Brushes.Transparent, Cursor = System.Windows.Input.Cursors.Hand };
         row.MouseLeftButtonUp += (_, _) => Activate(session, true);
+        row.MouseRightButtonUp += (_, _) => {
+            var menu = new ContextMenu();
+            menu.Items.Add(MenuItem("Rename session…", (_, _) => {
+                var name = AskName("Rename session", session.CustomName ?? session.Panes.FirstOrDefault()?.Title ?? session.Label);
+                if (name != null) { session.CustomName = string.IsNullOrWhiteSpace(name) ? null : name; Refresh(session); }
+            }));
+            menu.Items.Add(MenuItem("Use automatic title", (_, _) => { session.CustomName = null; Refresh(session); }));
+            var move = new MenuItem { Header = "Move to section" };
+            foreach (var section in _sections) {
+                var target = section;
+                move.Items.Add(MenuItem(target, (_, _) => { session.Section = target; RebuildRows(); }));
+            }
+            menu.Items.Add(move);
+            row.ContextMenu = menu;
+            menu.IsOpen = true;
+        };
         session.Row = row;
         session.Details.Tag = close; // hidden with the details when collapsed
         Refresh(session);
         return row;
+    }
+
+    private string? AskName(string title, string initial)
+    {
+        var input = new TextBox { Text = initial, MinWidth = 280, Margin = new Thickness(12) };
+        var ok = new Button { Content = "Save", IsDefault = true, Margin = new Thickness(12), HorizontalAlignment = HorizontalAlignment.Right };
+        var cancel = new Button { Content = "Cancel", IsCancel = true, Margin = new Thickness(12) };
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(cancel); buttons.Children.Add(ok);
+        var content = new StackPanel(); content.Children.Add(input); content.Children.Add(buttons);
+        var dialog = new Window { Title = title, Content = content, Owner = Window.GetWindow(this), SizeToContent = SizeToContent.WidthAndHeight, WindowStartupLocation = WindowStartupLocation.CenterOwner, ResizeMode = ResizeMode.NoResize };
+        ok.Click += (_, _) => dialog.DialogResult = true;
+        dialog.Loaded += (_, _) => { input.Focus(); input.SelectAll(); };
+        return dialog.ShowDialog() == true ? input.Text.Trim() : null;
+    }
+
+    private void RebuildRows()
+    {
+        _rows.Children.Clear();
+        foreach (var section in _sections.ToList())
+        {
+            var members = _sessions.Where(s => s.Section == section).ToList();
+            var header = new Button { Content = $"{(_collapsedSections.Contains(section) ? "▸" : "▾")} {section} ({members.Count})", HorizontalContentAlignment = HorizontalAlignment.Left, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Margin = new Thickness(4) };
+            header.Click += (_, _) => { if (!_collapsedSections.Add(section)) _collapsedSections.Remove(section); RebuildRows(); };
+            var menu = new ContextMenu();
+            menu.Items.Add(MenuItem("Rename section…", (_, _) => {
+                var name = AskName("Rename section", section);
+                if (string.IsNullOrWhiteSpace(name) || _sections.Contains(name)) return;
+                _sections[_sections.IndexOf(section)] = name;
+                foreach (var member in members) member.Section = name;
+                if (_collapsedSections.Remove(section)) _collapsedSections.Add(name);
+                RebuildRows();
+            }));
+            menu.Items.Add(MenuItem("Remove section", (_, _) => {
+                _sections.Remove(section); _collapsedSections.Remove(section);
+                foreach (var member in members) member.Section = _sections[0];
+                RebuildRows();
+            }, enabled: _sections.Count > 1));
+            header.ContextMenu = menu;
+            _rows.Children.Add(header);
+            if (!_collapsedSections.Contains(section)) foreach (var member in members) _rows.Children.Add(member.Row);
+        }
     }
 
     private void RenumberRows()
@@ -372,12 +439,13 @@ public sealed class TerminalPanel : UserControl
             ActivityState.Attention => new SolidColorBrush(Color.FromRgb(0xE8, 0x89, 0x0C)),
             _ => Brushes.Gray,
         };
-        session.TitleText.Text = lead.Title;
+        var displayName = session.CustomName ?? lead.Title;
+        session.TitleText.Text = displayName;
         session.DirectoryText.Text = TerminalPathDisplay.Compact(lead.Directory,
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-        var rowName = $"{lead.Title}, {state}";
+        var rowName = $"{displayName}, {state}";
         AutomationProperties.SetName(session.Row, rowName);
-        session.Row.ToolTip = $"{lead.Title}\n{lead.Directory}\n{state} · directory from {(lead.DirectorySource == "osc" ? "the shell" : "the process")}";
+        session.Row.ToolTip = $"{displayName}\nProgram: {lead.Title}\n{lead.Directory}\n{state} · directory from {(lead.DirectorySource == "osc" ? "the shell" : "the process")}";
     }
 
     private static ActivityState StateOf(Session session, DateTime now)
@@ -427,6 +495,8 @@ public sealed class TerminalPanel : UserControl
 
     private void Activate(Session session, bool takeFocus)
     {
+        _collapsedSections.Remove(session.Section);
+        RebuildRows();
         _active = session;
         Show(session);
         foreach (var s in _sessions)
@@ -458,7 +528,7 @@ public sealed class TerminalPanel : UserControl
         foreach (var pane in session.Panes) pane.Dispose();
         var index = _sessions.IndexOf(session);
         _sessions.Remove(session);
-        _rows.Children.Remove(session.Row);
+        RebuildRows();
         _body.Children.Remove(session.Body);
         RenumberRows();
         if (ReferenceEquals(_active, session))
