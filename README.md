@@ -95,6 +95,19 @@ named by `FLEETMATE_SESSION`:
 Both fields are optional. An empty title clears the automatic label. Manual names take
 precedence over agent labels and program titles.
 
+## Repository Insights
+
+The desktop repository Insights view offers **Automatic**, **Linear** and **Compressed**
+scales for lines added and removed. Compressed scaling preserves every bucket and its
+raw hover values while making ordinary activity visible beside large import or rewrite
+spikes. Axis labels remain line counts, and the caption identifies the selected scale.
+Automatic is recalculated when the data changes; choosing Linear or Compressed keeps
+your choice until you return to Automatic.
+
+The activity heatmap includes all 168 weekday/hour cells, including empty periods.
+Hover a cell to see its exact commit count. Adjacent ranked cards share their height
+and distribute their rows through the available space.
+
 ## Command Reference
 
 ### Fleet Monitoring
