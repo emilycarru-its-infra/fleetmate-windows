@@ -42,6 +42,21 @@ public sealed class TerminalView : UserControl, IDisposable
     /// <summary>Names this session's own brief, removed when the pane closes.</summary>
     private readonly string _sessionId = Guid.NewGuid().ToString("N");
 
+    private DateTime _metadataModified;
+    public AgentSessionMetadata? ReadMetadataChange()
+    {
+        var path = AgentSessionMetadata.FilePath(_sessionId);
+        try
+        {
+            var modified = File.GetLastWriteTimeUtc(path);
+            if (modified == _metadataModified) return null;
+            var metadata = AgentSessionMetadata.Read(path);
+            if (metadata != null) _metadataModified = modified;
+            return metadata;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+
     public event EventHandler? ToggleRequested;
     public event EventHandler? Exited;
     /// <summary>The title, directory or activity changed; the session list redraws the row.</summary>

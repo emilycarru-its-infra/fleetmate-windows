@@ -93,6 +93,11 @@ public static class AgentBrief
             "directory; it never replaces them, and a repository's own instructions still " +
             "govern work inside that repository.",
             "",
+            "Read the generated guide named by FLEETMATE_INSTRUCTIONS for shared Handbook and skills paths. " +
+            "FLEETMATE_WORKSPACE is the default per-user workspace; explicit repository sessions retain their own directory and instructions. " +
+            "Live context describes the UI and selections; it does not provide arbitrary GUI controls. " +
+            "Discover supported operations with `fleetmate --help` rather than assuming every GUI action has a CLI equivalent.",
+            "",
             $"## Operate systems through `{name}`",
             "",
             $"- Every system FleetMate manages is reachable through the `{name}` command-line tool{where}. " +

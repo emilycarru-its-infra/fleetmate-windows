@@ -79,10 +79,8 @@ public sealed class AgentSessions
     // ── Where a session opens ────────────────────────────────────────────
 
     /// <summary>
-    /// Where a session opens when nothing chose a folder: the checkout of the
-    /// selected pull request's repository while Development is on screen,
-    /// else the folder repositories are cloned into, else FleetMate's own
-    /// folder. Never the bare home folder, which tells an agent nothing.
+    /// Prefer the selected pull request's local checkout; otherwise use the
+    /// shared per-user workspace with generated guide and operator instructions.
     /// </summary>
     public string StartDirectory()
     {
@@ -111,16 +109,13 @@ public sealed class AgentSessions
     }
 
     /// <summary>
-    /// The clone root repositories live under, else the terminal's repos
-    /// folder, else FleetMate's per-user folder.
+    /// The stable per-user workspace; repository sessions choose their own directory.
     /// </summary>
     public static string WorkspaceDirectory()
     {
-        if (Registry()?.Settings.CloneRoot is { } root && Directory.Exists(RepoSettings.Expand(root))) return RepoSettings.Expand(root);
-        if (Directory.Exists(RepoLocator.DefaultRoot)) return RepoLocator.DefaultRoot;
-        var own = AppEdition.Current.UserDirectory;
-        try { Directory.CreateDirectory(own); } catch (IOException) { } catch (UnauthorizedAccessException) { }
-        return own;
+        var workspace = AgentWorkspace.DefaultDirectory;
+        Directory.CreateDirectory(workspace);
+        return workspace;
     }
 
     // ── What a session is told ───────────────────────────────────────────
@@ -137,10 +132,24 @@ public sealed class AgentSessions
         var brief = Brief.WriteSessionBrief(sessionId, place with { WorkingDirectory = workingDirectory });
         var managed = Settings.KeepClisCurrent;
         if (managed && AgentBrief.AgentOf(command.FileName) != null) Updater.UpdateIfStale();
-        return AgentSessionLaunch.Prepare(command, brief, managed, _codexNoDaemon, AgentCommands.FindOnPath);
+        var prepared = AgentSessionLaunch.Prepare(command, brief, managed, _codexNoDaemon, AgentCommands.FindOnPath);
+        var workspace = WorkspaceDirectory();
+        var instructions = AgentWorkspace.Prepare(workspace, Brief.BriefPath, _app.Context.Path);
+        PrivateFile.EnsureDirectory(AgentSessionMetadata.Directory);
+        var metadata = AgentSessionMetadata.FilePath(sessionId);
+        PrivateFile.Write(metadata, "{}");
+        prepared.Environment["FLEETMATE_SESSION"] = metadata;
+        prepared.Environment["FLEETMATE_WORKSPACE"] = workspace;
+        prepared.Environment["FLEETMATE_INSTRUCTIONS"] = instructions;
+        return prepared;
     }
 
-    public void Release(string sessionId) => Brief.RemoveSessionBrief(sessionId);
+    public void Release(string sessionId)
+    {
+        Brief.RemoveSessionBrief(sessionId);
+        try { File.Delete(AgentSessionMetadata.FilePath(sessionId)); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
 
     /// <summary>Tab → the selection kind it publishes.</summary>
     private static readonly Dictionary<string, string> SelectionKinds = new()

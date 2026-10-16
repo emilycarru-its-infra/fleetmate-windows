@@ -17,7 +17,7 @@ public sealed class AgentBriefStore
     public delegate (bool Ok, string Output) Runner(string fileName, IReadOnlyList<string> arguments);
 
     /// <summary>Bump when the brief's layout changes, so existing caches regenerate.</summary>
-    internal const int FormatVersion = 1;
+    internal const int FormatVersion = 2;
 
     private readonly object _gate = new();
 

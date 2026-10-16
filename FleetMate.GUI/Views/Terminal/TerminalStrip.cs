@@ -18,7 +18,7 @@ namespace FleetMate.GUI.Views.Terminal;
 /// </summary>
 public sealed class TerminalStrip : UserControl
 {
-    public const double StripHeight = 26;
+    public const double StripHeight = 32;
 
     private readonly TextBlock _agent = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
     private readonly TextBlock _status = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
@@ -39,6 +39,7 @@ public sealed class TerminalStrip : UserControl
 
     /// <summary>Raised by the full-window button: fill the window with the terminal, or restore it.</summary>
     public event EventHandler? FullWindowRequested;
+    public event EventHandler? SplitViewRequested;
 
     /// <summary>The panel whose sessions the strip describes.</summary>
     public TerminalPanel? Panel { get; set; }
@@ -67,6 +68,11 @@ public sealed class TerminalStrip : UserControl
         left.Children.Add(_agent);
         left.Children.Add(_status);
         var right = new StackPanel { Orientation = Orientation.Horizontal };
+        var split = BarButton("TerminalSplitViewButton", (_, _) => SplitViewRequested?.Invoke(this, EventArgs.Empty));
+        split.Content = "Split View";
+        split.ToolTip = "Show the terminal in half the content area";
+        AutomationProperties.SetName(split, "Split View");
+        right.Children.Add(split);
         right.Children.Add(_fullWindow);
         right.Children.Add(_toggle);
 
@@ -95,7 +101,7 @@ public sealed class TerminalStrip : UserControl
         };
         MouseLeftButtonUp += (_, e) =>
         {
-            if (_pressedAt != null) Release(_showing ? null : ShowRequested);
+            if (_pressedAt != null) Release(_showing ? HideRequested : ShowRequested);
             e.Handled = true;
         };
         LostMouseCapture += (_, _) => _pressedAt = null;
@@ -155,7 +161,7 @@ public sealed class TerminalStrip : UserControl
 
     private static void SetButton(Button button, string glyph, string tip, string name)
     {
-        ((FontIcon)button.Content).Glyph = glyph;
+        button.Content = name.Replace(" Agent Terminal", "");
         button.ToolTip = tip;
         AutomationProperties.SetName(button, name);
     }

@@ -202,6 +202,14 @@ public sealed class TerminalLayoutState
         return collapse;
     }
 
+    public void Split(double available)
+    {
+        FullWindow = false;
+        _dragHeight = null;
+        Height = Clamp(available / 2, available);
+        RestoreHeight = Height;
+    }
+
     public void Toggle(double available)
     {
         if (FullWindow)

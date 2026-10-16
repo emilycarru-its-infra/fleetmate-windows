@@ -23,6 +23,9 @@ public sealed class TerminalPanel : UserControl
     private sealed class Session
     {
         public required string Label { get; init; }
+        public string? CustomName { get; set; }
+        public string? AutomaticName { get; set; }
+        public string Section { get; set; } = "Sessions";
         public required Grid Body { get; init; }
         public List<TerminalView> Panes { get; } = new();
         public Border Row { get; set; } = null!;
@@ -43,6 +46,9 @@ public sealed class TerminalPanel : UserControl
     private readonly StackPanel _headerNarrow = new() { Orientation = Orientation.Vertical, Visibility = Visibility.Collapsed };
     private readonly List<Session> _sessions = new();
     private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private readonly List<string> _sections = new() { "Sessions" };
+    private readonly HashSet<string> _collapsedSections = new();
+    private Popup? _nameEditor;
     private Session? _active;
     private bool _collapsed;
     private int _tickCount;
@@ -68,6 +74,10 @@ public sealed class TerminalPanel : UserControl
         newMenu.Padding = new Thickness(2, 4, 4, 4);
         _headerWide.Children.Add(newButton);
         _headerWide.Children.Add(newMenu);
+        _headerWide.Children.Add(IconButton("", "New section", "TerminalNewSectionButton", (sender, _) =>
+            EditName((Button)sender!, "New section", "", name => {
+                if (!string.IsNullOrWhiteSpace(name) && !_sections.Contains(name)) { _sections.Add(name); RebuildRows(); }
+            })));
         _headerWide.Children.Add(IconButton("", "Split (Alt+Shift+D)", "TerminalSplitButton", (_, _) => SplitActive()));
         _headerWide.Children.Add(IconButton("", "Collapse the list", "TerminalCollapseButton", (_, _) => SetCollapsed(true)));
 
@@ -106,7 +116,23 @@ public sealed class TerminalPanel : UserControl
         {
             if (++_tickCount % 4 == 0)
                 foreach (var pane in _sessions.SelectMany(s => s.Panes)) pane.PollDirectory();
-            foreach (var session in _sessions) Refresh(session);
+            var sectionsChanged = false;
+            foreach (var session in _sessions)
+            {
+                foreach (var pane in session.Panes)
+                {
+                    if (pane.ReadMetadataChange() is not { } metadata) continue;
+                    if (metadata.Title != null) session.AutomaticName = metadata.Title.Length == 0 ? null : metadata.Title;
+                    if (!string.IsNullOrWhiteSpace(metadata.Section) && metadata.Section != session.Section)
+                    {
+                        if (!_sections.Contains(metadata.Section)) _sections.Add(metadata.Section);
+                        session.Section = metadata.Section;
+                        sectionsChanged = true;
+                    }
+                }
+                Refresh(session);
+            }
+            if (sectionsChanged) RebuildRows();
         };
         _tick.Start();
 
@@ -234,7 +260,8 @@ public sealed class TerminalPanel : UserControl
         var session = new Session { Label = launch.Title, Body = new Grid() };
         _sessions.Add(session);
         _body.Children.Add(session.Body);
-        _rows.Children.Add(BuildRow(session));
+        BuildRow(session);
+        RebuildRows();
         AddPane(session, launch);
         Activate(session, launch.TakeFocus);
         RenumberRows();
@@ -345,10 +372,89 @@ public sealed class TerminalPanel : UserControl
 
         var row = new Border { Child = grid, Padding = new Thickness(4, 5, 2, 5), Margin = new Thickness(4, 1, 4, 1), CornerRadius = new CornerRadius(6), Background = Brushes.Transparent, Cursor = System.Windows.Input.Cursors.Hand };
         row.MouseLeftButtonUp += (_, _) => Activate(session, true);
+        row.MouseRightButtonUp += (_, _) => {
+            var menu = new ContextMenu();
+            menu.Items.Add(MenuItem("Rename session…", (_, _) => {
+                EditName(row, "Rename session", session.CustomName ?? session.AutomaticName ?? session.Panes.FirstOrDefault()?.Title ?? session.Label, name => {
+                    if (!_sessions.Contains(session)) return;
+                    session.CustomName = string.IsNullOrWhiteSpace(name) ? null : name;
+                    Refresh(session);
+                });
+            }));
+            menu.Items.Add(MenuItem("Use automatic title", (_, _) => { session.CustomName = null; Refresh(session); }));
+            var move = new MenuItem { Header = "Move to section" };
+            foreach (var section in _sections) {
+                var target = section;
+                move.Items.Add(MenuItem(target, (_, _) => { session.Section = target; RebuildRows(); }));
+            }
+            menu.Items.Add(move);
+            row.ContextMenu = menu;
+            menu.IsOpen = true;
+        };
         session.Row = row;
         session.Details.Tag = close; // hidden with the details when collapsed
         Refresh(session);
         return row;
+    }
+
+    private void EditName(FrameworkElement anchor, string title, string initial, Action<string> save)
+    {
+        if (_nameEditor != null) _nameEditor.IsOpen = false;
+        var input = new TextBox { Text = initial, MinWidth = 220, MaxWidth = 360, Margin = new Thickness(0, 6, 0, 0) };
+        AutomationProperties.SetName(input, title);
+        var content = new StackPanel();
+        content.Children.Add(new TextBlock { Text = title, FontWeight = FontWeights.SemiBold });
+        content.Children.Add(input);
+        content.Children.Add(new TextBlock { Text = "Return to save · Esc to cancel", FontSize = 11, Margin = new Thickness(0, 6, 0, 0) });
+        var surface = new Border { Child = content, Padding = new Thickness(10), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6) };
+        surface.SetResourceReference(Border.BackgroundProperty, "AppBackgroundBrush");
+        surface.SetResourceReference(Border.BorderBrushProperty, "SystemControlForegroundBaseLowBrush");
+        surface.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseHighBrush");
+        var popup = new Popup { Child = surface, PlacementTarget = anchor, Placement = PlacementMode.Bottom, StaysOpen = false, AllowsTransparency = true };
+        _nameEditor = popup;
+        input.PreviewKeyDown += (_, e) => {
+            if (e.Key == System.Windows.Input.Key.Enter) {
+                var name = input.Text.Trim();
+                popup.IsOpen = false;
+                save(name);
+                e.Handled = true;
+            }
+            else if (e.Key == System.Windows.Input.Key.Escape) { popup.IsOpen = false; e.Handled = true; }
+        };
+        popup.Opened += (_, _) => Dispatcher.BeginInvoke(() => { input.Focus(); input.SelectAll(); }, DispatcherPriority.Input);
+        popup.Closed += (_, _) => { if (ReferenceEquals(_nameEditor, popup)) _nameEditor = null; };
+        // Context-menu close restores focus; open after that completes.
+        Dispatcher.BeginInvoke(() => { if (anchor.IsLoaded && ReferenceEquals(_nameEditor, popup)) popup.IsOpen = true; }, DispatcherPriority.Input);
+    }
+
+    private void RebuildRows()
+    {
+        _rows.Children.Clear();
+        foreach (var section in _sections.ToList())
+        {
+            var members = _sessions.Where(s => s.Section == section).ToList();
+            var header = new Button { Content = $"{(_collapsedSections.Contains(section) ? "▸" : "▾")} {section} ({members.Count})", HorizontalContentAlignment = HorizontalAlignment.Left, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Margin = new Thickness(4) };
+            header.Click += (_, _) => { if (!_collapsedSections.Add(section)) _collapsedSections.Remove(section); RebuildRows(); };
+            var menu = new ContextMenu();
+            menu.Items.Add(MenuItem("Rename section…", (_, _) => {
+                EditName(header, "Rename section", section, name => {
+                    var index = _sections.IndexOf(section);
+                    if (index < 0 || string.IsNullOrWhiteSpace(name) || _sections.Contains(name)) return;
+                    _sections[index] = name;
+                    foreach (var member in _sessions.Where(s => s.Section == section).ToList()) member.Section = name;
+                    if (_collapsedSections.Remove(section)) _collapsedSections.Add(name);
+                    RebuildRows();
+                });
+            }, enabled: section != "Sessions"));
+            menu.Items.Add(MenuItem("Remove section", (_, _) => {
+                _sections.Remove(section); _collapsedSections.Remove(section);
+                foreach (var member in members) member.Section = "Sessions";
+                RebuildRows();
+            }, enabled: section != "Sessions"));
+            header.ContextMenu = menu;
+            _rows.Children.Add(header);
+            if (!_collapsedSections.Contains(section)) foreach (var member in members) _rows.Children.Add(member.Row);
+        }
     }
 
     private void RenumberRows()
@@ -372,12 +478,13 @@ public sealed class TerminalPanel : UserControl
             ActivityState.Attention => new SolidColorBrush(Color.FromRgb(0xE8, 0x89, 0x0C)),
             _ => Brushes.Gray,
         };
-        session.TitleText.Text = lead.Title;
+        var displayName = session.CustomName ?? session.AutomaticName ?? lead.Title;
+        session.TitleText.Text = displayName;
         session.DirectoryText.Text = TerminalPathDisplay.Compact(lead.Directory,
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-        var rowName = $"{lead.Title}, {state}";
+        var rowName = $"{displayName}, {state}";
         AutomationProperties.SetName(session.Row, rowName);
-        session.Row.ToolTip = $"{lead.Title}\n{lead.Directory}\n{state} · directory from {(lead.DirectorySource == "osc" ? "the shell" : "the process")}";
+        session.Row.ToolTip = $"{displayName}\nProgram: {lead.Title}\n{lead.Directory}\n{state} · directory from {(lead.DirectorySource == "osc" ? "the shell" : "the process")}";
     }
 
     private static ActivityState StateOf(Session session, DateTime now)
@@ -427,6 +534,8 @@ public sealed class TerminalPanel : UserControl
 
     private void Activate(Session session, bool takeFocus)
     {
+        _collapsedSections.Remove(session.Section);
+        RebuildRows();
         _active = session;
         Show(session);
         foreach (var s in _sessions)
@@ -458,7 +567,7 @@ public sealed class TerminalPanel : UserControl
         foreach (var pane in session.Panes) pane.Dispose();
         var index = _sessions.IndexOf(session);
         _sessions.Remove(session);
-        _rows.Children.Remove(session.Row);
+        RebuildRows();
         _body.Children.Remove(session.Body);
         RenumberRows();
         if (ReferenceEquals(_active, session))
@@ -471,12 +580,14 @@ public sealed class TerminalPanel : UserControl
     /// <summary>Called when the panel is shown or hidden, so bells from a hidden panel count as unseen.</summary>
     public void OnVisibilityChanged()
     {
+        if (!IsVisible && _nameEditor != null) _nameEditor.IsOpen = false;
         if (_active != null) Show(_active);
     }
 
     public void DisposeAll()
     {
         _tick.Stop();
+        if (_nameEditor != null) _nameEditor.IsOpen = false;
         UserPreferences.Changed -= OnPreferencesChanged;
         foreach (var session in _sessions.ToList()) CloseSession(session);
     }
