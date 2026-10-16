@@ -252,9 +252,21 @@ public class TicketWorkflowAssignmentTests
         Assert.Contains("Current workflow: Purchase approval", text);
         Assert.Contains("New workflow: Onboarding", text);
         Assert.Contains("reset", text);
+        Assert.Contains("removed completely", text);
+        Assert.Contains("incomplete workflow tasks", text);
         Assert.Contains("notifications", text);
         Assert.Contains("tasks", text);
         Assert.Contains("automations", text);
+    }
+
+    [Fact]
+    public void ARestartConfirmationWarnsTheSameWay()
+    {
+        var text = RestartRequest().ConfirmationText();
+
+        Assert.Contains("Restart the workflow “Purchase approval” on ticket #42", text);
+        Assert.Contains("incomplete workflow tasks", text);
+        Assert.Contains("automations may run again", text);
     }
 
     [Fact]
@@ -335,7 +347,7 @@ public class TicketWorkflowAssignmentTests
     {
         var api = new FakeApi();
 
-        var outcome = await new TicketWorkflowAssignmentController(api).SubmitAsync(RestartRequest());
+        var outcome = await new TicketWorkflowAssignmentController(api, new FakeCatalog()).SubmitAsync(RestartRequest());
 
         Assert.True(outcome.Succeeded);
         Assert.Equal(1, api.Reads);
@@ -344,13 +356,47 @@ public class TicketWorkflowAssignmentTests
     }
 
     [Fact]
-    public async Task ARestartDoesNotNeedTheCatalog()
+    public async Task ARestartIsCheckedAgainstAFreshWorkflowList()
     {
         var api = new FakeApi();
+        var catalog = new FakeCatalog();
+        var reads = 0;
+        var inner = catalog.Choices;
+        catalog.Choices = id => { reads++; return inner(id); };
 
-        var outcome = await new TicketWorkflowAssignmentController(api, catalog: null).SubmitAsync(RestartRequest());
+        var outcome = await new TicketWorkflowAssignmentController(api, catalog).SubmitAsync(RestartRequest());
 
         Assert.True(outcome.Succeeded);
+        Assert.Equal(1, reads);
+        Assert.Equal((42, 3, true), Assert.Single(api.Puts));
+    }
+
+    [Fact]
+    public async Task ARestartOfADefinitionNoLongerOfferedIsNotSent()
+    {
+        var api = new FakeApi();
+        var catalog = new FakeCatalog
+        {
+            Choices = _ => Task.FromResult<IReadOnlyList<TdxWorkflowChoice>>(new[] { new TdxWorkflowChoice(15, "Onboarding") }),
+        };
+
+        var outcome = await new TicketWorkflowAssignmentController(api, catalog).SubmitAsync(RestartRequest());
+
+        Assert.Equal(TicketWorkflowChangeStatus.NotSent, outcome.Status);
+        Assert.Contains("no longer offered", outcome.Message);
+        Assert.Empty(api.Puts);
+    }
+
+    [Fact]
+    public async Task ARestartWithoutAWorkflowListIsNotSent()
+    {
+        var api = new FakeApi();
+        var controller = new TicketWorkflowAssignmentController(api, catalog: null);
+
+        var outcome = await controller.SubmitAsync(RestartRequest());
+
+        Assert.Equal(TicketWorkflowChangeStatus.NotSent, outcome.Status);
+        Assert.Empty(api.Puts);
     }
 
     [Fact]
@@ -408,7 +454,7 @@ public class TicketWorkflowAssignmentTests
     {
         var api = new FakeApi { Live = _ => Task.FromException<TdxTicketWorkflow?>(new TdxWorkflowException("No answer.")) };
 
-        var outcome = await new TicketWorkflowAssignmentController(api).SubmitAsync(RestartRequest());
+        var outcome = await new TicketWorkflowAssignmentController(api, new FakeCatalog()).SubmitAsync(RestartRequest());
 
         Assert.Equal(TicketWorkflowChangeStatus.NotSent, outcome.Status);
         Assert.Contains("nothing was changed", outcome.Message);
@@ -474,7 +520,7 @@ public class TicketWorkflowAssignmentTests
     {
         var api = new FakeApi { Put = (_, _, _) => Task.FromException<TdxTicket?>(new TdxWorkflowException("You do not have permission.", 403)) };
 
-        var outcome = await new TicketWorkflowAssignmentController(api).SubmitAsync(RestartRequest());
+        var outcome = await new TicketWorkflowAssignmentController(api, new FakeCatalog()).SubmitAsync(RestartRequest());
 
         Assert.Equal(TicketWorkflowChangeStatus.Failed, outcome.Status);
         Assert.Equal("You do not have permission.", outcome.Message);
@@ -489,7 +535,7 @@ public class TicketWorkflowAssignmentTests
             Put = (_, _, _) => Task.FromException<TdxTicket?>(new TdxWorkflowException("No answer in time.", null, null, outcomeUnknown: true)),
         };
 
-        var outcome = await new TicketWorkflowAssignmentController(api).SubmitAsync(RestartRequest());
+        var outcome = await new TicketWorkflowAssignmentController(api, new FakeCatalog()).SubmitAsync(RestartRequest());
 
         Assert.Equal(TicketWorkflowChangeStatus.Uncertain, outcome.Status);
         Assert.Contains("may or may not", outcome.Message);
@@ -507,7 +553,7 @@ public class TicketWorkflowAssignmentTests
             Put = (_, _, _) => Task.FromResult(returnedId is int id ? new TdxTicket { Id = id } : null),
         };
 
-        var outcome = await new TicketWorkflowAssignmentController(api).SubmitAsync(RestartRequest());
+        var outcome = await new TicketWorkflowAssignmentController(api, new FakeCatalog()).SubmitAsync(RestartRequest());
 
         Assert.Equal(TicketWorkflowChangeStatus.Uncertain, outcome.Status);
         Assert.Equal(42, outcome.TicketId);

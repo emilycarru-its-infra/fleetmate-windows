@@ -99,9 +99,9 @@ public sealed record TicketWorkflowChangeRequest(
         if (AllowRemoveExisting)
         {
             lines.Add("");
-            lines.Add("The current workflow is removed and the new one starts from its first step. "
-                + "Its progress, including any approvals already given, is reset, and its notifications, "
-                + "tasks and automations may run again.");
+            lines.Add("The current workflow is removed completely, together with its incomplete workflow tasks, "
+                + "and the new one starts from its first step. Its progress, including any approvals already given, "
+                + "is reset, and its notifications, tasks and automations may run again.");
         }
         return string.Join("\n", lines);
     }
@@ -183,7 +183,10 @@ public sealed class TicketWorkflowAssignmentController
         _catalog = catalog;
     }
 
-    /// <summary>False when there is no workflow list, so Change Workflow cannot be offered.</summary>
+    /// <summary>
+    /// False when there is no workflow list. Neither Change nor Restart can be
+    /// offered then: both are checked against the list before they are sent.
+    /// </summary>
     public bool CanChange => _catalog != null;
 
     /// <summary>True while a change is being checked or sent.</summary>
@@ -196,13 +199,17 @@ public sealed class TicketWorkflowAssignmentController
     /// no catalog or it could not be read.
     /// </summary>
     public async Task<IReadOnlyList<TdxWorkflowChoice>> GetChoicesAsync(
-        int ticketId, TdxTicketWorkflow? current, CancellationToken ct = default)
+        int ticketId, TdxTicketWorkflow? current, CancellationToken ct = default) =>
+        (await GetOfferedAsync(ticketId, ct)).Where(c => c.Id != current?.WorkflowConfigurationId).ToList();
+
+    /// <summary>Everything the catalog offers for the ticket now, each usable ID once.</summary>
+    private async Task<IReadOnlyList<TdxWorkflowChoice>> GetOfferedAsync(int ticketId, CancellationToken ct = default)
     {
         if (_catalog == null)
             throw new TdxWorkflowException("No list of workflows is available, so the workflow cannot be changed here.");
         var all = await _catalog.GetAssignableWorkflowsAsync(ticketId, ct);
         return all
-            .Where(c => c.Id > 0 && c.Id != current?.WorkflowConfigurationId)
+            .Where(c => c.Id > 0)
             .GroupBy(c => c.Id)
             .Select(g => g.First())
             .ToList();
@@ -247,7 +254,9 @@ public sealed class TicketWorkflowAssignmentController
                 return new(TicketWorkflowChangeStatus.NotSent, ticketId,
                     $"Ticket #{ticketId} no longer has that workflow to restart.", WorkflowChanged: true);
 
-            if (request.Kind != TicketWorkflowChangeKind.Restart && await RevalidateTargetAsync(request, live) is { } stale)
+            // A restart is checked against the list too: a definition
+            // TeamDynamix no longer offers for this ticket is not put back.
+            if (await RevalidateTargetAsync(request, live) is { } stale)
                 return new(TicketWorkflowChangeStatus.NotSent, ticketId, stale);
 
             TdxTicket? ticket;
@@ -307,13 +316,19 @@ public sealed class TicketWorkflowAssignmentController
         };
     }
 
-    /// <summary>The target must still be offered for this ticket; null when it is.</summary>
+    /// <summary>
+    /// The target must still be offered for this ticket, read fresh; null when
+    /// it is. A restart's target is the live workflow's own definition; a
+    /// change's is any other offered one.
+    /// </summary>
     private async Task<string?> RevalidateTargetAsync(TicketWorkflowChangeRequest request, TdxTicketWorkflow? live)
     {
         IReadOnlyList<TdxWorkflowChoice> choices;
         try
         {
-            choices = await GetChoicesAsync(request.TicketId, live);
+            choices = request.Kind == TicketWorkflowChangeKind.Restart
+                ? await GetOfferedAsync(request.TicketId)
+                : await GetChoicesAsync(request.TicketId, live);
         }
         catch (Exception ex)
         {

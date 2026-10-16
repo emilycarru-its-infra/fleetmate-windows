@@ -315,7 +315,7 @@ public partial class TicketWorkflowPanel : UserControl
 
     /// <summary>The loaded snapshot a restart can be made against, or null.</summary>
     private TicketWorkflowSnapshot? RestartBasis() =>
-        _assignment != null && _controller?.Current is { Phase: TicketWorkflowPhase.Loaded, Workflow.WorkflowConfigurationId: > 0 } snapshot
+        _assignment is { CanChange: true } && _controller?.Current is { Phase: TicketWorkflowPhase.Loaded, Workflow.WorkflowConfigurationId: > 0 } snapshot
         && snapshot.TicketId == _ticketId && _controller.IsCurrent(snapshot)
             ? snapshot
             : null;
