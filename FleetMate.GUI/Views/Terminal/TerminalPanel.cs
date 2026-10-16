@@ -48,6 +48,7 @@ public sealed class TerminalPanel : UserControl
     private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly List<string> _sections = new() { "Sessions" };
     private readonly HashSet<string> _collapsedSections = new();
+    private Popup? _nameEditor;
     private Session? _active;
     private bool _collapsed;
     private int _tickCount;
@@ -73,10 +74,10 @@ public sealed class TerminalPanel : UserControl
         newMenu.Padding = new Thickness(2, 4, 4, 4);
         _headerWide.Children.Add(newButton);
         _headerWide.Children.Add(newMenu);
-        _headerWide.Children.Add(IconButton("", "New section", "TerminalNewSectionButton", (_, _) => {
-            var name = AskName("New section", "");
-            if (!string.IsNullOrWhiteSpace(name) && !_sections.Contains(name)) { _sections.Add(name); RebuildRows(); }
-        }));
+        _headerWide.Children.Add(IconButton("", "New section", "TerminalNewSectionButton", (sender, _) =>
+            EditName((Button)sender!, "New section", "", name => {
+                if (!string.IsNullOrWhiteSpace(name) && !_sections.Contains(name)) { _sections.Add(name); RebuildRows(); }
+            })));
         _headerWide.Children.Add(IconButton("", "Split (Alt+Shift+D)", "TerminalSplitButton", (_, _) => SplitActive()));
         _headerWide.Children.Add(IconButton("", "Collapse the list", "TerminalCollapseButton", (_, _) => SetCollapsed(true)));
 
@@ -374,8 +375,11 @@ public sealed class TerminalPanel : UserControl
         row.MouseRightButtonUp += (_, _) => {
             var menu = new ContextMenu();
             menu.Items.Add(MenuItem("Rename session…", (_, _) => {
-                var name = AskName("Rename session", session.CustomName ?? session.Panes.FirstOrDefault()?.Title ?? session.Label);
-                if (name != null) { session.CustomName = string.IsNullOrWhiteSpace(name) ? null : name; Refresh(session); }
+                EditName(row, "Rename session", session.CustomName ?? session.AutomaticName ?? session.Panes.FirstOrDefault()?.Title ?? session.Label, name => {
+                    if (!_sessions.Contains(session)) return;
+                    session.CustomName = string.IsNullOrWhiteSpace(name) ? null : name;
+                    Refresh(session);
+                });
             }));
             menu.Items.Add(MenuItem("Use automatic title", (_, _) => { session.CustomName = null; Refresh(session); }));
             var move = new MenuItem { Header = "Move to section" };
@@ -393,18 +397,33 @@ public sealed class TerminalPanel : UserControl
         return row;
     }
 
-    private string? AskName(string title, string initial)
+    private void EditName(FrameworkElement anchor, string title, string initial, Action<string> save)
     {
-        var input = new TextBox { Text = initial, MinWidth = 280, Margin = new Thickness(12) };
-        var ok = new Button { Content = "Save", IsDefault = true, Margin = new Thickness(12), HorizontalAlignment = HorizontalAlignment.Right };
-        var cancel = new Button { Content = "Cancel", IsCancel = true, Margin = new Thickness(12) };
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-        buttons.Children.Add(cancel); buttons.Children.Add(ok);
-        var content = new StackPanel(); content.Children.Add(input); content.Children.Add(buttons);
-        var dialog = new Window { Title = title, Content = content, Owner = Window.GetWindow(this), SizeToContent = SizeToContent.WidthAndHeight, WindowStartupLocation = WindowStartupLocation.CenterOwner, ResizeMode = ResizeMode.NoResize };
-        ok.Click += (_, _) => dialog.DialogResult = true;
-        dialog.Loaded += (_, _) => { input.Focus(); input.SelectAll(); };
-        return dialog.ShowDialog() == true ? input.Text.Trim() : null;
+        if (_nameEditor != null) _nameEditor.IsOpen = false;
+        var input = new TextBox { Text = initial, MinWidth = 220, MaxWidth = 360, Margin = new Thickness(0, 6, 0, 0) };
+        AutomationProperties.SetName(input, title);
+        var content = new StackPanel();
+        content.Children.Add(new TextBlock { Text = title, FontWeight = FontWeights.SemiBold });
+        content.Children.Add(input);
+        var surface = new Border { Child = content, Padding = new Thickness(10), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6) };
+        surface.SetResourceReference(Border.BackgroundProperty, "AppBackgroundBrush");
+        surface.SetResourceReference(Border.BorderBrushProperty, "SystemControlForegroundBaseLowBrush");
+        surface.SetResourceReference(TextElement.ForegroundProperty, "SystemControlForegroundBaseHighBrush");
+        var popup = new Popup { Child = surface, PlacementTarget = anchor, Placement = PlacementMode.Bottom, StaysOpen = false, AllowsTransparency = true };
+        _nameEditor = popup;
+        input.PreviewKeyDown += (_, e) => {
+            if (e.Key == System.Windows.Input.Key.Enter) {
+                var name = input.Text.Trim();
+                popup.IsOpen = false;
+                save(name);
+                e.Handled = true;
+            }
+            else if (e.Key == System.Windows.Input.Key.Escape) { popup.IsOpen = false; e.Handled = true; }
+        };
+        popup.Opened += (_, _) => Dispatcher.BeginInvoke(() => { input.Focus(); input.SelectAll(); }, DispatcherPriority.Input);
+        popup.Closed += (_, _) => { if (ReferenceEquals(_nameEditor, popup)) _nameEditor = null; };
+        // Context-menu close restores focus; open after that completes.
+        Dispatcher.BeginInvoke(() => { if (anchor.IsLoaded && ReferenceEquals(_nameEditor, popup)) popup.IsOpen = true; }, DispatcherPriority.Input);
     }
 
     private void RebuildRows()
@@ -417,12 +436,14 @@ public sealed class TerminalPanel : UserControl
             header.Click += (_, _) => { if (!_collapsedSections.Add(section)) _collapsedSections.Remove(section); RebuildRows(); };
             var menu = new ContextMenu();
             menu.Items.Add(MenuItem("Rename section…", (_, _) => {
-                var name = AskName("Rename section", section);
-                if (string.IsNullOrWhiteSpace(name) || _sections.Contains(name)) return;
-                _sections[_sections.IndexOf(section)] = name;
-                foreach (var member in members) member.Section = name;
-                if (_collapsedSections.Remove(section)) _collapsedSections.Add(name);
-                RebuildRows();
+                EditName(header, "Rename section", section, name => {
+                    var index = _sections.IndexOf(section);
+                    if (index < 0 || string.IsNullOrWhiteSpace(name) || _sections.Contains(name)) return;
+                    _sections[index] = name;
+                    foreach (var member in _sessions.Where(s => s.Section == section).ToList()) member.Section = name;
+                    if (_collapsedSections.Remove(section)) _collapsedSections.Add(name);
+                    RebuildRows();
+                });
             }, enabled: section != "Sessions"));
             menu.Items.Add(MenuItem("Remove section", (_, _) => {
                 _sections.Remove(section); _collapsedSections.Remove(section);
@@ -564,6 +585,7 @@ public sealed class TerminalPanel : UserControl
     public void DisposeAll()
     {
         _tick.Stop();
+        if (_nameEditor != null) _nameEditor.IsOpen = false;
         UserPreferences.Changed -= OnPreferencesChanged;
         foreach (var session in _sessions.ToList()) CloseSession(session);
     }
