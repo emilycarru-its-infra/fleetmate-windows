@@ -410,6 +410,7 @@ public sealed class RepoWorkspaceModel : RepoObservable
 /// </summary>
 public sealed class RepoInsightsModel : RepoObservable
 {
+    public const string HistoryReference = "refs/remotes/origin/main";
     public enum InsightsScope { Repository, All }
 
     public enum InsightsPeriod { Days30, Days90, Months6, Year1, All }
@@ -490,7 +491,7 @@ public sealed class RepoInsightsModel : RepoObservable
                 if (selected == null) { Report = null; ShownKey = key; return; }
                 try
                 {
-                    var result = await manager.StatsAsync(selected, since, bucket: bucket, top: 12);
+                    var result = await manager.StatsAsync(selected, since, bucket: bucket, top: 12, reference: HistoryReference);
                     if (key != Key(selected, tracked)) return;
                     Report = result;
                     Error = null;
@@ -503,7 +504,7 @@ public sealed class RepoInsightsModel : RepoObservable
             }
             else
             {
-                var result = await manager.StatsSummaryAsync(tracked, since, bucket: bucket, top: 12);
+                var result = await manager.StatsSummaryAsync(tracked, since, bucket: bucket, top: 12, reference: HistoryReference);
                 if (key != Key(selected, tracked)) return;
                 Summary = result;
                 Error = null;

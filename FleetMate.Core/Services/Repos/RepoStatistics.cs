@@ -389,7 +389,7 @@ public sealed class RepoStatsSummary
             return new RepoStatsSummaryRow(
                 input.Id, input.DisplayName,
                 report.Total.Commits, report.Total.Authors, report.Total.Added, report.Total.Removed,
-                input.Commits.Count > 0 ? input.Commits.Max(c => c.Date) : status?.LastCommitAt,
+                input.Commits.Count > 0 ? input.Commits.Max(c => c.Date) : null,
                 status?.Branch, status?.Ahead ?? 0, status?.Behind ?? 0,
                 (status?.Staged ?? 0) + (status?.Unstaged ?? 0) + (status?.Untracked ?? 0),
                 input.Error ?? status?.Error,
@@ -408,10 +408,10 @@ public static class RepoManagerStatistics
 {
     /// <summary>One repository's statistics over a period.</summary>
     public static async Task<RepoStatsReport> StatsAsync(this RepoManager manager, RepoRecord record, DateTimeOffset? since,
-        DateTimeOffset? until = null, RepoStatsBucket? bucket = null, int top = 15, CancellationToken ct = default)
+        DateTimeOffset? until = null, RepoStatsBucket? bucket = null, int top = 15, CancellationToken ct = default, string? reference = null)
     {
         var end = until ?? DateTimeOffset.Now;
-        var commits = await manager.WorkingCopy(record).ChurnLogAsync(since, end, ct: ct);
+        var commits = await manager.WorkingCopy(record).ChurnLogAsync(since, end, reference: reference, ct: ct);
         return RepoStatistics.Report(commits, since, end, bucket, top);
     }
 
@@ -421,7 +421,7 @@ public static class RepoManagerStatistics
     /// never hides the others.
     /// </summary>
     public static async Task<RepoStatsSummary> StatsSummaryAsync(this RepoManager manager, IReadOnlyList<RepoRecord> records,
-        DateTimeOffset? since, DateTimeOffset? until = null, RepoStatsBucket? bucket = null, int top = 15, CancellationToken ct = default)
+        DateTimeOffset? since, DateTimeOffset? until = null, RepoStatsBucket? bucket = null, int top = 15, CancellationToken ct = default, string? reference = null)
     {
         var end = until ?? DateTimeOffset.Now;
         int concurrency;
@@ -432,7 +432,7 @@ public static class RepoManagerStatistics
             var status = await manager.StatusAsync(record, ct);
             try
             {
-                var commits = await manager.WorkingCopy(record).ChurnLogAsync(since, end, ct: ct);
+                var commits = await manager.WorkingCopy(record).ChurnLogAsync(since, end, reference: reference, ct: ct);
                 return new RepoStatsInput(record.Id, record.Key.DisplayName, commits, status, null);
             }
             catch (RepoException ex)

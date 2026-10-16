@@ -530,7 +530,7 @@ public static class ReposCommand
         var command = new Command("log", "Recent commits");
         var repo = new Argument<string>("repo", "Repository");
         var number = new Option<int>(new[] { "--number", "-n" }, () => 20, "Number of commits");
-        var reference = new Option<string?>("--ref", "Branch or ref (default: HEAD)");
+        var reference = new Option<string?>("--ref", "Branch or ref (default: HEAD). Use refs/remotes/origin/main to match Insights.");
         var json = JsonFlag();
         command.AddArgument(repo);
         command.AddOption(number);
@@ -561,11 +561,13 @@ public static class ReposCommand
         var since = new Option<string>("--since", () => "90d", "Start of the period: 30d, 12w, 6m, 1y, YYYY-MM-DD, or all");
         var by = new Option<string?>("--by", "Timeline bucket: day, week or month (default: chosen from the period)");
         var top = new Option<int>("--top", () => 10, "How many files, folders and authors to list");
+        var reference = new Option<string?>("--ref", "Branch or ref (default: HEAD). Use refs/remotes/origin/main to match Insights.");
         var json = JsonFlag();
         command.AddArgument(repos);
         command.AddOption(since);
         command.AddOption(by);
         command.AddOption(top);
+        command.AddOption(reference);
         command.AddOption(json);
         command.SetHandler(ctx => Run(async () =>
         {
@@ -589,7 +591,7 @@ public static class ReposCommand
             var records = manager.ResolveLocal(r.GetValueForArgument(repos));
             if (records.Count == 1)
             {
-                var report = await manager.StatsAsync(records[0], start, bucket: bucket, top: limit);
+                var report = await manager.StatsAsync(records[0], start, bucket: bucket, top: limit, reference: r.GetValueForOption(reference));
                 if (asJson) { PrintJson(report); return; }
                 AnsiConsole.MarkupLine($"\n[bold]{E(records[0].Key.DisplayName)}[/]  [grey]{Period(start)}[/]");
                 PrintReport(report, limit);
@@ -600,7 +602,7 @@ public static class ReposCommand
                 Console.WriteLine("No tracked repositories. Name one, or track some with 'fleetmate repos track'.");
                 return;
             }
-            var summary = await manager.StatsSummaryAsync(records, start, bucket: bucket, top: limit);
+            var summary = await manager.StatsSummaryAsync(records, start, bucket: bucket, top: limit, reference: r.GetValueForOption(reference));
             if (asJson) { PrintJson(summary); return; }
             AnsiConsole.MarkupLine($"\n[bold]Tracked repositories[/]  [grey]{Period(start)}[/]\n");
             AnsiConsole.MarkupLine("[grey]" + E(Pad("Repository", 44) + " " + Pad("Commits", 8) + " " + Pad("+lines", 9) + " " +

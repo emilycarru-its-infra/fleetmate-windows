@@ -122,8 +122,8 @@ public sealed class RepoInsightsView : UserControl
         var cli = _model.Insights.Scope == InsightsScope.All
             ? $"fleetmate repos stats --since {since}"
             : $"fleetmate repos stats {_model.Selected?.Key.DisplayName ?? "<repo>"} --since {since}";
-        _caption.Text = "Merge commits excluded · " + cli;
-        _caption.ToolTip = cli;
+        _caption.Text = "origin/main · Merge commits excluded · " + cli + " --ref " + HistoryReference;
+        _caption.ToolTip = cli + " --ref " + HistoryReference;
     }
 
     private void Placeholder(string text)
