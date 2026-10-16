@@ -215,6 +215,7 @@ public partial class TicketTasksPanel : UserControl
         EditTaskButton.Visibility = editable;
         DeleteTaskButton.Visibility = editable;
         CompleteButton.Visibility = task.IsComplete ? Visibility.Collapsed : Visibility.Visible;
+        SetLine(DetailWaitingText, TicketTaskController.WaitingOnPredecessor(task));
 
         if (freshForm) SetPercent(task.PercentComplete);
         _ = LoadFeedAsync(task.Id);
@@ -455,13 +456,16 @@ public partial class TicketTasksPanel : UserControl
         ApplyTemplateButton.IsEnabled = !busy && loaded && _catalog != null;
         TasksList.IsEnabled = !_submitting;
 
-        var canAct = !busy && loaded && SelectedTask() != null;
+        var selected = SelectedTask();
+        var canAct = !busy && loaded && selected != null;
+        // A task waiting on its predecessor takes a comment, not progress.
+        var canProgress = canAct && TicketTaskController.WaitingOnPredecessor(selected!) == null;
         SaveProgressButton.IsEnabled = canAct;
-        CompleteButton.IsEnabled = canAct;
+        CompleteButton.IsEnabled = canProgress;
         EditTaskButton.IsEnabled = canAct;
         DeleteTaskButton.IsEnabled = canAct;
-        PercentBox.IsReadOnly = !canAct;
-        PercentSlider.IsEnabled = canAct;
+        PercentBox.IsReadOnly = !canProgress;
+        PercentSlider.IsEnabled = canProgress;
         UpdateCommentBox.IsReadOnly = _submitting;
     }
 }

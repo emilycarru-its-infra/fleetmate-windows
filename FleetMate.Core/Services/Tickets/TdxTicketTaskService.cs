@@ -51,9 +51,11 @@ public sealed class TdxTicketTaskService : ITicketTaskApi
     public async Task<IReadOnlyList<TdxTicketTask>> GetTasksAsync(int ticketId, bool eligiblePredecessorsOnly = false, CancellationToken ct = default)
     {
         var url = TasksUrl(ticketId) + (eligiblePredecessorsOnly ? "?isEligiblePredecessor=true" : "");
-        using var response = await SendAsync(HttpMethod.Get, url, null, $"read the tasks of ticket {ticketId}", ct);
-        var tasks = await ReadAsync<List<TdxTicketTask>>(response, $"read the tasks of ticket {ticketId}", ct) ?? new();
-        return tasks.OrderBy(t => t.Order).ThenBy(t => t.Id).ToList();
+        var what = $"read the tasks of ticket {ticketId}";
+        using var response = await SendAsync(HttpMethod.Get, url, null, what, ct);
+        var tasks = await ReadAsync<List<TdxTicketTask?>>(response, what, ct)
+                    ?? throw Malformed(what, response, "no task list");
+        return RequireTasks(tasks, ticketId, what, response).OrderBy(t => t.Order).ThenBy(t => t.Id).ToList();
     }
 
     /// <inheritdoc />
@@ -66,8 +68,8 @@ public sealed class TdxTicketTaskService : ITicketTaskApi
         {
             using var doc = JsonDocument.Parse(text);
             if (doc.RootElement.ValueKind != JsonValueKind.Object) throw new JsonException("not an object");
-            var task = doc.RootElement.Deserialize<TdxTicketTask>(_json) ?? throw new JsonException("empty");
-            return (task, doc.RootElement.Clone());
+            var task = doc.RootElement.Deserialize<TdxTicketTask>(_json);
+            return (TicketTaskIdentity.Require(task, ticketId, taskId, what, (int)response.StatusCode), doc.RootElement.Clone());
         }
         catch (JsonException ex)
         {
@@ -82,19 +84,22 @@ public sealed class TdxTicketTaskService : ITicketTaskApi
     {
         var what = $"read the activity of task {taskId}";
         using var response = await SendAsync(HttpMethod.Get, TasksUrl(ticketId, $"{taskId}/feed"), null, what, ct);
-        var feed = await ReadAsync<List<TdxFeedEntry>>(response, what, ct) ?? new();
+        var feed = await ReadAsync<List<TdxFeedEntry?>>(response, what, ct) ?? throw Malformed(what, response, "no activity list");
+        if (feed.Any(e => e is not { Id: > 0 })) throw Malformed(what, response, "an activity entry without an ID");
 
         // The collection reports RepliesCount but never the replies; only the
         // tenant-level entry carries them. One entry failing to load leaves
         // that entry as it was rather than failing the whole feed.
-        var withReplies = await Task.WhenAll(feed.Select(async entry =>
+        var withReplies = await Task.WhenAll(feed.Select(async e =>
         {
+            var entry = e!;
             if (!entry.HasUnloadedReplies) return entry;
             try
             {
                 using var single = await SendAsync(HttpMethod.Get, _config.GetApiUrl($"feed/{entry.Id}"), null, "read a reply thread", ct);
                 var full = await ReadAsync<TdxFeedEntry>(single, "read a reply thread", ct);
-                return full?.ReplyList.Count > 0 ? entry.WithReplies(full.ReplyList.ToList()) : entry;
+                // Only the entry asked for supplies replies.
+                return full is { } f && f.Id == entry.Id && f.ReplyList.Count > 0 ? entry.WithReplies(f.ReplyList.ToList()) : entry;
             }
             catch (TdxTicketTaskException)
             {
@@ -105,37 +110,43 @@ public sealed class TdxTicketTaskService : ITicketTaskApi
     }
 
     /// <inheritdoc />
-    public async Task PostTaskFeedAsync(int ticketId, int taskId, TdxTicketTaskFeedRequest request, CancellationToken ct = default)
+    public async Task<TdxFeedEntry> PostTaskFeedAsync(int ticketId, int taskId, TdxTicketTaskFeedRequest request, CancellationToken ct = default)
     {
         if (request.PercentComplete is < 0 or > 100)
             throw new ArgumentOutOfRangeException(nameof(request), "Percent complete must be between 0 and 100.");
         if (request.PercentComplete == null && string.IsNullOrWhiteSpace(request.Comments))
             throw new ArgumentException("A task update needs a comment or a percent complete.", nameof(request));
 
-        using var response = await SendAsync(HttpMethod.Post, TasksUrl(ticketId, $"{taskId}/feed"), request,
-            $"update task {taskId} on ticket {ticketId}", ct);
-        Log.Information("[tdx] Tasks: update posted to task {Task} on ticket {Ticket} (progress {Percent})",
-            taskId, ticketId, request.PercentComplete?.ToString() ?? "unchanged");
+        var what = $"update task {taskId} on ticket {ticketId}";
+        using var response = await SendAsync(HttpMethod.Post, TasksUrl(ticketId, $"{taskId}/feed"), request, what, ct);
+        // The feed entry TeamDynamix generated is the proof the update was
+        // recorded. A success with an empty object, an error object or
+        // anything else without an entry ID proves nothing, so it is unknown.
+        var entry = await ReadAsync<TdxFeedEntry>(response, what, ct);
+        if (entry is not { Id: > 0 }) throw Malformed(what, response, "no activity entry");
+        Log.Information("[tdx] Tasks: update posted to task {Task} on ticket {Ticket} (progress {Percent}, entry {Entry})",
+            taskId, ticketId, request.PercentComplete?.ToString() ?? "unchanged", entry.Id);
+        return entry;
     }
 
     /// <inheritdoc />
-    public async Task<TdxTicketTask?> CreateTaskAsync(int ticketId, IDictionary<string, object?> body, CancellationToken ct = default)
+    public async Task<TdxTicketTask> CreateTaskAsync(int ticketId, IDictionary<string, object?> body, CancellationToken ct = default)
     {
         var what = $"add a task to ticket {ticketId}";
         using var response = await SendAsync(HttpMethod.Post, TasksUrl(ticketId), body, what, ct);
-        var task = await ReadAsync<TdxTicketTask>(response, what, ct);
-        Log.Information("[tdx] Tasks: task {Task} added to ticket {Ticket}", task?.Id, ticketId);
+        var task = TicketTaskIdentity.Require(await ReadAsync<TdxTicketTask>(response, what, ct), ticketId, null, what, (int)response.StatusCode);
+        Log.Information("[tdx] Tasks: task {Task} added to ticket {Ticket}", task.Id, ticketId);
         return task;
     }
 
     /// <inheritdoc />
-    public async Task<TdxTicketTask?> UpdateTaskAsync(int ticketId, int taskId, IDictionary<string, object?> body, CancellationToken ct = default)
+    public async Task<TdxTicketTask> UpdateTaskAsync(int ticketId, int taskId, IDictionary<string, object?> body, CancellationToken ct = default)
     {
         var what = $"save task {taskId} on ticket {ticketId}";
         using var response = await SendAsync(HttpMethod.Put, TasksUrl(ticketId, taskId.ToString()), body, what, ct);
         Log.Information("[tdx] Tasks: task {Task} on ticket {Ticket} saved (fields: {Fields})",
             taskId, ticketId, string.Join(", ", body.Keys.OrderBy(k => k, StringComparer.Ordinal)));
-        return await ReadAsync<TdxTicketTask>(response, what, ct);
+        return TicketTaskIdentity.Require(await ReadAsync<TdxTicketTask>(response, what, ct), ticketId, taskId, what, (int)response.StatusCode);
     }
 
     /// <inheritdoc />
@@ -155,7 +166,8 @@ public sealed class TdxTicketTaskService : ITicketTaskApi
         using var response = await SendAsync(HttpMethod.Post, TasksUrl(ticketId, "applytemplate"), request, what, ct);
         Log.Information("[tdx] Tasks: task template {Template} applied to ticket {Ticket} (remove existing requested: {Remove})",
             request.TaskTemplateId, ticketId, request.RemoveExistingTasks);
-        return await ReadAsync<List<TdxTicketTask>>(response, what, ct) ?? new();
+        var tasks = await ReadAsync<List<TdxTicketTask?>>(response, what, ct) ?? throw Malformed(what, response, "no task list");
+        return RequireTasks(tasks, ticketId, what, response);
     }
 
     /// <inheritdoc />
@@ -178,13 +190,36 @@ public sealed class TdxTicketTaskService : ITicketTaskApi
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Exact identity only: the one person whose primary email is the signed-in
+    /// account's. A lookup that finds only someone else, even as its single
+    /// result, or more than one exact match is no answer, so nobody is
+    /// assigned as "me" by a near miss.
+    /// </remarks>
     public async Task<TdxPerson?> GetMeAsync(CancellationToken ct = default)
     {
-        var email = _operatorEmail();
+        var email = _operatorEmail()?.Trim();
         if (string.IsNullOrWhiteSpace(email) || !email.Contains('@')) return null;
-        var matches = await SearchPeopleAsync(email, ct);
-        return matches.FirstOrDefault(p => string.Equals(p.PrimaryEmail, email, StringComparison.OrdinalIgnoreCase))
-               ?? (matches.Count == 1 ? matches[0] : null);
+        var exact = (await SearchPeopleAsync(email, ct))
+            .Where(p => p.Uid is { } uid && uid != Guid.Empty
+                        && string.Equals(p.PrimaryEmail?.Trim(), email, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        return exact.Count == 1 ? exact[0] : null;
+    }
+
+    /// <summary>Every task in a list must belong to the ticket; one that does not fails the whole answer.</summary>
+    private static List<TdxTicketTask> RequireTasks(List<TdxTicketTask?> tasks, int ticketId, string what, HttpResponseMessage response)
+    {
+        foreach (var task in tasks) TicketTaskIdentity.Require(task, ticketId, null, what, (int)response.StatusCode);
+        if (tasks.Select(t => t!.Id).Distinct().Count() != tasks.Count) throw Malformed(what, response, "the same task twice");
+        return tasks.Select(t => t!).ToList();
+    }
+
+    private static TdxTicketTaskException Malformed(string what, HttpResponseMessage response, string problem)
+    {
+        Log.Warning("[tdx] Tasks: {Operation} answered with {Problem}", what, problem);
+        return new TdxTicketTaskException($"TeamDynamix answered with {problem} when asked to {what}, so the answer was not used.",
+            (int)response.StatusCode);
     }
 
     // ── Transport ──────────────────────────────────────────────────────

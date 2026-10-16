@@ -115,6 +115,8 @@
 
                         <!-- Update: progress and/or a comment, through the task feed -->
                         <TextBlock Text="Update" FontWeight="SemiBold" FontSize="13" Margin="0,10,0,4" />
+                        <TextBlock x:Name="DetailWaitingText" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,4" Visibility="Collapsed"
+                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                         <DockPanel>
                             <TextBlock DockPanel.Dock="Right" Text="%" VerticalAlignment="Center" Margin="4,0,0,0" />
                             <TextBox x:Name="PercentBox" DockPanel.Dock="Right" Width="56" TextAlignment="Right"

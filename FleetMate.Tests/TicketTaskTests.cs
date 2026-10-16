@@ -67,8 +67,8 @@ public class TicketTaskTests
     public async Task ReadsTasksFromTheTicketingApplicationAsTheSignedInUserInOrder()
     {
         var handler = new StubHandler(_ => Json("""
-            [{"ID": 2, "TypeID": 3, "Title": "Approve", "Order": 2, "PercentComplete": 0, "EstimatedMinutes": 0},
-             {"ID": 1, "TypeID": 1, "Title": "Prepare", "Order": 1, "PercentComplete": 100, "EstimatedMinutes": 30}]
+            [{"ID": 2, "TicketID": 42, "TypeID": 3, "Title": "Approve", "Order": 2, "PercentComplete": 0, "EstimatedMinutes": 0},
+             {"ID": 1, "TicketID": 42, "TypeID": 1, "Title": "Prepare", "Order": 1, "PercentComplete": 100, "EstimatedMinutes": 30}]
             """));
         using var service = Service(handler);
 
@@ -144,7 +144,7 @@ public class TicketTaskTests
     [Fact]
     public async Task ACommentOnlyUpdateLeavesProgressOut()
     {
-        var handler = new StubHandler(_ => Json("{}"));
+        var handler = new StubHandler(_ => Json("""{"ID": 901, "Body": "Waiting on parts"}"""));
         using var service = Service(handler);
 
         await service.Tasks.PostTaskFeedAsync(42, 11, new TdxTicketTaskFeedRequest { Comments = "Waiting on parts" });
@@ -200,7 +200,7 @@ public class TicketTaskTests
     public async Task CreatesAndDeletesOnTheDocumentedRoutes()
     {
         var handler = new StubHandler(r => r.Method == HttpMethod.Post
-            ? Json("""{"ID": 12, "Title": "New one", "TypeID": 1}""", HttpStatusCode.Created)
+            ? Json("""{"ID": 12, "TicketID": 42, "Title": "New one", "TypeID": 1}""", HttpStatusCode.Created)
             : Json("\"Removed\""));
         using var service = Service(handler);
 
@@ -220,7 +220,7 @@ public class TicketTaskTests
     [Fact]
     public async Task AppliesATemplateWithTheDocumentedParameters()
     {
-        var handler = new StubHandler(_ => Json("""[{"ID": 20, "TypeID": 1, "Title": "From template"}]"""));
+        var handler = new StubHandler(_ => Json("""[{"ID": 20, "TicketID": 42, "TypeID": 1, "Title": "From template"}]"""));
         using var service = Service(handler);
 
         var tasks = await service.Tasks.ApplyTaskTemplateAsync(42, new TdxApplyTaskTemplateRequest
@@ -472,36 +472,42 @@ public class TicketTaskTests
             Calls.Add($"get {taskId}");
             if (!Tasks.TryGetValue(taskId, out var task)) throw new TdxTicketTaskException("gone", 404);
             var current = OnGetTask?.Invoke(Calls.Count(c => c == $"get {taskId}"), task) ?? task;
+            if (ReadBackAs != null && Calls.Count(c => c == $"get {taskId}") > 1) current = ReadBackAs(current);
             return Task.FromResult((current, JsonSerializer.SerializeToElement(current)));
         }
 
         public Task<IReadOnlyList<TdxFeedEntry>> GetTaskFeedAsync(int ticketId, int taskId, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<TdxFeedEntry>>(new List<TdxFeedEntry> { new() { Id = 1, Body = "Entry" } });
 
-        public async Task PostTaskFeedAsync(int ticketId, int taskId, TdxTicketTaskFeedRequest request, CancellationToken ct = default)
+        public TdxFeedEntry FeedEntry = new() { Id = 900 };
+        public Func<int, TdxTicketTask>? CreateReturns;
+        public Func<TdxTicketTask, TdxTicketTask>? ReadBackAs;
+
+        public async Task<TdxFeedEntry> PostTaskFeedAsync(int ticketId, int taskId, TdxTicketTaskFeedRequest request, CancellationToken ct = default)
         {
             Calls.Add($"feed {taskId}");
             LastFeed = request;
             if (HoldPost != null) await HoldPost.Task;
             if (PostFails != null) throw PostFails;
             if (request.PercentComplete is int p) Tasks[taskId].PercentComplete = p;
+            return FeedEntry;
         }
 
-        public Task<TdxTicketTask?> CreateTaskAsync(int ticketId, IDictionary<string, object?> body, CancellationToken ct = default)
+        public Task<TdxTicketTask> CreateTaskAsync(int ticketId, IDictionary<string, object?> body, CancellationToken ct = default)
         {
             Calls.Add("create");
             LastBody = body;
-            var task = new TdxTicketTask { Id = 99, TypeId = 1, Title = (string?)body["Title"] };
-            Tasks[99] = task;
-            return Task.FromResult<TdxTicketTask?>(task);
+            var task = CreateReturns?.Invoke(ticketId) ?? new TdxTicketTask { Id = 99, TicketId = ticketId, TypeId = 1, Title = (string?)body["Title"] };
+            Tasks[task.Id] = task;
+            return Task.FromResult(task);
         }
 
-        public Task<TdxTicketTask?> UpdateTaskAsync(int ticketId, int taskId, IDictionary<string, object?> body, CancellationToken ct = default)
+        public Task<TdxTicketTask> UpdateTaskAsync(int ticketId, int taskId, IDictionary<string, object?> body, CancellationToken ct = default)
         {
             Calls.Add($"put {taskId}");
             LastBody = body;
             if (body.TryGetValue("Title", out var t) && t is string title) Tasks[taskId].Title = title;
-            return Task.FromResult<TdxTicketTask?>(Tasks[taskId]);
+            return Task.FromResult(Tasks[taskId]);
         }
 
         public Task DeleteTaskAsync(int ticketId, int taskId, CancellationToken ct = default)
@@ -636,7 +642,7 @@ public class TicketTaskTests
     public async Task ATaskChangedSinceItWasShownIsNotOverwritten()
     {
         var (api, controller) = await LoadedAsync();
-        api.OnGetTask = (_, t) => new TdxTicketTask { Id = t.Id, TypeId = 1, PercentComplete = t.PercentComplete, ModifiedDate = Modified.AddMinutes(5) };
+        api.OnGetTask = (_, t) => new TdxTicketTask { Id = t.Id, TicketId = 42, TypeId = 1, PercentComplete = t.PercentComplete, ModifiedDate = Modified.AddMinutes(5) };
 
         var outcome = await controller.UpdateProgressAsync(42, 11, 100, null, false);
 
@@ -651,7 +657,7 @@ public class TicketTaskTests
     public async Task AProgressTheServerDoesNotShowIsAFailureNotASuccess()
     {
         var (api, controller) = await LoadedAsync();
-        api.OnGetTask = (n, t) => n == 2 ? new TdxTicketTask { Id = 11, TypeId = 1, PercentComplete = 40 } : t;
+        api.OnGetTask = (n, t) => n == 2 ? new TdxTicketTask { Id = 11, TicketId = 42, TypeId = 1, PercentComplete = 40 } : t;
         api.PostFails = null;
 
         var outcome = await controller.UpdateProgressAsync(42, 11, 90, null, false);
@@ -873,6 +879,316 @@ public class TicketTaskTests
         Assert.Equal("Entry", Assert.Single(feed!.Value.Feed).Body);
     }
 
+    // ── Review regressions: proof of an update, identity, exact "me", waiting tasks ──
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{"ID": 0, "Body": "x"}""")]
+    [InlineData("""{"Message": "The task could not be updated."}""")]
+    [InlineData("")]
+    [InlineData("null")]
+    public async Task ATaskUpdateAnsweredWithoutAGeneratedEntryIsNotTakenAsDone(string answer)
+    {
+        var handler = new StubHandler(_ => Json(answer));
+        using var service = Service(handler);
+
+        var ex = await Assert.ThrowsAsync<TdxTicketTaskException>(() =>
+            service.Tasks.PostTaskFeedAsync(42, 11, new TdxTicketTaskFeedRequest { Comments = "Parts ordered" }));
+
+        Assert.Equal(200, ex.StatusCode);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task ACommentOnlyUpdateAnsweredWithAnEmptySuccessIsUncertainEndToEnd()
+    {
+        // The real service against a stub server: the task reads fine, the
+        // feed POST answers 200 with {}. Progress is unchanged, so a read-back
+        // would look identical either way — only the entry could prove it.
+        var handler = new StubHandler(r => r.Method == HttpMethod.Post ? Json("{}") : r.RequestUri!.AbsolutePath.EndsWith("/tasks")
+            ? Json($"[{TaskJson}]")
+            : Json(TaskJson));
+        using var service = Service(handler);
+        var controller = new TicketTaskController(service.Tasks);
+        await controller.LoadAsync(42);
+
+        var outcome = await controller.UpdateProgressAsync(42, 11, 40, "Parts ordered", false);
+
+        Assert.Equal(TicketTaskSubmitStatus.Uncertain, outcome.Status);
+        Assert.DoesNotContain("Comment added", outcome.Message);
+        Assert.Null(controller.Current);
+    }
+
+    [Fact]
+    public async Task AFakeFeedWithoutAnEntryIsAlsoUncertainInTheController()
+    {
+        var (api, controller) = await LoadedAsync();
+        api.FeedEntry = new TdxFeedEntry();
+
+        var outcome = await controller.UpdateProgressAsync(42, 11, 40, "Note", false);
+
+        Assert.Equal(TicketTaskSubmitStatus.Uncertain, outcome.Status);
+    }
+
+    [Theory]
+    [InlineData("{}", "without an ID")]
+    [InlineData("""{"ID": 11, "TicketID": 41, "TypeID": 1}""", "another ticket")]
+    [InlineData("""{"ID": 12, "TicketID": 42, "TypeID": 1}""", "different task")]
+    [InlineData("[]", "could not read")]
+    public async Task AReadOfOneTaskRejectsMalformedOrForeignObjects(string answer, string expected)
+    {
+        using var service = Service(new StubHandler(_ => Json(answer)));
+
+        var ex = await Assert.ThrowsAsync<TdxTicketTaskException>(() => service.Tasks.GetTaskAsync(42, 11));
+
+        Assert.Contains(expected, ex.Message);
+    }
+
+    [Theory]
+    [InlineData("""[{"ID": 1, "TicketID": 41}]""")]
+    [InlineData("""[{"ID": 0, "TicketID": 42}]""")]
+    [InlineData("""[null]""")]
+    [InlineData("""[{"ID": 1, "TicketID": 42}, {"ID": 1, "TicketID": 42}]""")]
+    [InlineData("null")]
+    public async Task ATaskListWithAForeignMissingOrRepeatedTaskIsRejected(string answer)
+    {
+        using var service = Service(new StubHandler(_ => Json(answer)));
+
+        await Assert.ThrowsAsync<TdxTicketTaskException>(() => service.Tasks.GetTasksAsync(42));
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{"ID": 12, "TicketID": 41, "TypeID": 1}""")]
+    [InlineData("")]
+    public async Task ACreateAnsweredWithoutATaskOnThisTicketIsUncertain(string answer)
+    {
+        using var service = Service(new StubHandler(r => r.Method == HttpMethod.Post
+            ? Json(answer, HttpStatusCode.Created)
+            : Json($"[{TaskJson}]")));
+        var controller = new TicketTaskController(service.Tasks);
+        await controller.LoadAsync(42);
+
+        var outcome = await controller.CreateAsync(42, new TicketTaskWrite { Title = "Order a charger", EstimatedMinutes = 5 });
+
+        Assert.Equal(TicketTaskSubmitStatus.Uncertain, outcome.Status);
+        Assert.True(outcome.WasSent);
+    }
+
+    [Fact]
+    public async Task AnUpdateAnsweredWithAnotherTaskIsRejected()
+    {
+        using var service = Service(new StubHandler(_ => Json("""{"ID": 12, "TicketID": 42, "TypeID": 1}""")));
+
+        await Assert.ThrowsAsync<TdxTicketTaskException>(() =>
+            service.Tasks.UpdateTaskAsync(42, 11, new Dictionary<string, object?> { ["Title"] = "x" }));
+    }
+
+    [Fact]
+    public async Task ATemplateResultWithAnotherTicketsTaskIsRejected()
+    {
+        using var service = Service(new StubHandler(_ => Json("""[{"ID": 20, "TicketID": 42}, {"ID": 21, "TicketID": 43}]""")));
+
+        await Assert.ThrowsAsync<TdxTicketTaskException>(() =>
+            service.Tasks.ApplyTaskTemplateAsync(42, new TdxApplyTaskTemplateRequest { TaskTemplateId = 3 }));
+    }
+
+    [Fact]
+    public async Task AFeedEntryWithoutAnIdFailsTheActivityRead()
+    {
+        using var service = Service(new StubHandler(_ => Json("""[{"ID": 0, "Body": "x"}]""")));
+
+        await Assert.ThrowsAsync<TdxTicketTaskException>(() => service.Tasks.GetTaskFeedAsync(42, 11));
+    }
+
+    [Fact]
+    public async Task AReadBackOfAnotherTicketsTaskIsUncertainNotSuccess()
+    {
+        var (api, controller) = await LoadedAsync();
+        api.ReadBackAs = t => new TdxTicketTask { Id = t.Id, TicketId = 43, TypeId = 1, PercentComplete = 75 };
+
+        var outcome = await controller.UpdateProgressAsync(42, 11, 75, null, false);
+
+        Assert.Equal(TicketTaskSubmitStatus.Uncertain, outcome.Status);
+        Assert.Contains("another ticket", outcome.Message);
+    }
+
+    [Fact]
+    public async Task ACreateOnAnotherTicketIsUncertainInTheController()
+    {
+        var (api, controller) = await LoadedAsync();
+        api.CreateReturns = _ => new TdxTicketTask { Id = 99, TicketId = 43, TypeId = 1 };
+
+        var outcome = await controller.CreateAsync(42, new TicketTaskWrite { Title = "T" });
+
+        Assert.Equal(TicketTaskSubmitStatus.Uncertain, outcome.Status);
+    }
+
+    [Fact]
+    public async Task ATemplateResultForAnotherTicketIsUncertainInTheController()
+    {
+        var (api, controller) = await LoadedAsync();
+        api.ApplyResult = new List<TdxTicketTask> { new() { Id = 30, TicketId = 43, TypeId = 1 } };
+        var template = new TaskTemplateChoice(3, "New hire");
+
+        var outcome = await controller.ApplyTemplateAsync(42, template, new[] { template }, false, TaskTemplateStartDate.Current);
+
+        Assert.Equal(TicketTaskSubmitStatus.Uncertain, outcome.Status);
+    }
+
+    [Fact]
+    public async Task AssignToMeNeverFallsBackToASoleNonMatchingPerson()
+    {
+        using var service = Service(new StubHandler(_ => Json("""
+            [{"UID": "11111111-1111-1111-1111-111111111111", "FullName": "Someone Else", "PrimaryEmail": "someone.else@example.com"}]
+            """)));
+
+        Assert.Null(await service.Tasks.GetMeAsync());
+    }
+
+    [Theory]
+    [InlineData("""[{"UID": null, "PrimaryEmail": "operator@example.com"}]""")]
+    [InlineData("""[{"UID": "00000000-0000-0000-0000-000000000000", "PrimaryEmail": "operator@example.com"}]""")]
+    [InlineData("""[{"UID": "11111111-1111-1111-1111-111111111111", "PrimaryEmail": "operator@example.com"}, {"UID": "22222222-2222-2222-2222-222222222222", "PrimaryEmail": "operator@example.com"}]""")]
+    [InlineData("[]")]
+    public async Task AssignToMeNeedsExactlyOneExactMatchWithAnId(string answer)
+    {
+        using var service = Service(new StubHandler(_ => Json(answer)));
+
+        Assert.Null(await service.Tasks.GetMeAsync());
+    }
+
+    [Fact]
+    public async Task AssignToMeIsNothingWithoutASignIn()
+    {
+        var handler = new StubHandler(_ => Json("[]"));
+        using var service = Service(handler, signedIn: false);
+
+        Assert.Null(await service.Tasks.GetMeAsync());
+        Assert.Empty(handler.Requests);
+    }
+
+    private static TdxTicketTask Waiting()
+    {
+        var task = Standard(12, 0);
+        task.IsActive = false;
+        task.PredecessorId = 11;
+        task.PredecessorTitle = "Order parts";
+        return task;
+    }
+
+    [Fact]
+    public async Task ATaskWaitingOnItsPredecessorTakesNoProgress()
+    {
+        var (api, controller) = await LoadedAsync(Standard(11), Waiting());
+
+        var progress = await controller.UpdateProgressAsync(42, 12, 50, null, false);
+        var complete = await controller.CompleteAsync(42, 12, "Done early", false);
+
+        Assert.Equal(TicketTaskSubmitStatus.NotSent, progress.Status);
+        Assert.Contains("waiting on “Order parts”", progress.Message);
+        Assert.Equal(TicketTaskSubmitStatus.NotSent, complete.Status);
+        Assert.Empty(api.Calls);
+        Assert.NotNull(controller.Current);
+    }
+
+    [Fact]
+    public async Task AWaitingTaskStillTakesAComment()
+    {
+        var (api, controller) = await LoadedAsync(Standard(11), Waiting());
+
+        var outcome = await controller.UpdateProgressAsync(42, 12, 0, "Parts are late", false);
+
+        Assert.True(outcome.Succeeded, outcome.Message);
+        Assert.Null(api.LastFeed!.PercentComplete);
+        Assert.StartsWith("Comment added", outcome.Message);
+    }
+
+    [Fact]
+    public async Task ATaskThatBecameBlockedSinceItWasShownIsNotProgressed()
+    {
+        var (api, controller) = await LoadedAsync();
+        // Same modified date and progress, but the server now says inactive.
+        api.OnGetTask = (_, t) => new TdxTicketTask
+        {
+            Id = t.Id, TicketId = 42, TypeId = 1, PercentComplete = t.PercentComplete, ModifiedDate = t.ModifiedDate,
+            IsActive = false, PredecessorId = 5,
+        };
+
+        var outcome = await controller.UpdateProgressAsync(42, 11, 90, null, false);
+
+        Assert.Equal(TicketTaskSubmitStatus.NotSent, outcome.Status);
+        Assert.Contains("waiting on", outcome.Message);
+        Assert.DoesNotContain(api.Calls, c => c.StartsWith("feed"));
+        Assert.Null(controller.Current);
+    }
+
+    [Fact]
+    public void ACompleteInactiveTaskIsNotTreatedAsWaiting()
+    {
+        var done = Waiting();
+        done.PercentComplete = 100;
+        Assert.Null(TicketTaskController.WaitingOnPredecessor(done));
+        Assert.Null(TicketTaskController.WaitingOnPredecessor(Standard()));
+    }
+
+    [Fact]
+    public void AnUneditedRichDescriptionIsKeptExactly()
+    {
+        const string rich = "<p>Use the <b>standard</b> image</p>";
+        var shown = TicketTaskFormat.PlainText(rich);
+
+        Assert.Equal(rich, TicketTaskWrite.DescriptionFromEditor(rich, shown));
+        Assert.Equal("Use the new image", TicketTaskWrite.DescriptionFromEditor(rich, "Use the new image"));
+        Assert.Null(TicketTaskWrite.DescriptionFromEditor(rich, "  "));
+        Assert.Null(TicketTaskWrite.DescriptionFromEditor(null, ""));
+    }
+
+    [Fact]
+    public void AnEditThatLeavesTheRichDescriptionAloneDoesNotSendIt()
+    {
+        const string rich = "<p>Use the <b>standard</b> image</p>";
+        var original = new TicketTaskWrite { Title = "T", Description = rich };
+        var edited = original with
+        {
+            Title = "T2",
+            Description = TicketTaskWrite.DescriptionFromEditor(rich, TicketTaskFormat.PlainText(rich)),
+        };
+
+        Assert.Equal(new[] { "Title" }, TicketTaskBody.Changes(original, edited).Keys);
+    }
+
+    [Theory]
+    [InlineData(TicketTaskType.Standard, "Task")]
+    [InlineData(TicketTaskType.Workflow, "Workflow task")]
+    [InlineData(TicketTaskType.MaintenanceActivity, "Maintenance activity")]
+    [InlineData(TicketTaskType.None, "Other")]
+    public void EveryTaskTypeReadsDistinctly(TicketTaskType type, string label)
+    {
+        Assert.Equal(label, TicketTaskFormat.TypeLabel(type));
+        Assert.Equal(type == TicketTaskType.Standard, TicketTasksPanel.RestrictionNote(type) == null);
+    }
+
+    [Fact]
+    public void TheLogsNeverCarryAResponseBody()
+    {
+        var source = File.ReadAllText(Path.Combine(RepoRoot(), "FleetMate.Core", "Services", "Tickets", "TdxTicketTaskService.cs"));
+        foreach (var line in source.Split('\n').Where(l => l.Contains("Log.")))
+        {
+            Assert.DoesNotContain("text", line);
+            Assert.DoesNotContain("body", line, StringComparison.Ordinal);
+            Assert.DoesNotContain("url", line, StringComparison.Ordinal);
+            Assert.DoesNotContain("ex,", line);
+        }
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "FleetMate.sln"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new DirectoryNotFoundException("FleetMate.sln");
+    }
+
     // ── The panel, built and driven without a window ───────────────────
 
     private static void OnSta(Action action)
@@ -953,6 +1269,30 @@ public class TicketTaskTests
 
         panel.Clear();
         Assert.Equal(System.Windows.Visibility.Collapsed, panel.Visibility);
+    });
+
+    [Fact]
+    public void ThePanelLocksProgressButNotCommentsOnAWaitingTask() => OnSta(() =>
+    {
+        var api = new FakeApi();
+        api.Tasks[11] = Standard(11);
+        api.Tasks[12] = Waiting();
+        var panel = new TicketTasksPanel();
+        panel.Attach(api, (_, _) => Task.FromResult<IReadOnlyList<TaskTemplateChoice>>(Array.Empty<TaskTemplateChoice>()));
+        Pump(panel.LoadAsync(42));
+
+        var rows = Assert.IsAssignableFrom<IEnumerable<TicketTaskRow>>(panel.TasksList.ItemsSource).ToList();
+        panel.TasksList.SelectedItem = rows.Single(r => r.Id == 12);
+        Pump(Task.Delay(50));
+
+        Assert.False(panel.CompleteButton.IsEnabled);
+        Assert.False(panel.PercentSlider.IsEnabled);
+        Assert.True(panel.PercentBox.IsReadOnly);
+        Assert.True(panel.SaveProgressButton.IsEnabled);
+        Assert.False(panel.UpdateCommentBox.IsReadOnly);
+        Assert.False(panel.UpdatePrivateBox.IsChecked);
+        Assert.Equal(System.Windows.Visibility.Visible, panel.DetailWaitingText.Visibility);
+        Assert.Contains("Order parts", panel.DetailWaitingText.Text);
     });
 
     [Fact]

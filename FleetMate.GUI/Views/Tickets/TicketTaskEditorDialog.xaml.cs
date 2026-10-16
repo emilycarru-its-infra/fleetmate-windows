@@ -225,7 +225,7 @@ public partial class TicketTaskEditorDialog : Window
         {
             var me = await _controller.Api.GetMeAsync();
             if (me?.Uid is { } uid) SetPerson(uid, me);
-            else StatusText.Text = "Your TeamDynamix person record could not be found.";
+            else StatusText.Text = "No TeamDynamix person matches your sign-in exactly, so nobody was assigned.";
         }
         catch (TdxTicketTaskException ex)
         {
@@ -308,14 +308,12 @@ public partial class TicketTaskEditorDialog : Window
 
         // The description is edited as plain text; an untouched one keeps its
         // original markup rather than being flattened.
-        var description = DescriptionBox.Text == TicketTaskFormat.PlainText(_original.Description)
-            ? _original.Description
-            : DescriptionBox.Text;
+        var description = TicketTaskWrite.DescriptionFromEditor(_original.Description, DescriptionBox.Text);
 
         var values = new TicketTaskWrite
         {
             Title = TitleBox.Text.Trim(),
-            Description = string.IsNullOrWhiteSpace(description) ? null : description,
+            Description = description,
             EstimatedMinutes = estimate,
             CompleteWithinMinutes = within,
             StartDate = start,

@@ -196,8 +196,19 @@ public sealed class TicketTaskController
             if (!progressChanged && comment.Length == 0)
                 return NotSent(ticketId, taskId, $"The task is already at {percentComplete}%. Change the progress or add a comment.");
 
+            // A task waiting on its predecessor takes comments but not
+            // progress, as in TeamDynamix itself. Checked against what was
+            // shown and again against the task as just read.
+            if (progressChanged && WaitingOnPredecessor(shown) is { } waiting)
+                return NotSent(ticketId, taskId, waiting);
+
             var (latest, _) = await _api.GetTaskAsync(ticketId, taskId);
             if (Changed(shown, latest) is { } why) return Stale(ticketId, taskId, why);
+            if (progressChanged && WaitingOnPredecessor(latest) is { } nowWaiting)
+            {
+                Invalidate();
+                return NotSent(ticketId, taskId, nowWaiting);
+            }
 
             Spend();
             var request = new TdxTicketTaskFeedRequest
@@ -206,14 +217,21 @@ public sealed class TicketTaskController
                 PercentComplete = progressChanged ? percentComplete : null,
                 IsPrivate = isPrivate,
             };
+            TdxFeedEntry entry;
             try
             {
-                await _api.PostTaskFeedAsync(ticketId, taskId, request);
+                entry = await _api.PostTaskFeedAsync(ticketId, taskId, request);
             }
             catch (Exception ex)
             {
                 return SendFailed(ticketId, taskId, ex);
             }
+
+            // The generated feed entry is the only proof a comment was
+            // recorded; progress read back alone says nothing about it.
+            if (entry is not { Id: > 0 })
+                return new(TicketTaskSubmitStatus.Uncertain, ticketId, taskId,
+                    "TeamDynamix answered without the update it recorded. Check the refreshed task before sending it again.");
 
             var title = latest.DisplayTitle;
             return await ReadBackAsync(ticketId, taskId, after =>
@@ -239,7 +257,7 @@ public sealed class TicketTaskController
             if (values.Validate() is { } invalid) return NotSent(ticketId, null, invalid);
 
             Spend();
-            TdxTicketTask? created;
+            TdxTicketTask created;
             try
             {
                 created = await _api.CreateTaskAsync(ticketId, TicketTaskBody.ForCreate(values));
@@ -249,9 +267,9 @@ public sealed class TicketTaskController
                 return SendFailed(ticketId, null, ex);
             }
 
-            if (created is not { Id: > 0 })
+            if (!TicketTaskIdentity.Belongs(created, ticketId))
                 return new(TicketTaskSubmitStatus.Uncertain, ticketId, null,
-                    "TeamDynamix answered without the new task. Check the refreshed list before adding it again.");
+                    "TeamDynamix answered without a task on this ticket. Check the refreshed list before adding it again.");
             return new(TicketTaskSubmitStatus.Succeeded, ticketId, created.Id, $"Added “{created.DisplayTitle}”.");
         });
 
@@ -363,6 +381,10 @@ public sealed class TicketTaskController
                 return SendFailed(ticketId, null, ex);
             }
 
+            if (after.Any(t => !TicketTaskIdentity.Belongs(t, ticketId)))
+                return new(TicketTaskSubmitStatus.Uncertain, ticketId, null,
+                    "TeamDynamix answered with tasks that are not this ticket's. Check the refreshed list before applying again.");
+
             var afterIds = after.Select(t => t.Id).ToHashSet();
             var added = after.Count(t => !before.Any(b => b.Id == t.Id));
             var keptStandard = before.Count(b => b.IsStandard && afterIds.Contains(b.Id));
@@ -435,11 +457,24 @@ public sealed class TicketTaskController
     /// <summary>Why <paramref name="latest"/> no longer matches what the operator saw, or null.</summary>
     internal static string? Changed(TdxTicketTask shown, TdxTicketTask latest)
     {
-        if (latest.Id != shown.Id) return "it is a different task";
+        if (latest.Id != shown.Id || latest.TicketId != shown.TicketId) return "it is a different task";
         if (latest.TypeId != shown.TypeId) return "its type changed";
         if (latest.PercentComplete != shown.PercentComplete) return $"its progress is now {latest.PercentComplete}%";
         if (latest.ModifiedDate != shown.ModifiedDate) return "someone changed it";
         return null;
+    }
+
+    /// <summary>
+    /// Why the task's progress cannot change yet, or null: it is incomplete
+    /// and inactive, which TeamDynamix means as waiting on its predecessor.
+    /// </summary>
+    public static string? WaitingOnPredecessor(TdxTicketTask task)
+    {
+        if (task.IsActive || task.IsComplete) return null;
+        var predecessor = task.PredecessorId > 0
+            ? $"“{(string.IsNullOrWhiteSpace(task.PredecessorTitle) ? $"task {task.PredecessorId}" : task.PredecessorTitle!.Trim())}”"
+            : "its predecessor";
+        return $"“{task.DisplayTitle}” is waiting on {predecessor}, so its progress cannot change until that is complete. A comment can still be added.";
     }
 
     private TicketTaskSubmitOutcome Stale(int ticketId, int taskId, string why)
@@ -467,6 +502,9 @@ public sealed class TicketTaskController
         try
         {
             var (after, _) = await _api.GetTaskAsync(ticketId, taskId);
+            if (TicketTaskIdentity.Problem(after, ticketId, taskId) is { } problem)
+                return new(TicketTaskSubmitStatus.Uncertain, ticketId, taskId,
+                    $"TeamDynamix accepted the change, but reading it back returned {problem}. Check the refreshed task.");
             return judge(after);
         }
         catch (Exception ex)

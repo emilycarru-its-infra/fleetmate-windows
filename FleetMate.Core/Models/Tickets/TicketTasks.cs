@@ -230,6 +230,17 @@ public sealed record TicketTaskWrite
         NotifyResponsible = task.NotifyResponsible ?? true,
     };
 
+    /// <summary>
+    /// The description to send from the editor's plain text. Unedited, the
+    /// original is kept exactly — rich text and all — rather than flattened
+    /// to what the editor showed.
+    /// </summary>
+    public static string? DescriptionFromEditor(string? original, string? editorText)
+    {
+        if ((editorText ?? "") == TicketTaskFormat.PlainText(original)) return original;
+        return string.IsNullOrWhiteSpace(editorText) ? null : editorText;
+    }
+
     /// <summary>Why these values cannot be sent, or null when they can.</summary>
     public string? Validate(int? taskId = null)
     {
@@ -418,6 +429,40 @@ public static class TicketTaskFormat
 }
 
 /// <summary>
+/// The check every task TeamDynamix sends back has to pass before FleetMate
+/// believes it: a positive ID, the ticket that was asked about and, where one
+/// task was asked for, that task. A malformed or foreign object is never
+/// shown, edited or taken as proof a change happened.
+/// </summary>
+public static class TicketTaskIdentity
+{
+    public static bool Belongs(TdxTicketTask? task, int ticketId, int? taskId = null) =>
+        task is { Id: > 0 } && task.TicketId == ticketId && (taskId == null || task.Id == taskId);
+
+    /// <summary>The reason <paramref name="task"/> fails the check, or null.</summary>
+    public static string? Problem(TdxTicketTask? task, int ticketId, int? taskId = null) => task switch
+    {
+        null => "no task",
+        { Id: <= 0 } => "a task without an ID",
+        _ when task.TicketId != ticketId => "a task from another ticket",
+        _ when taskId != null && task.Id != taskId => "a different task",
+        _ => null,
+    };
+
+    /// <summary>
+    /// Throws when <paramref name="task"/> fails the check. The status is the
+    /// answer's own (a success), so a change that was sent reads as uncertain,
+    /// never as refused.
+    /// </summary>
+    public static TdxTicketTask Require(TdxTicketTask? task, int ticketId, int? taskId, string what, int? status)
+    {
+        if (Problem(task, ticketId, taskId) is { } problem)
+            throw new TdxTicketTaskException($"TeamDynamix answered with {problem} when asked to {what}, so the answer was not used.", status);
+        return task!;
+    }
+}
+
+/// <summary>
 /// A ticket-task request TeamDynamix refused or never answered. The message is
 /// always one FleetMate wrote — never a response body, URL or exception text,
 /// which can carry ticket content or a sign-in page.
@@ -450,12 +495,18 @@ public interface ITicketTaskApi
 
     Task<IReadOnlyList<TdxFeedEntry>> GetTaskFeedAsync(int ticketId, int taskId, CancellationToken ct = default);
 
-    /// <summary>Post a comment and/or a new percent complete to the task feed.</summary>
-    Task PostTaskFeedAsync(int ticketId, int taskId, TdxTicketTaskFeedRequest request, CancellationToken ct = default);
+    /// <summary>
+    /// Post a comment and/or a new percent complete to the task feed. Returns
+    /// the feed entry TeamDynamix generated; an answer without one throws,
+    /// because a 200 with no entry is no proof anything was recorded.
+    /// </summary>
+    Task<TdxFeedEntry> PostTaskFeedAsync(int ticketId, int taskId, TdxTicketTaskFeedRequest request, CancellationToken ct = default);
 
-    Task<TdxTicketTask?> CreateTaskAsync(int ticketId, IDictionary<string, object?> body, CancellationToken ct = default);
+    /// <summary>The created task; throws unless it is a task on <paramref name="ticketId"/>.</summary>
+    Task<TdxTicketTask> CreateTaskAsync(int ticketId, IDictionary<string, object?> body, CancellationToken ct = default);
 
-    Task<TdxTicketTask?> UpdateTaskAsync(int ticketId, int taskId, IDictionary<string, object?> body, CancellationToken ct = default);
+    /// <summary>The saved task; throws unless it is <paramref name="taskId"/> on <paramref name="ticketId"/>.</summary>
+    Task<TdxTicketTask> UpdateTaskAsync(int ticketId, int taskId, IDictionary<string, object?> body, CancellationToken ct = default);
 
     Task DeleteTaskAsync(int ticketId, int taskId, CancellationToken ct = default);
 
