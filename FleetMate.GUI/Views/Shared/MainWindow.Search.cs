@@ -12,6 +12,8 @@ namespace FleetMate.GUI.Views.Shared;
 /// filter box the tab registers (<see cref="ITabSearch"/>); in All scope it
 /// searches everything and drops hits beneath it, grouped by category. Ctrl+F
 /// filters the tab, Ctrl+K searches everything, the chip switches, Esc clears.
+/// TicketsMate leaves the chip out — it has one module — and words the field
+/// for tickets; the shortcuts work the same.
 /// </summary>
 public partial class MainWindow
 {
@@ -81,11 +83,14 @@ public partial class MainWindow
         SearchBox.CaretIndex = SearchBox.Text.Length;
     }
 
-    /// <summary>Keep the typed text clear of the chip, whatever its label.</summary>
+    /// <summary>Keep the typed text clear of the chip, whatever its label; with no chip, just clear of the magnifier.</summary>
     private void OnSearchScopeChipSizeChanged(object sender, SizeChangedEventArgs e)
     {
         var padding = SearchBox.Padding;
-        SearchBox.Padding = new Thickness(SearchScopeChip.Margin.Left + e.NewSize.Width + 6, padding.Top, padding.Right, padding.Bottom);
+        var left = SearchScopeChip.Visibility == Visibility.Visible
+            ? SearchScopeChip.Margin.Left + e.NewSize.Width + 6
+            : SearchScopeChip.Margin.Left;
+        SearchBox.Padding = new Thickness(left, padding.Top, padding.Right, padding.Bottom);
     }
 
     /// <summary>
@@ -111,8 +116,17 @@ public partial class MainWindow
     /// <summary>Label, prompt and hint for the current scope; then apply <paramref name="text"/> to it.</summary>
     private void ShowSearchMode(string text)
     {
+        var showChip = ToolbarSearchScopes.ShowsScopeChip(TicketsOnly);
+        if (!showChip && SearchScopeChip.Visibility == Visibility.Visible)
+        {
+            SearchScopeChip.Visibility = Visibility.Collapsed;
+            var padding = SearchBox.Padding;
+            SearchBox.Padding = new Thickness(SearchScopeChip.Margin.Left, padding.Top, padding.Right, padding.Bottom);
+            System.Windows.Automation.AutomationProperties.SetName(SearchBox, ToolbarSearchScopes.AccessibleName(TicketsOnly));
+        }
         SearchScopeChip.Content = ToolbarSearchScopes.ChipLabel(_searchMode, _searchTabName);
-        ModernWpf.Controls.Primitives.ControlHelper.SetPlaceholderText(SearchBox, ToolbarSearchScopes.Placeholder(_searchMode, _tabScope?.Prompt));
+        ModernWpf.Controls.Primitives.ControlHelper.SetPlaceholderText(SearchBox,
+            ToolbarSearchScopes.Placeholder(_searchMode, _tabScope?.Prompt, TicketsOnly));
         SearchHintText.Text = _searchMode == ToolbarSearchMode.Tab ? "Ctrl+F" : "Ctrl+K";
 
         _searchCts?.Cancel();
