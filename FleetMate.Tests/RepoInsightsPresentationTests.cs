@@ -40,9 +40,11 @@ public class RepoInsightsPresentationTests
     }
 
     [Fact]
-    public void CompressedTicksAreActualLineCountsAndIncludePeak()
+    public void CompressedTicksAreActualLineCountsAndStayLegible()
     {
-        Assert.Equal(new[] { 0, 1, 10, 100, 1000, 10000, 12345 }, RepoChurnScaling.Ticks(12345, RepoChurnScale.Compressed));
+        Assert.Equal(new[] { 0, 100, 1000, 10000 }, RepoChurnScaling.Ticks(12345, RepoChurnScale.Compressed));
+        Assert.Equal(new[] { 0, 100, 10000, 1000000 }, RepoChurnScaling.Ticks(2_000_000, RepoChurnScale.Compressed));
+        Assert.Equal(new[] { 0, 1 }, RepoChurnScaling.Ticks(1, RepoChurnScale.Compressed));
     }
 
     [Fact]

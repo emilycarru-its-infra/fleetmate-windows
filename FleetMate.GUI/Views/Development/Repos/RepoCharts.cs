@@ -120,7 +120,7 @@ public sealed class TimelineChart : FrameworkElement
             foreach (var value in RepoChurnScaling.Ticks(peak, _churnScale).Where(v => v > 0))
             {
                 var offset = plotHeight / 2 * RepoChurnScaling.Transform(value, _churnScale) / transformedPeak;
-                if (value != peak && (offset - previousOffset < 12 || plotHeight / 2 - offset < 12)) continue;
+                if (offset - previousOffset < 12) continue;
                 previousOffset = offset;
                 Text(dc, Compact(value), new Point(2, zero - offset - 6), RepoBrushes.Secondary, 10);
                 Text(dc, "−" + Compact(value), new Point(2, zero + offset - 6), RepoBrushes.Secondary, 10);

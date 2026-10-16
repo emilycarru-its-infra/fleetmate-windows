@@ -26,9 +26,9 @@ public static class RepoChurnScaling
     public static IReadOnlyList<int> Ticks(int peak, RepoChurnScale scale)
     {
         if (scale != RepoChurnScale.Compressed) return new[] { 0, peak };
-        var ticks = new List<int> { 0 };
-        for (long value = 1; value < peak; value *= 10) ticks.Add((int)value);
-        if (peak > 0) ticks.Add(peak);
-        return ticks;
+        var largestExponent = (int)Math.Floor(Math.Log10(Math.Max(peak, 1)));
+        return new[] { 0 }.Concat(Enumerable.Range(1, 3)
+            .Select(n => (int)Math.Ceiling(largestExponent * n / 3.0))
+            .Distinct().Order().Select(exponent => (int)Math.Pow(10, exponent))).ToArray();
     }
 }
