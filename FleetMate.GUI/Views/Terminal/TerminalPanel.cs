@@ -406,12 +406,12 @@ public sealed class TerminalPanel : UserControl
                 foreach (var member in members) member.Section = name;
                 if (_collapsedSections.Remove(section)) _collapsedSections.Add(name);
                 RebuildRows();
-            }));
+            }, enabled: section != "Sessions"));
             menu.Items.Add(MenuItem("Remove section", (_, _) => {
                 _sections.Remove(section); _collapsedSections.Remove(section);
-                foreach (var member in members) member.Section = _sections[0];
+                foreach (var member in members) member.Section = "Sessions";
                 RebuildRows();
-            }, enabled: _sections.Count > 1));
+            }, enabled: section != "Sessions"));
             header.ContextMenu = menu;
             _rows.Children.Add(header);
             if (!_collapsedSections.Contains(section)) foreach (var member in members) _rows.Children.Add(member.Row);

@@ -79,11 +79,25 @@ public sealed class AgentSessions
     // ── Where a session opens ────────────────────────────────────────────
 
     /// <summary>
-    /// Sessions without an explicit repository open in the shared per-user
-    /// workspace, where the generated guide and operator instructions live.
+    /// Prefer the selected pull request's local checkout; otherwise use the
+    /// shared per-user workspace with generated guide and operator instructions.
     /// </summary>
     public string StartDirectory()
     {
+        var context = _app.Context.Current;
+        if (context.Tab == "Development"
+            && context.Selection.TryGetValue("pullRequest", out var pulls) && pulls.FirstOrDefault() is { } pr
+            && pr.Fields.TryGetValue("repository", out var name) && name != null)
+        {
+            var repoName = name.Split('/').Last();
+            var registered = (Registry()?.Entries ?? Array.Empty<RepoRegistryEntry>())
+                .Where(e => string.Equals(e.Key.Name, repoName, StringComparison.OrdinalIgnoreCase))
+                .Select(e => e.Path);
+            var listed = TrackedRepositories()
+                .Where(r => string.Equals(r.Name.Split('/').Last(), repoName, StringComparison.OrdinalIgnoreCase))
+                .Select(r => r.Path);
+            if (registered.Concat(listed).FirstOrDefault(Directory.Exists) is { } checkout) return checkout;
+        }
         return WorkspaceDirectory();
     }
 
