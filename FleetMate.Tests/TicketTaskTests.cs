@@ -816,6 +816,22 @@ public class TicketTaskTests
         Assert.Contains("still on the ticket", outcome.Message);
     }
 
+    [Theory]
+    [InlineData(403, TicketTaskSubmitStatus.Failed)]
+    [InlineData(500, TicketTaskSubmitStatus.Uncertain)]
+    [InlineData(null, TicketTaskSubmitStatus.Uncertain)]
+    public async Task ADeleteThatFailsIsReportedAsRefusedOrUncertain(int? status, TicketTaskSubmitStatus expected)
+    {
+        var (api, controller) = await LoadedAsync();
+        api.DeleteFails = new TdxTicketTaskException("Refused or unanswered.", status);
+
+        var outcome = await controller.DeleteAsync(42, 11);
+
+        Assert.Equal(expected, outcome.Status);
+        Assert.True(outcome.WasSent);
+        Assert.Null(controller.Current);
+    }
+
     [Fact]
     public async Task ATemplateNoLongerOfferedIsNotApplied()
     {
@@ -856,6 +872,131 @@ public class TicketTaskTests
         var feed = await controller.LoadFeedAsync(42, 11);
         Assert.Equal("Entry", Assert.Single(feed!.Value.Feed).Body);
     }
+
+    // ── The panel, built and driven without a window ───────────────────
+
+    private static void OnSta(Action action)
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                SynchronizationContext.SetSynchronizationContext(
+                    new System.Windows.Threading.DispatcherSynchronizationContext(System.Windows.Threading.Dispatcher.CurrentDispatcher));
+                action();
+            }
+            catch (Exception ex) { failure = ex; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
+    }
+
+    private static void Pump(Task task)
+    {
+        var frame = new System.Windows.Threading.DispatcherFrame();
+        task.ContinueWith(_ => frame.Continue = false, TaskScheduler.Default);
+        System.Windows.Threading.Dispatcher.PushFrame(frame);
+        task.GetAwaiter().GetResult();
+    }
+
+    [Fact]
+    public void ThePanelShowsTasksAndOffersEditAndDeleteOnlyForStandardTasks() => OnSta(() =>
+    {
+        var workflow = Standard(12, 0);
+        workflow.TypeId = (int)TicketTaskType.Workflow;
+        workflow.Title = "Manager approval";
+        var api = new FakeApi();
+        api.Tasks[11] = Standard(11, 100);
+        api.Tasks[12] = workflow;
+        var catalogReads = 0;
+        var panel = new TicketTasksPanel();
+        panel.Attach(api, (_, _) =>
+        {
+            catalogReads++;
+            return Task.FromResult<IReadOnlyList<TaskTemplateChoice>>(Array.Empty<TaskTemplateChoice>());
+        });
+        var changes = new List<TicketTaskSubmitOutcome>();
+        panel.TasksChanged += changes.Add;
+
+        Pump(panel.LoadAsync(42));
+
+        Assert.Equal(System.Windows.Visibility.Visible, panel.Visibility);
+        Assert.Equal("Tasks · 2 · 1 of 2 complete", panel.TasksHeaderText.Text);
+        var rows = Assert.IsAssignableFrom<IEnumerable<TicketTaskRow>>(panel.TasksList.ItemsSource).ToList();
+        Assert.Equal(new[] { 11, 12 }, rows.Select(r => r.Id));
+        Assert.Equal(System.Windows.Visibility.Visible, rows[1].TypeBadgeVisibility);
+        Assert.Equal(System.Windows.Visibility.Collapsed, rows[0].TypeBadgeVisibility);
+
+        panel.TasksList.SelectedItem = rows[1];
+        Pump(Task.Delay(50));
+        Assert.Equal(System.Windows.Visibility.Visible, panel.DetailBorder.Visibility);
+        Assert.Equal(System.Windows.Visibility.Collapsed, panel.EditTaskButton.Visibility);
+        Assert.Equal(System.Windows.Visibility.Collapsed, panel.DeleteTaskButton.Visibility);
+        Assert.Contains("workflow", panel.DetailRestrictionText.Text);
+        Assert.True(panel.SaveProgressButton.IsEnabled);
+        Assert.Equal("0", panel.PercentBox.Text);
+
+        panel.TasksList.SelectedItem = rows[0];
+        Pump(Task.Delay(50));
+        Assert.Equal(System.Windows.Visibility.Visible, panel.EditTaskButton.Visibility);
+        Assert.Equal(System.Windows.Visibility.Visible, panel.DeleteTaskButton.Visibility);
+        Assert.Equal(System.Windows.Visibility.Collapsed, panel.CompleteButton.Visibility);
+
+        // Loading and selecting never writes, and the template list is only
+        // read when Apply Template is opened.
+        Assert.DoesNotContain(api.Calls, c => c.StartsWith("feed") || c.StartsWith("put") || c.StartsWith("delete") || c is "create" or "apply");
+        Assert.Equal(0, catalogReads);
+        Assert.Empty(changes);
+
+        panel.Clear();
+        Assert.Equal(System.Windows.Visibility.Collapsed, panel.Visibility);
+    });
+
+    [Fact]
+    public void ThePanelSaysWhenThereAreNoTasksOrTheyCannotBeRead() => OnSta(() =>
+    {
+        var api = new FakeApi();
+        var panel = new TicketTasksPanel();
+        panel.Attach(api, (_, _) => Task.FromResult<IReadOnlyList<TaskTemplateChoice>>(Array.Empty<TaskTemplateChoice>()));
+
+        Pump(panel.LoadAsync(42));
+        Assert.Equal("Tasks · none", panel.TasksHeaderText.Text);
+        Assert.Equal("No tasks on this ticket.", panel.MessageText.Text);
+        Assert.True(panel.AddTaskButton.IsEnabled);
+
+        api.BeforeGetTasks = () => throw new TdxTicketTaskException("You do not have permission to read the tasks of ticket 42.", 403);
+        Pump(panel.LoadAsync(42));
+        Assert.Equal("Tasks · unavailable", panel.TasksHeaderText.Text);
+        Assert.Contains("permission", panel.MessageText.Text);
+        Assert.False(panel.AddTaskButton.IsEnabled);
+    });
+
+    [Fact]
+    public void TheDialogsBuildForAddEditAndApply() => OnSta(() =>
+    {
+        var api = new FakeApi();
+        api.Tasks[11] = Standard();
+        var controller = new TicketTaskController(api);
+        Pump(controller.LoadAsync(42));
+
+        var add = new TicketTaskEditorDialog(controller, 42, null);
+        Assert.Equal("Add Task", add.SaveButton.Content);
+        var edit = new TicketTaskEditorDialog(controller, 42, api.Tasks[11]);
+        Assert.Equal("Task 11", edit.TitleBox.Text);
+        Assert.Equal("30", edit.EstimateBox.Text);
+        var apply = new ApplyTaskTemplateDialog(controller, 42,
+            _ => Task.FromResult<IReadOnlyList<TaskTemplateChoice>>(new[] { new TaskTemplateChoice(3, "New hire") }));
+        Assert.False(apply.RemoveExistingBox.IsChecked);
+        Assert.False(apply.ApplyButton.IsEnabled);
+
+        add.Close();
+        edit.Close();
+        apply.Close();
+        Assert.DoesNotContain(api.Calls, c => c != "list 42");
+    });
 
     // ── How tasks read ─────────────────────────────────────────────────
 

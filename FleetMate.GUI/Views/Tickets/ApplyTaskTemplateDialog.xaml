@@ -42,7 +42,7 @@
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                 <Button x:Name="CancelButton" Content="Cancel" Click="OnCancel" Margin="0,0,8,0" MinWidth="80" IsCancel="True" />
                 <Button x:Name="ApplyButton" Content="Apply" Click="OnApply" IsEnabled="False"
-                        Style="{StaticResource AccentButtonStyle}" MinWidth="100" />
+                        Style="{DynamicResource AccentButtonStyle}" MinWidth="100" />
             </StackPanel>
             <TextBlock x:Name="StatusText" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,16,0"
                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />

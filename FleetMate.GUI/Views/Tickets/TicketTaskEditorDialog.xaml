@@ -107,7 +107,7 @@
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                 <Button x:Name="CancelButton" Content="Cancel" Click="OnCancel" Margin="0,0,8,0" MinWidth="80" IsCancel="True" />
                 <Button x:Name="SaveButton" Content="Add Task" Click="OnSave"
-                        Style="{StaticResource AccentButtonStyle}" MinWidth="110" />
+                        Style="{DynamicResource AccentButtonStyle}" MinWidth="110" />
             </StackPanel>
             <ui:ProgressRing x:Name="SaveProgress" DockPanel.Dock="Left" IsActive="False" Visibility="Collapsed"
                              Width="16" Height="16" Margin="0,0,8,0" />
