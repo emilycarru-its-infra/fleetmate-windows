@@ -389,7 +389,7 @@ public sealed class RepoStatsSummary
             return new RepoStatsSummaryRow(
                 input.Id, input.DisplayName,
                 report.Total.Commits, report.Total.Authors, report.Total.Added, report.Total.Removed,
-                input.Commits.Count > 0 ? input.Commits.Max(c => c.Date) : status?.LastCommitAt,
+                input.Commits.Count > 0 ? input.Commits.Max(c => c.Date) : null,
                 status?.Branch, status?.Ahead ?? 0, status?.Behind ?? 0,
                 (status?.Staged ?? 0) + (status?.Unstaged ?? 0) + (status?.Untracked ?? 0),
                 input.Error ?? status?.Error,

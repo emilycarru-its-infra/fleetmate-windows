@@ -53,7 +53,9 @@ public class RepoWorkspaceGuiTests
                 }) Pump(copy.GitAsync(args));
                 copy.WriteFile("old.txt", "old\n"u8.ToArray());
                 Pump(copy.CommitAsync("Old history", null, new HashSet<string>(), allowProtected: true));
-                var old = copy.GitAsync(new[] { "rev-parse", "HEAD" }).GetAwaiter().GetResult().StandardOutput.Trim();
+                var oldTask = copy.GitAsync(new[] { "rev-parse", "HEAD" });
+                Pump(oldTask);
+                var old = oldTask.Result.StandardOutput.Trim();
                 copy.WriteFile("remote.txt", "one\ntwo\nthree\nfour\n"u8.ToArray());
                 Pump(copy.CommitAsync("New remote history", null, new HashSet<string>(), allowProtected: true));
                 Pump(copy.GitAsync(new[] { "update-ref", RepoInsightsModel.HistoryReference, "HEAD" }));
@@ -69,7 +71,13 @@ public class RepoWorkspaceGuiTests
                 Assert.Equal(2, model.Report.Timeline.Sum(p => p.Commits));
                 Assert.Equal(5, model.Report.Timeline.Sum(p => p.Added));
                 Assert.Contains(model.Report.Files, f => f.Path == "remote.txt");
-                Assert.Equal(1, manager.StatsAsync(record, null).GetAwaiter().GetResult().Total.Commits);
+                var headTask = manager.StatsAsync(record, null);
+                Pump(headTask);
+                Assert.Equal(1, headTask.Result.Total.Commits);
+                var emptyTask = manager.StatsSummaryAsync(new[] { record }, DateTimeOffset.UtcNow.AddDays(1),
+                    until: DateTimeOffset.UtcNow.AddDays(2), reference: RepoInsightsModel.HistoryReference);
+                Pump(emptyTask);
+                Assert.Null(Assert.Single(emptyTask.Result.Rows).LastCommit);
                 model.Scope = RepoInsightsModel.InsightsScope.All;
                 Pump(model.LoadAsync(manager, record, new[] { record }));
                 Assert.Equal(2, model.Summary!.Combined.Total.Commits);
@@ -82,6 +90,7 @@ public class RepoWorkspaceGuiTests
                 Pump(model.LoadAsync(manager, record, new[] { record }));
                 Assert.Equal(0, model.Summary!.Combined.Total.Commits);
                 Assert.Contains("origin/main", Assert.Single(model.Summary.Rows).Error);
+                Assert.Null(Assert.Single(model.Summary.Rows).LastCommit);
             } catch (Exception ex) { failure = ex; }
             finally {
                 RepoWorkspacePreferences.KeyPathOverride = null;
