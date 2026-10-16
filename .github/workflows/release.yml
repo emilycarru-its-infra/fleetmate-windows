@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build
+        type: string
+        required: true
 
 permissions:
   contents: write
@@ -10,6 +16,7 @@ permissions:
 env:
   DOTNET_VERSION: '10.0.x'
   TZ: 'America/Vancouver'
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   release:
@@ -22,6 +29,7 @@ jobs:
           # The Reporting tab builds from the ReportMate app's source, which
           # carries a submodule of its own.
           submodules: recursive
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
@@ -38,7 +46,7 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
+          $tag = $env:RELEASE_TAG
           $version = $tag -replace '^v',''
           if ($version -notmatch '^\d{4}\.\d{2}\.\d{2}\.\d{4}$') { throw "Tag $tag is not vYYYY.MM.DD.HHMM" }
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
@@ -98,7 +106,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $tag = '${{ github.ref_name }}'
+          $tag = $env:RELEASE_TAG
           $title = "FleetMate $tag"
           $dotnet = (dotnet --version).Trim()
           $os = (Get-CimInstance Win32_OperatingSystem).Caption.Trim()
@@ -125,12 +133,19 @@ jobs:
           }
           ``````
 
-          Built from commit ``$env:GITHUB_SHA``.
+          Built from the checked-out release tag.
           "@
 
-          $autoNotes = (gh api -X POST "repos/$env:GITHUB_REPOSITORY/releases/generate-notes" -f tag_name=$tag --jq .body) -join "`n"
-          $notes = "$buildInfo`n`n$autoNotes`n`n$signing"
+          $sourceSha = (git rev-parse HEAD).Trim()
+          $notes = "$buildInfo`n`nUnsigned CLI and desktop installers for x64 and ARM64.`n`nSource commit: $sourceSha.`n`n$signing"
 
           $artifacts = Get-ChildItem -Path release -File | ForEach-Object { $_.FullName }
           if ($artifacts.Count -eq 0) { throw 'No artifacts to upload' }
-          gh release create $tag @artifacts --title $title --notes $notes
+          $draft = gh release view $tag --json isDraft --jq .isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            if ($draft -ne 'true') { throw "Release $tag is already published; refusing to replace its assets" }
+            gh release upload $tag @artifacts --clobber
+          } else {
+            gh release create $tag @artifacts --verify-tag --title $title --notes $notes
+          }
+          if ($LASTEXITCODE) { throw "Could not upload release assets for $tag" }
