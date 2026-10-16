@@ -9,8 +9,24 @@ namespace FleetMate.Core.Models.Tickets;
 /// </summary>
 public sealed class TdxTicketWorkflow
 {
+    /// <summary>
+    /// The running workflow instance on this ticket. Not the workflow that
+    /// can be assigned again — that is <see cref="WorkflowConfigurationId"/>.
+    /// </summary>
     [JsonPropertyName("ID")]
     public int Id { get; set; }
+
+    /// <summary>
+    /// The workflow definition the instance was started from: the ID the
+    /// assignment PUT takes as <c>newWorkflowId</c>, and the one a restart
+    /// sends. Zero when TeamDynamix did not say.
+    /// </summary>
+    [JsonPropertyName("WorkflowConfigurationID")]
+    public int WorkflowConfigurationId { get; set; }
+
+    /// <summary>When this instance started; a restart gives the ticket a new one.</summary>
+    [JsonPropertyName("StartDateUtc")]
+    public DateTime? StartDateUtc { get; set; }
 
     [JsonPropertyName("Name")]
     public string? Name { get; set; }
@@ -210,10 +226,18 @@ public sealed class TdxWorkflowException : Exception
 
     public bool IsForbidden => StatusCode is 401 or 403;
 
-    public TdxWorkflowException(string message, int? statusCode = null, Exception? inner = null)
+    /// <summary>
+    /// The request may have reached TeamDynamix and been applied: it timed
+    /// out, the connection dropped, or the answer could not be read. Never
+    /// true for a request that was refused or never sent.
+    /// </summary>
+    public bool OutcomeUnknown { get; }
+
+    public TdxWorkflowException(string message, int? statusCode = null, Exception? inner = null, bool outcomeUnknown = false)
         : base(message, inner)
     {
         StatusCode = statusCode;
+        OutcomeUnknown = outcomeUnknown;
     }
 }
 
@@ -232,4 +256,47 @@ public interface ITicketWorkflowApi
 
     /// <summary>Perform an action. The result's IsSuccessful decides whether it happened.</summary>
     Task<TdxWorkflowActionResult> PerformWorkflowActionAsync(int ticketId, TdxWorkflowApproveRequest request, CancellationToken ct = default);
+}
+
+/// <summary>
+/// A workflow that can be put on a ticket, as the workflow list offers it.
+/// The ID is the workflow definition's, the same one
+/// <see cref="TdxTicketWorkflow.WorkflowConfigurationId"/> carries for the
+/// workflow on a ticket — never the running instance's ID.
+/// </summary>
+public sealed record TdxWorkflowChoice(int Id, string Name, string? Description = null)
+{
+    public string DisplayName => string.IsNullOrWhiteSpace(Name) ? $"Workflow {Id}" : Name.Trim();
+}
+
+/// <summary>
+/// The workflows the signed-in user may put on a ticket. The documented
+/// TDWebApi has no route that lists them; the list comes from TeamDynamix's
+/// own Reassign Workflow page (<see cref="TdxWorkflowPicker"/>), read fresh
+/// every time. Without a catalog Change Workflow is not offered, and nothing
+/// stands in for it — no built-in list and no typed-in ID.
+/// </summary>
+public interface ITicketWorkflowCatalog
+{
+    /// <summary>The workflows that can be assigned to <paramref name="ticketId"/>, in display order.</summary>
+    Task<IReadOnlyList<TdxWorkflowChoice>> GetAssignableWorkflowsAsync(int ticketId, CancellationToken ct = default);
+}
+
+/// <summary>
+/// Restarting, replacing or assigning a ticket's workflow, through
+/// <c>PUT /api/{appId}/tickets/{id}/workflow?newWorkflowId=&amp;allowRemoveExisting=</c>.
+/// </summary>
+public interface ITicketWorkflowAssignmentApi
+{
+    /// <summary>The ticket's workflow, or null when it has none.</summary>
+    Task<TdxTicketWorkflow?> GetTicketWorkflowAsync(int ticketId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Put workflow <paramref name="newWorkflowId"/> on the ticket. With
+    /// <paramref name="allowRemoveExisting"/> false TeamDynamix refuses when
+    /// the ticket already has one, so a first assignment never overwrites a
+    /// workflow someone else added meanwhile. Returns the updated ticket, or
+    /// null when the answer had none.
+    /// </summary>
+    Task<TdxTicket?> AssignTicketWorkflowAsync(int ticketId, int newWorkflowId, bool allowRemoveExisting, CancellationToken ct = default);
 }
