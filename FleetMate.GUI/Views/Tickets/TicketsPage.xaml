@@ -706,6 +706,9 @@
                                 </ItemsControl>
                             </StackPanel>
 
+                            <!-- Tasks: progress, updates and standard-task management -->
+                            <tickets:TicketTasksPanel x:Name="TasksPanel" />
+
                             <!-- Workflow: active steps and the actions the signed-in user may take -->
                             <tickets:TicketWorkflowPanel x:Name="WorkflowPanel" />
 
