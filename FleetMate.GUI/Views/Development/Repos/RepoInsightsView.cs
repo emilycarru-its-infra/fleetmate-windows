@@ -160,9 +160,7 @@ public sealed class RepoInsightsView : UserControl
         var commits = new TimelineChart();
         commits.ShowCommits(report.Timeline, report.Bucket);
         _content.Children.Add(Card($"Commits per {bucket}", commits));
-        var churn = new TimelineChart();
-        churn.ShowChurn(report.Timeline, report.Bucket);
-        _content.Children.Add(Card($"Lines changed per {bucket}", new StackPanel { Children = { churn, Legend(("Added", RepoBrushes.Added), ("Removed", RepoBrushes.Removed)) } }));
+        _content.Children.Add(ChurnCard(report.Timeline, report.Bucket));
         _content.Children.Add(TwoUp(
             Card("Authors", Ranked(report.Contributors.Take(10).Select(c => (c.Name, c.Commits, $"+{c.Added:N0} −{c.Removed:N0}")), "commits")),
             Card("Top-level folders", Ranked(report.Areas.Take(10).Select(a => (a.Path, a.Commits, $"+{a.Added:N0} −{a.Removed:N0}")), "commits"))));
@@ -195,9 +193,7 @@ public sealed class RepoInsightsView : UserControl
         _content.Children.Add(Card($"Commits per {bucket} by repository",
             new StackPanel { Children = { stacked, Legend(series.Select(s => (s.Item1, s.Item2)).ToArray()) } }));
 
-        var churn = new TimelineChart();
-        churn.ShowChurn(summary.Combined.Timeline, summary.Bucket);
-        _content.Children.Add(Card($"Lines changed per {bucket}", new StackPanel { Children = { churn, Legend(("Added", RepoBrushes.Added), ("Removed", RepoBrushes.Removed)) } }));
+        _content.Children.Add(ChurnCard(summary.Combined.Timeline, summary.Bucket));
         _content.Children.Add(Card("Repositories", SummaryTable(summary.Rows)));
         _content.Children.Add(TwoUp(
             Card("Authors", Ranked(summary.Combined.Contributors.Take(10).Select(c => (c.Name, c.Commits, $"+{c.Added:N0} −{c.Removed:N0}")), "commits")),
@@ -206,6 +202,32 @@ public sealed class RepoInsightsView : UserControl
         var heat = new ActivityHeatmap();
         heat.Show(summary.Combined.Activity);
         _content.Children.Add(Card("When commits happen", heat));
+    }
+
+    private UIElement ChurnCard(IReadOnlyList<RepoStatsReport.TimelinePoint> points, RepoStatsBucket bucket)
+    {
+        var choice = _model!.Insights.ChurnScale;
+        var effective = RepoChurnScaling.Resolve(choice, points);
+        var automatic = RepoChurnScaling.Resolve(RepoChurnScale.Automatic, points);
+        var picker = new ComboBox { MinWidth = 170, Margin = new Thickness(6, 0, 12, 0) };
+        System.Windows.Automation.AutomationProperties.SetName(picker, "Lines changed scale");
+        foreach (var value in Enum.GetValues<RepoChurnScale>())
+            picker.Items.Add(new ComboBoxItem { Content = value == RepoChurnScale.Automatic ? $"Automatic ({automatic})" : value.ToString(), Tag = value });
+        picker.SelectedItem = picker.Items.Cast<ComboBoxItem>().First(i => (RepoChurnScale)i.Tag == choice);
+        picker.SelectionChanged += (_, _) => {
+            if (_model == null || picker.SelectedItem is not ComboBoxItem { Tag: RepoChurnScale value }) return;
+            _model.Insights.ChurnScale = value;
+            Render();
+        };
+        var caption = new TextBlock { Text = effective == RepoChurnScale.Compressed ? "Compressed scale · raw values on hover" : "Linear scale", FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
+        caption.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
+        var controls = new WrapPanel { Margin = new Thickness(0, 0, 0, 6) };
+        controls.Children.Add(new TextBlock { Text = "Scale", VerticalAlignment = VerticalAlignment.Center });
+        controls.Children.Add(picker);
+        controls.Children.Add(caption);
+        var churn = new TimelineChart();
+        churn.ShowChurn(points, bucket, effective);
+        return Card($"Lines changed per {TimelineChart.Bucket(bucket)}", new StackPanel { Children = { controls, churn, Legend(("Added", RepoBrushes.Added), ("Removed", RepoBrushes.Removed)) } });
     }
 
     private UIElement SummaryTable(IReadOnlyList<RepoStatsSummaryRow> rows)
@@ -254,7 +276,13 @@ public sealed class RepoInsightsView : UserControl
     private static Border Card(string title, UIElement content)
     {
         var heading = new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 10) };
-        var border = new Border { Child = new StackPanel { Children = { heading, content } } };
+        var body = new Grid();
+        body.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        Grid.SetRow(content, 1);
+        body.Children.Add(heading);
+        body.Children.Add(content);
+        var border = new Border { Child = body, VerticalAlignment = VerticalAlignment.Stretch };
         border.SetResourceReference(StyleProperty, "CardStyle");
         return border;
     }
@@ -307,8 +335,8 @@ public sealed class RepoInsightsView : UserControl
         for (var i = 0; i < rows.Count; i++)
         {
             var (label, value, detail) = rows[i];
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var name = new TextBlock { Text = label, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = label, Margin = new Thickness(0, 2, 8, 2) };
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = 24 });
+            var name = new TextBlock { Text = label, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = label, Margin = new Thickness(0, 2, 8, 2), VerticalAlignment = VerticalAlignment.Center };
             var bar = new Border
             {
                 Background = RepoBrushes.Accent,
@@ -322,7 +350,7 @@ public sealed class RepoInsightsView : UserControl
             track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0, 1 - value / (double)peak), GridUnitType.Star) });
             bar.HorizontalAlignment = HorizontalAlignment.Stretch;
             track.Children.Add(bar);
-            var count = new TextBlock { Text = value.ToString("N0"), FontWeight = FontWeights.SemiBold, TextAlignment = TextAlignment.Right, Margin = new Thickness(0, 2, 8, 2) };
+            var count = new TextBlock { Text = value.ToString("N0"), FontWeight = FontWeights.SemiBold, TextAlignment = TextAlignment.Right, Margin = new Thickness(0, 2, 8, 2), VerticalAlignment = VerticalAlignment.Center };
             var extra = new TextBlock { Text = detail, FontSize = 11, Opacity = 0.7, Margin = new Thickness(0, 2, 0, 2), VerticalAlignment = VerticalAlignment.Center };
             foreach (var (element, column) in new (FrameworkElement, int)[] { (name, 0), (track, 1), (count, 2), (extra, 3) })
             {

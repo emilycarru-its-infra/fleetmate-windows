@@ -21,9 +21,10 @@ public sealed class TimelineChart : FrameworkElement
     private IReadOnlyList<int> _added = Array.Empty<int>();
     private IReadOnlyList<int> _removed = Array.Empty<int>();
     private RepoStatsBucket _bucket;
+    private RepoChurnScale _churnScale;
     private int _hovered = -1;
 
-    private const double Top = 22, Bottom = 18, Left = 34;
+    private const double Top = 22, Bottom = 18, Left = 48;
 
     public TimelineChart()
     {
@@ -43,9 +44,10 @@ public sealed class TimelineChart : FrameworkElement
         InvalidateVisual();
     }
 
-    public void ShowChurn(IReadOnlyList<RepoStatsReport.TimelinePoint> points, RepoStatsBucket bucket)
+    public void ShowChurn(IReadOnlyList<RepoStatsReport.TimelinePoint> points, RepoStatsBucket bucket, RepoChurnScale scale = RepoChurnScale.Automatic)
     {
         _mode = ChartMode.Churn;
+        _churnScale = RepoChurnScaling.Resolve(scale, points);
         _bucket = bucket;
         _starts = points.Select(p => p.Start).ToList();
         _added = points.Select(p => p.Added).ToList();
@@ -100,20 +102,34 @@ public sealed class TimelineChart : FrameworkElement
         {
             var peak = Math.Max(1, Math.Max(_added.DefaultIfEmpty(0).Max(), _removed.DefaultIfEmpty(0).Max()));
             var zero = Top + plotHeight / 2;
+            var transformedPeak = RepoChurnScaling.Transform(peak, _churnScale);
             for (var i = 0; i < _starts.Count; i++)
             {
                 var x = Left + i * slot + (slot - barWidth) / 2;
                 var fade = _hovered < 0 || _hovered == i ? 1.0 : 0.45;
-                var up = plotHeight / 2 * _added[i] / peak;
-                var down = plotHeight / 2 * _removed[i] / peak;
+                var up = plotHeight / 2 * RepoChurnScaling.Transform(_added[i], _churnScale) / transformedPeak;
+                var down = plotHeight / 2 * RepoChurnScaling.Transform(_removed[i], _churnScale) / transformedPeak;
                 dc.PushOpacity(fade);
                 if (up > 0) dc.DrawRectangle(RepoBrushes.Added, null, new Rect(x, zero - up, barWidth, up));
                 if (down > 0) dc.DrawRectangle(RepoBrushes.Removed, null, new Rect(x, zero, barWidth, down));
                 dc.Pop();
             }
             dc.DrawLine(axisPen, new Point(Left, zero), new Point(ActualWidth, zero));
-            Text(dc, Compact(peak), new Point(2, Top - 6), RepoBrushes.Secondary, 10);
-            Text(dc, Compact(peak), new Point(2, Top + plotHeight - 8), RepoBrushes.Secondary, 10);
+            Text(dc, "0", new Point(2, zero - 6), RepoBrushes.Secondary, 10);
+            var previousOffset = 0.0;
+            foreach (var value in RepoChurnScaling.Ticks(peak, _churnScale).Where(v => v > 0))
+            {
+                var offset = plotHeight / 2 * RepoChurnScaling.Transform(value, _churnScale) / transformedPeak;
+                if (value != peak && (offset - previousOffset < 12 || plotHeight / 2 - offset < 12)) continue;
+                previousOffset = offset;
+                Text(dc, Compact(value), new Point(2, zero - offset - 6), RepoBrushes.Secondary, 10);
+                Text(dc, "−" + Compact(value), new Point(2, zero + offset - 6), RepoBrushes.Secondary, 10);
+                var gridPen = new Pen(RepoBrushes.Secondary, 0.3);
+                dc.PushOpacity(0.25);
+                dc.DrawLine(gridPen, new Point(Left, zero - offset), new Point(ActualWidth, zero - offset));
+                dc.DrawLine(gridPen, new Point(Left, zero + offset), new Point(ActualWidth, zero + offset));
+                dc.Pop();
+            }
         }
         else
         {
@@ -195,7 +211,7 @@ public sealed class ActivityHeatmap : FrameworkElement
 
     public void Show(IReadOnlyList<RepoStatsReport.ActivityCell> cells)
     {
-        _cells = cells;
+        _cells = RepoActivityGrid.Expand(cells);
         InvalidateVisual();
     }
 
@@ -204,6 +220,7 @@ public sealed class ActivityHeatmap : FrameworkElement
     private void Hover(Point p)
     {
         var (w, h) = Cell;
+        if (w <= 0 || h <= 0) return;
         var hour = (int)Math.Floor((p.X - Left) / w);
         var row = (int)Math.Floor((p.Y - Top) / h);
         (int, int)? next = hour is >= 0 and < 24 && row is >= 0 and < 7 ? (row + 1, hour) : null;
