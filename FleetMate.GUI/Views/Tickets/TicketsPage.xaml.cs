@@ -92,8 +92,15 @@ private bool _isInitialLoadDone;
             _tdxService = app.TdxService;
             if (_tdxService != null)
             {
-                WorkflowPanel.Attach(_tdxService);
+                // The workflow list for Change Workflow is TeamDynamix's own
+                // picker page, read in the signed-in web session; without a web
+                // address there is none, and Change is not offered.
+                var catalog = app.Config?.Tdx is { } tdx && TdxWorkflowPicker.PageUrl(tdx, 1) != null
+                    ? new TdxWorkflowPickerCatalog(tdx)
+                    : null;
+                WorkflowPanel.Attach(_tdxService, _tdxService, catalog);
                 WorkflowPanel.ActionFinished += OnWorkflowActionFinished;
+                WorkflowPanel.ChangeFinished += OnWorkflowChangeFinished;
             }
 
             // Silent SSO can finish after this page has loaded, and the preload
@@ -110,6 +117,9 @@ private bool _isInitialLoadDone;
         // filter left out, and clicking them changes the filters.
         TicketWidgetsSection.Builder = () => TicketWidgets.Build(TicketsMatching, _filters, _isLoading);
         TicketWidgetsSection.EqualHeights = true;
+        // The six figures and five charts stay on one row at laptop widths;
+        // the cards narrow instead of By Group wrapping onto a second row.
+        TicketWidgetsSection.SingleRow = true;
         _filters.Changed += () =>
         {
             UpdateFilterButtons();
@@ -1101,6 +1111,25 @@ private bool _isInitialLoadDone;
     private async void OnWorkflowActionFinished(TicketWorkflowSubmitOutcome outcome)
     {
         if (_tdxService == null) return;
+
+        if (_selectedTicket?.Id != outcome.TicketId)
+        {
+            ShowActionMessage($"Ticket #{outcome.TicketId}: {outcome.Message}", isError: !outcome.Succeeded);
+            return;
+        }
+
+        await LoadTicketDetailAsync(outcome.TicketId);
+        if (_selectedTicket is { } ticket && ticket.Id == outcome.TicketId) ReplaceCachedTicket(ticket);
+    }
+
+    /// <summary>
+    /// After a restart or change was sent — whatever came of it — or found the
+    /// workflow had moved: the ticket, its feed and the workflow are read
+    /// again, as after a step action. Nothing is sent again.
+    /// </summary>
+    private async void OnWorkflowChangeFinished(TicketWorkflowChangeOutcome outcome)
+    {
+        if (_tdxService == null || !outcome.RequiresReload) return;
 
         if (_selectedTicket?.Id != outcome.TicketId)
         {

@@ -53,7 +53,18 @@ public static class ToolbarSearchScopes
     public static string ChipLabel(ToolbarSearchMode mode, string tabName) =>
         mode == ToolbarSearchMode.Tab ? tabName : "All";
 
-    /// <summary>The field's placeholder.</summary>
-    public static string Placeholder(ToolbarSearchMode mode, string? tabPrompt) =>
-        mode == ToolbarSearchMode.Tab && !string.IsNullOrWhiteSpace(tabPrompt) ? tabPrompt! : "Search everything";
+    /// <summary>
+    /// Whether the field shows its scope chip. TicketsMate has one module, so
+    /// there is no "everything" to choose against and the chip is left out;
+    /// Ctrl+F and Ctrl+K still switch scope as they do in FleetMate.
+    /// </summary>
+    public static bool ShowsScopeChip(bool singleModule) => !singleModule;
+
+    /// <summary>The field's placeholder; in a single-module edition, "everything" is all its tickets.</summary>
+    public static string Placeholder(ToolbarSearchMode mode, string? tabPrompt, bool singleModule = false) =>
+        mode == ToolbarSearchMode.Tab && !string.IsNullOrWhiteSpace(tabPrompt) ? tabPrompt!
+        : singleModule ? "Search all tickets" : "Search everything";
+
+    /// <summary>The field's accessible name.</summary>
+    public static string AccessibleName(bool singleModule) => singleModule ? "Search tickets" : "Search";
 }

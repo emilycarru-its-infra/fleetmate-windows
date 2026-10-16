@@ -39,4 +39,22 @@ public class ToolbarSearchScopeTests
     [InlineData(ToolbarSearchMode.Tab, null, "Search everything")]
     public void The_placeholder_follows_the_scope(ToolbarSearchMode mode, string? prompt, string expected) =>
         Assert.Equal(expected, ToolbarSearchScopes.Placeholder(mode, prompt));
+
+    [Fact]
+    public void Only_FleetMate_shows_the_module_scope_chip()
+    {
+        Assert.True(ToolbarSearchScopes.ShowsScopeChip(singleModule: false));
+        Assert.False(ToolbarSearchScopes.ShowsScopeChip(singleModule: true));
+    }
+
+    [Theory]
+    [InlineData(ToolbarSearchMode.Tab, "Search tickets or requestor", "Search tickets or requestor")]
+    [InlineData(ToolbarSearchMode.All, "Search tickets or requestor", "Search all tickets")]
+    [InlineData(ToolbarSearchMode.Tab, null, "Search all tickets")]
+    public void TicketsMate_words_the_field_for_tickets(ToolbarSearchMode mode, string? prompt, string expected)
+    {
+        Assert.Equal(expected, ToolbarSearchScopes.Placeholder(mode, prompt, singleModule: true));
+        Assert.Equal("Search tickets", ToolbarSearchScopes.AccessibleName(singleModule: true));
+        Assert.Equal("Search", ToolbarSearchScopes.AccessibleName(singleModule: false));
+    }
 }

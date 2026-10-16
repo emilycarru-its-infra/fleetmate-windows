@@ -15,7 +15,7 @@ namespace FleetMate.Core.Services.Tickets;
 /// TeamDynamix (TDX) service for ticket management
 /// Uses JWT authentication via SSO, username/password, or BEID
 /// </summary>
-public class TdxService : IDisposable, ITicketWorkflowApi
+public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssignmentApi
 {
     private readonly HttpClient _client;
     private readonly TdxConfig _config;
@@ -844,6 +844,8 @@ public class TdxService : IDisposable, ITicketWorkflowApi
     //   GET  api/{appId}/tickets/{id}/workflow                  → TicketWorkflow, or null
     //   GET  api/{appId}/tickets/{id}/workflow/actions?stepId=  → actions for the signed-in user
     //   POST api/{appId}/tickets/{id}/workflow/approve          → TicketWorkflowStepActionResult
+    //   PUT  api/{appId}/tickets/{id}/workflow?newWorkflowId=&allowRemoveExisting=
+    //                                                           → the updated Ticket
     // All of them take the ticketing application's ID, never the assets one.
     // Reassigning a step (workflow/reassign) needs an admin service account
     // and is deliberately absent.
@@ -927,12 +929,52 @@ public class TdxService : IDisposable, ITicketWorkflowApi
         };
     }
 
-    private enum WorkflowOperation { ReadWorkflow, ReadActions, PerformAction }
+    /// <inheritdoc />
+    public async Task<TdxTicket?> AssignTicketWorkflowAsync(
+        int ticketId, int newWorkflowId, bool allowRemoveExisting, CancellationToken ct = default)
+    {
+        if (newWorkflowId <= 0)
+            throw new ArgumentOutOfRangeException(nameof(newWorkflowId), "A workflow ID is required.");
+
+        using var response = await SendWorkflowAsync(
+            () => BuildAssignWorkflowRequest(ticketId, newWorkflowId, allowRemoveExisting),
+            WorkflowOperation.AssignWorkflow, ticketId, ct);
+        TdxTicket? ticket;
+        try
+        {
+            ticket = await ReadWorkflowJsonAsync<TdxTicket>(response, WorkflowOperation.AssignWorkflow, ticketId, ct);
+        }
+        catch (TdxWorkflowException ex)
+        {
+            // A 2xx with an unreadable body: the change may well have landed.
+            throw new TdxWorkflowException(ex.Message, ex.StatusCode, ex.InnerException, outcomeUnknown: true);
+        }
+        Log.Information("[tdx] Workflow assigned on ticket {Id} (replacing allowed: {AllowRemove})",
+            ticketId, allowRemoveExisting);
+        return ticket;
+    }
+
+    /// <summary>
+    /// The workflow PUT. Both parameters go in the query string, as the
+    /// contract declares them; there is no body. One call replaces the
+    /// workflow — never a DELETE and a PUT, which would leave the ticket with
+    /// none if the second failed.
+    /// </summary>
+    internal HttpRequestMessage BuildAssignWorkflowRequest(int ticketId, int newWorkflowId, bool allowRemoveExisting) =>
+        new(HttpMethod.Put, _config.GetTicketsUrl($"{ticketId}/workflow")
+            + "?newWorkflowId=" + newWorkflowId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + "&allowRemoveExisting=" + (allowRemoveExisting ? "true" : "false"));
+
+    private enum WorkflowOperation { ReadWorkflow, ReadActions, PerformAction, AssignWorkflow }
+
+    private static bool IsWrite(WorkflowOperation operation) =>
+        operation is WorkflowOperation.PerformAction or WorkflowOperation.AssignWorkflow;
 
     private static string Describe(WorkflowOperation operation, int ticketId) => operation switch
     {
         WorkflowOperation.ReadWorkflow => $"read the workflow of ticket {ticketId}",
         WorkflowOperation.ReadActions => $"read the workflow actions of ticket {ticketId}",
+        WorkflowOperation.AssignWorkflow => $"change the workflow of ticket {ticketId}",
         _ => $"perform the workflow action on ticket {ticketId}",
     };
 
@@ -980,7 +1022,9 @@ public class TdxService : IDisposable, ITicketWorkflowApi
                 operation, ticketId, timedOut ? "timeout" : ex.GetType().Name);
             throw new TdxWorkflowException(timedOut
                 ? $"TeamDynamix did not answer in time when asked to {Describe(operation, ticketId)}."
-                : $"Could not reach TeamDynamix to {Describe(operation, ticketId)}.", null, ex);
+                : $"Could not reach TeamDynamix to {Describe(operation, ticketId)}.", null, ex,
+                // A write that timed out or lost its connection may have been applied.
+                outcomeUnknown: IsWrite(operation));
         }
 
         if (response.IsSuccessStatusCode) return response;

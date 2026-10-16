@@ -16,6 +16,8 @@ public enum TicketMenuCommand
     Priority,
     SetParent,
     CreateParent,
+    RestartWorkflow,
+    ChangeWorkflow,
     Refresh,
     CopyForAgent,
     SendToAgent,
@@ -81,6 +83,11 @@ public static class TicketMenuPlan
             TicketMenuEntry.Separator,
             new(TicketMenuCommand.SetParent, "Set Parent…", "TicketMenuSetParent", canWrite),
             new(TicketMenuCommand.CreateParent, "Create Parent…", "TicketMenuCreateParent", canWrite),
+            TicketMenuEntry.Separator,
+            // Whether the ticket has a workflow, and which, is only known once
+            // it is open; its Workflow section then decides what is possible.
+            new(TicketMenuCommand.RestartWorkflow, "Restart Workflow…", "TicketMenuRestartWorkflow", canWrite),
+            new(TicketMenuCommand.ChangeWorkflow, "Change Workflow…", "TicketMenuChangeWorkflow", canWrite),
             new(TicketMenuCommand.Refresh, "Refresh", "TicketMenuRefresh", canWrite),
         };
 

@@ -47,7 +47,9 @@ public class TicketContextMenuTests
             TicketMenuCommand.AssignToMe, TicketMenuCommand.Reassign, TicketMenuCommand.Unassign,
             TicketMenuCommand.Status, TicketMenuCommand.Priority,
             null,
-            TicketMenuCommand.SetParent, TicketMenuCommand.CreateParent, TicketMenuCommand.Refresh,
+            TicketMenuCommand.SetParent, TicketMenuCommand.CreateParent,
+            null,
+            TicketMenuCommand.RestartWorkflow, TicketMenuCommand.ChangeWorkflow, TicketMenuCommand.Refresh,
             null,
             TicketMenuCommand.CopyForAgent, TicketMenuCommand.SendToAgent,
         }, plan.Select(e => e.Command));
@@ -137,7 +139,8 @@ public class TicketContextMenuTests
         var writes = new[]
         {
             TicketMenuCommand.AssignToMe, TicketMenuCommand.Reassign, TicketMenuCommand.Unassign, TicketMenuCommand.Status,
-            TicketMenuCommand.Priority, TicketMenuCommand.SetParent, TicketMenuCommand.CreateParent, TicketMenuCommand.Refresh,
+            TicketMenuCommand.Priority, TicketMenuCommand.SetParent, TicketMenuCommand.CreateParent,
+            TicketMenuCommand.RestartWorkflow, TicketMenuCommand.ChangeWorkflow, TicketMenuCommand.Refresh,
         };
         Assert.All(writes, c => Assert.False(Entry(plan, c).IsEnabled));
         Assert.True(Entry(plan, TicketMenuCommand.CopyNumber).IsEnabled);

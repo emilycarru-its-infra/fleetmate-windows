@@ -171,9 +171,13 @@ public static class WidgetCards
     /// A donut on the left and a legend carrying every count on the right.
     /// A wedge or a legend row passes its label to <paramref name="onClick"/>.
     /// Colours carry their own alpha, so a faded slice fades in the legend too.
+    /// With <paramref name="adaptive"/>, a card too narrow for both side by
+    /// side gets a smaller donut over the full legend instead
+    /// (<see cref="AdaptiveDonutPanel"/>), and each legend row keeps to one
+    /// line with its full label and count in a tooltip.
     /// </summary>
     public static UIElement Donut(IReadOnlyList<ChartSlice> slices, Action<string>? onClick = null,
-        IReadOnlyList<SKColor>? colors = null, double size = DonutSize)
+        IReadOnlyList<SKColor>? colors = null, double size = DonutSize, bool adaptive = false)
     {
         var diameter = Math.Min(size, 150);
         var total = slices.Sum(s => s.Value);
@@ -208,6 +212,23 @@ public static class WidgetCards
         };
         Wire(chart, series, slices, onClick);
 
+        if (adaptive)
+        {
+            var compactLegend = Legend(slices, fills, onClick, singleLine: true);
+            return new AdaptiveDonutPanel(chart, new ScrollViewer
+            {
+                Content = compactLegend,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalAlignment = VerticalAlignment.Center,
+            }, diameter, d =>
+            {
+                chart.Width = d;
+                chart.Height = d;
+                foreach (var s in series.OfType<PieSeries<int>>()) s.InnerRadius = d / 2 * 0.55;
+            });
+        }
+
         var grid = new Grid { MinHeight = diameter };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 110 });
@@ -224,8 +245,13 @@ public static class WidgetCards
     internal static string WedgeLabel(int value, int total) =>
         total > 0 && (double)value / total >= 0.12 ? value.ToString("N0") : "";
 
-    /// <summary>Swatch, label and count per slice. Labels wrap rather than truncate; each row is a button.</summary>
-    private static StackPanel Legend(IReadOnlyList<ChartSlice> slices, IReadOnlyList<SKColor> fills, Action<string>? onClick)
+    /// <summary>
+    /// Swatch, label and count per slice; each row is a button. Labels wrap
+    /// rather than truncate, or, with <paramref name="singleLine"/>, keep to
+    /// one trimmed line with the whole label and count in the row's tooltip.
+    /// </summary>
+    private static StackPanel Legend(IReadOnlyList<ChartSlice> slices, IReadOnlyList<SKColor> fills, Action<string>? onClick,
+        bool singleLine = false)
     {
         var stack = new StackPanel();
         for (var i = 0; i < slices.Count; i++)
@@ -244,9 +270,16 @@ public static class WidgetCards
             };
             var label = new TextBlock
             {
-                Text = DisplayLabel(slice), FontSize = 11, TextWrapping = TextWrapping.Wrap,
+                Text = DisplayLabel(slice), FontSize = 11,
+                TextWrapping = singleLine ? TextWrapping.NoWrap : TextWrapping.Wrap,
                 MaxHeight = 30, TextTrimming = TextTrimming.CharacterEllipsis,
             };
+            if (singleLine)
+            {
+                row.Margin = new Thickness(0, 0, 0, 2);
+                row.ToolTip = $"{DisplayLabel(slice)}: {slice.Value:N0}";
+                System.Windows.Automation.AutomationProperties.SetName(row, $"{DisplayLabel(slice)}: {slice.Value:N0}");
+            }
             var count = new TextBlock
             {
                 Text = slice.Value.ToString("N0"), FontSize = 11, FontWeight = FontWeights.Medium,
@@ -293,15 +326,17 @@ public static class WidgetCards
     /// <summary>
     /// Label | bar | count rows, so long names stay readable. A row highlights
     /// on hover and a click passes its label. <paramref name="faded"/> values
-    /// draw at reduced opacity.
+    /// draw at reduced opacity. With <paramref name="narrow"/> the bar may
+    /// shrink further so the count always fits a narrow card, and each row's
+    /// tooltip carries its whole label and count, since the label trims.
     /// </summary>
     public static UIElement HorizontalBars(IReadOnlyList<ChartSlice> slices, Func<string, Color> colorOf,
-        Action<string>? onClick = null, Func<string, bool>? faded = null)
+        Action<string>? onClick = null, Func<string, bool>? faded = null, bool narrow = false)
     {
         var max = Math.Max(1, slices.Count == 0 ? 1 : slices.Max(s => s.Value));
         var grid = new Grid { Margin = new Thickness(0, 2, 0, 2) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star), MaxWidth = 160 });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3, GridUnitType.Star), MinWidth = 40 });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3, GridUnitType.Star), MinWidth = narrow ? 16 : 40 });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         for (var i = 0; i < slices.Count; i++)
@@ -313,10 +348,10 @@ public static class WidgetCards
             var label = new TextBlock
             {
                 Text = slice.Label, FontSize = 11, Foreground = Medium, TextTrimming = TextTrimming.CharacterEllipsis,
-                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 3, 8, 3), Opacity = opacity,
+                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 3, narrow ? 5 : 8, 3), Opacity = opacity,
             };
             var value = Math.Max(slice.Value, 0);
-            var track = new Grid { Margin = new Thickness(0, 3, 8, 3), Opacity = opacity };
+            var track = new Grid { Margin = new Thickness(0, 3, narrow ? 5 : 8, 3), Opacity = opacity };
             track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(value, GridUnitType.Star), MinWidth = value > 0 ? 3 : 0 });
             track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(max - value, GridUnitType.Star) });
             var bar = new Border { Height = 14, CornerRadius = new CornerRadius(3), Background = new SolidColorBrush(colorOf(slice.Label)) };
@@ -337,7 +372,8 @@ public static class WidgetCards
 
             // One hit target across the whole row, so a short bar is as easy to
             // hover and click as a long one.
-            var hit = new Border { Background = Brushes.Transparent, ToolTip = slice.Label };
+            var hit = new Border { Background = Brushes.Transparent, ToolTip = narrow ? $"{slice.Label}: {slice.Value:N0}" : slice.Label };
+            if (narrow) System.Windows.Automation.AutomationProperties.SetName(hit, $"{slice.Label}: {slice.Value:N0}");
             hit.MouseEnter += (_, _) => bar.Opacity = HoverOpacity;
             hit.MouseLeave += (_, _) => bar.Opacity = 1;
             if (onClick != null)

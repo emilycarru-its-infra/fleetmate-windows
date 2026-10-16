@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using FleetMate.Core.Models.Tickets;
@@ -37,7 +36,7 @@ public static class TicketWidgets
                 byStatus.Select(c => new ChartSlice(c.Label, c.Value)).ToList(),
                 v => filters.Toggle(TicketFilterCategory.Status, v),
                 byStatus.Select(c => Fade(ToSk(StatusColor(c.Label)), Faded(filters, TicketFilterCategory.Status, c.Label))).ToList(),
-                size: 110), loading: loading)));
+                size: 110, adaptive: true), loading: loading)));
 
         cards.Add(BarCard("By Priority", new TicketStats(tickets(TicketFilterCategory.Priority)).ByPriority,
             TicketFilterCategory.Priority, filters, loading, PriorityColor));
@@ -86,10 +85,15 @@ public static class TicketWidgets
         };
     }
 
-    /// <summary>Six small figures in a 3 × 2 grid, so they take one card's height. Each is a button.</summary>
+    /// <summary>
+    /// Six small figures in one chart-width card, so the five charts share
+    /// its row: three columns of two where there is room, two compact columns
+    /// of three where there is not (<see cref="KpiTilePanel"/>). Each is a
+    /// button.
+    /// </summary>
     private static Border KpiGrid(IReadOnlyList<Tile> tiles, bool waiting)
     {
-        var grid = new UniformGrid { Rows = 2, Columns = 3 };
+        var grid = new KpiTilePanel();
         foreach (var t in tiles) grid.Children.Add(TileView(t, waiting));
 
         var card = new Border
@@ -99,50 +103,58 @@ public static class TicketWidgets
             VerticalAlignment = VerticalAlignment.Stretch,
             Child = grid,
         };
-        WidgetFlowPanel.SetUnits(card, 2);
+        WidgetFlowPanel.SetUnits(card, 1);
         return card;
     }
 
+    /// <summary>The figure and its icon on top, the label under them, the full text in the tooltip.</summary>
     private static UIElement TileView(Tile t, bool waiting)
     {
         var accent = Application.Current.TryFindResource("SystemAccentColor") is Color a ? a : Color.FromRgb(0, 120, 212);
         var medium = (Brush)Application.Current.FindResource("SystemControlForegroundBaseMediumBrush");
 
-        var row = new DockPanel { LastChildFill = true };
-        var glyph = new TextBlock
+        var top = new StackPanel { Orientation = Orientation.Horizontal };
+        top.Children.Add(new TextBlock
         {
-            Text = t.Glyph, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 16,
+            Text = t.Glyph, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 13,
             Foreground = new SolidColorBrush(t.Color), VerticalAlignment = VerticalAlignment.Center,
-            Width = 20, Margin = new Thickness(0, 0, 8, 0),
-        };
-        DockPanel.SetDock(glyph, Dock.Left);
-        row.Children.Add(glyph);
-        row.Children.Add(new StackPanel
-        {
-            VerticalAlignment = VerticalAlignment.Center,
-            Children =
-            {
-                waiting
-                    ? WidgetCards.SkeletonBlock(36, 18, new Thickness(0, 2, 0, 3))
-                    : new TextBlock { Text = t.Value.ToString("N0"), FontSize = 18, FontWeight = FontWeights.Bold },
-                new TextBlock { Text = t.Title, FontSize = 11, Foreground = medium, TextTrimming = TextTrimming.CharacterEllipsis },
-            },
+            Margin = new Thickness(0, 0, 5, 0),
         });
+        top.Children.Add(waiting
+            ? WidgetCards.SkeletonBlock(28, 16, new Thickness(0, 1, 0, 1))
+            : new TextBlock { Text = t.Value.ToString("N0"), FontSize = 16, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center });
 
         var tile = new Border
         {
-            Child = row,
-            Padding = new Thickness(10, 6, 10, 6),
-            Margin = new Thickness(4),
-            CornerRadius = new CornerRadius(8),
+            Child = new StackPanel
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                Children =
+                {
+                    top,
+                    new TextBlock { Text = t.Title, FontSize = 11, Foreground = medium, TextTrimming = TextTrimming.CharacterEllipsis },
+                },
+            },
+            Padding = new Thickness(7, 4, 7, 4),
+            Margin = new Thickness(2),
+            CornerRadius = new CornerRadius(7),
             Background = new SolidColorBrush(t.IsOn ? Color.FromArgb(36, accent.R, accent.G, accent.B) : Color.FromArgb(16, 128, 128, 128)),
             BorderBrush = new SolidColorBrush(t.IsOn ? accent : Color.FromArgb(40, 128, 128, 128)),
             BorderThickness = new Thickness(t.IsOn ? 1.5 : 1),
             Cursor = Cursors.Hand,
-            ToolTip = t.Help,
+            // The label may be trimmed in a compact tile, so the tooltip carries it whole.
+            ToolTip = $"{t.Title}: {t.Value:N0}. {t.Help}",
+            Focusable = true,
+            FocusVisualStyle = (Style?)Application.Current.TryFindResource(SystemParameters.FocusVisualStyleKey),
         };
         AutomationPropertiesName(tile, $"{t.Title}: {t.Value}. {t.Help}");
         tile.MouseLeftButtonUp += (_, _) => t.Action();
+        tile.KeyDown += (_, e) =>
+        {
+            if (e.Key is not (Key.Enter or Key.Space)) return;
+            e.Handled = true;
+            t.Action();
+        };
         return tile;
     }
 
@@ -157,7 +169,8 @@ public static class TicketWidgets
                 counts.Select(c => new ChartSlice(c.Label, c.Value)).ToList(),
                 colorOf,
                 v => filters.Toggle(category, v),
-                v => Faded(filters, category, v)), loading: loading));
+                v => Faded(filters, category, v),
+                narrow: true), loading: loading));
 
     /// <summary>Cards in a row share its height (see <see cref="WidgetFlowPanel.EqualHeights"/>).</summary>
     private static Border Stretch(Border card)

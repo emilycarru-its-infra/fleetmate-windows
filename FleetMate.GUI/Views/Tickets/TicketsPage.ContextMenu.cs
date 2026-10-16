@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using FleetMate.Core.Config;
 using FleetMate.Core.Models.Tickets;
+using FleetMate.Core.Services.Tickets;
 using FleetMate.GUI.Views.Shared;
 using ModernWpf.Controls;
 
@@ -15,7 +16,9 @@ namespace FleetMate.GUI.Views.Tickets;
 /// The right-click menu of ticket rows and board cards: the detail pane's
 /// actions without opening the ticket first. Assign to Me, Unassign, Status
 /// and Priority save at once; Reassign, Set Parent and Create Parent open the
-/// ticket and its popup. The menu opens on right click and, on a focused row,
+/// ticket and its popup; Restart Workflow and Change Workflow open the ticket
+/// and, once its workflow has loaded, the same confirmation as its Workflow
+/// section. The menu opens on right click and, on a focused row,
 /// with Shift+F10 or the Menu key.
 /// </summary>
 public partial class TicketsPage
@@ -136,6 +139,8 @@ public partial class TicketsPage
         TicketMenuCommand.Refresh => "",
         TicketMenuCommand.CopyForAgent => "",
         TicketMenuCommand.SendToAgent => "",
+        TicketMenuCommand.RestartWorkflow => "",
+        TicketMenuCommand.ChangeWorkflow => "",
         _ => null,
     };
 
@@ -169,6 +174,14 @@ public partial class TicketsPage
                 break;
             case TicketMenuCommand.CreateParent:
                 OpenTicketWithPopup(ticket, CreateParentPopup);
+                break;
+            case TicketMenuCommand.RestartWorkflow:
+                ShowTicket(ticket);
+                WorkflowPanel.RequestChange(ticket.Id, TicketWorkflowChangeKind.Restart);
+                break;
+            case TicketMenuCommand.ChangeWorkflow:
+                ShowTicket(ticket);
+                WorkflowPanel.RequestChange(ticket.Id, TicketWorkflowChangeKind.Replace);
                 break;
             case TicketMenuCommand.Refresh:
                 await RefreshTicketAsync(ticket.Id);
