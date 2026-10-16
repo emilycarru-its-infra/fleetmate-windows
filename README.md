@@ -56,6 +56,45 @@ fleetmate status
 
 This displays your configuration, available services, and connection status.
 
+## Agent terminal
+
+The desktop app keeps an Agent terminal handle above the terminal area. Use **Show/Hide**,
+**Split View** (half the content height), or **Full Window**; drag the divider to resize.
+Clicking any top navigation tab hides the terminal while sessions continue running.
+
+Shift+Enter sends a newline without submitting. Use the scrollbar, Shift+PageUp/PageDown,
+Shift+Home/End, or Shift+mouse wheel to browse up to 50,000 lines of scrollback. An agent
+using the alternate terminal screen controls its own history; FleetMate cannot recover
+content that program never wrote to normal scrollback.
+
+Right-click a session to rename it, return to its automatic title, or move it between
+sections. Add sections from the session list header; click a section to collapse it, or
+right-click to rename or remove it. Removing a section returns its sessions to **Sessions**.
+Names and sections last for the current app session.
+
+New sessions prefer the selected pull request's local checkout when available. Otherwise
+they start in `%USERPROFILE%\.fleetmate`; an explicit repository choice keeps its own
+working directory. FleetMate refreshes `FLEETMATE.md` there and creates `AGENTS.md` only
+when absent. Put your own enduring instructions in `AGENTS.md`.
+
+Sessions expose `FLEETMATE_WORKSPACE`, `FLEETMATE_INSTRUCTIONS`, `FLEETMATE_AGENT_BRIEF`,
+and `FLEETMATE_CONTEXT`. The brief describes the installed CLI; live context tracks the
+visible tab, selections, repositories and backend sign-in state. The guide points to
+configured Handbook and shared skills mirrors. Standard local Claude and Codex launches
+receive the brief automatically; remote launches and other wrappers retain their launch
+behavior. Context describes the app and does not provide arbitrary GUI control; agents
+must discover supported operations with `fleetmate --help`.
+
+Agents can label and organize their own sidebar row by writing a JSON object to the file
+named by `FLEETMATE_SESSION`:
+
+```json
+{"title":"Review changes","section":"Development"}
+```
+
+Both fields are optional. An empty title clears the automatic label. Manual names take
+precedence over agent labels and program titles.
+
 ## Command Reference
 
 ### Fleet Monitoring
