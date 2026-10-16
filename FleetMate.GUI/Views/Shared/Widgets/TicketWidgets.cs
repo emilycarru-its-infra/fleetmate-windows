@@ -36,7 +36,7 @@ public static class TicketWidgets
                 byStatus.Select(c => new ChartSlice(c.Label, c.Value)).ToList(),
                 v => filters.Toggle(TicketFilterCategory.Status, v),
                 byStatus.Select(c => Fade(ToSk(StatusColor(c.Label)), Faded(filters, TicketFilterCategory.Status, c.Label))).ToList(),
-                size: 110), loading: loading)));
+                size: 110, adaptive: true), loading: loading)));
 
         cards.Add(BarCard("By Priority", new TicketStats(tickets(TicketFilterCategory.Priority)).ByPriority,
             TicketFilterCategory.Priority, filters, loading, PriorityColor));
@@ -169,7 +169,8 @@ public static class TicketWidgets
                 counts.Select(c => new ChartSlice(c.Label, c.Value)).ToList(),
                 colorOf,
                 v => filters.Toggle(category, v),
-                v => Faded(filters, category, v)), loading: loading));
+                v => Faded(filters, category, v),
+                narrow: true), loading: loading));
 
     /// <summary>Cards in a row share its height (see <see cref="WidgetFlowPanel.EqualHeights"/>).</summary>
     private static Border Stretch(Border card)

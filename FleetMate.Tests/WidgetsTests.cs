@@ -73,6 +73,38 @@ public class WidgetsTests
         });
     }
 
+    [Fact]
+    public void Donut_KeepsTheLegendBesideItWhereItFitsAndStacksASmallerDonutOverItWhereNot()
+    {
+        RunSta(() =>
+        {
+            var sizes = new List<double>();
+            var chart = new System.Windows.Controls.Border();
+            var legend = new System.Windows.Controls.Border { Height = 50 };
+            var panel = new AdaptiveDonutPanel(chart, legend, 110, sizes.Add);
+
+            // A wide card: donut and legend side by side, the legend after the donut.
+            panel.Measure(new Size(300, 240));
+            panel.Arrange(new Rect(0, 0, 300, panel.DesiredSize.Height));
+            Assert.False(panel.IsStacked);
+            Assert.Equal(110, panel.DesiredSize.Height, 3);
+            Assert.Equal(new Rect(124, 0, 176, 110), System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot(legend));
+
+            // A one-unit card at a laptop width: a 90px donut over the full-width legend.
+            panel.Measure(new Size(180, 240));
+            panel.Arrange(new Rect(0, 0, 180, panel.DesiredSize.Height));
+            Assert.True(panel.IsStacked);
+            Assert.Equal(90 + 6 + 50, panel.DesiredSize.Height, 3);
+            Assert.Equal(new Rect(45, 0, 90, 90), System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot(chart));
+            Assert.Equal(new Rect(0, 96, 180, 50), System.Windows.Controls.Primitives.LayoutInformation.GetLayoutSlot(legend));
+
+            // The donut is resized only when the layout changes.
+            Assert.Equal(new double[] { 110, 90 }, sizes);
+            panel.Measure(new Size(170, 240));
+            Assert.Equal(2, sizes.Count);
+        });
+    }
+
     private static void RunSta(Action action)
     {
         Exception? failure = null;
