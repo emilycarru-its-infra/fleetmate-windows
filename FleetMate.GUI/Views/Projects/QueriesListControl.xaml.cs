@@ -30,8 +30,8 @@ public partial class QueriesListControl : UserControl
     public Func<AdoSharedQuery, int, AgentContext> QueryContext { get; set; } =
         (query, count) => AgentContexts.Query(query, null, null, count);
 
-    /// <summary>Collapse state survives tab switches, not restarts.</summary>
-    private static readonly HashSet<string> CollapsedQueryIds = new();
+    /// <summary>Queries start collapsed; deliberate expansions survive reloads and tab switches, not restarts.</summary>
+    private static readonly HashSet<string> ExpandedQueryIds = new();
 
     private List<QueryRunDisplay> _runs = new();
     private string _search = "";
@@ -145,11 +145,11 @@ public partial class QueriesListControl : UserControl
 
         var expander = new Expander
         {
-            IsExpanded = !CollapsedQueryIds.Contains(run.Query.Id),
+            IsExpanded = ExpandedQueryIds.Contains(run.Query.Id),
             Margin = new Thickness(0, 0, 0, 2)
         };
-        expander.Expanded += (_, _) => CollapsedQueryIds.Remove(run.Query.Id);
-        expander.Collapsed += (_, _) => CollapsedQueryIds.Add(run.Query.Id);
+        expander.Expanded += (_, _) => ExpandedQueryIds.Add(run.Query.Id);
+        expander.Collapsed += (_, _) => ExpandedQueryIds.Remove(run.Query.Id);
 
         // Tagged with its run, so the header offers Copy and Send to Agent for the query.
         var headerPanel = new DockPanel { LastChildFill = true, Tag = run };
