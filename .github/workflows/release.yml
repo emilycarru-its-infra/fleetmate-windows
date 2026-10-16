@@ -146,6 +146,6 @@ jobs:
             if ($draft -ne 'true') { throw "Release $tag is already published; refusing to replace its assets" }
             gh release upload $tag @artifacts --clobber
           } else {
-            gh release create $tag @artifacts --draft --verify-tag --title $title --notes $notes
+            gh release create $tag @artifacts --verify-tag --title $title --notes $notes
           }
           if ($LASTEXITCODE) { throw "Could not upload release assets for $tag" }
