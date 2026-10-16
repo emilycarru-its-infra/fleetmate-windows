@@ -61,6 +61,7 @@ public class RepoWorkspaceGuiTests
                 Pump(copy.GitAsync(new[] { "update-ref", RepoInsightsModel.HistoryReference, "HEAD" }));
                 Pump(copy.GitAsync(new[] { "checkout", "-b", "feature/stale", old }));
                 Pump(copy.GitAsync(new[] { "update-ref", "refs/heads/main", old }));
+                Pump(copy.GitAsync(new[] { "branch", "origin/main", old }));
                 var manager = new RepoManager(new RepoRegistryStore(Path.Combine(parent, "registry", "repos.json")));
                 Pump(manager.LinkAsync(root));
                 var record = Assert.Single(manager.Records());

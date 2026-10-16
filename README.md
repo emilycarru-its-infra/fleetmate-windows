@@ -97,6 +97,11 @@ precedence over agent labels and program titles.
 
 ## Repository Insights
 
+Insights always reads `refs/remotes/origin/main`, independently of the checked-out branch
+or local `main`. Fetch the repository to refresh that remote-tracking ref. A missing ref
+is reported as an error. The matching CLI command is `fleetmate repos stats --ref
+refs/remotes/origin/main`; CLI statistics otherwise retain their `HEAD` default.
+
 The desktop repository Insights view offers **Automatic**, **Linear** and **Compressed**
 scales for lines added and removed. Compressed scaling preserves every bucket and its
 raw hover values while making ordinary activity visible beside large import or rewrite

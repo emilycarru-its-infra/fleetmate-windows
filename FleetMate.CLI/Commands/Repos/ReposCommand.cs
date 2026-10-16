@@ -530,7 +530,7 @@ public static class ReposCommand
         var command = new Command("log", "Recent commits");
         var repo = new Argument<string>("repo", "Repository");
         var number = new Option<int>(new[] { "--number", "-n" }, () => 20, "Number of commits");
-        var reference = new Option<string?>("--ref", "Branch or ref (default: HEAD)");
+        var reference = new Option<string?>("--ref", "Branch or ref (default: HEAD). Use refs/remotes/origin/main to match Insights.");
         var json = JsonFlag();
         command.AddArgument(repo);
         command.AddOption(number);
@@ -561,7 +561,7 @@ public static class ReposCommand
         var since = new Option<string>("--since", () => "90d", "Start of the period: 30d, 12w, 6m, 1y, YYYY-MM-DD, or all");
         var by = new Option<string?>("--by", "Timeline bucket: day, week or month (default: chosen from the period)");
         var top = new Option<int>("--top", () => 10, "How many files, folders and authors to list");
-        var reference = new Option<string?>("--ref", "Branch or ref (default: HEAD)");
+        var reference = new Option<string?>("--ref", "Branch or ref (default: HEAD). Use refs/remotes/origin/main to match Insights.");
         var json = JsonFlag();
         command.AddArgument(repos);
         command.AddOption(since);
