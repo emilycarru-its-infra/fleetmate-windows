@@ -101,6 +101,9 @@ private bool _isInitialLoadDone;
                 WorkflowPanel.Attach(_tdxService, _tdxService, catalog);
                 WorkflowPanel.ActionFinished += OnWorkflowActionFinished;
                 WorkflowPanel.ChangeFinished += OnWorkflowChangeFinished;
+                TasksPanel.Attach(_tdxService.Tasks, (ticketId, ct) => TaskTemplateCatalog.LoadAsync(
+                    app.Config.Tdx ?? throw new TdxTicketTaskException("TeamDynamix is not configured."), ticketId, ct));
+                TasksPanel.TasksChanged += OnTasksChanged;
             }
 
             // Silent SSO can finish after this page has loaded, and the preload
@@ -963,6 +966,7 @@ private bool _isInitialLoadDone;
         _selectedTicket = null;
         TicketsListView.SelectedItem = null;
         WorkflowPanel.Clear();
+        TasksPanel.Clear();
         DetailContent.Visibility = Visibility.Collapsed;
         NoSelectionPanel.Visibility = Visibility.Visible;
         _detailPanelVisible = false;
@@ -1071,6 +1075,7 @@ private bool _isInitialLoadDone;
         // The workflow loads beside the ticket and feed; the panel drops its
         // own answer if another ticket is opened first.
         var workflowLoad = WorkflowPanel.LoadAsync(ticketId);
+        var tasksLoad = TasksPanel.LoadAsync(ticketId);
 
         try
         {
@@ -1098,7 +1103,28 @@ private bool _isInitialLoadDone;
         finally
         {
             await workflowLoad;
+            await tasksLoad;
         }
+    }
+
+    /// <summary>
+    /// After a task change was sent, whatever its outcome: the ticket, its
+    /// feed, its workflow (a completed workflow task can advance it) and its
+    /// tasks are read again, once. Nothing is resent. An outcome on a ticket
+    /// no longer open is reported here, since its panel is gone.
+    /// </summary>
+    private async void OnTasksChanged(TicketTaskSubmitOutcome outcome)
+    {
+        if (_tdxService == null) return;
+
+        if (_selectedTicket?.Id != outcome.TicketId)
+        {
+            ShowActionMessage($"Ticket #{outcome.TicketId}: {outcome.Message}", isError: !outcome.Succeeded);
+            return;
+        }
+
+        await LoadTicketDetailAsync(outcome.TicketId);
+        if (_selectedTicket is { } ticket && ticket.Id == outcome.TicketId) ReplaceCachedTicket(ticket);
     }
 
     /// <summary>

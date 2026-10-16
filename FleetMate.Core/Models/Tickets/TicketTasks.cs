@@ -367,6 +367,21 @@ public static class TicketTaskFormat
         };
     }
 
+    /// <summary>
+    /// Feed and description HTML as plain text: line breaks kept, tags
+    /// dropped, entities decoded. Nothing of the markup is ever rendered.
+    /// </summary>
+    public static string PlainText(string? html)
+    {
+        if (string.IsNullOrEmpty(html)) return "";
+        var text = System.Text.RegularExpressions.Regex.Replace(html, @"<br\s*/?>|</p>|</div>|</li>", "\n",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        text = System.Text.RegularExpressions.Regex.Replace(text, "<[^>]+>", "");
+        text = System.Net.WebUtility.HtmlDecode(text).Replace(' ', ' ');
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"\n{3,}", "\n\n");
+        return text.Trim();
+    }
+
     /// <summary>"1h 30m", "45m", "2d 1h" — minutes as people read them.</summary>
     public static string Minutes(int minutes)
     {

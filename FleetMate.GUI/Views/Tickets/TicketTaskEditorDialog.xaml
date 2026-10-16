@@ -1,0 +1,118 @@
+<Window x:Class="FleetMate.GUI.Views.Tickets.TicketTaskEditorDialog"
+        Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.modernwpf.com/2019"
+        ui:WindowHelper.UseModernWindowStyle="True"
+        Title="Task"
+        Height="760" Width="560" MinHeight="560" MinWidth="460"
+        WindowStartupLocation="CenterOwner">
+
+    <!-- Add or edit a standard ticket task: every writable field of the
+         TeamDynamix task. Progress is not here; it is set through the task's
+         update, the only route that can change it. -->
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock x:Name="HeadingText" Grid.Row="0" Text="New Task" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,16"
+                   TextWrapping="Wrap" />
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <TextBlock Text="Title" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <TextBox x:Name="TitleBox" MaxLength="300" Margin="0,0,0,12" AutomationProperties.Name="Task title" />
+
+                <TextBlock Text="Description" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <TextBox x:Name="DescriptionBox" AcceptsReturn="True" TextWrapping="Wrap" Height="90"
+                         VerticalScrollBarVisibility="Auto" Margin="0,0,0,12" AutomationProperties.Name="Task description" />
+
+                <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Estimate (minutes)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                    <TextBox Grid.Row="1" Grid.Column="0" x:Name="EstimateBox" Text="0" AutomationProperties.Name="Estimated minutes" />
+                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Complete within (operational minutes)" FontWeight="SemiBold"
+                               Margin="0,0,0,4" TextTrimming="CharacterEllipsis"
+                               ToolTip="Optional. Counts only operational hours, skipping weekends and days off." />
+                    <TextBox Grid.Row="1" Grid.Column="2" x:Name="WithinBox" ui:ControlHelper.PlaceholderText="None"
+                             AutomationProperties.Name="Complete within operational minutes" />
+                    <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" x:Name="EstimateHint" FontSize="11" Margin="0,4,0,0"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                </Grid>
+
+                <TextBlock Text="Start" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                    <DatePicker x:Name="StartDatePicker" Width="170" AutomationProperties.Name="Start date" />
+                    <TextBox x:Name="StartTimeBox" Width="80" Margin="8,0,0,0" ui:ControlHelper.PlaceholderText="HH:mm"
+                             AutomationProperties.Name="Start time, 24-hour" />
+                    <Button Content="Clear" Margin="8,0,0,0" Click="OnClearStart" AutomationProperties.Name="Clear the start date" />
+                </StackPanel>
+
+                <TextBlock Text="End" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                    <DatePicker x:Name="EndDatePicker" Width="170" AutomationProperties.Name="End date" />
+                    <TextBox x:Name="EndTimeBox" Width="80" Margin="8,0,0,0" ui:ControlHelper.PlaceholderText="HH:mm"
+                             AutomationProperties.Name="End time, 24-hour" />
+                    <Button Content="Clear" Margin="8,0,0,0" Click="OnClearEnd" AutomationProperties.Name="Clear the end date" />
+                </StackPanel>
+
+                <DockPanel Margin="0,0,0,4">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button x:Name="AssignMeButton" Content="Assign to me" Click="OnAssignMe" Margin="0,0,8,0" />
+                        <Button Content="Clear" Click="OnClearPerson" AutomationProperties.Name="Clear the responsible person" />
+                    </StackPanel>
+                    <TextBlock Text="Responsible person" FontWeight="SemiBold" VerticalAlignment="Center" />
+                </DockPanel>
+                <TextBox x:Name="PersonBox" ui:ControlHelper.PlaceholderText="Search people by name or email"
+                         TextChanged="OnPersonSearchChanged" AutomationProperties.Name="Search responsible person" />
+                <ListBox x:Name="PersonResults" MaxHeight="120" Visibility="Collapsed"
+                         SelectionChanged="OnPersonPicked" DisplayMemberPath="DisplayName" />
+                <TextBlock x:Name="PersonPicked" FontSize="12" Margin="0,4,0,12"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+                <DockPanel Margin="0,0,0,4">
+                    <Button DockPanel.Dock="Right" Content="Clear" Click="OnClearGroup" AutomationProperties.Name="Clear the responsible group" />
+                    <TextBlock Text="Responsible group" FontWeight="SemiBold" VerticalAlignment="Center" />
+                </DockPanel>
+                <TextBox x:Name="GroupBox" ui:ControlHelper.PlaceholderText="Search groups by name"
+                         TextChanged="OnGroupSearchChanged" AutomationProperties.Name="Search responsible group" />
+                <ListBox x:Name="GroupResults" MaxHeight="120" Visibility="Collapsed" SelectionChanged="OnGroupPicked" />
+                <TextBlock x:Name="GroupPicked" FontSize="12" Margin="0,4,0,12"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+                <CheckBox x:Name="NotifyBox" Content="Notify the responsible when the task becomes active" IsChecked="True"
+                          Margin="0,0,0,12" />
+
+                <TextBlock Text="Predecessor" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <ComboBox x:Name="PredecessorCombo" HorizontalAlignment="Stretch" AutomationProperties.Name="Predecessor task" />
+                <TextBlock x:Name="PredecessorHint" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                           Text="A task with a predecessor stays inactive until that task is complete."
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <DockPanel Grid.Row="2" Margin="0,16,0,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button x:Name="CancelButton" Content="Cancel" Click="OnCancel" Margin="0,0,8,0" MinWidth="80" IsCancel="True" />
+                <Button x:Name="SaveButton" Content="Add Task" Click="OnSave"
+                        Style="{StaticResource AccentButtonStyle}" MinWidth="110" />
+            </StackPanel>
+            <ui:ProgressRing x:Name="SaveProgress" DockPanel.Dock="Left" IsActive="False" Visibility="Collapsed"
+                             Width="16" Height="16" Margin="0,0,8,0" />
+            <TextBlock x:Name="StatusText" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,16,0"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+        </DockPanel>
+    </Grid>
+</Window>
