@@ -405,10 +405,11 @@ public sealed class TerminalPanel : UserControl
         var content = new StackPanel();
         content.Children.Add(new TextBlock { Text = title, FontWeight = FontWeights.SemiBold });
         content.Children.Add(input);
+        content.Children.Add(new TextBlock { Text = "Return to save · Esc to cancel", FontSize = 11, Margin = new Thickness(0, 6, 0, 0) });
         var surface = new Border { Child = content, Padding = new Thickness(10), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6) };
         surface.SetResourceReference(Border.BackgroundProperty, "AppBackgroundBrush");
         surface.SetResourceReference(Border.BorderBrushProperty, "SystemControlForegroundBaseLowBrush");
-        surface.SetResourceReference(TextElement.ForegroundProperty, "SystemControlForegroundBaseHighBrush");
+        surface.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseHighBrush");
         var popup = new Popup { Child = surface, PlacementTarget = anchor, Placement = PlacementMode.Bottom, StaysOpen = false, AllowsTransparency = true };
         _nameEditor = popup;
         input.PreviewKeyDown += (_, e) => {

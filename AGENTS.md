@@ -110,3 +110,9 @@ TicketsMate is the same GUI limited to the Tickets tab. `dotnet build FleetMate.
 
 FleetMate ships on macOS and Windows with the same features. A change that adds or alters a
 feature here names its Mac counterpart issue, or opens one, so the two apps stay in step.
+
+## Lightweight editing
+
+Use anchored popovers for session names, section names and other lightweight naming edits.
+Do not open modal naming dialogs. Focus and select the current text; Return saves, Escape
+cancels, and clicking away dismisses the editor.
