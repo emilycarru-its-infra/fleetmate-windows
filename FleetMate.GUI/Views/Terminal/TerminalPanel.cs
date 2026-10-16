@@ -580,6 +580,7 @@ public sealed class TerminalPanel : UserControl
     /// <summary>Called when the panel is shown or hidden, so bells from a hidden panel count as unseen.</summary>
     public void OnVisibilityChanged()
     {
+        if (!IsVisible && _nameEditor != null) _nameEditor.IsOpen = false;
         if (_active != null) Show(_active);
     }
 
