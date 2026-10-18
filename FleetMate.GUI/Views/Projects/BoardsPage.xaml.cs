@@ -650,7 +650,10 @@ public partial class BoardsPage : Page
             });
             await Task.WhenAll(tasks);
 
-            _queryRuns = runs;
+            // Runs finish in any order; keep the Azure DevOps order, which
+            // is what Sort Queries By › Query Order shows.
+            var position = queries.Select((q, i) => (q.Id, i)).GroupBy(p => p.Id).ToDictionary(g => g.Key, g => g.First().i);
+            _queryRuns = runs.OrderBy(r => position.GetValueOrDefault(r.Query.Id, int.MaxValue)).ToList();
             _queriesLoadedAt = DateTime.UtcNow;
             RefreshQueriesDisplay();
         }
