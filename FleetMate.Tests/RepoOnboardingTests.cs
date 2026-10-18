@@ -219,6 +219,13 @@ public sealed class RepoDiscoveryScanTests : TempFolder
         Assert.Null(RepoDiscovery.ReadOrigin(FakeCheckout("no-remote")));
     }
 
+    [Theory]
+    [InlineData(@" C:\\work\\remote.git", @"C:\work\remote.git")]
+    [InlineData(" \"https://example.com/a b.git\" # note", "https://example.com/a b.git")]
+    [InlineData(" https://example.com/x.git ; trailing", "https://example.com/x.git")]
+    public void ConfigValues_AreUnescapedAsGitReadsThem(string raw, string expected) =>
+        Assert.Equal(expected, RepoDiscovery.ConfigValue(raw));
+
     [Fact]
     public void WorkspaceFolders_ParsesRelativeAndAbsolutePaths()
     {
