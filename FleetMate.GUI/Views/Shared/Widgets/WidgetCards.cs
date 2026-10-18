@@ -121,50 +121,95 @@ public static class WidgetCards
     public static StackPanel KpiStack(IEnumerable<KpiTile> tiles)
     {
         var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
-        foreach (var tile in tiles)
-        {
-            var color = (Color)ColorConverter.ConvertFromString(tile.ColorHex);
-            var row = new DockPanel();
-            var glyph = new TextBlock
-            {
-                Text = tile.Glyph, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 20,
-                Foreground = new SolidColorBrush(color), VerticalAlignment = VerticalAlignment.Center,
-                Width = 28, Margin = new Thickness(0, 0, 10, 0),
-            };
-            DockPanel.SetDock(glyph, Dock.Left);
-            row.Children.Add(glyph);
-
-            UIElement value = tile.Loading
-                ? SkeletonBlock(60, 22, new Thickness(0, 2, 0, 3))
-                : new TextBlock { Text = tile.Value, FontSize = 22, FontWeight = FontWeights.Bold };
-            row.Children.Add(new StackPanel
-            {
-                VerticalAlignment = VerticalAlignment.Center,
-                Children = { value, new TextBlock { Text = tile.Title, FontSize = 11, Foreground = Medium } },
-            });
-
-            var card = new Border
-            {
-                Style = (Style)Application.Current.FindResource("CardStyle"),
-                Padding = new Thickness(12, 10, 12, 10),
-                Margin = new Thickness(0, 0, 0, 8),
-                Child = row,
-            };
-            System.Windows.Automation.AutomationProperties.SetName(card, $"{tile.Title}: {tile.Value}");
-            if (tile.Open is { } open)
-            {
-                card.Cursor = Cursors.Hand;
-                card.MouseEnter += (_, _) => card.Opacity = 0.85;
-                card.MouseLeave += (_, _) => card.Opacity = 1;
-                card.MouseLeftButtonUp += (_, _) => open();
-            }
-            stack.Children.Add(card);
-        }
+        foreach (var tile in tiles) stack.Children.Add(KpiCard(tile, new Thickness(0, 0, 0, 8)));
 
         if (stack.Children.Count > 0 && stack.Children[^1] is Border last) last.Margin = new Thickness(0);
         WidgetFlowPanel.SetUnits(stack, 1);
         return stack;
     }
+
+    /// <summary>
+    /// KPI tiles that share the cell's height: in an equal-height row
+    /// (<see cref="WidgetFlowPanel.EqualHeights"/>) the column ends level
+    /// with the chart cards beside it instead of leaving a gap below.
+    /// </summary>
+    public static Grid KpiColumn(IEnumerable<KpiTile> tiles)
+    {
+        var grid = new Grid { VerticalAlignment = VerticalAlignment.Stretch };
+        var list = tiles.ToList();
+        for (var i = 0; i < list.Count; i++)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            var card = KpiCard(list[i], new Thickness(0, 0, 0, i == list.Count - 1 ? 0 : 8));
+            card.VerticalAlignment = VerticalAlignment.Stretch;
+            Grid.SetRow(card, i);
+            grid.Children.Add(card);
+        }
+        WidgetFlowPanel.SetUnits(grid, 1);
+        return grid;
+    }
+
+    private static Border KpiCard(KpiTile tile, Thickness margin)
+    {
+        var color = (Color)ColorConverter.ConvertFromString(tile.ColorHex);
+        var row = new DockPanel { VerticalAlignment = VerticalAlignment.Center };
+        var glyph = new TextBlock
+        {
+            Text = tile.Glyph, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 20,
+            Foreground = new SolidColorBrush(color), VerticalAlignment = VerticalAlignment.Center,
+            Width = 28, Margin = new Thickness(0, 0, 10, 0),
+        };
+        DockPanel.SetDock(glyph, Dock.Left);
+        row.Children.Add(glyph);
+
+        UIElement value = tile.Loading
+            ? SkeletonBlock(60, 22, new Thickness(0, 2, 0, 3))
+            : new TextBlock { Text = tile.Value, FontSize = 22, FontWeight = FontWeights.Bold };
+        row.Children.Add(new StackPanel
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { value, new TextBlock { Text = tile.Title, FontSize = 11, Foreground = Medium } },
+        });
+
+        var card = new Border
+        {
+            Style = (Style)Application.Current.FindResource("CardStyle"),
+            Padding = new Thickness(12, 10, 12, 10),
+            Margin = margin,
+            Child = row,
+        };
+        System.Windows.Automation.AutomationProperties.SetName(card, $"{tile.Title}: {tile.Value}");
+        if (tile.Open is { } open)
+        {
+            card.Cursor = Cursors.Hand;
+            card.MouseEnter += (_, _) => card.Opacity = 0.85;
+            card.MouseLeave += (_, _) => card.Opacity = 1;
+            card.MouseLeftButtonUp += (_, _) => open();
+        }
+        return card;
+    }
+
+    /// <summary>
+    /// A card with nothing to chart: one centred line in the card's own
+    /// height, rather than zero figures over a lone "none" message.
+    /// </summary>
+    public static UIElement AllClear(string title, string detail) => new StackPanel
+    {
+        VerticalAlignment = VerticalAlignment.Center,
+        HorizontalAlignment = HorizontalAlignment.Center,
+        Margin = new Thickness(0, 8, 0, 8),
+        Children =
+        {
+            new TextBlock
+            {
+                Text = "", FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 20,
+                Foreground = new SolidColorBrush(WidgetPalette.Green), HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 4),
+            },
+            new TextBlock { Text = title, FontSize = 13, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center },
+            new TextBlock { Text = detail, FontSize = 11, Foreground = Medium, HorizontalAlignment = HorizontalAlignment.Center },
+        },
+    };
 
     // MARK: - Donut
 
