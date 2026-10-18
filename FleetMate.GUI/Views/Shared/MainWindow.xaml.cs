@@ -52,6 +52,8 @@ public partial class MainWindow : Window
         // The bar below the panel stays on the window edge and holds show,
         // hide and full window.
         TerminalStrip.Panel = Terminal;
+        // The terminal opens in the mode it was last used in, split or full window.
+        _terminalLayout.RestoreMode(UserPreferences.TerminalLastFullWindow);
         TerminalStrip.ShowRequested += (_, _) => SetTerminalVisible(true);
         TerminalStrip.HideRequested += (_, _) => SetTerminalVisible(false);
         TerminalStrip.SplitViewRequested += (_, _) => {
@@ -266,6 +268,8 @@ public partial class MainWindow : Window
     {
         var visible = Terminal.Visibility == Visibility.Visible;
         var full = visible && _terminalLayout.FullWindow;
+        if (visible && _terminalLayout.FullWindow != UserPreferences.TerminalLastFullWindow)
+            UserPreferences.SetTerminalLastFullWindow(_terminalLayout.FullWindow);
         TerminalDivider.Visibility = visible && !full ? Visibility.Visible : Visibility.Collapsed;
         TerminalStrip.SetState(visible, full);
         ContentFrame.Visibility = full ? Visibility.Hidden : Visibility.Visible;
