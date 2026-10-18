@@ -328,7 +328,7 @@ public static class RepoDiscovery
         var origin = config != null ? OriginFromConfig(config) : null;
         return new DiscoveredCheckout(path, origin, RepoRemoteUrl.Parse(origin), fromWorkspace)
         {
-            CommandConfig = config != null ? CommandConfigKeys(config) : new(),
+            CommandConfig = CommandConfig(path),
         };
     }
 
@@ -373,40 +373,53 @@ public static class RepoDiscovery
         return texts.Count == 0 ? null : string.Join("\n", texts);
     }
 
-    private static readonly HashSet<string> BooleanValues = new(StringComparer.OrdinalIgnoreCase)
-        { "", "true", "false", "yes", "no", "on", "off", "0", "1" };
+    private static readonly HashSet<string> Falsy = new(StringComparer.OrdinalIgnoreCase) { "false", "no", "off", "0" };
+
+    private static readonly HashSet<string> CoreDataKeys = new(StringComparer.Ordinal)
+    {
+        "repositoryformatversion", "filemode", "bare", "logallrefupdates", "ignorecase", "precomposeunicode",
+        "symlinks", "autocrlf", "eol", "safecrlf", "longpaths", "quotepath", "checkstat", "trustctime",
+        "sparsecheckout", "sparsecheckoutcone", "untrackedcache", "splitindex",
+    };
 
     /// <summary>
-    /// Whether git would run a program this key names. Matched on
-    /// <c>section.key</c> with any subsection, lowercased as git compares them.
+    /// Whether a config key is known to hold only data. Everything else is
+    /// flagged: an allowlist, so a key git learns to run tomorrow, or one this
+    /// list never heard of, is treated as able to run commands.
     /// </summary>
-    internal static bool IsCommandKey(string section, string? subsection, string key, string value) => (section, key) switch
+    internal static bool IsDataOnlyKey(string section, string? subsection, string key, string value) => section switch
     {
-        // true and false choose the built-in daemon or nothing; anything else is a program.
-        ("core", "fsmonitor") => !BooleanValues.Contains(value),
-        ("core", "hookspath" or "sshcommand" or "pager" or "editor" or "askpass" or "gitproxy" or "alternaterefscommand") => true,
-        ("sequence", "editor") => true,
-        ("credential", "helper") => true,
-        ("diff", "external" or "textconv" or "command") => true,
-        ("merge", "driver") => true,
-        ("filter", _) => true,
-        ("remote", "uploadpack" or "receivepack") => true,
-        ("gpg", "program") => true,
-        ("pager", _) => true,
-        ("protocol", "allow") => value.Equals("always", StringComparison.OrdinalIgnoreCase),
-        ("include" or "includeif", "path") => true,
+        "core" => subsection == null && (key == "fsmonitor" ? Falsy.Contains(value) : CoreDataKeys.Contains(key)),
+        "remote" => subsection != null && key is "url" or "fetch" or "pushurl" or "push" or "tagopt" or "prune" or "prunetags" or "mirror" or "skipdefaultupdate",
+        // Editors keep their own per-branch notes here.
+        "branch" => subsection != null && (key is "remote" or "merge" or "rebase" or "pushremote" or "description"
+            || key.StartsWith("vscode-", StringComparison.Ordinal) || key.StartsWith("github-pr-", StringComparison.Ordinal)),
+        "user" or "pull" or "color" or "column" or "advice" or "i18n" => true,
+        "fetch" => subsection == null && key is "prune" or "prunetags" or "writecommitgraph" or "parallel",
+        "init" => subsection == null && key == "defaultbranch",
+        "lfs" => subsection == null ? key == "repositoryformatversion" : key is "access" or "locksverify",
+        "extensions" => subsection == null && key is "objectformat" or "refstorage",
+        "submodule" => subsection == null
+            ? key == "active"
+            : key == "update" ? !value.StartsWith('!') : key is "url" or "active" or "branch" or "fetchrecursesubmodules" or "ignore" or "shallow",
+        "push" => subsection == null && key is "default" or "autosetupremote" or "followtags",
+        "merge" => subsection == null && key is "ff" or "conflictstyle",
+        "rebase" => subsection == null && key is "autostash" or "autosquash" or "updaterefs",
+        "gc" => subsection == null && key is "auto" or "autodetach",
         _ => false,
     };
 
     /// <summary>
-    /// <c>section[.subsection].key</c> names in git config text whose values git
-    /// would run as programs, in file order, each once.
+    /// <c>section[.subsection].key</c> names in git config text that are not
+    /// known to be data-only, in file order, each once. A key outside any
+    /// section and an unparsable header are flagged too.
     /// </summary>
     public static List<string> CommandConfigKeys(string text)
     {
         var section = "";
         string? subsection = null;
         var found = new List<string>();
+        void Flag(string name) { if (!found.Contains(name)) found.Add(name); }
         foreach (var rawLine in text.Split('\n'))
         {
             var line = rawLine.Trim();
@@ -414,7 +427,13 @@ public static class RepoDiscovery
             if (line[0] == '[')
             {
                 var close = line.IndexOf(']');
-                if (close < 0) continue;
+                if (close < 0)
+                {
+                    Flag("(unparsable section header)");
+                    section = "";
+                    subsection = null;
+                    continue;
+                }
                 var header = line[1..close].Trim();
                 var quote = header.IndexOf('"');
                 var dot = header.IndexOf('.');
@@ -448,11 +467,81 @@ public static class RepoDiscovery
                 name = line.Split(' ', '\t', '#', ';')[0].ToLowerInvariant();
                 value = "";
             }
-            if (name.Length == 0 || section.Length == 0 || !IsCommandKey(section, subsection, name, value)) continue;
-            var full = subsection != null ? $"{section}.{subsection}.{name}" : $"{section}.{name}";
-            if (!found.Contains(full)) found.Add(full);
+            var full = string.Join(".", new[] { section, subsection, name }.Where(p => !string.IsNullOrEmpty(p)));
+            if (name.Length == 0 || section.Length == 0)
+            {
+                Flag(full.Length == 0 || section.Length == 0 ? "(key outside a section)" : full);
+                continue;
+            }
+            if (!IsDataOnlyKey(section, subsection, name, value)) Flag(full);
         }
         return found;
+    }
+
+    private static readonly System.Text.Encoding StrictUtf8 = new System.Text.UTF8Encoding(false, throwOnInvalidBytes: true);
+
+    /// <summary>
+    /// Why the clone's own files could make git run something: config keys not
+    /// known to be data-only, hooks, a <c>commondir</c> pointing elsewhere, and
+    /// anything that could not be read. Fails closed: what cannot be read is
+    /// itself a reason. Empty for a clone with nothing to review.
+    /// </summary>
+    public static List<string> CommandConfig(string checkout)
+    {
+        var reasons = new List<string>();
+        void Add(string reason) { if (!reasons.Contains(reason)) reasons.Add(reason); }
+        if (GitDirectory(checkout) is not { } gitDir)
+        {
+            var dotGit = Path.Combine(checkout, ".git");
+            if (File.Exists(dotGit) || Directory.Exists(dotGit)) Add("(unreadable .git)");
+            return reasons;
+        }
+        var gitDirs = new List<string> { gitDir };
+        var commondir = Path.Combine(gitDir, "commondir");
+        if (File.Exists(commondir))
+        {
+            Add("commondir");
+            try
+            {
+                var target = File.ReadAllText(commondir, StrictUtf8).Trim().Replace('/', Path.DirectorySeparatorChar);
+                if (target.Length > 0 && !IsUncOrDevicePath(target))
+                    gitDirs.Add(Path.GetFullPath(Path.IsPathRooted(target) ? target : Path.Combine(gitDir, target)));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException
+                or NotSupportedException or System.Text.DecoderFallbackException) { }
+        }
+        foreach (var dir in gitDirs)
+        {
+            foreach (var name in new[] { "config", "config.worktree" })
+            {
+                var file = Path.Combine(dir, name);
+                if (!File.Exists(file)) continue;
+                try
+                {
+                    foreach (var key in CommandConfigKeys(File.ReadAllText(file, StrictUtf8))) Add(key);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.DecoderFallbackException)
+                {
+                    Add($"{name} (unreadable)");
+                }
+            }
+            // Windows has no execute bit and Git for Windows runs any hook
+            // file through sh, so every non-sample file counts.
+            try
+            {
+                var hooks = Path.Combine(dir, "hooks");
+                if (Directory.Exists(hooks))
+                    foreach (var hook in Directory.EnumerateFiles(hooks).Select(Path.GetFileName).OfType<string>()
+                                 .Where(h => !h.EndsWith(".sample", StringComparison.OrdinalIgnoreCase))
+                                 .OrderBy(h => h, StringComparer.Ordinal))
+                        Add($"hooks/{hook}");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Add("hooks (unreadable)");
+            }
+        }
+        return reasons;
     }
 
     /// <summary>
