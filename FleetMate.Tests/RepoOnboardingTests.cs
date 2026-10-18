@@ -278,7 +278,7 @@ public sealed class RepoDiscoveryScanTests : TempFolder
     }
 
     [Fact]
-    public void ConfigCases_MatchTheMacTable() => Assert.Equal(41, ConfigCases.Count);
+    public void ConfigCases_MatchTheMacTable() => Assert.Equal(42, ConfigCases.Count);
 
     [Fact]
     public void InvalidUtf8_IsFlagged() =>
