@@ -116,12 +116,13 @@
                      just before Minimize. -->
                 <StackPanel x:Name="ToolbarRight" Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right"
                             Margin="0,0,132,0">
-                    <!-- Elevation session status. The per-user session container
+                    <!-- Elevated sessions status. The per-user session container
                          takes a while to boot and lives for its TTL, so the chrome
-                         says whether the next elevated action will wait on it.
-                         Click to re-check; it starts sessions that are not running. -->
+                         says "Elevation starting…" or "Elevation ready", and stays a
+                         quiet grey "Elevation" when stopped, since the next action
+                         restarts it. Click to check again and start what is not running. -->
                     <Button x:Name="ElevationButton" Click="OnElevationClicked" Visibility="Collapsed"
-                            AutomationProperties.AutomationId="ElevationButton" AutomationProperties.Name="Elevation"
+                            AutomationProperties.AutomationId="ElevationButton" AutomationProperties.Name="Elevated sessions"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
                             Style="{StaticResource ChromeIconButtonStyle}" Margin="0,0,4,0">
                         <StackPanel Orientation="Horizontal">

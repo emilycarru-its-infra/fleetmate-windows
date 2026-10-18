@@ -1,4 +1,5 @@
 using FleetMate.Core.Config;
+using FleetMate.Core.Models;
 using FleetMate.Core.Services;
 using Xunit;
 
@@ -105,7 +106,28 @@ public class ElevationSessionStateTests
     {
         var line = ElevationStatusText.DomainLine(GraphDomain.Devices, ElevationSessionState.Ready,
             Now.AddHours(5).AddMinutes(12), null, Now);
-        Assert.Equal("Devices: ready, expires in 5h 12m", line);
+        Assert.Equal("Devices (Intune, Microsoft Graph): Ready, 5h 12m left", line);
+    }
+
+    [Theory]
+    [InlineData(ElevationSessionState.Ready, "Elevation ready")]
+    [InlineData(ElevationSessionState.Starting, "Elevation starting…")]
+    [InlineData(ElevationSessionState.Expired, "Elevation")]
+    [InlineData(ElevationSessionState.None, "Elevation")]
+    public void ChromeTextStaysQuietWhenStopped(ElevationSessionState state, string expected)
+    {
+        Assert.Equal(expected, ElevationStatusText.Label(state));
+    }
+
+    [Fact]
+    public void StoppedSessionReadsAsRestartingNotAsAProblem()
+    {
+        Assert.Equal("Stopped", ElevationStatusText.StateLabel(ElevationSessionState.Expired));
+        Assert.Equal("Stopped, restarts on next use",
+            ElevationStatusText.Detail(ElevationSessionState.None, null, Now));
+        Assert.Equal(AuthDisplayTone.Inactive, AuthDisplayStatus.Standby.Tone);
+        Assert.Equal(AuthDisplayTone.Positive, AuthDisplayStatus.Ready.Tone);
+        Assert.Equal("All valid", AuthDisplayStatus.Summary(new[] { AuthDisplayStatus.Ready, AuthDisplayStatus.Standby }).Label);
     }
 
     [Fact]

@@ -117,13 +117,14 @@ public partial class MainWindow : Window
             ElevationSessionState.Ready => Colors.Green,
             ElevationSessionState.Starting => Colors.DodgerBlue,
             ElevationSessionState.Expired => Colors.Gray,
-            ElevationSessionState.None => Colors.Gray,
-            _ => Colors.Goldenrod,
+            _ => Colors.Gray,
         });
-        ElevationButton.ToolTip = string.Join(Environment.NewLine, ElevationMonitor.DesktopDomains.Select(d =>
+        ElevationButton.ToolTip = ElevationStatusText.Explainer(monitor.TtlHours)
+            + Environment.NewLine + Environment.NewLine
+            + string.Join(Environment.NewLine, ElevationMonitor.DesktopDomains.Select(d =>
                 ElevationStatusText.DomainLine(d, monitor.StateOf(d), monitor.ExpiresOf(d), monitor.ErrorOf(d), DateTimeOffset.Now)))
             + Environment.NewLine + Environment.NewLine
-            + "Click to re-check and start any session that is not running.";
+            + "Click to check again and start any session that is not running.";
     }
 
     private async void OnElevationClicked(object sender, RoutedEventArgs e)
