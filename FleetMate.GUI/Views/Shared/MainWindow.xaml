@@ -131,12 +131,17 @@
                                        VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <ToggleButton x:Name="TerminalToggleButton" ToolTip="Show Agent Terminal (Ctrl+`)" Click="OnTerminalToggleClicked"
+                    <!-- Agent is a mode, not one more glyph: icon and name, checked
+                         (accent) while the terminal is open. Ctrl+J or Ctrl+`. -->
+                    <ToggleButton x:Name="TerminalToggleButton" ToolTip="Show Agent (Ctrl+J or Ctrl+`)" Click="OnTerminalToggleClicked"
                                   AutomationProperties.AutomationId="TerminalToggleButton"
-                                  AutomationProperties.Name="Show Agent Terminal"
+                                  AutomationProperties.Name="Agent"
                                   shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                                  Background="Transparent" BorderThickness="0" Padding="8,5" Margin="0,0,4,0">
-                        <ui:FontIcon Glyph="&#xE756;" FontFamily="Segoe Fluent Icons" FontSize="14" />
+                                  Padding="10,4" Margin="0,0,6,0">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:FontIcon Glyph="&#xE756;" FontFamily="Segoe Fluent Icons" FontSize="14" VerticalAlignment="Center" />
+                            <TextBlock Text="Agent" Margin="6,0,0,0" FontSize="13" VerticalAlignment="Center" />
+                        </StackPanel>
                     </ToggleButton>
                     <!-- Graphs: shows or hides this tab's widget strip (Ctrl+Alt+G).
                          Accent while shown, secondary while hidden; absent on tabs
