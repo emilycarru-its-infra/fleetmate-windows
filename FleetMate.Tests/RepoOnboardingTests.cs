@@ -234,10 +234,6 @@ public sealed class RepoDiscoveryScanTests : TempFolder
         { "fsmonitor false", "[core]\n\tfsmonitor = false\n", false },
         { "fsmonitor program", "[core]\n\tfsmonitor = ./watch.sh\n", true },
         { "fsmonitor true", "[core]\n\tfsmonitor = true\n", true },
-        { "commit gpgsign true", "[commit]\n\tgpgsign = true\n", false },
-        { "commit gpgsign other value", "[commit]\n\tgpgsign = maybe\n", true },
-        { "gpg program", "[gpg]\n\tprogram = ./sign.sh\n", true },
-        { "user signingkey", "[user]\n\tsigningkey = ABCDEF\n", true },
         { "hooksPath", "[core]\n\thooksPath = .husky\n", true },
         { "sshCommand", "[core]\n\tsshCommand = ssh -i key\n", true },
         { "pager", "[core]\n\tpager = less\n", true },
@@ -271,6 +267,15 @@ public sealed class RepoDiscoveryScanTests : TempFolder
         { "bad key name", "[user]\n\tna me = x\n", true },
         { "bad section name", "[us!er]\n\tname = x\n", true },
         { "escaped quote in subsection", "[branch \"a\\\"b\"]\n\tremote = origin\n", true },
+        { "commit gpgsign true", "[commit]\n\tgpgsign = true\n", false },
+        { "commit gpgsign false", "[commit]\n\tgpgSign = false\n", false },
+        { "commit gpgsign bare", "[commit]\n\tgpgsign\n", false },
+        { "commit gpgsign quoted", "[commit]\n\tgpgsign = \"true\"\n", true },
+        { "commit gpgsign other value", "[commit]\n\tgpgsign = yes-please\n", true },
+        { "gpg program", "[gpg]\n\tprogram = /usr/local/bin/gpg\n", true },
+        { "gpg format", "[gpg]\n\tformat = ssh\n", true },
+        { "gpg ssh program", "[gpg \"ssh\"]\n\tprogram = ssh-keygen\n", true },
+        { "user signingkey", "[user]\n\tsigningkey = ABC123\n", true },
     };
 
     [Theory]
@@ -282,7 +287,7 @@ public sealed class RepoDiscoveryScanTests : TempFolder
     }
 
     [Fact]
-    public void ConfigCases_MatchTheMacTable() => Assert.Equal(46, ConfigCases.Count);
+    public void ConfigCases_MatchTheMacTable() => Assert.Equal(51, ConfigCases.Count);
 
     [Fact]
     public void InvalidUtf8_IsFlagged() =>
