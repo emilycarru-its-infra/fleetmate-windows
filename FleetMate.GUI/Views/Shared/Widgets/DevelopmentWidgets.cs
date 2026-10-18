@@ -111,11 +111,18 @@ public static partial class WidgetCatalog
             }),
         };
 
-        var byRepo = RepositorySlices(prs);
-        cards.Add(WidgetCards.Card("By Repository",
-            WidgetCards.ChartOr(byRepo.Count > 0, loading, "No open pull requests",
-                () => WidgetCards.HorizontalBars(byRepo, WidgetCards.ByIndex(byRepo, RepositoryColors),
-                    repo => filter(Category.Repository, repo))),
+        var weeks = PerWeek(prs.Select(p => p.CreatedAt), 12, DateTime.Now);
+        cards.Add(WidgetCards.Card("Opened per Week",
+            WidgetCards.ChartOr(prs.Count > 0, loading, "No open pull requests",
+                () => DayColumns(weeks.Select(w => w.Start).ToList(),
+                    new[] { ("Pull requests", (Brush)RepoBrushes.Accent, (IReadOnlyList<int>)weeks.Select(w => w.Count).ToList()) },
+                    legend: false, bucket: RepoStatsBucket.Week)),
+            units: 2, loading: loading));
+
+        var review = ReviewSlices(prs);
+        cards.Add(WidgetCards.Card("Review Status",
+            WidgetCards.ChartOr(review.Count > 0, loading, "No open pull requests",
+                () => WidgetCards.Donut(review, colors: review.Select(s => P.Sk(ReviewColor(s.Label))).ToList(), adaptive: true)),
             loading: loading));
 
         var ages = AgeSlices(prs, DateTime.Now);
@@ -124,13 +131,59 @@ public static partial class WidgetCatalog
                 () => WidgetCards.HorizontalBars(ages, AgeColor)),
             loading: loading));
 
-        var review = ReviewSlices(prs);
-        cards.Add(WidgetCards.Card("Review Status",
-            WidgetCards.ChartOr(review.Count > 0, loading, "No open pull requests",
-                () => WidgetCards.Donut(review, colors: review.Select(s => P.Sk(ReviewColor(s.Label))).ToList(), adaptive: true)),
+        var byRepo = RepositorySlices(prs);
+        cards.Add(WidgetCards.Card("By Repository",
+            WidgetCards.ChartOr(byRepo.Count > 0, loading, "No open pull requests",
+                () => WidgetCards.HorizontalBars(byRepo, WidgetCards.ByIndex(byRepo, RepositoryColors),
+                    repo => filter(Category.Repository, repo))),
+            loading: loading));
+
+        var byAuthor = TopSlices(prs, p => string.IsNullOrWhiteSpace(p.AuthorName) ? "Unknown" : p.AuthorName);
+        cards.Add(WidgetCards.Card("By Author",
+            WidgetCards.ChartOr(byAuthor.Count > 0, loading, "No open pull requests",
+                () => WidgetCards.HorizontalBars(byAuthor, _ => P.Indigo, author => filter(Category.Search, author))),
+            loading: loading));
+
+        var discussed = MostDiscussed(prs);
+        cards.Add(WidgetCards.Card("Most Discussed",
+            WidgetCards.ChartOr(discussed.Count > 0, loading, "No comments yet",
+                () => WidgetCards.HorizontalBars(discussed.Select(p => new ChartSlice(p.Title, p.CommentCount)).ToList(), _ => P.Teal,
+                    title => { if (discussed.FirstOrDefault(p => p.Title == title) is { } pr) filter(Category.PullRequest, pr.Id); })),
             loading: loading));
 
         return cards;
+    }
+
+    /// <summary>The eight pull requests with the most comments, busiest first, newest activity breaking ties.</summary>
+    internal static List<UnifiedPullRequest> MostDiscussed(IEnumerable<UnifiedPullRequest> prs) => prs
+        .Where(p => p.CommentCount > 0)
+        .OrderByDescending(p => p.CommentCount).ThenByDescending(p => p.UpdatedAt ?? p.CreatedAt ?? DateTime.MinValue)
+        .Take(8).ToList();
+
+    /// <summary>The first day of the week <paramref name="date"/> falls in, in the user's calendar.</summary>
+    private static DateTime WeekStart(DateTime date)
+    {
+        var first = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek;
+        var offset = ((int)date.DayOfWeek - (int)first + 7) % 7;
+        return date.Date.AddDays(-offset);
+    }
+
+    /// <summary>One entry per week for the last <paramref name="weeks"/> weeks, oldest first, empty weeks included.</summary>
+    internal static List<(DateTime Start, int Count)> PerWeek(IEnumerable<DateTime?> dates, int weeks, DateTime today)
+    {
+        var thisWeek = WeekStart(today);
+        var counts = dates.OfType<DateTime>().GroupBy(d => WeekStart(Local(d))).ToDictionary(g => g.Key, g => g.Count());
+        return Enumerable.Range(0, weeks).Select(i => thisWeek.AddDays(-7 * (weeks - 1 - i)))
+            .Select(w => (w, counts.GetValueOrDefault(w))).ToList();
+    }
+
+    /// <summary>Counts by weekday in the user's week order, every day present.</summary>
+    internal static List<ChartSlice> Weekdays(IEnumerable<DateTime?> dates)
+    {
+        var format = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat;
+        var counts = dates.OfType<DateTime>().GroupBy(d => Local(d).DayOfWeek).ToDictionary(g => g.Key, g => g.Count());
+        return Enumerable.Range(0, 7).Select(i => (DayOfWeek)(((int)format.FirstDayOfWeek + i) % 7))
+            .Select(d => new ChartSlice(format.GetAbbreviatedDayName(d), counts.GetValueOrDefault(d))).ToList();
     }
 
     // MARK: - Commits
@@ -193,11 +246,43 @@ public static partial class WidgetCatalog
         var byAuthor = AuthorSlices(repos);
         cards.Add(WidgetCards.Card("By Author",
             WidgetCards.ChartOr(byAuthor.Count > 0, loading, "No commits in the last 14 days",
-                () => WidgetCards.HorizontalBars(byAuthor, _ => P.Teal)),
+                () => WidgetCards.HorizontalBars(byAuthor, _ => P.Blue, author => filter(Category.Search, author))),
+            loading: loading));
+
+        var weekdays = Weekdays(commits.Select(c => c.Date));
+        cards.Add(WidgetCards.Card("By Weekday",
+            WidgetCards.ChartOr(commits.Count > 0, loading, "No commits in the last 14 days",
+                () => WidgetCards.HorizontalBars(weekdays, _ => P.Indigo)),
+            loading: loading));
+
+        var sources = new[] { PullRequestSource.AzureDevOps, PullRequestSource.GitHub }
+            .Select(src => (Source: src, Count: repos.Where(r => r.Source == src).Sum(r => r.Commits.Count)))
+            .Where(x => x.Count > 0).ToList();
+        cards.Add(WidgetCards.Card("By Source",
+            WidgetCards.ChartOr(sources.Count > 0, loading, "No commits in the last 14 days",
+                () => WidgetCards.Donut(sources.Select(x => new ChartSlice(x.Source.DisplayName(), x.Count)).ToList(), null,
+                    sources.Select(x => P.Sk(x.Source == PullRequestSource.GitHub ? P.Indigo : P.Blue)).ToList(), adaptive: true)),
+            loading: loading));
+
+        var recent = RecentlyActive(repos);
+        cards.Add(WidgetCards.Card("Recently Active",
+            WidgetCards.ChartOr(recent.Count > 0, loading, "No commits in the last 14 days",
+                () => WidgetCards.List("Recently Active",
+                    recent.Select(r => new ListRow(r.DisplayName, RepoShell.Relative(r.Latest),
+                        () => filter(Category.CommitRepository, r.DisplayName))).ToList(), visible: 8)),
             loading: loading));
 
         return cards;
     }
+
+    /// <summary>Repositories by their newest commit, most recent first, top eight.</summary>
+    internal static List<(string DisplayName, DateTimeOffset? Latest)> RecentlyActive(IEnumerable<RepositoryCommits> repos) => repos
+        .Select(r => (r.DisplayName, Latest: r.Commits.Where(c => c.Date != null).Select(c => (DateTime?)c.Date).Max()))
+        .Where(r => r.Latest != null)
+        .OrderByDescending(r => r.Latest)
+        .Take(8)
+        .Select(r => (r.DisplayName, (DateTimeOffset?)new DateTimeOffset(Local(r.Latest!.Value))))
+        .ToList();
 
     // MARK: - Pipelines
 
@@ -318,14 +403,31 @@ public static partial class WidgetCatalog
                     repo => filter(Category.PipelineRepository, repo))),
             loading: loading));
 
+        var failures = FailuresByPipeline(runs);
+        cards.Add(WidgetCards.Card("Failures by Pipeline",
+            failures.Count > 0
+                ? WidgetCards.HorizontalBars(failures, _ => P.Orange, name => filter(Category.Search, name))
+                : waiting ? WidgetCards.Skeleton() : WidgetCards.AllClear("No failed runs", $"{runs.Count:N0} runs in {RunDays} days"),
+            loading: loading));
+
         var slowest = SlowestPipelines(runs);
-        cards.Add(WidgetCards.Card("Slowest Pipelines · median minutes",
+        cards.Add(WidgetCards.Card("Slowest · median minutes",
             WidgetCards.ChartOr(slowest.Count > 0, loading, "No finished runs in the last 7 days",
-                () => WidgetCards.HorizontalBars(slowest, _ => P.Indigo)),
+                () => WidgetCards.HorizontalBars(slowest, _ => P.Indigo, name => filter(Category.Search, name))),
+            loading: loading));
+
+        var triggers = TopSlices(runs.Where(r => !string.IsNullOrWhiteSpace(r.TriggeredBy)), r => r.TriggeredBy!);
+        cards.Add(WidgetCards.Card("Triggered By",
+            WidgetCards.ChartOr(triggers.Count > 0, loading, "No runs in the last 7 days",
+                () => WidgetCards.HorizontalBars(triggers, _ => P.Teal, who => filter(Category.Search, who))),
             loading: loading));
 
         return cards;
     }
+
+    /// <summary>Failed and partially succeeded runs per pipeline, most first, top eight.</summary>
+    internal static List<ChartSlice> FailuresByPipeline(IEnumerable<PipelineRun> runs) =>
+        TopSlices(runs.Where(r => r.Status is PipelineRunStatus.Failed or PipelineRunStatus.Partial), r => r.PipelineName);
 
     // MARK: - Skills
 
@@ -367,6 +469,12 @@ public static partial class WidgetCatalog
                 () => WidgetCards.HorizontalBars(groups, WidgetCards.ByIndex(groups, RepositoryColors))),
             loading: syncing));
 
+        var scripts = ScriptExtensions(entries);
+        cards.Add(WidgetCards.Card("Bundled Scripts",
+            WidgetCards.ChartOr(scripts.Count > 0, syncing, "No bundled scripts",
+                () => WidgetCards.HorizontalBars(scripts, WidgetCards.ByIndex(scripts, RepositoryColors))),
+            loading: syncing));
+
         var files = MostFiles(entries);
         cards.Add(WidgetCards.Card("Most Bundled Files",
             WidgetCards.ChartOr(files.Count > 0, syncing, "No skill ships extra files",
@@ -379,8 +487,19 @@ public static partial class WidgetCatalog
                 () => WidgetCards.HorizontalBars(longest, _ => P.Teal)),
             loading: syncing));
 
+        var hooks = Longest(entries.Where(e => e.Kind == SkillKind.Hook));
+        cards.Add(WidgetCards.Card("Hooks · lines",
+            WidgetCards.ChartOr(hooks.Count > 0, syncing, "No hooks",
+                () => WidgetCards.HorizontalBars(hooks, _ => P.Purple)),
+            loading: syncing));
+
         return cards;
     }
+
+    /// <summary>Files shipped beside skills and hooks, by extension, most first, top eight.</summary>
+    internal static List<ChartSlice> ScriptExtensions(IEnumerable<SkillEntry> entries) => TopSlices(
+        entries.SelectMany(e => e.Files),
+        f => System.IO.Path.GetExtension(f) is { Length: > 0 } ext ? ext.ToLowerInvariant() : "no extension");
 
     // MARK: - Pieces
 
@@ -401,18 +520,23 @@ public static partial class WidgetCatalog
         return brush;
     }
 
-    /// <summary>Daily columns, stacked when there is more than one series; hover names the day and its values.</summary>
-    private static UIElement DayColumns(IReadOnlyList<DateTime> days, IReadOnlyList<(string Name, Brush Brush, IReadOnlyList<int> Values)> series, bool legend)
+    /// <summary>Columns per day (or week), stacked when there is more than one series; hover names the period and its values. The chart takes whatever height its card has.</summary>
+    private static UIElement DayColumns(IReadOnlyList<DateTime> days, IReadOnlyList<(string Name, Brush Brush, IReadOnlyList<int> Values)> series,
+        bool legend, RepoStatsBucket bucket = RepoStatsBucket.Day)
     {
-        var chart = new TimelineChart { Height = 150 };
-        chart.ShowStacked(days.Select(d => new DateTimeOffset(d)).ToList(), series, RepoStatsBucket.Day);
+        var chart = new TimelineChart { MinHeight = 130 };
+        chart.ShowStacked(days.Select(d => new DateTimeOffset(d)).ToList(), series, bucket);
         if (!legend) return chart;
         var key = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
         foreach (var (name, brush, _) in series)
         {
             key.Children.Add(new Border { Width = 10, Height = 10, CornerRadius = new CornerRadius(2), Background = brush, Margin = new Thickness(0, 0, 5, 0), VerticalAlignment = VerticalAlignment.Center });
-            key.Children.Add(new TextBlock { Text = name, FontSize = 11, Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center });
+            key.Children.Add(new TextBlock { Text = name, FontSize = WidgetCards.CaptionSize, Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center });
         }
-        return new StackPanel { Children = { chart, key } };
+        var panel = new DockPanel();
+        DockPanel.SetDock(key, Dock.Bottom);
+        panel.Children.Add(key);
+        panel.Children.Add(chart);
+        return panel;
     }
 }

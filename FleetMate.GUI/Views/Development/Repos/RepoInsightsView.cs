@@ -27,7 +27,7 @@ public sealed class RepoInsightsView : UserControl
     private readonly WidgetFlowPanel _content = new() { EqualHeights = true };
 
     /// <summary>A card's units when it takes a whole row of the strip.</summary>
-    private const int FullRow = 99;
+    private const int FullRow = WidgetFlowPanel.FullRow;
     private string? _requestedKey;
     private int _refresh;
 
@@ -54,7 +54,7 @@ public sealed class RepoInsightsView : UserControl
         var refresh = new Button { Content = new FontIcon { Glyph = "", FontSize = 12 }, Padding = new Thickness(6, 4, 6, 4), ToolTip = "Read the history again" };
         System.Windows.Automation.AutomationProperties.SetName(refresh, "Refresh Insights");
         refresh.Click += (_, _) => { _refresh++; Load(); };
-        _caption = new TextBlock { FontSize = 11, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(8, 0, 8, 0) };
+        _caption = new TextBlock { FontSize = WidgetCards.CaptionSize, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(8, 0, 8, 0) };
         _caption.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
 
         var controls = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
@@ -162,9 +162,9 @@ public sealed class RepoInsightsView : UserControl
         commits.ShowCommits(report.Timeline, report.Bucket);
         _content.Children.Add(Card($"Commits per {bucket}", commits, 2));
         _content.Children.Add(ChurnCard(report.Timeline, report.Bucket));
-        _content.Children.Add(Card("Authors", Ranked(report.Contributors.Take(10).Select(c => (c.Name, c.Commits, $"+{c.Added:N0} −{c.Removed:N0}")), "commits")));
-        _content.Children.Add(Card("Top-level folders", Ranked(report.Areas.Take(10).Select(a => (a.Path, a.Commits, $"+{a.Added:N0} −{a.Removed:N0}")), "commits")));
-        _content.Children.Add(Card("Most-changed files", FileList(report.Files), 2));
+        _content.Children.Add(Card("Authors", Ranked(report.Contributors.Take(8).Select(c => (c.Name, c.Commits, $"+{c.Added:N0} −{c.Removed:N0}")), "commits")));
+        _content.Children.Add(Card("Top-level folders", Ranked(report.Areas.Take(8).Select(a => (a.Path, a.Commits, $"+{a.Added:N0} −{a.Removed:N0}")), "commits")));
+        _content.Children.Add(Card("Most-changed files", FileList(report.Files.Take(8).ToList()), 2));
         var heat = new ActivityHeatmap();
         heat.Show(report.Activity);
         _content.Children.Add(Card("When commits happen", heat, 2));
@@ -191,11 +191,11 @@ public sealed class RepoInsightsView : UserControl
         var stacked = new TimelineChart();
         stacked.ShowStacked(summary.BucketStarts, series.Select(s => (s.Item1, s.Item2, (IReadOnlyList<int>)s.Item3)).ToList(), summary.Bucket);
         _content.Children.Add(Card($"Commits per {bucket} by repository",
-            new StackPanel { Children = { stacked, Legend(series.Select(s => (s.Item1, s.Item2)).ToArray()) } }, 2));
+            Docked(stacked, Legend(series.Select(s => (s.Item1, s.Item2)).ToArray())), 2));
 
         _content.Children.Add(ChurnCard(summary.Combined.Timeline, summary.Bucket));
-        _content.Children.Add(Card("Authors", Ranked(summary.Combined.Contributors.Take(10).Select(c => (c.Name, c.Commits, $"+{c.Added:N0} −{c.Removed:N0}")), "commits")));
-        _content.Children.Add(Card("Behind upstream", Ranked(summary.Rows.Where(r => r.Behind > 0).OrderByDescending(r => r.Behind).Take(10)
+        _content.Children.Add(Card("Authors", Ranked(summary.Combined.Contributors.Take(8).Select(c => (c.Name, c.Commits, $"+{c.Added:N0} −{c.Removed:N0}")), "commits")));
+        _content.Children.Add(Card("Behind upstream", Ranked(summary.Rows.Where(r => r.Behind > 0).OrderByDescending(r => r.Behind).Take(8)
             .Select(r => (r.DisplayName, r.Behind, r.Branch ?? "")), "commits behind")));
         _content.Children.Add(Card("Repositories", SummaryTable(summary.Rows), 2));
         var heat = new ActivityHeatmap();
@@ -218,7 +218,7 @@ public sealed class RepoInsightsView : UserControl
             _model.Insights.ChurnScale = value;
             Render();
         };
-        var caption = new TextBlock { Text = effective == RepoChurnScale.Compressed ? "Compressed scale · raw values on hover" : "Linear scale", FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
+        var caption = new TextBlock { Text = effective == RepoChurnScale.Compressed ? "Compressed scale · raw values on hover" : "Linear scale", FontSize = WidgetCards.CaptionSize, VerticalAlignment = VerticalAlignment.Center };
         caption.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
         var controls = new WrapPanel { Margin = new Thickness(0, 0, 0, 6) };
         controls.Children.Add(new TextBlock { Text = "Scale", VerticalAlignment = VerticalAlignment.Center });
@@ -226,7 +226,7 @@ public sealed class RepoInsightsView : UserControl
         controls.Children.Add(caption);
         var churn = new TimelineChart();
         churn.ShowChurn(points, bucket, effective);
-        return Card($"Lines changed per {TimelineChart.Bucket(bucket)}", new StackPanel { Children = { controls, churn, Legend(("Added", RepoBrushes.Added), ("Removed", RepoBrushes.Removed)) } }, 2);
+        return Card($"Lines changed per {TimelineChart.Bucket(bucket)}", Docked(churn, Legend(("Added", RepoBrushes.Added), ("Removed", RepoBrushes.Removed)), controls), 2);
     }
 
     private UIElement SummaryTable(IReadOnlyList<RepoStatsSummaryRow> rows)
@@ -237,7 +237,7 @@ public sealed class RepoInsightsView : UserControl
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = c == 0 ? new GridLength(2, GridUnitType.Star) : c == 7 ? new GridLength(1.3, GridUnitType.Star) : GridLength.Auto });
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         for (var c = 0; c < headers.Length; c++)
-            Cell(grid, 0, c, new TextBlock { Text = headers[c], FontSize = 11, FontWeight = FontWeights.SemiBold, Opacity = 0.7, TextAlignment = c is > 0 and < 7 ? TextAlignment.Right : TextAlignment.Left });
+            Cell(grid, 0, c, new TextBlock { Text = headers[c], FontSize = WidgetCards.CaptionSize, FontWeight = FontWeights.SemiBold, Opacity = 0.7, TextAlignment = c is > 0 and < 7 ? TextAlignment.Right : TextAlignment.Left });
         var r = 1;
         foreach (var row in rows)
         {
@@ -279,6 +279,21 @@ public sealed class RepoInsightsView : UserControl
         return element;
     }
 
+    /// <summary>A chart that takes whatever height the card has, with an optional header above and a legend below.</summary>
+    private static DockPanel Docked(UIElement chart, UIElement legend, UIElement? header = null)
+    {
+        var panel = new DockPanel { LastChildFill = true };
+        if (header != null)
+        {
+            DockPanel.SetDock(header, Dock.Top);
+            panel.Children.Add(header);
+        }
+        DockPanel.SetDock(legend, Dock.Bottom);
+        panel.Children.Add(legend);
+        panel.Children.Add(chart);
+        return panel;
+    }
+
     /// <summary>A titled card spanning <paramref name="units"/> of the strip's width.</summary>
     private static Border Card(string title, UIElement content, int units = 1)
     {
@@ -295,27 +310,32 @@ public sealed class RepoInsightsView : UserControl
         return border;
     }
 
+    /// <summary>The period's totals as a three-by-two grid of figures in one card two units wide.</summary>
     private static UIElement Tiles(RepoStatsReport.Totals totals)
     {
-        var grid = new UniformGrid { Rows = 1, Margin = new Thickness(-4, 0, -4, 0) };
-        WidgetFlowPanel.SetUnits(grid, FullRow);
+        var grid = new UniformGrid { Rows = 2, Columns = 3, Margin = new Thickness(-3) };
         void Tile(string title, string value)
         {
-            var label = new TextBlock { Text = title, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis };
+            var label = new TextBlock { Text = title, FontSize = WidgetCards.CaptionSize, TextTrimming = TextTrimming.CharacterEllipsis };
             label.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
-            var figure = new TextBlock { Text = value, FontSize = 20, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = value };
-            var border = new Border { Child = new StackPanel { Children = { label, figure } }, Margin = new Thickness(4, 0, 4, 0) };
+            var figure = new TextBlock { Text = value, FontSize = 18, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = value };
+            var border = new Border
+            {
+                Child = new StackPanel { Children = { label, figure }, VerticalAlignment = VerticalAlignment.Center },
+                Margin = new Thickness(3),
+                VerticalAlignment = VerticalAlignment.Stretch,
+            };
             border.SetResourceReference(StyleProperty, "CardStyle");
             System.Windows.Automation.AutomationProperties.SetName(border, $"{title}: {value}");
             grid.Children.Add(border);
         }
         Tile("Commits", totals.Commits.ToString("N0"));
         Tile("Authors", totals.Authors.ToString("N0"));
+        Tile("Files touched", totals.FilesTouched.ToString("N0"));
         Tile("Lines added", "+" + totals.Added.ToString("N0"));
         Tile("Lines removed", "−" + totals.Removed.ToString("N0"));
-        Tile("Files touched", totals.FilesTouched.ToString("N0"));
         Tile("Last commit", RepoShell.Relative(totals.LastCommit));
-        return grid;
+        return Card("Totals", grid, 2);
     }
 
     /// <summary>Label, bar, count and a detail per row. Only the bar carries colour.</summary>
@@ -348,7 +368,7 @@ public sealed class RepoInsightsView : UserControl
             bar.HorizontalAlignment = HorizontalAlignment.Stretch;
             track.Children.Add(bar);
             var count = new TextBlock { Text = value.ToString("N0"), FontWeight = FontWeights.SemiBold, TextAlignment = TextAlignment.Right, Margin = new Thickness(0, 2, 8, 2), VerticalAlignment = VerticalAlignment.Center };
-            var extra = new TextBlock { Text = detail, FontSize = 11, Opacity = 0.7, Margin = new Thickness(0, 2, 0, 2), VerticalAlignment = VerticalAlignment.Center };
+            var extra = new TextBlock { Text = detail, FontSize = WidgetCards.CaptionSize, Opacity = 0.7, Margin = new Thickness(0, 2, 0, 2), VerticalAlignment = VerticalAlignment.Center };
             foreach (var (element, column) in new (FrameworkElement, int)[] { (name, 0), (track, 1), (count, 2), (extra, 3) })
             {
                 Grid.SetRow(element, i);
@@ -369,7 +389,7 @@ public sealed class RepoInsightsView : UserControl
         grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var headers = new[] { "File", "Commits", "Added", "Removed" };
         for (var c = 0; c < headers.Length; c++)
-            Cell(grid, 0, c, new TextBlock { Text = headers[c], FontSize = 11, FontWeight = FontWeights.SemiBold, Opacity = 0.7, TextAlignment = c > 0 ? TextAlignment.Right : TextAlignment.Left });
+            Cell(grid, 0, c, new TextBlock { Text = headers[c], FontSize = WidgetCards.CaptionSize, FontWeight = FontWeights.SemiBold, Opacity = 0.7, TextAlignment = c > 0 ? TextAlignment.Right : TextAlignment.Left });
         for (var i = 0; i < files.Count; i++)
         {
             var file = files[i];
@@ -399,7 +419,7 @@ public sealed class RepoInsightsView : UserControl
         foreach (var (name, brush) in items)
         {
             panel.Children.Add(new Border { Width = 10, Height = 10, CornerRadius = new CornerRadius(2), Background = brush, Margin = new Thickness(0, 0, 5, 0), VerticalAlignment = VerticalAlignment.Center });
-            panel.Children.Add(new TextBlock { Text = name, FontSize = 11, Margin = new Thickness(0, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center });
+            panel.Children.Add(new TextBlock { Text = name, FontSize = WidgetCards.CaptionSize, Margin = new Thickness(0, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center });
         }
         return panel;
     }
