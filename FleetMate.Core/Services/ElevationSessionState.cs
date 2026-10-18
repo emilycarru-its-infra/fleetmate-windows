@@ -61,7 +61,7 @@ public static class ElevationStatusText
     {
         ElevationSessionState.Ready => "Elevation ready",
         ElevationSessionState.Starting => "Elevation starting…",
-        ElevationSessionState.Expired => "Elevation expired",
+        ElevationSessionState.Expired => "Elevation stopped",
         ElevationSessionState.None => "Elevation idle",
         ElevationSessionState.Unknown => "Elevation unknown",
         _ => "Elevation off",
@@ -77,7 +77,7 @@ public static class ElevationStatusText
                 $"{name}: ready, expires in {FormatRemaining(e - now)}",
             ElevationSessionState.Ready => $"{name}: ready",
             ElevationSessionState.Starting => $"{name}: starting (first boot takes about a minute)",
-            ElevationSessionState.Expired => $"{name}: expired — the next action restarts it",
+            ElevationSessionState.Expired => $"{name}: stopped — the next action restarts it",
             ElevationSessionState.None => $"{name}: not started — the next action starts it",
             ElevationSessionState.Unknown when !string.IsNullOrWhiteSpace(error) => $"{name}: unknown ({error})",
             ElevationSessionState.Unknown => $"{name}: not checked yet",
