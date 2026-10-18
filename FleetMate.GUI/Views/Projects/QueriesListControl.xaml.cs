@@ -36,6 +36,7 @@ public partial class QueriesListControl : UserControl
     private List<QueryRunDisplay> _runs = new();
     private string _search = "";
     private bool _showClosed;
+    private Func<UnifiedTask, bool>? _rowFilter;
 
     public QueriesListControl()
     {
@@ -144,8 +145,10 @@ public partial class QueriesListControl : UserControl
         Rebuild();
     }
 
-    public void ShowRuns(List<QueryRunDisplay> runs, string search, bool showClosed)
+    /// <param name="rowFilter">An extra test every row must pass, such as a Projects strip tile's set; null for none.</param>
+    public void ShowRuns(List<QueryRunDisplay> runs, string search, bool showClosed, Func<UnifiedTask, bool>? rowFilter = null)
     {
+        _rowFilter = rowFilter;
         _runs = runs;
         _search = search.Trim();
         _showClosed = showClosed;
@@ -175,6 +178,10 @@ public partial class QueriesListControl : UserControl
         foreach (var section in Ordered(_runs, UserPreferences.QueriesOrder, UserPreferences.QueriesOrderAscending,
                      r => r.Rows.Count(RowVisible)))
         {
+            // Under a tile filter, a query with nothing in the tile's set drops out, and so does an emptied section.
+            var runs = _rowFilter == null ? section.Runs : section.Runs.Where(r => r.Rows.Any(RowVisible)).ToList();
+            if (runs.Count == 0) continue;
+
             var header = new TextBlock
             {
                 Text = section.Key,
@@ -184,7 +191,7 @@ public partial class QueriesListControl : UserControl
             };
             SectionsPanel.Children.Add(header);
 
-            foreach (var run in section.Runs)
+            foreach (var run in runs)
             {
                 SectionsPanel.Children.Add(BuildQuery(run));
                 any = true;
@@ -193,7 +200,8 @@ public partial class QueriesListControl : UserControl
 
         if (!any)
         {
-            ShowMessage(_search.Length > 0 ? $"No rows match \"{_search}\"." : "No shared queries.");
+            ShowMessage(_rowFilter != null ? "No rows in the shared queries match the selected tile."
+                : _search.Length > 0 ? $"No rows match \"{_search}\"." : "No shared queries.");
         }
     }
 
@@ -276,6 +284,7 @@ public partial class QueriesListControl : UserControl
     private bool RowVisible(QueryRowDisplay row)
     {
         if (!_showClosed && row.Task.State == TaskState.Closed) return false;
+        if (_rowFilter != null && !_rowFilter(row.Task)) return false;
         if (_search.Length == 0) return true;
         return row.Task.Id.Contains(_search, StringComparison.OrdinalIgnoreCase)
             || row.Task.Title.Contains(_search, StringComparison.OrdinalIgnoreCase)

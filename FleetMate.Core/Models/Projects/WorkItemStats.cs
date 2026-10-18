@@ -24,28 +24,36 @@ public sealed record WorkItemStats
 
     public static WorkItemStats From(IEnumerable<WorkItem> items, DateTime nowUtc)
     {
-        var week = nowUtc.AddDays(-7);
-        var stale = nowUtc.AddDays(-StaleDays);
-        int open = 0, inProgress = 0, created = 0, updated = 0, blocked = 0, overdue = 0, old = 0;
-        foreach (var item in items)
-        {
-            open++;
-            if (!string.IsNullOrEmpty(item.State) && !NotStarted.Contains(item.State)) inProgress++;
-            if (Utc(item.CreatedDate) is { } c && c >= week) created++;
-            if (Utc(item.ChangedDate) is { } ch)
-            {
-                if (ch >= week) updated++;
-                if (ch < stale) old++;
-            }
-            if (IsBlocked(item)) blocked++;
-            if (Utc(item.Fields.DueDate) is { } due && due < nowUtc) overdue++;
-        }
+        var list = items as IReadOnlyCollection<WorkItem> ?? items.ToList();
+        int Count(ProjectsTile tile) => list.Count(w => Matches(w, tile, nowUtc));
         return new WorkItemStats
         {
-            Open = open, InProgress = inProgress, NewThisWeek = created, UpdatedThisWeek = updated,
-            Blocked = blocked, Overdue = overdue, Stale = old,
+            Open = list.Count,
+            InProgress = Count(ProjectsTile.InProgress),
+            NewThisWeek = Count(ProjectsTile.NewThisWeek),
+            UpdatedThisWeek = Count(ProjectsTile.UpdatedThisWeek),
+            Blocked = Count(ProjectsTile.Blocked),
+            Overdue = Count(ProjectsTile.Overdue),
+            Stale = Count(ProjectsTile.Stale),
         };
     }
+
+    /// <summary>
+    /// Whether <paramref name="item"/> counts toward <paramref name="tile"/>: the one
+    /// rule behind both a figure and the filter its tile applies. GitHub Issues
+    /// counts no work item.
+    /// </summary>
+    public static bool Matches(WorkItem item, ProjectsTile tile, DateTime nowUtc) => tile switch
+    {
+        ProjectsTile.AssignedToMe => true,
+        ProjectsTile.InProgress => !string.IsNullOrEmpty(item.State) && !NotStarted.Contains(item.State),
+        ProjectsTile.NewThisWeek => Utc(item.CreatedDate) is { } c && c >= nowUtc.AddDays(-7),
+        ProjectsTile.UpdatedThisWeek => Utc(item.ChangedDate) is { } ch && ch >= nowUtc.AddDays(-7),
+        ProjectsTile.Blocked => IsBlocked(item),
+        ProjectsTile.Overdue => Utc(item.Fields.DueDate) is { } due && due < nowUtc,
+        ProjectsTile.Stale => Utc(item.ChangedDate) is { } old && old < nowUtc.AddDays(-StaleDays),
+        _ => false,
+    };
 
     public static bool IsBlocked(WorkItem item) =>
         item.Tags.Any(t => t.Equals("Blocked", StringComparison.OrdinalIgnoreCase))
