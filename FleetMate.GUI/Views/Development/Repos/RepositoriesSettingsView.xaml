@@ -35,7 +35,7 @@
                                  AutomationProperties.Name="Clone root" />
                     </DockPanel>
 
-                    <TextBlock Text="Folders to scan for existing clones" FontSize="12" Margin="0,12,0,4" />
+                    <TextBlock Text="Watched folders" FontSize="12" FontWeight="SemiBold" Margin="0,12,0,4" />
                     <ItemsControl x:Name="ScanRootsList">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
@@ -53,9 +53,13 @@
                     <DockPanel Margin="0,6,0,0">
                         <Button DockPanel.Dock="Right" Content="Choose…" Margin="6,0,0,0" Click="OnChooseScanRoot" />
                         <Button x:Name="AddScanRootButton" DockPanel.Dock="Right" Content="Add" Margin="6,0,0,0" Click="OnAddScanRoot" />
-                        <TextBox x:Name="NewScanRootBox" ui:ControlHelper.PlaceholderText="Folder to scan for clones"
-                                 KeyDown="OnNewScanRootKey" AutomationProperties.Name="Folder to scan" />
+                        <TextBox x:Name="NewScanRootBox" ui:ControlHelper.PlaceholderText="Folder where you keep clones"
+                                 KeyDown="OnNewScanRootKey" AutomationProperties.Name="Folder to watch" />
                     </DockPanel>
+                    <CheckBox x:Name="AutoTrackBox" Margin="0,10,0,0" Click="OnAutoTrackClicked"
+                              Content="Automatically track new clones in these folders"
+                              AutomationProperties.AutomationId="ReposAutoTrack"
+                              ToolTip="A clone that appears in a watched folder joins the Repos sidebar the next time FleetMate starts or refreshes" />
 
                     <DockPanel Margin="0,12,0,0">
                         <Button x:Name="SaveButton" DockPanel.Dock="Right" Content="Save" IsEnabled="False" Click="OnSaveSettings"

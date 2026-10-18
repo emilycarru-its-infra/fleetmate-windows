@@ -22,14 +22,15 @@ namespace FleetMate.GUI.Views.Shared;
 /// FleetMate shows no sign-in window of its own. With Development switched
 /// off but Devices, Identity or Projects chosen, the same step is Sign In.
 /// </summary>
-public sealed class SetupWizardWindow : Window
+public sealed partial class SetupWizardWindow : Window
 {
     private static string RegistryPath => FleetMate.Core.Config.AppEdition.Current.UserRegistryPath;
     // TicketsMate has one module and signs in with the Windows account alone,
     // so it skips Modules and the sign-in step.
     private string[] StepTitles => AppEdition.Current.IsTicketsOnly
         ? new[] { "Welcome", "Connections", "Summary" }
-        : new[] { "Welcome", "Modules", "Connections", SignInStepTitle, "Summary" }.OfType<string>().ToArray();
+        : new[] { "Welcome", "Modules", "Connections", SignInStepTitle, Shows("Development") ? RepositoriesStepTitle : null, "Summary" }
+            .OfType<string>().ToArray();
 
     /// <summary>The sign-in step's title, or null when no chosen module needs az or gh.</summary>
     private string? SignInStepTitle =>
@@ -137,6 +138,7 @@ public sealed class SetupWizardWindow : Window
             "Modules" => ModulesStep(),
             "Connections" => ConnectionsStep(),
             "Development" or "Sign In" => SignInStep(),
+            RepositoriesStepTitle => RepositoriesStep(),
             _ => SummaryStep(),
         };
     }
@@ -347,6 +349,11 @@ public sealed class SetupWizardWindow : Window
         var shown = AppModules.All.Where(m => Shows(m.Tag)).Select(m => m.Title).ToList();
         Section(panel, "Modules");
         panel.Children.Add(Note(string.Join(", ", shown), top: 2));
+        if (Shows("Development") && _repoStepShown)
+        {
+            Section(panel, "Repositories");
+            panel.Children.Add(Note(RepositoriesSummary(), top: 2));
+        }
         var endpoints = _fields.Keys.Concat(_values.Keys).Distinct()
             .Where(k => _fields.ContainsKey(k) && !string.IsNullOrWhiteSpace(Value(k)))
             .Select(k => $"{FieldLabel(k)}: {Value(k)}")
@@ -389,6 +396,7 @@ public sealed class SetupWizardWindow : Window
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
+        if (Shows("Development")) SaveRepositories();
         UserPreferences.SetHiddenModules(_hidden);
         UserPreferences.MarkSetupCompleted();
         (Application.Current as App)?.ReloadConfiguration();

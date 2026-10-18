@@ -81,6 +81,7 @@ public partial class RepositoriesSettingsView : UserControl
             _saved = _manager.Settings();
             CloneRootBox.Text = _saved.CloneRoot;
             _scanRoots = _saved.ScanRoots.ToList();
+            AutoTrackBox.IsChecked = _saved.AutoTrackNewClones;
             var cached = _manager.CachedCatalog();
             _fetchedAt = cached?.FetchedAt;
             ProviderErrors.ItemsSource = cached?.Errors ?? new List<string>();
@@ -124,6 +125,7 @@ public partial class RepositoriesSettingsView : UserControl
         var settings = _manager.Settings();
         settings.CloneRoot = CloneRootBox.Text.Trim().Length > 0 ? CloneRootBox.Text.Trim() : RepoSettings.Default.CloneRoot;
         settings.ScanRoots = _scanRoots.ToList();
+        settings.AutoTrackNewClones = AutoTrackBox.IsChecked == true;
         return settings;
     }
 
@@ -132,10 +134,11 @@ public partial class RepositoriesSettingsView : UserControl
         ScanRootsList.ItemsSource = null;
         ScanRootsList.ItemsSource = _scanRoots;
         DiscoverButton.IsEnabled = _scanRoots.Count > 0 && DiscoverRing.Visibility != Visibility.Visible;
-        SaveButton.IsEnabled = CloneRootBox.Text.Trim() != _saved.CloneRoot || !_scanRoots.SequenceEqual(_saved.ScanRoots);
+        SaveButton.IsEnabled = CloneRootBox.Text.Trim() != _saved.CloneRoot || !_scanRoots.SequenceEqual(_saved.ScanRoots)
+            || (AutoTrackBox.IsChecked == true) != _saved.AutoTrackNewClones;
         LocationsFooter.Text =
             $@"New clones go to <clone root>\AzDevOps\<Project>\<Repo> or <clone root>\GitHub\<owner>\<repo>. " +
-            $"Finding clones scans the folders below {_saved.ScanDepth} levels deep and links each checkout by its origin.";
+            $"FleetMate looks for clones in the watched folders, {_saved.ScanDepth} levels deep, and links each one by its origin.";
     }
 
     private void OnSettingsEdited(object sender, TextChangedEventArgs e)
@@ -152,6 +155,9 @@ public partial class RepositoriesSettingsView : UserControl
             {
                 s.CloneRoot = edited.CloneRoot;
                 s.ScanRoots = edited.ScanRoots;
+                s.AutoTrackNewClones = edited.AutoTrackNewClones;
+                // Saving the watched folders is choosing them.
+                s.RootsChosen = true;
             });
             _saved = _manager.Settings();
             RenderLocations();
@@ -160,6 +166,11 @@ public partial class RepositoriesSettingsView : UserControl
         {
             ShowError(ex.Message);
         }
+    }
+
+    private void OnAutoTrackClicked(object sender, RoutedEventArgs e)
+    {
+        if (!_loading) RenderLocations();
     }
 
     private static string? ChooseFolder(string title, string? start)
@@ -184,7 +195,7 @@ public partial class RepositoriesSettingsView : UserControl
 
     private void OnChooseScanRoot(object sender, RoutedEventArgs e)
     {
-        if (ChooseFolder("Scan this folder for existing clones", _scanRoots.FirstOrDefault()) is { } path) AddScanRoot(path);
+        if (ChooseFolder("Watch this folder for clones", _scanRoots.FirstOrDefault()) is { } path) AddScanRoot(path);
     }
 
     private void OnAddScanRoot(object sender, RoutedEventArgs e) => AddScanRoot(NewScanRootBox.Text);

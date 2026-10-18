@@ -252,6 +252,7 @@ public enum RepoErrorKind
     GitFailed,
     NothingToCommit,
     InvalidArgument,
+    WouldLoseWork,
 }
 
 /// <summary>A repository operation that was refused or failed, with a message fit to show as it is.</summary>
@@ -298,4 +299,9 @@ public sealed class RepoException : Exception
     public static RepoException NothingToCommit() => new(RepoErrorKind.NothingToCommit, "Nothing to commit.");
 
     public static RepoException InvalidArgument(string message) => new(RepoErrorKind.InvalidArgument, message);
+
+    /// <summary>Deleting the clone would lose the listed work.</summary>
+    public static RepoException WouldLoseWork(string name, IReadOnlyList<string> losses) => new(RepoErrorKind.WouldLoseWork,
+        $"Deleting {name} would lose:\n  " + string.Join("\n  ", losses)
+        + "\nCommit and push first, or pass --force to move it to the Recycle Bin anyway.", name, losses);
 }
