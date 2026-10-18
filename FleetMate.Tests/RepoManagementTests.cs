@@ -689,6 +689,9 @@ public sealed class ReposCommandTests : TempGitRepository
         {
             var wt = Path.Combine(Root, ".worktrees", "side");
             Assert.True((await Copy.GitAsync(new[] { "worktree", "add", "-q", "-b", "side", wt })).Succeeded);
+            // commit.gpgsign is not on the data-only list, so a clone carrying
+            // it would be held for review rather than tracked.
+            Assert.True((await Copy.GitAsync(new[] { "config", "--unset", "commit.gpgsign" })).Succeeded);
             var settings = RepoSettings.Default;
             settings.ScanRoots = new() { Parent };
             settings.ScanDepth = 1;

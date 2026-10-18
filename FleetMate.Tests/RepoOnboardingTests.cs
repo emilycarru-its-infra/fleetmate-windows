@@ -219,96 +219,155 @@ public sealed class RepoDiscoveryScanTests : TempFolder
         Assert.Null(RepoDiscovery.ReadOrigin(FakeCheckout("no-remote")));
     }
 
-    [Theory]
-    [InlineData("[core]\n\tfsmonitor = ./watch.sh", "core.fsmonitor")]
-    [InlineData("[core]\n\thooksPath = .githooks", "core.hookspath")]
-    [InlineData("[core]\n\tsshCommand = ssh -i key", "core.sshcommand")]
-    [InlineData("[core]\n\tpager = less", "core.pager")]
-    [InlineData("[core]\n\teditor = vim", "core.editor")]
-    [InlineData("[core]\n\taskPass = ./ask", "core.askpass")]
-    [InlineData("[core]\n\tgitProxy = ./proxy", "core.gitproxy")]
-    [InlineData("[core]\n\talternateRefsCommand = ./refs", "core.alternaterefscommand")]
-    [InlineData("[sequence]\n\teditor = ./edit", "sequence.editor")]
-    [InlineData("[credential]\n\thelper = store", "credential.helper")]
-    [InlineData("[credential \"https://example.com\"]\n\thelper = ./h", "credential.https://example.com.helper")]
-    [InlineData("[diff]\n\texternal = ./d", "diff.external")]
-    [InlineData("[diff \"pdf\"]\n\ttextconv = pdftotext", "diff.pdf.textconv")]
-    [InlineData("[diff \"x\"]\n\tcommand = ./c", "diff.x.command")]
-    [InlineData("[merge \"ours\"]\n\tdriver = ./m", "merge.ours.driver")]
-    [InlineData("[filter \"lfs\"]\n\tprocess = git-lfs filter-process", "filter.lfs.process")]
-    [InlineData("[filter \"x\"]\n\tsmudge = ./s", "filter.x.smudge")]
-    [InlineData("[remote \"origin\"]\n\tuploadpack = ./u", "remote.origin.uploadpack")]
-    [InlineData("[remote \"origin\"]\n\treceivepack = ./r", "remote.origin.receivepack")]
-    [InlineData("[gpg]\n\tprogram = ./g", "gpg.program")]
-    [InlineData("[gpg \"ssh\"]\n\tprogram = ./g", "gpg.ssh.program")]
-    [InlineData("[pager]\n\tlog = ./p", "pager.log")]
-    [InlineData("[protocol]\n\tallow = always", "protocol.allow")]
-    [InlineData("[protocol \"ext\"]\n\tallow = always", "protocol.ext.allow")]
-    [InlineData("[include]\n\tpath = ../other", "include.path")]
-    [InlineData("[includeIf \"gitdir:~/x/\"]\n\tpath = ../other", "includeif.gitdir:~/x/.path")]
-    [InlineData("[core.sub]\n\tpager = less", "core.sub.pager")]
-    [InlineData("[core] pager = less", "core.pager")]
-    public void CommandConfigKeys_FlagsKeysThatRunPrograms(string config, string key) =>
-        Assert.Equal(new[] { key }, RepoDiscovery.CommandConfigKeys(config));
+    /// <summary>
+    /// Each case is a whole config and whether it must be flagged. The same
+    /// table runs on the Mac; it includes every bypass reviews found.
+    /// </summary>
+    public static readonly TheoryData<string, string, bool> ConfigCases = new()
+    {
+        { "typical clone", "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://github.com/owner-a/one.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\tremote = origin\n\tmerge = refs/heads/main\n", false },
+        { "crlf line endings", "[core]\r\n\tbare = false\r\n", false },
+        { "bare boolean key", "[core]\n\tbare\n", false },
+        { "comment lines", "# note\n; note\n[core]\n\tbare = false\n", false },
+        { "editor branch notes", "[branch \"feature/x\"]\n\tvscode-merge-base = origin/main\n", false },
+        { "submodule update rebase", "[submodule \"lib\"]\n\turl = https://github.com/owner-a/lib.git\n\tupdate = rebase\n", false },
+        { "fsmonitor false", "[core]\n\tfsmonitor = false\n", false },
+        { "fsmonitor program", "[core]\n\tfsmonitor = ./watch.sh\n", true },
+        { "fsmonitor true", "[core]\n\tfsmonitor = true\n", true },
+        { "hooksPath", "[core]\n\thooksPath = .husky\n", true },
+        { "sshCommand", "[core]\n\tsshCommand = ssh -i key\n", true },
+        { "pager", "[core]\n\tpager = less\n", true },
+        { "core.worktree", "[core]\n\tworktree = /elsewhere\n", true },
+        { "credential helper", "[credential]\n\thelper = store\n", true },
+        { "textconv", "[diff \"img\"]\n\ttextconv = exiftool\n", true },
+        { "filter", "[filter \"lfs\"]\n\tprocess = git-lfs filter-process\n", true },
+        { "uploadpack", "[remote \"origin\"]\n\turl = /tmp/x\n\tuploadpack = sh -c x\n", true },
+        { "protocol allow", "[protocol \"ext\"]\n\tallow = always\n", true },
+        { "include", "[include]\n\tpath = other\n", true },
+        { "includeIf", "[includeIf \"gitdir:/work/\"]\n\tpath = other\n", true },
+        { "worktreeConfig", "[extensions]\n\tworktreeConfig = true\n", true },
+        { "unknown section", "[somethingnew]\n\tvalue = 1\n", true },
+        { "remote key without subsection", "[remote]\n\turl = x\n", true },
+        { "submodule update command", "[submodule \"lib\"]\n\tupdate = !sh -c x\n", true },
+        { "submodule update quoted empty then command", "[submodule \"lib\"]\n\tupdate = \"\"!sh -c x\n", true },
+        { "submodule update other value", "[submodule \"lib\"]\n\tupdate = merge-ish\n", true },
+        { "continuation backslash", "[user]\n\tname = Someone \\\n[core]\n\tpager = less\n", true },
+        { "quoted value", "[user]\n\tname = \"Some one\"\n", true },
+        { "quote spanning lines", "[user]\n\tname = \"Some\n\tone\"\n", true },
+        { "inline comment", "[core]\n\tbare = false # note\n", true },
+        { "bare carriage return splits a line", "[user]\n\tname = x\r\tpager = less\n[core]\n", true },
+        { "unicode line separator", "[user]\n\tname = x\u2028[core]\n\tpager = less\n", true },
+        { "unicode paragraph separator", "[user]\n\tname = x\u2029\n", true },
+        { "non-ascii value", "[user]\n\tname = Zoë\n", true },
+        { "control character", "[user]\n\tname = x\u000By\n", true },
+        { "nul byte", "[user]\n\tname = x\0\n", true },
+        { "key outside a section", "name = x\n", true },
+        { "malformed header", "[core\n\tbare = false\n", true },
+        { "bad key name", "[user]\n\tna me = x\n", true },
+        { "bad section name", "[us!er]\n\tname = x\n", true },
+        { "escaped quote in subsection", "[branch \"a\\\"b\"]\n\tremote = origin\n", true },
+    };
 
-
     [Theory]
-    [InlineData("[core]\n\tfsmonitor = true", "core.fsmonitor")]
-    [InlineData("[core]\n\tfsmonitor", "core.fsmonitor")]
-    [InlineData("[protocol]\n\tallow = user", "protocol.allow")]
-    [InlineData("[extensions]\n\tworktreeConfig = true", "extensions.worktreeconfig")]
-    [InlineData("[core]\n\tworktree = ../elsewhere", "core.worktree")]
-    [InlineData("[includeIf \"onbranch:main\"]\n\tpath = x", "includeif.onbranch:main.path")]
-    [InlineData("[somethingnew]\n\tkey = value", "somethingnew.key")]
-    [InlineData("[core \"sub\"]\n\tbare = false", "core.sub.bare")]
-    [InlineData("[submodule \"lib\"]\n\tupdate = !rm -rf /", "submodule.lib.update")]
-    [InlineData("[remote \"origin\"]\n\tvcs = ./x", "remote.origin.vcs")]
-    [InlineData("bare = true", "(key outside a section)")]
-    [InlineData("[core\n\tbare = true", "(unparsable section header)")]
-    public void CommandConfigKeys_FlagsEverythingNotKnownToBeData(string config, string key) =>
-        Assert.Contains(key, RepoDiscovery.CommandConfigKeys(config));
+    [MemberData(nameof(ConfigCases))]
+    public void ConfigReviewTable(string name, string config, bool flagged)
+    {
+        var reasons = RepoDiscovery.CommandConfigKeys(config);
+        Assert.True(flagged == reasons.Count > 0, $"{name}: [{string.Join(", ", reasons)}]");
+    }
 
-    [Theory]
-    [InlineData("[core]\n\tfsmonitor = false")]
-    [InlineData("[core]\n\tfsmonitor = off")]
-    [InlineData("[core]\n\tfsmonitor = 0")]
-    [InlineData("[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n\tignorecase = true\n\tsymlinks = false\n\tautocrlf = true\n\tlongpaths = true\n[remote \"origin\"]\n\turl = https://github.com/example-org/one.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\tremote = origin\n\tmerge = refs/heads/main\n# pager = less\n; editor = vim")]
-    [InlineData("[branch \"feature/x\"]\n\tvscode-merge-base = origin/main\n\tgithub-pr-owner-number = \"example-org#1\"\n\tdescription = notes\n[user]\n\tname = Dev\n\temail = dev@example.com\n[pull]\n\trebase = true\n[push]\n\tautoSetupRemote = true\n[fetch]\n\tprune = true\n[init]\n\tdefaultBranch = main")]
-    [InlineData("[lfs]\n\trepositoryformatversion = 0\n[lfs \"https://example.com/x.git/info/lfs\"]\n\taccess = basic\n\tlocksverify = false\n[extensions]\n\tobjectFormat = sha1")]
-    [InlineData("[submodule]\n\tactive = .\n[submodule \"lib\"]\n\turl = https://example.com/lib.git\n\tactive = true\n\tupdate = rebase\n[merge]\n\tconflictStyle = zdiff3\n[rebase]\n\tautoStash = true\n[gc]\n\tauto = 0")]
-    public void CommandConfigKeys_LeavesAPlainOrEditorConfigAlone(string config) =>
+    [Fact]
+    public void ConfigCases_MatchTheMacTable() => Assert.Equal(41, ConfigCases.Count);
+
+    [Fact]
+    public void InvalidUtf8_IsFlagged() =>
+        Assert.NotEmpty(RepoDiscovery.ConfigReview(new byte[] { 0x5B, 0x63, 0x5D, 0x0A, 0xC3, 0x28 }));
+
+    [Fact]
+    public void FlaggedKeys_AreNamed() =>
+        Assert.Equal(new[] { "core.pager", "diff.img.textconv" },
+            RepoDiscovery.CommandConfigKeys("[core]\n\tpager = less\n[diff \"img\"]\n\ttextconv = x\n"));
+
+    [Fact]
+    public void APlainConfig_IsNotFlagged()
+    {
+        var config = string.Join("\n",
+            "[core]", "\trepositoryformatversion = 0", "\tfilemode = true", "\tbare = false", "\tlogallrefupdates = true",
+            "\tignorecase = true", "\tprecomposeunicode = true", "\tfsmonitor = false",
+            "[remote \"origin\"]", "\turl = https://github.com/owner-a/one.git", "\tfetch = +refs/heads/*:refs/remotes/origin/*",
+            "[branch \"main\"]", "\tremote = origin", "\tmerge = refs/heads/main", "\tvscode-merge-base = origin/main",
+            "[submodule]", "\tactive = .",
+            "[submodule \"lib\"]", "\turl = https://github.com/owner-a/lib.git", "\tactive = true",
+            "[user]", "\tname = Someone", "[pull]", "\trebase = true", "[lfs]", "\trepositoryformatversion = 0",
+            "[extensions]", "\tobjectformat = sha256", "[init]", "\tdefaultBranch = main");
         Assert.Empty(RepoDiscovery.CommandConfigKeys(config));
+    }
 
-    [Fact]
-    public void CommandConfig_FailsClosedOnUnreadableConfig()
+    private string GitDir(string name)
     {
-        var checkout = FakeCheckout("bad");
-        File.WriteAllBytes(Path.Combine(checkout, ".git", "config"), new byte[] { 0x5B, 0x63, 0xFF, 0xFE, 0x5D });
-        File.WriteAllBytes(Path.Combine(checkout, ".git", "config.worktree"), new byte[] { 0xC3, 0x28 });
-        Assert.Equal(new[] { "config (unreadable)", "config.worktree (unreadable)" }, RepoDiscovery.CommandConfig(checkout));
+        var dir = Dir(name, ".git");
+        File.WriteAllText(Path.Combine(dir, "config"), "[core]\n\tbare = false\n");
+        return dir;
     }
 
     [Fact]
-    public void CommandConfig_FollowsCommondir()
+    public void APlainClone_HasNoReasons()
     {
-        var common = Dir("common");
-        File.WriteAllText(Path.Combine(common, "config"), "[core]\n\tpager = less\n");
-        Directory.CreateDirectory(Path.Combine(common, "hooks"));
-        File.WriteAllText(Path.Combine(common, "hooks", "pre-commit"), "#!/bin/sh\n");
-        var checkout = FakeCheckout("linked");
-        File.WriteAllText(Path.Combine(checkout, ".git", "commondir"), Path.GetRelativePath(Path.Combine(checkout, ".git"), common));
-        Assert.Equal(new[] { "commondir", "core.pager", "hooks/pre-commit" }, RepoDiscovery.CommandConfig(checkout));
+        var dir = GitDir("plain");
+        Directory.CreateDirectory(Path.Combine(dir, "hooks"));
+        File.WriteAllText(Path.Combine(dir, "hooks", "pre-commit.sample"), "#!/bin/sh\n");
+        Assert.Empty(RepoDiscovery.CommandConfig(Path.Combine(Root, "plain")));
     }
 
     [Fact]
-    public void CommandConfig_FlagsRealHooksButNotSamples()
+    public void Hooks_AreFlagged_EveryNonSampleFileOnWindows()
     {
-        var checkout = FakeCheckout("hooked");
-        var hooks = Directory.CreateDirectory(Path.Combine(checkout, ".git", "hooks")).FullName;
-        File.WriteAllText(Path.Combine(hooks, "pre-commit.sample"), "#!/bin/sh\n");
-        Assert.Empty(RepoDiscovery.CommandConfig(checkout));
-        File.WriteAllText(Path.Combine(hooks, "post-checkout"), "#!/bin/sh\n");
-        Assert.Equal(new[] { "hooks/post-checkout" }, RepoDiscovery.CommandConfig(checkout));
+        var dir = GitDir("hooked");
+        Directory.CreateDirectory(Path.Combine(dir, "hooks"));
+        File.WriteAllText(Path.Combine(dir, "hooks", "pre-commit.sample"), "#!/bin/sh\n");
+        File.WriteAllText(Path.Combine(dir, "hooks", "post-checkout"), "#!/bin/sh\n");
+        Assert.Equal(new[] { "hooks/post-checkout" }, RepoDiscovery.CommandConfig(Path.Combine(Root, "hooked")));
+    }
+
+    [Fact]
+    public void AnUnreadableConfig_FailsClosed()
+    {
+        var dir = GitDir("garbled");
+        File.WriteAllBytes(Path.Combine(dir, "config"), new byte[] { 0xFF, 0xFE, 0x00, 0xC3, 0x28 });
+        Assert.Equal(new[] { "(characters outside plain ASCII)" }, RepoDiscovery.CommandConfig(Path.Combine(Root, "garbled")));
+        var worktree = GitDir("garbled-worktree");
+        File.WriteAllBytes(Path.Combine(worktree, "config.worktree"), new byte[] { 0xC3, 0x28 });
+        Assert.Equal(new[] { "(characters outside plain ASCII)" }, RepoDiscovery.CommandConfig(Path.Combine(Root, "garbled-worktree")));
+    }
+
+    [Fact]
+    public void Commondir_IsFlagged_AndItsConfigRead()
+    {
+        var shared = GitDir("shared");
+        File.WriteAllText(Path.Combine(shared, "config"), "[core]\n\tpager = less\n");
+        var linked = GitDir("linked");
+        File.WriteAllText(Path.Combine(linked, "commondir"), "../../shared/.git\n");
+        Assert.Equal(new[] { "commondir", "core.pager" }, RepoDiscovery.CommandConfig(Path.Combine(Root, "linked")));
+    }
+
+    [Theory]
+    [InlineData("wtc", "[extensions]\n\tworktreeConfig = true\n")]
+    [InlineData("inc", "[include]\n\tpath = other\n")]
+    [InlineData("incif", "[includeIf \"onbranch:main\"]\n\tpath = other\n")]
+    [InlineData("cwt", "[core]\n\tworktree = /elsewhere\n")]
+    public void WorktreeConfigIncludeAndCoreWorktree_AreFlagged(string name, string text)
+    {
+        File.WriteAllText(Path.Combine(GitDir(name), "config"), text);
+        Assert.NotEmpty(RepoDiscovery.CommandConfig(Path.Combine(Root, name)));
+    }
+
+    [Fact]
+    public void ConfigWorktree_IsReadToo()
+    {
+        var dir = GitDir("wtc2");
+        File.WriteAllText(Path.Combine(dir, "config"), "[extensions]\n\tworktreeConfig = true\n");
+        File.WriteAllText(Path.Combine(dir, "config.worktree"), "[core]\n\tsshCommand = x\n");
+        Assert.Equal(new[] { "extensions.worktreeconfig", "core.sshcommand" }, RepoDiscovery.CommandConfig(Path.Combine(Root, "wtc2")));
     }
 
     [Fact]
@@ -318,11 +377,6 @@ public sealed class RepoDiscoveryScanTests : TempFolder
         File.WriteAllText(Path.Combine(checkout, ".git"), "not a gitdir line\n");
         Assert.Equal(new[] { "(unreadable .git)" }, RepoDiscovery.CommandConfig(checkout));
     }
-
-    [Fact]
-    public void CommandConfigKeys_ListsEachOnceAcrossRepeatedSections() =>
-        Assert.Equal(new[] { "core.pager", "filter.lfs.clean" },
-            RepoDiscovery.CommandConfigKeys("[core]\n\tpager = a\n[filter \"lfs\"]\n\tclean = b\n[core]\n\tpager = c\n"));
 
     [Fact]
     public async Task Discovery_FlagsAClone_FromConfigAndConfigWorktree()
