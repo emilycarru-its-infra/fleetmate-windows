@@ -411,6 +411,11 @@ public static class RepoDiscovery
         {
             case "core" when subsection == null && key == "fsmonitor":
                 return value.ToLowerInvariant() is "false" or "no" or "off" or "0";
+            // Signing on or off is data; the program or key that signs is not.
+            case "commit" when subsection == null && key == "gpgsign":
+                return value.ToLowerInvariant() is "true" or "false";
+            case "user" when key == "signingkey":
+                return false;
             case "lfs" when subsection == null && key == "repositoryformatversion":
                 return true;
             case "lfs" when subsection != null && key is "access" or "locksverify":
@@ -445,7 +450,7 @@ public static class RepoDiscovery
     /// <item>Lines split on LF alone; one trailing CR dropped. Blank and comment lines skipped.</item>
     /// <item>Headers <c>[section]</c>, <c>[section "sub"]</c> (no quote or backslash inside) or legacy <c>[section.sub]</c>.</item>
     /// <item>Entries <c>key = value</c> with no quote, backslash, <c>;</c> or <c>#</c> in the value, or a bare boolean key.</item>
-    /// <item>Keys on <see cref="DataOnlyKeys"/>; <c>submodule.&lt;x&gt;.update</c> only as checkout, rebase, merge or none; <c>core.fsmonitor</c> only as false.</item>
+    /// <item>Keys on <see cref="DataOnlyKeys"/>; <c>submodule.&lt;x&gt;.update</c> only as checkout, rebase, merge or none; <c>core.fsmonitor</c> only as false; <c>commit.gpgsign</c> only as true or false; <c>user.signingkey</c> never.</item>
     /// </list>
     /// </summary>
     public static List<string> ConfigReview(byte[] bytes)
