@@ -20,7 +20,7 @@ namespace FleetMate.GUI.Views.Shared.Widgets;
 /// from data the app already holds; only the Projects GitHub-issues list and
 /// the Devices ReportMate figures fetch anything of their own.
 /// </summary>
-public static class WidgetCatalog
+public static partial class WidgetCatalog
 {
     /// <summary>Filter categories a widget click hands to its tab, as the macOS module filters name them.</summary>
     public static class Category
@@ -40,6 +40,10 @@ public static class WidgetCatalog
         public const string Source = "Source";
         /// <summary>Development: open Pipelines filtered to a status (a <see cref="PipelineStatusFilter"/> name).</summary>
         public const string PipelineStatus = "PipelineStatus";
+        /// <summary>Development: open Commits filtered to a repository.</summary>
+        public const string CommitRepository = "CommitRepository";
+        /// <summary>Development: open Pipelines filtered to a repository.</summary>
+        public const string PipelineRepository = "PipelineRepository";
     }
 
     public const string InboxSegment = "Inbox";
@@ -55,13 +59,13 @@ public static class WidgetCatalog
         "Inventory" => cacheKey is "Assets",
         "Tickets" => cacheKey is "Tickets",
         "Projects" => cacheKey is "WorkItems" or "Sprints" or "Issues" or App.MyWorkItemsKey,
-        "Development" => cacheKey is "PullRequests" or "Runs" or "Inbox",
+        "Development" => cacheKey is "PullRequests" or "Commits" or "Runs",
         _ => false,
     };
 
     public static List<UIElement> Build(string tab, App app, Action<string, string> filter) => tab switch
     {
-        "Development" => Development(app, filter),
+        "Development" => Development(app, DevelopmentSegment.Pulls, filter),
         "Projects" => Projects(app),
         "Devices" => Devices(app, filter),
         "Inventory" => Inventory(app, filter),
@@ -105,74 +109,6 @@ public static class WidgetCatalog
         var want = Norm(incoming);
         var matches = available.Where(v => Norm(display?.Invoke(v) ?? v) == want).ToArray();
         return matches.Length > 0 ? matches : new[] { incoming };
-    }
-
-    // MARK: - Development
-
-    private static readonly Color[] RepositoryColors = { P.Blue, P.Purple, P.Orange, P.Teal, P.Green, P.Indigo, P.Brown, P.Pink };
-
-    /// <summary>The Unread in Inbox tile opens the Inbox when anything is unread, and Pull Requests otherwise.</summary>
-    internal static (string Category, string Value) UnreadTarget(int unread) =>
-        unread > 0 ? (Category.Segment, InboxSegment) : (Category.Source, nameof(DevelopmentSourceFilter.All));
-
-    /// <summary>Open pull requests per repository, most first, top eight.</summary>
-    internal static List<ChartSlice> RepositorySlices(IEnumerable<UnifiedPullRequest> prs) => prs
-        .GroupBy(DevelopmentFilter.RepositoryKey)
-        .Select(g => new ChartSlice(g.Key, g.Count()))
-        .OrderByDescending(s => s.Value)
-        .ThenBy(s => s.Label, StringComparer.Ordinal)
-        .Take(8)
-        .ToList();
-
-    private static List<UIElement> Development(App app, Action<string, string> filter)
-    {
-        var queue = app.DevelopmentPullRequests;
-        var prs = queue?.PullRequests ?? new List<UnifiedPullRequest>();
-        var runs = app.DevelopmentRuns ?? new List<PipelineRun>();
-        var prLoading = app.IsCacheLoading("PullRequests") && prs.Count == 0;
-        var runsLoading = app.IsCacheLoading("Runs") && runs.Count == 0;
-        var inboxLoading = app.Inbox.IsRefreshing && app.Inbox.Notifications.Count == 0;
-        var unread = app.Inbox.UnreadCount;
-
-        void Pulls(DevelopmentSourceFilter source) => filter(Category.Source, source.ToString());
-        void Pipelines(PipelineStatusFilter status) => filter(Category.PipelineStatus, status.ToString());
-
-        var cards = new List<UIElement>
-        {
-            WidgetCards.KpiStack(new[]
-            {
-                new KpiTile("Unread in Inbox", unread.ToString("N0"), "", P.Hex(P.Blue), inboxLoading,
-                    () => { var (c, v) = UnreadTarget(app.Inbox.UnreadCount); filter(c, v); }),
-                new KpiTile("Review Requested",
-                    CountOrUnknown(prs.Count(p => p.Relations.Contains(PullRequestRelation.AssignedToMe)), Failed(queue)),
-                    "", P.Hex(P.Purple), prLoading, () => Pulls(DevelopmentSourceFilter.All)),
-            }),
-            WidgetCards.KpiStack(new[]
-            {
-                new KpiTile($"{PullRequestSource.AzureDevOps.ShortName()} Pull Requests",
-                    CountOrUnknown(prs.Count(p => p.Source == PullRequestSource.AzureDevOps), Failed(queue, PullRequestSource.AzureDevOps)),
-                    "", P.Hex(P.Blue), prLoading, () => Pulls(DevelopmentSourceFilter.DevOps)),
-                new KpiTile($"{PullRequestSource.GitHub.ShortName()} Pull Requests",
-                    CountOrUnknown(prs.Count(p => p.Source == PullRequestSource.GitHub), Failed(queue, PullRequestSource.GitHub)),
-                    "", P.Hex(P.Indigo), prLoading, () => Pulls(DevelopmentSourceFilter.GitHub)),
-            }),
-            WidgetCards.KpiStack(new[]
-            {
-                new KpiTile("Failing Pipelines", CommitsAndPipelinesFilter.FailingCount(runs).ToString("N0"), "",
-                    P.Hex(P.Orange), runsLoading, () => Pipelines(PipelineStatusFilter.Failed)),
-                new KpiTile("Running Pipelines", runs.Count(r => r.Status.IsActive()).ToString("N0"), "",
-                    P.Hex(P.Teal), runsLoading, () => Pipelines(PipelineStatusFilter.Running)),
-            }),
-        };
-
-        var byRepo = RepositorySlices(prs);
-        cards.Add(WidgetCards.Card("Pull Requests by Repository",
-            WidgetCards.ChartOr(byRepo.Count > 0, app.IsCacheLoading("PullRequests"), "No open pull requests",
-                () => WidgetCards.HorizontalBars(byRepo, WidgetCards.ByIndex(byRepo, RepositoryColors),
-                    repo => filter(Category.Repository, repo))),
-            loading: app.IsCacheLoading("PullRequests")));
-
-        return cards;
     }
 
     // MARK: - Projects

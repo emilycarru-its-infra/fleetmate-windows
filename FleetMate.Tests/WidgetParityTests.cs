@@ -236,11 +236,59 @@ public class WidgetParityTests
 
     // MARK: - Development
 
+    private static readonly DateTime Now = new(2026, 10, 18, 12, 0, 0, DateTimeKind.Local);
+
     [Fact]
-    public void UnreadFigure_OpensInboxOnlyWhenSomethingIsUnread()
+    public void PullAge_BucketsByCreationDay()
     {
-        Assert.Equal((WidgetCatalog.Category.Segment, WidgetCatalog.InboxSegment), WidgetCatalog.UnreadTarget(3));
-        Assert.Equal((WidgetCatalog.Category.Source, "All"), WidgetCatalog.UnreadTarget(0));
+        Assert.Equal("Today", WidgetCatalog.AgeBucket(Now.AddHours(-2), Now));
+        Assert.Equal("1–7 days", WidgetCatalog.AgeBucket(Now.AddDays(-7), Now));
+        Assert.Equal("8–30 days", WidgetCatalog.AgeBucket(Now.AddDays(-30), Now));
+        Assert.Equal("Over 30 days", WidgetCatalog.AgeBucket(Now.AddDays(-31), Now));
+        Assert.Equal(4, WidgetCatalog.AgeSlices(Array.Empty<UnifiedPullRequest>(), Now).Count);
+    }
+
+    [Fact]
+    public void ReviewState_CountsEachPullRequestOnceInPrecedenceOrder()
+    {
+        PullRequestReviewer Vote(PullRequestReviewVote v) => new() { Vote = v };
+        Assert.Equal("Draft", WidgetCatalog.ReviewState(new UnifiedPullRequest { State = PullRequestState.Draft, HasConflicts = true }));
+        Assert.Equal("Conflicts", WidgetCatalog.ReviewState(new UnifiedPullRequest { HasConflicts = true, Reviewers = new[] { Vote(PullRequestReviewVote.Approved) } }));
+        Assert.Equal("Changes Requested", WidgetCatalog.ReviewState(new UnifiedPullRequest { Reviewers = new[] { Vote(PullRequestReviewVote.Approved), Vote(PullRequestReviewVote.WaitingForAuthor) } }));
+        Assert.Equal("Approved", WidgetCatalog.ReviewState(new UnifiedPullRequest { Reviewers = new[] { Vote(PullRequestReviewVote.ApprovedWithSuggestions) } }));
+        Assert.Equal("Awaiting Review", WidgetCatalog.ReviewState(new UnifiedPullRequest()));
+    }
+
+    [Fact]
+    public void CommitsPerDay_CoversTheWholeWindowEndingToday()
+    {
+        var repo = new RepositoryCommits
+        {
+            Container = "Org", Repository = "R",
+            Commits = new() { new PullRequestCommit { Date = Now }, new PullRequestCommit { Date = Now.AddHours(-1) }, new PullRequestCommit { Date = Now.AddDays(-13) }, new PullRequestCommit { Date = Now.AddDays(-20) } },
+        };
+        var days = WidgetCatalog.CommitsPerDay(new[] { repo }, Now);
+        Assert.Equal(14, days.Count);
+        Assert.Equal(Now.Date, days[^1].Day);
+        Assert.Equal(2, days[^1].Count);
+        Assert.Equal(1, days[0].Count);
+    }
+
+    [Fact]
+    public void SuccessRate_CountsOnlyRunsWithAVerdict()
+    {
+        PipelineRun Run(PipelineRunStatus s) => new() { Status = s };
+        Assert.Null(WidgetCatalog.SuccessRate(new[] { Run(PipelineRunStatus.Running), Run(PipelineRunStatus.Cancelled) }));
+        Assert.Equal(67, WidgetCatalog.SuccessRate(new[] { Run(PipelineRunStatus.Succeeded), Run(PipelineRunStatus.Succeeded), Run(PipelineRunStatus.Failed), Run(PipelineRunStatus.Cancelled) }));
+    }
+
+    [Fact]
+    public void SlowestPipelines_UseTheMedianFinishedRun()
+    {
+        PipelineRun Run(string name, int minutes) => new() { PipelineName = name, Status = PipelineRunStatus.Succeeded, StartedAt = Now, FinishedAt = Now.AddMinutes(minutes) };
+        var slices = WidgetCatalog.SlowestPipelines(new[] { Run("A", 2), Run("A", 4), Run("A", 60), Run("B", 10) });
+        Assert.Equal(("B", 10), (slices[0].Label, slices[0].Value));
+        Assert.Equal(("A", 4), (slices[1].Label, slices[1].Value));
     }
 
     [Theory]

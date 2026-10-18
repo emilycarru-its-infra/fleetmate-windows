@@ -153,7 +153,7 @@ public class WidgetsTests
     [InlineData("Devices", "Assets", false)]
     [InlineData("Projects", "Issues", true)]
     [InlineData("Development", "Runs", true)]
-    [InlineData("Development", "Commits", false)]
+    [InlineData("Development", "Commits", true)]
     public void RedrawOnlyForTheTabsOwnData(string tab, string key, bool expected) =>
         Assert.Equal(expected, WidgetCatalog.DependsOn(tab, key));
 

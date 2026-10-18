@@ -38,7 +38,7 @@ public sealed class RepoEditorDocument
 /// <summary>
 /// The Repos workspace: tracked checkouts on the left; for the selected one,
 /// the git pane (<see cref="GitPaneModel"/>), FleetMate's file browser and
-/// editor, and Insights. Everything goes through the same
+/// editor, and the Insights the Graphs strip shows. Everything goes through the same
 /// <see cref="RepoManager"/> and registry file as <c>fleetmate repos</c>.
 /// </summary>
 public sealed class RepoWorkspaceModel : RepoObservable
@@ -405,7 +405,7 @@ public sealed class RepoWorkspaceModel : RepoObservable
 }
 
 /// <summary>
-/// What the Insights panel shows and the statistics behind it. The numbers come
+/// What the Repos Insights in the Graphs strip show and the statistics behind it. The numbers come
 /// from the same code as <c>fleetmate repos stats</c>, so the app and agents agree.
 /// </summary>
 public sealed class RepoInsightsModel : RepoObservable
