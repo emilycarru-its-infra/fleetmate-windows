@@ -15,8 +15,10 @@ using FleetMate.GUI.Views.Shared;
 
 namespace FleetMate.GUI.Views.Identity;
 
-public partial class IdentityPage : Page
+public partial class IdentityPage : Page, IChromeToolbar
 {
+    public FrameworkElement? ChromeToolbar => IdentityChrome;
+
     private readonly App? _app;
     private readonly GraphService? _graphService;
     private bool _isInitialLoadDone;

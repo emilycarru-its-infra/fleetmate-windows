@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using FleetMate.GUI.Views.Development.Repos;
+using FleetMate.GUI.Views.Shared;
 using FleetMate.GUI.Views.Shared.Widgets;
 
 namespace FleetMate.GUI.Views.Development;
@@ -11,8 +12,18 @@ namespace FleetMate.GUI.Views.Development;
 /// Graphs strip above follows the open sub-tab: each has its own cards, and
 /// Repos shows the selected repository's Insights there.
 /// </summary>
-public partial class DevelopmentPage : Page, IWidgetFilterHost
+public partial class DevelopmentPage : Page, IWidgetFilterHost, IChromeToolbar, IPageCommands
 {
+    public FrameworkElement? ChromeToolbar => View.ChromeToolbar;
+
+    /// <summary>F5 and Ctrl+R: the toolbar's Refresh lives in the view, outside this page's names.</summary>
+    bool IPageCommands.Execute(AppShortcut shortcut)
+    {
+        if (shortcut != AppShortcut.Refresh) return false;
+        OnRefreshClicked(this, new RoutedEventArgs());
+        return true;
+    }
+
     /// <summary>
     /// The graphs never take more than this share of the page, nor less than
     /// <see cref="StripMinimum"/>; past it they scroll, so the repository
@@ -64,6 +75,7 @@ public partial class DevelopmentPage : Page, IWidgetFilterHost
     public DevelopmentPage()
     {
         InitializeComponent();
+        View.RefreshRequested += (_, _) => OnRefreshClicked(this, new RoutedEventArgs());
         Widgets.Builder = BuildWidgets;
         View.SegmentChanged += (_, _) => Widgets.Invalidate();
         View.ReposShownChanged += (_, _) => Widgets.Invalidate();

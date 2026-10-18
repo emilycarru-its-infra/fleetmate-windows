@@ -34,6 +34,21 @@ public sealed class SegmentMenuButton : Button
         set => SetValue(SegmentsProperty, value);
     }
 
+    public static readonly DependencyProperty AvailableWidthProperty = DependencyProperty.Register(
+        nameof(AvailableWidth), typeof(double), typeof(SegmentMenuButton),
+        new PropertyMetadata(double.NaN, (d, _) => ((SegmentMenuButton)d).Update()));
+
+    /// <summary>
+    /// The room the segments have, when it is not their host's width. In the
+    /// window's title bar the host sizes to its content, so the window sets
+    /// this from the space left beside the tab bar.
+    /// </summary>
+    public double AvailableWidth
+    {
+        get => (double)GetValue(AvailableWidthProperty);
+        set => SetValue(AvailableWidthProperty, value);
+    }
+
     private readonly TextBlock _label = new() { VerticalAlignment = VerticalAlignment.Center };
     private FrameworkElement? _host;
     private bool _attached;
@@ -103,7 +118,8 @@ public sealed class SegmentMenuButton : Button
             needed += option.DesiredSize.Width;
         }
 
-        var fold = ShouldFold(showing.Count, needed, _host.ActualWidth);
+        var available = double.IsNaN(AvailableWidth) ? _host.ActualWidth : AvailableWidth;
+        var fold = ShouldFold(showing.Count, needed, available);
         Segments.Visibility = fold ? Visibility.Collapsed : Visibility.Visible;
         Visibility = fold ? Visibility.Visible : Visibility.Collapsed;
 

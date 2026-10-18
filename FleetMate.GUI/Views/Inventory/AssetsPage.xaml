@@ -25,10 +25,7 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <StackPanel Grid.Column="0">
-                <TextBlock Text="Inventory" Style="{StaticResource TitleTextStyle}" />
-                <TextBlock Text="Snipe-IT asset inventory management" Style="{StaticResource SubtitleTextStyle}" />
-            </StackPanel>
+            <!-- No page heading: the tab bar names the tab, as on Mac. -->
 
             <ui:SimpleStackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                 <Button Click="OnColumnsClicked" ToolTip="Show or hide columns"
