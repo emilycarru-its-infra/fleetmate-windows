@@ -136,7 +136,7 @@ public partial class MainWindow : Window
         {
             ElevationSessionState.Ready => Colors.Green,
             ElevationSessionState.Starting => Colors.DodgerBlue,
-            ElevationSessionState.Expired => Colors.Orange,
+            ElevationSessionState.Expired => Colors.Gray,
             ElevationSessionState.None => Colors.Gray,
             _ => Colors.Goldenrod,
         });
