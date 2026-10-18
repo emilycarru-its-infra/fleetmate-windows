@@ -13,7 +13,12 @@ public enum DiscoveryAction
     [JsonStringEnumMemberName("duplicate")] Duplicate,
     /// <summary>No origin remote, or one that could not be parsed.</summary>
     [JsonStringEnumMemberName("noRemote")] NoRemote,
+    /// <summary>Its config can run commands, so it was linked without being tracked; tracking it is the person's call.</summary>
+    [JsonStringEnumMemberName("needsReview")] NeedsReview,
 }
+
+/// <summary>What Choose Folder did: what it registered, and the clones it held back for review.</summary>
+public sealed record TrackFoldersResult(List<DiscoveryResult> Results, List<DiscoveredCheckout> Review);
 
 /// <summary>
 /// What <c>discover</c> did with one checkout it found. For a duplicate,
@@ -217,8 +222,15 @@ public sealed class RepoManager
         return RepoDiscovery.DiscoverAsync(settings, includeWorkspaceFolders: true);
     }
 
-    /// <summary>Registers checkouts found by <see cref="PreviewAsync"/> or <see cref="RepoDiscovery"/>, under the same rules as discover.</summary>
-    public List<DiscoveryResult> Register(IEnumerable<DiscoveredCheckout> found, bool track = false, bool trackNew = false)
+    /// <summary>
+    /// Registers checkouts found by <see cref="PreviewAsync"/> or <see cref="RepoDiscovery"/>,
+    /// under the same rules as discover. A clone whose config can run commands
+    /// is never tracked here unless <paramref name="trustCommandConfig"/> says
+    /// the person ticked it knowing that; it is linked untracked and reported
+    /// as <see cref="DiscoveryAction.NeedsReview"/>.
+    /// </summary>
+    public List<DiscoveryResult> Register(IEnumerable<DiscoveredCheckout> found, bool track = false, bool trackNew = false,
+        bool trustCommandConfig = false)
     {
         var catalog = (CachedCatalog()?.Repos ?? new()).GroupBy(r => r.Id).ToDictionary(g => g.Key, g => g.First());
 
@@ -235,11 +247,12 @@ public sealed class RepoManager
                 catalog.TryGetValue(key.Id, out var catalogEntry);
                 var canonical = catalogEntry?.Key ?? key;
                 var inCatalog = catalogEntry != null;
+                var held = checkout.RunsCommands && !trustCommandConfig;
                 if (doc.Repos.TryGetValue(key.Id, out var existing))
                 {
                     if (string.Equals(existing.Path, checkout.Path, StringComparison.OrdinalIgnoreCase))
                     {
-                        if (track) doc.Repos[key.Id] = existing with { Tracked = true };
+                        if (track && !held) doc.Repos[key.Id] = existing with { Tracked = true };
                         results.Add(new DiscoveryResult(checkout.Path, key.Id, canonical.DisplayName, inCatalog, DiscoveryAction.AlreadyLinked, null));
                         continue;
                     }
@@ -249,16 +262,18 @@ public sealed class RepoManager
                         continue;
                     }
                 }
+                var wantsTracking = track || (existing?.Tracked ?? trackNew);
                 doc.Repos[key.Id] = new RepoRegistryEntry
                 {
                     Key = canonical,
                     Path = checkout.Path,
-                    Tracked = track || (existing?.Tracked ?? trackNew),
+                    Tracked = wantsTracking && !held,
                     RemoteUrl = checkout.RemoteUrl,
                     DefaultBranch = catalogEntry?.DefaultBranch,
                     Hidden = existing?.Hidden ?? false,
                 };
-                results.Add(new DiscoveryResult(checkout.Path, key.Id, canonical.DisplayName, inCatalog, DiscoveryAction.Linked, null));
+                results.Add(new DiscoveryResult(checkout.Path, key.Id, canonical.DisplayName, inCatalog,
+                    wantsTracking && held ? DiscoveryAction.NeedsReview : DiscoveryAction.Linked, null));
             }
             return results;
         });
@@ -267,15 +282,23 @@ public sealed class RepoManager
     /// <summary>
     /// Adds <paramref name="folders"/> to the scan roots, marks the roots as
     /// chosen, and tracks every clone found in them. What the Repos sidebar's
-    /// Choose Folder does, with no further questions.
+    /// Choose Folder does, with no further questions; clones whose config can
+    /// run commands are left unregistered and returned for review instead.
     /// </summary>
-    public Task<List<DiscoveryResult>> TrackFoldersAsync(IEnumerable<string> folders)
+    public async Task<TrackFoldersResult> TrackFoldersAsync(IEnumerable<string> folders)
     {
         var roots = folders.Select(RepoSettings.Abbreviate).ToList();
         AddScanRoots(roots);
         var settings = Settings();
         settings.ScanRoots = roots;
-        return DiscoverAsync(track: true, settings: settings);
+        var found = await RepoDiscovery.DiscoverAsync(settings);
+        // Clones whose config can run commands are not registered: they come
+        // back to be ticked one by one, unless already tracked.
+        var known = Store.Load().Repos;
+        var review = found.Where(c => c.RunsCommands && c.Key is { } key
+            && !(known.TryGetValue(key.Id, out var entry) && entry.Tracked)).ToList();
+        var reviewPaths = review.Select(c => c.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return new TrackFoldersResult(Register(found.Where(c => !reviewPaths.Contains(c.Path)), track: true), review);
     }
 
     /// <summary>

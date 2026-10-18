@@ -220,6 +220,67 @@ public sealed class RepoDiscoveryScanTests : TempFolder
     }
 
     [Theory]
+    [InlineData("[core]\n\tfsmonitor = ./watch.sh", "core.fsmonitor")]
+    [InlineData("[core]\n\thooksPath = .githooks", "core.hookspath")]
+    [InlineData("[core]\n\tsshCommand = ssh -i key", "core.sshcommand")]
+    [InlineData("[core]\n\tpager = less", "core.pager")]
+    [InlineData("[core]\n\teditor = vim", "core.editor")]
+    [InlineData("[core]\n\taskPass = ./ask", "core.askpass")]
+    [InlineData("[core]\n\tgitProxy = ./proxy", "core.gitproxy")]
+    [InlineData("[core]\n\talternateRefsCommand = ./refs", "core.alternaterefscommand")]
+    [InlineData("[sequence]\n\teditor = ./edit", "sequence.editor")]
+    [InlineData("[credential]\n\thelper = store", "credential.helper")]
+    [InlineData("[credential \"https://example.com\"]\n\thelper = ./h", "credential.https://example.com.helper")]
+    [InlineData("[diff]\n\texternal = ./d", "diff.external")]
+    [InlineData("[diff \"pdf\"]\n\ttextconv = pdftotext", "diff.pdf.textconv")]
+    [InlineData("[diff \"x\"]\n\tcommand = ./c", "diff.x.command")]
+    [InlineData("[merge \"ours\"]\n\tdriver = ./m", "merge.ours.driver")]
+    [InlineData("[filter \"lfs\"]\n\tprocess = git-lfs filter-process", "filter.lfs.process")]
+    [InlineData("[filter \"x\"]\n\tsmudge = ./s", "filter.x.smudge")]
+    [InlineData("[remote \"origin\"]\n\tuploadpack = ./u", "remote.origin.uploadpack")]
+    [InlineData("[remote \"origin\"]\n\treceivepack = ./r", "remote.origin.receivepack")]
+    [InlineData("[gpg]\n\tprogram = ./g", "gpg.program")]
+    [InlineData("[gpg \"ssh\"]\n\tprogram = ./g", "gpg.ssh.program")]
+    [InlineData("[pager]\n\tlog = ./p", "pager.log")]
+    [InlineData("[protocol]\n\tallow = always", "protocol.allow")]
+    [InlineData("[protocol \"ext\"]\n\tallow = always", "protocol.ext.allow")]
+    [InlineData("[include]\n\tpath = ../other", "include.path")]
+    [InlineData("[includeIf \"gitdir:~/x/\"]\n\tpath = ../other", "includeif.gitdir:~/x/.path")]
+    [InlineData("[core.sub]\n\tpager = less", "core.sub.pager")]
+    [InlineData("[core] pager = less", "core.pager")]
+    public void CommandConfigKeys_FlagsKeysThatRunPrograms(string config, string key) =>
+        Assert.Equal(new[] { key }, RepoDiscovery.CommandConfigKeys(config));
+
+    [Theory]
+    [InlineData("[core]\n\tfsmonitor = true")]
+    [InlineData("[core]\n\tfsmonitor = false")]
+    [InlineData("[core]\n\tfsmonitor = 0")]
+    [InlineData("[core]\n\tfsmonitor")]
+    [InlineData("[protocol]\n\tallow = user")]
+    [InlineData("[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://github.com/example-org/one.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\tremote = origin\n\tmerge = refs/heads/main\n# pager = less\n; editor = vim")]
+    public void CommandConfigKeys_LeavesAPlainConfigAlone(string config) =>
+        Assert.Empty(RepoDiscovery.CommandConfigKeys(config));
+
+    [Fact]
+    public void CommandConfigKeys_ListsEachOnceAcrossRepeatedSections() =>
+        Assert.Equal(new[] { "core.pager", "filter.lfs.clean" },
+            RepoDiscovery.CommandConfigKeys("[core]\n\tpager = a\n[filter \"lfs\"]\n\tclean = b\n[core]\n\tpager = c\n"));
+
+    [Fact]
+    public async Task Discovery_FlagsAClone_FromConfigAndConfigWorktree()
+    {
+        var plain = FakeCheckout("plain");
+        File.WriteAllText(Path.Combine(plain, ".git", "config"), "[remote \"origin\"]\n\turl = https://github.com/example-org/plain.git\n");
+        var flagged = FakeCheckout("flagged");
+        File.WriteAllText(Path.Combine(flagged, ".git", "config"), "[remote \"origin\"]\n\turl = https://github.com/example-org/flagged.git\n");
+        File.WriteAllText(Path.Combine(flagged, ".git", "config.worktree"), "[core]\n\tfsmonitor = ./watch\n");
+
+        var found = await RepoDiscovery.DiscoverAsync(new RepoSettings { ScanRoots = new() { Root } });
+        Assert.False(found.Single(c => c.Key?.Name == "plain").RunsCommands);
+        Assert.Equal(new[] { "core.fsmonitor" }, found.Single(c => c.Key?.Name == "flagged").CommandConfig);
+    }
+
+    [Theory]
     [InlineData(@" C:\\work\\remote.git", @"C:\work\remote.git")]
     [InlineData(" \"https://example.com/a b.git\" # note", "https://example.com/a b.git")]
     [InlineData(" https://example.com/x.git ; trailing", "https://example.com/x.git")]
@@ -305,6 +366,42 @@ public sealed class RepoRegisterTests : TempFolder
         Assert.Equal(new[] { DiscoveryAction.AlreadyLinked, DiscoveryAction.Linked }, results.Select(r => r.Action));
         Assert.False(manager.Resolve("known").IsTracked);
         Assert.True(manager.Resolve("fresh").IsTracked);
+    }
+
+    private DiscoveredCheckout Flagged(string name) => Found(name) with { CommandConfig = new() { "core.fsmonitor" } };
+
+    [Fact]
+    public void AFlaggedClone_IsLinkedUntracked_UnlessTrusted()
+    {
+        var manager = Manager;
+        var results = manager.Register(new[] { Flagged("risky") }, track: true);
+        Assert.Equal(DiscoveryAction.NeedsReview, results.Single().Action);
+        Assert.False(manager.Resolve("risky").IsTracked);
+
+        manager.Register(new[] { Flagged("risky") }, track: true);
+        Assert.False(manager.Resolve("risky").IsTracked);
+
+        manager.Register(new[] { Flagged("risky") }, track: true, trustCommandConfig: true);
+        Assert.True(manager.Resolve("risky").IsTracked);
+    }
+
+    [Fact]
+    public async Task TrackFolders_HoldsFlaggedClonesForReview_AndReplacesTheDefaultRoot()
+    {
+        var manager = Manager;
+        WriteOrigin(FakeCheckout("code", "plain"), "plain");
+        var risky = FakeCheckout("code", "risky");
+        File.WriteAllText(Path.Combine(risky, ".git", "config"),
+            "[remote \"origin\"]\n\turl = https://github.com/example-org/risky.git\n[filter \"x\"]\n\tsmudge = ./s\n");
+
+        var (results, review) = await manager.TrackFoldersAsync(new[] { Path.Combine(Root, "code") });
+
+        Assert.Equal(new[] { "risky" }, review.Select(c => c.Key!.Name));
+        Assert.Equal(new[] { "filter.x.smudge" }, review.Single().CommandConfig);
+        Assert.Single(results);
+        Assert.True(manager.Resolve("plain").IsTracked);
+        Assert.Throws<RepoException>(() => manager.Resolve("risky"));
+        Assert.Equal(new[] { RepoSettings.Abbreviate(Path.Combine(Root, "code")) }, manager.Settings().ScanRoots);
     }
 
     [Fact]
@@ -444,11 +541,46 @@ public sealed class CloneRemovalTests : IAsyncLifetime
     public void Discovery_ReadsTheOriginWithoutGit() =>
         Assert.Equal(Remote, RepoDiscovery.ReadOrigin(Clone));
 
-    [Fact]
-    public void InspectionConfig_TurnsOffFsmonitorAndHooks()
+    [Theory]
+    [InlineData("status", true)]
+    [InlineData("log", true)]
+    [InlineData("worktree", true)]
+    [InlineData("commit", false)]
+    [InlineData("push", false)]
+    [InlineData("pull", false)]
+    [InlineData("switch", false)]
+    [InlineData("cherry-pick", false)]
+    public void SafetyConfig_KeepsHooksOnlyForCommandsPeopleRun(string command, bool hooksOff)
     {
-        Assert.Contains("core.fsmonitor=false", GitWorkingCopy.InspectionConfig);
-        Assert.Contains(GitWorkingCopy.InspectionConfig, a => a.StartsWith("core.hooksPath="));
+        var config = GitWorkingCopy.SafetyConfig(new[] { command });
+        Assert.Contains("core.fsmonitor=false", config);
+        Assert.Contains("core.pager=cat", config);
+        Assert.Equal(hooksOff, config.Any(a => a.StartsWith("core.hooksPath=")));
+    }
+
+    [Fact]
+    public void DiffShowLogAndGrep_NeverRunExternalPrograms()
+    {
+        Assert.Equal(new[] { "diff", "--no-ext-diff", "--no-textconv", "--cached" }, GitWorkingCopy.WithSafeDiffOptions(new[] { "diff", "--cached" }));
+        Assert.Equal(new[] { "log", "--no-ext-diff", "--no-textconv", "-1" }, GitWorkingCopy.WithSafeDiffOptions(new[] { "log", "-1" }));
+        Assert.Equal(new[] { "show", "--no-ext-diff", "--no-textconv", "HEAD" }, GitWorkingCopy.WithSafeDiffOptions(new[] { "show", "HEAD" }));
+        Assert.Equal(new[] { "grep", "--no-textconv", "x" }, GitWorkingCopy.WithSafeDiffOptions(new[] { "grep", "x" }));
+        Assert.Equal(new[] { "status" }, GitWorkingCopy.WithSafeDiffOptions(new[] { "status" }));
+    }
+
+    [Fact]
+    public async Task AClonesHook_DoesNotRunDuringAStatusRead()
+    {
+        var hooks = Directory.CreateDirectory(Path.Combine(_parent, "hooks")).FullName;
+        var marker = Path.Combine(_parent, "hook-ran");
+        var script = Path.Combine(hooks, "post-index-change");
+        File.WriteAllText(script, $"#!/bin/sh\necho ran > '{marker.Replace('\\', '/')}'\n");
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        await Git(Clone, "config", "core.hooksPath", hooks);
+        File.WriteAllText(Path.Combine(Clone, "README.md"), "changed\n");
+        await new GitWorkingCopy(Clone).StatusAsync();
+        await new GitWorkingCopy(Clone).GitAsync(new[] { "update-index", "--refresh" });
+        Assert.False(File.Exists(marker));
     }
 
     [Fact]

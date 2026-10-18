@@ -29,18 +29,21 @@ public sealed partial class SetupWizardWindow
     /// <summary>Paths of found clones the person unticked.</summary>
     private readonly HashSet<string> _repoSkipped = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>
-    /// Paths of clones only a VS Code workspace file names that the person
-    /// ticked: those start unticked, because the file is not their choice.
+    /// Paths of opt-in clones the person ticked: ones only a VS Code workspace
+    /// file names, and ones whose settings can run commands. Those start
+    /// unticked, because neither the file nor the settings are their choice.
     /// </summary>
     private readonly HashSet<string> _repoWorkspaceChosen = new(StringComparer.OrdinalIgnoreCase);
 
+    private static bool IsOptIn(DiscoveredCheckout c) => c.FromWorkspace || c.RunsCommands;
+
     private bool IsChosen(DiscoveredCheckout c) =>
-        c.FromWorkspace ? _repoWorkspaceChosen.Contains(c.Path) : !_repoSkipped.Contains(c.Path);
+        IsOptIn(c) ? _repoWorkspaceChosen.Contains(c.Path) : !_repoSkipped.Contains(c.Path);
 
     private void SetChosen(string path, bool on)
     {
         var checkout = _repoFound.FirstOrDefault(c => string.Equals(c.Path, path, StringComparison.OrdinalIgnoreCase));
-        if (checkout?.FromWorkspace == true)
+        if (checkout != null && IsOptIn(checkout))
         {
             if (on) _repoWorkspaceChosen.Add(path); else _repoWorkspaceChosen.Remove(path);
         }
@@ -125,16 +128,20 @@ public sealed partial class SetupWizardWindow
                 {
                     content.Children.Add(Note($"{usable.Count(IsChosen)} of {usable.Count} selected. Untick any you don't work in.", top: 2));
                     var fromWorkspace = usable.Where(c => c.FromWorkspace).Select(c => c.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    var commands = usable.Where(c => c.RunsCommands).ToDictionary(c => c.Path, c => string.Join(", ", c.CommandConfig), StringComparer.OrdinalIgnoreCase);
                     var records = usable.Select(c => new RepoRecord(c.Key!, null,
                         new RepoRegistryEntry { Key = c.Key!, Path = c.Path, Tracked = true })).ToList();
                     foreach (var group in RepoRecordGroup.Groups(records))
                         content.Children.Add(GroupPanel(group,
                             r => IsChosen(usable.First(c => c.Path == r.Local!.Path)),
                             (r, on) => SetChosen(r.Local!.Path, on),
-                            r => RepoShell.Abbreviate(r.Local!.Path) + (fromWorkspace.Contains(r.Local!.Path) ? " · from a VS Code workspace" : ""),
+                            r => RepoShell.Abbreviate(r.Local!.Path) + (fromWorkspace.Contains(r.Local!.Path) ? " · from a VS Code workspace" : "")
+                                + (commands.TryGetValue(r.Local!.Path, out var keys) ? $" · This repository's settings can run commands: {keys}" : ""),
                             Render));
                     if (fromWorkspace.Count > 0)
                         content.Children.Add(Note("Clones marked “from a VS Code workspace” are listed in a .code-workspace file rather than found in the folders, so they start unticked.", top: 6));
+                    if (commands.Count > 0)
+                        content.Children.Add(Note("Clones whose settings can run commands start unticked. Tick one only if you know where it came from.", top: 6));
                 }
                 var noRemote = _repoFound.Count(c => c.Key == null);
                 if (noRemote > 0)
@@ -297,7 +304,8 @@ public sealed partial class SetupWizardWindow
                 s.RootsChosen = true;
             });
             var usable = _repoFound.Where(c => c.Key != null).ToList();
-            _repoManager.Register(usable.Where(IsChosen), track: true);
+            // Ticking a flagged clone is the person trusting its settings.
+            _repoManager.Register(usable.Where(IsChosen), track: true, trustCommandConfig: true);
             // Unticked clones from the folders are recorded as untracked so
             // FleetMate never offers them again; unticked workspace proposals
             // are simply left alone.

@@ -5,7 +5,19 @@ namespace FleetMate.Core.Services.Repos;
 /// only because a VS Code workspace file lists it: a proposal for the person to
 /// accept, never registered or tracked without asking.
 /// </summary>
-public sealed record DiscoveredCheckout(string Path, string? RemoteUrl, RepoKey? Key, bool FromWorkspace = false);
+public sealed record DiscoveredCheckout(string Path, string? RemoteUrl, RepoKey? Key, bool FromWorkspace = false)
+{
+    /// <summary>
+    /// Keys in the clone's own config that make git run a program
+    /// (<c>core.fsmonitor</c>, <c>filter.lfs.process</c>, …). Such a clone is
+    /// flagged and starts unselected wherever it is offered.
+    /// </summary>
+    public List<string> CommandConfig { get; init; } = new();
+
+    /// <summary>The clone's settings can run commands.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool RunsCommands => CommandConfig.Count > 0;
+}
 
 /// <summary>
 /// Walks scan roots for git checkouts.
@@ -312,34 +324,135 @@ public static class RepoDiscovery
 
     private static DiscoveredCheckout Checkout(string path, bool fromWorkspace)
     {
-        var origin = ReadOrigin(path);
-        return new DiscoveredCheckout(path, origin, RepoRemoteUrl.Parse(origin), fromWorkspace);
+        var config = ReadConfig(path);
+        var origin = config != null ? OriginFromConfig(config) : null;
+        return new DiscoveredCheckout(path, origin, RepoRemoteUrl.Parse(origin), fromWorkspace)
+        {
+            CommandConfig = config != null ? CommandConfigKeys(config) : new(),
+        };
     }
 
     /// <summary>
     /// The <c>origin</c> remote's URL, read from the checkout's git config
     /// (following a <c>gitdir:</c> file for a submodule), or null.
     /// </summary>
-    public static string? ReadOrigin(string checkout)
+    public static string? ReadOrigin(string checkout) =>
+        ReadConfig(checkout) is { } config ? OriginFromConfig(config) : null;
+
+    /// <summary>The checkout's git directory: <c>.git</c>, or where a <c>gitdir:</c> file points.</summary>
+    internal static string? GitDirectory(string checkout)
     {
         try
         {
             var dotGit = Path.Combine(checkout, ".git");
-            string gitDir;
-            if (Directory.Exists(dotGit)) gitDir = dotGit;
-            else if (File.Exists(dotGit))
-            {
-                var line = File.ReadLines(dotGit).FirstOrDefault()?.Trim() ?? "";
-                if (!line.StartsWith("gitdir:", StringComparison.OrdinalIgnoreCase)) return null;
-                var target = line["gitdir:".Length..].Trim().Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
-                if (target.Length == 0 || IsUncOrDevicePath(target)) return null;
-                gitDir = Path.GetFullPath(Path.IsPathRooted(target) ? target : Path.Combine(checkout, target));
-            }
-            else return null;
-            var config = Path.Combine(gitDir, "config");
-            return File.Exists(config) ? OriginFromConfig(File.ReadAllText(config)) : null;
+            if (Directory.Exists(dotGit)) return dotGit;
+            if (!File.Exists(dotGit)) return null;
+            var line = File.ReadLines(dotGit).FirstOrDefault()?.Trim() ?? "";
+            if (!line.StartsWith("gitdir:", StringComparison.OrdinalIgnoreCase)) return null;
+            var target = line["gitdir:".Length..].Trim().Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+            if (target.Length == 0 || IsUncOrDevicePath(target)) return null;
+            return Path.GetFullPath(Path.IsPathRooted(target) ? target : Path.Combine(checkout, target));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { return null; }
+    }
+
+    /// <summary>The clone's <c>config</c> and <c>config.worktree</c> as text, or null when neither can be read.</summary>
+    public static string? ReadConfig(string checkout)
+    {
+        if (GitDirectory(checkout) is not { } gitDir) return null;
+        var texts = new List<string>();
+        foreach (var name in new[] { "config", "config.worktree" })
+        {
+            try
+            {
+                var file = Path.Combine(gitDir, name);
+                if (File.Exists(file)) texts.Add(File.ReadAllText(file));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+        return texts.Count == 0 ? null : string.Join("\n", texts);
+    }
+
+    private static readonly HashSet<string> BooleanValues = new(StringComparer.OrdinalIgnoreCase)
+        { "", "true", "false", "yes", "no", "on", "off", "0", "1" };
+
+    /// <summary>
+    /// Whether git would run a program this key names. Matched on
+    /// <c>section.key</c> with any subsection, lowercased as git compares them.
+    /// </summary>
+    internal static bool IsCommandKey(string section, string? subsection, string key, string value) => (section, key) switch
+    {
+        // true and false choose the built-in daemon or nothing; anything else is a program.
+        ("core", "fsmonitor") => !BooleanValues.Contains(value),
+        ("core", "hookspath" or "sshcommand" or "pager" or "editor" or "askpass" or "gitproxy" or "alternaterefscommand") => true,
+        ("sequence", "editor") => true,
+        ("credential", "helper") => true,
+        ("diff", "external" or "textconv" or "command") => true,
+        ("merge", "driver") => true,
+        ("filter", _) => true,
+        ("remote", "uploadpack" or "receivepack") => true,
+        ("gpg", "program") => true,
+        ("pager", _) => true,
+        ("protocol", "allow") => value.Equals("always", StringComparison.OrdinalIgnoreCase),
+        ("include" or "includeif", "path") => true,
+        _ => false,
+    };
+
+    /// <summary>
+    /// <c>section[.subsection].key</c> names in git config text whose values git
+    /// would run as programs, in file order, each once.
+    /// </summary>
+    public static List<string> CommandConfigKeys(string text)
+    {
+        var section = "";
+        string? subsection = null;
+        var found = new List<string>();
+        foreach (var rawLine in text.Split('\n'))
+        {
+            var line = rawLine.Trim();
+            if (line.Length == 0 || line[0] is '#' or ';') continue;
+            if (line[0] == '[')
+            {
+                var close = line.IndexOf(']');
+                if (close < 0) continue;
+                var header = line[1..close].Trim();
+                var quote = header.IndexOf('"');
+                var dot = header.IndexOf('.');
+                if (quote >= 0)
+                {
+                    section = header[..quote].Trim().ToLowerInvariant();
+                    subsection = header[(quote + 1)..].Trim().TrimEnd('"');
+                }
+                else if (dot >= 0)
+                {
+                    section = header[..dot].ToLowerInvariant();
+                    subsection = header[(dot + 1)..];
+                }
+                else
+                {
+                    section = header.ToLowerInvariant();
+                    subsection = null;
+                }
+                line = line[(close + 1)..].Trim();
+                if (line.Length == 0 || line[0] is '#' or ';') continue;
+            }
+            string name, value;
+            var equals = line.IndexOf('=');
+            if (equals >= 0)
+            {
+                name = line[..equals].Trim().ToLowerInvariant();
+                value = ConfigValue(line[(equals + 1)..]);
+            }
+            else
+            {
+                name = line.Split(' ', '\t', '#', ';')[0].ToLowerInvariant();
+                value = "";
+            }
+            if (name.Length == 0 || section.Length == 0 || !IsCommandKey(section, subsection, name, value)) continue;
+            var full = subsection != null ? $"{section}.{subsection}.{name}" : $"{section}.{name}";
+            if (!found.Contains(full)) found.Add(full);
+        }
+        return found;
     }
 
     /// <summary>
@@ -379,9 +492,11 @@ public static class RepoDiscovery
             {
                 var close = line.IndexOf(']');
                 var header = close > 0 ? line[1..close].Trim() : "";
-                inOrigin = header.StartsWith("remote", StringComparison.OrdinalIgnoreCase)
-                    && header[6..].Trim() == "\"origin\"";
-                continue;
+                inOrigin = (header.StartsWith("remote", StringComparison.OrdinalIgnoreCase) && header[6..].Trim() == "\"origin\"")
+                    || header.Equals("remote.origin", StringComparison.OrdinalIgnoreCase);
+                var rest = line[(close + 1)..].Trim();
+                if (!inOrigin || rest.Length == 0) continue;
+                line = rest;
             }
             if (!inOrigin) continue;
             var equals = line.IndexOf('=');
