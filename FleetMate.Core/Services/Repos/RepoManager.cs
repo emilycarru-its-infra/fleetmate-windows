@@ -205,12 +205,16 @@ public sealed class RepoManager
         return Register(found, track, trackNew);
     }
 
-    /// <summary>Checkouts under <paramref name="roots"/> without registering anything, for a preview the person picks from (setup).</summary>
+    /// <summary>
+    /// Checkouts under <paramref name="roots"/> without registering anything, for
+    /// a preview the person picks from (setup). Checkouts only a VS Code
+    /// workspace file names are included, marked <see cref="DiscoveredCheckout.FromWorkspace"/>.
+    /// </summary>
     public Task<List<DiscoveredCheckout>> PreviewAsync(IEnumerable<string> roots)
     {
         var settings = SettingsOrDefault();
         settings.ScanRoots = roots.ToList();
-        return RepoDiscovery.DiscoverAsync(settings);
+        return RepoDiscovery.DiscoverAsync(settings, includeWorkspaceFolders: true);
     }
 
     /// <summary>Registers checkouts found by <see cref="PreviewAsync"/> or <see cref="RepoDiscovery"/>, under the same rules as discover.</summary>
@@ -274,9 +278,14 @@ public sealed class RepoManager
         return DiscoverAsync(track: true, settings: settings);
     }
 
-    /// <summary>Adds roots (deduplicated, stored as <c>~\…</c>) and marks them as chosen.</summary>
+    /// <summary>
+    /// Adds roots (deduplicated, stored as <c>~\…</c>) and marks them as chosen.
+    /// Until roots have been chosen the list holds only the default guess, which
+    /// the first folders picked replace rather than join.
+    /// </summary>
     public void AddScanRoots(IEnumerable<string> folders) => UpdateSettings(settings =>
     {
+        if (!settings.RootsChosen) settings.ScanRoots = new();
         foreach (var root in folders.Select(RepoSettings.Abbreviate))
         {
             if (!settings.ScanRoots.Any(r => string.Equals(RepoSettings.Abbreviate(r), root, StringComparison.OrdinalIgnoreCase)))
@@ -286,14 +295,22 @@ public sealed class RepoManager
     });
 
     /// <summary>
-    /// Links and tracks clones that appeared in the scan roots since the last
-    /// scan, when the person turned that on. Null when it is off.
+    /// Clones in the watched folders the registry does not know yet, when the
+    /// person has chosen the folders and left "look for new clones" on. Nothing
+    /// is registered: the Repos sidebar asks, and Add or Ignore registers them
+    /// tracked or untracked. Null when looking is off.
     /// </summary>
-    public async Task<List<DiscoveryResult>?> TrackNewClonesAsync()
+    public async Task<List<DiscoveredCheckout>?> NewClonesAsync()
     {
         var settings = Settings();
         if (!settings.TracksNewClones || settings.ScanRoots.Count == 0) return null;
-        return await DiscoverAsync(settings: settings, trackNew: true);
+        var found = await RepoDiscovery.DiscoverAsync(settings);
+        var known = Store.Load().Repos;
+        return found
+            .Where(c => c.Key is { } key && !known.ContainsKey(key.Id))
+            .GroupBy(c => c.Key!.Id, StringComparer.Ordinal)
+            .Select(g => g.First())
+            .ToList();
     }
 
     // ── Removing a clone ────────────────────────────────────────────────

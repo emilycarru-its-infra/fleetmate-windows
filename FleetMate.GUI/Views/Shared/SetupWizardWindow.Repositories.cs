@@ -28,6 +28,25 @@ public sealed partial class SetupWizardWindow
     private List<DiscoveredCheckout> _repoFound = new();
     /// <summary>Paths of found clones the person unticked.</summary>
     private readonly HashSet<string> _repoSkipped = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Paths of clones only a VS Code workspace file names that the person
+    /// ticked: those start unticked, because the file is not their choice.
+    /// </summary>
+    private readonly HashSet<string> _repoWorkspaceChosen = new(StringComparer.OrdinalIgnoreCase);
+
+    private bool IsChosen(DiscoveredCheckout c) =>
+        c.FromWorkspace ? _repoWorkspaceChosen.Contains(c.Path) : !_repoSkipped.Contains(c.Path);
+
+    private void SetChosen(string path, bool on)
+    {
+        var checkout = _repoFound.FirstOrDefault(c => string.Equals(c.Path, path, StringComparison.OrdinalIgnoreCase));
+        if (checkout?.FromWorkspace == true)
+        {
+            if (on) _repoWorkspaceChosen.Add(path); else _repoWorkspaceChosen.Remove(path);
+        }
+        else if (on) _repoSkipped.Remove(path);
+        else _repoSkipped.Add(path);
+    }
     /// <summary>Catalog ids ticked for cloning.</summary>
     private readonly HashSet<string> _repoToClone = new(StringComparer.OrdinalIgnoreCase);
     private List<CatalogRepo> _repoCatalog = new();
@@ -104,14 +123,18 @@ public sealed partial class SetupWizardWindow
                     content.Children.Add(Note(_repoRoots.Count == 0 ? "Add a folder to see its clones." : "No git clones in these folders.", top: 4));
                 else
                 {
-                    content.Children.Add(Note($"{usable.Count - usable.Count(c => _repoSkipped.Contains(c.Path))} of {usable.Count} selected. Untick any you don't work in.", top: 2));
+                    content.Children.Add(Note($"{usable.Count(IsChosen)} of {usable.Count} selected. Untick any you don't work in.", top: 2));
+                    var fromWorkspace = usable.Where(c => c.FromWorkspace).Select(c => c.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
                     var records = usable.Select(c => new RepoRecord(c.Key!, null,
                         new RepoRegistryEntry { Key = c.Key!, Path = c.Path, Tracked = true })).ToList();
                     foreach (var group in RepoRecordGroup.Groups(records))
-                        content.Children.Add(GroupPanel(group, r => !_repoSkipped.Contains(r.Local!.Path), (r, on) =>
-                        {
-                            if (on) _repoSkipped.Remove(r.Local!.Path); else _repoSkipped.Add(r.Local!.Path);
-                        }, r => RepoShell.Abbreviate(r.Local!.Path), Render));
+                        content.Children.Add(GroupPanel(group,
+                            r => IsChosen(usable.First(c => c.Path == r.Local!.Path)),
+                            (r, on) => SetChosen(r.Local!.Path, on),
+                            r => RepoShell.Abbreviate(r.Local!.Path) + (fromWorkspace.Contains(r.Local!.Path) ? " · from a VS Code workspace" : ""),
+                            Render));
+                    if (fromWorkspace.Count > 0)
+                        content.Children.Add(Note("Clones marked “from a VS Code workspace” are listed in a .code-workspace file rather than found in the folders, so they start unticked.", top: 6));
                 }
                 var noRemote = _repoFound.Count(c => c.Key == null);
                 if (noRemote > 0)
@@ -247,7 +270,7 @@ public sealed partial class SetupWizardWindow
     private string RepositoriesSummary()
     {
         var usable = _repoFound.Where(c => c.Key != null).ToList();
-        var tracked = usable.Count(c => !_repoSkipped.Contains(c.Path));
+        var tracked = usable.Count(IsChosen);
         var parts = new List<string>
         {
             _repoRoots is { Count: > 0 } roots ? "Watching " + string.Join(", ", roots) : "No folders watched",
@@ -274,8 +297,11 @@ public sealed partial class SetupWizardWindow
                 s.RootsChosen = true;
             });
             var usable = _repoFound.Where(c => c.Key != null).ToList();
-            _repoManager.Register(usable.Where(c => !_repoSkipped.Contains(c.Path)), track: true);
-            _repoManager.Register(usable.Where(c => _repoSkipped.Contains(c.Path)));
+            _repoManager.Register(usable.Where(IsChosen), track: true);
+            // Unticked clones from the folders are recorded as untracked so
+            // FleetMate never offers them again; unticked workspace proposals
+            // are simply left alone.
+            _repoManager.Register(usable.Where(c => !c.FromWorkspace && !IsChosen(c)));
             RepoWorkspaceModel.NotifyRegistryChanged();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or RepoException)

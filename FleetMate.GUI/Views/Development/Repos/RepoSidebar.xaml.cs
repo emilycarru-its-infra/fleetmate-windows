@@ -116,6 +116,7 @@ public partial class RepoSidebar : UserControl
             case nameof(RepoWorkspaceModel.AllTracked):
             case nameof(RepoWorkspaceModel.IsEditing):
             case nameof(RepoWorkspaceModel.IsScanning):
+            case nameof(RepoWorkspaceModel.NewClones):
             case nameof(RepoWorkspaceModel.Statuses):
             case nameof(RepoWorkspaceModel.Fetching):
             case nameof(RepoWorkspaceModel.SelectedId):
@@ -190,6 +191,7 @@ public partial class RepoSidebar : UserControl
             ChooseFolderButton.IsEnabled = !_model.IsScanning;
             ScanningState.Visibility = _model.IsScanning ? Visibility.Visible : Visibility.Collapsed;
             EditButton.Content = _model.IsEditing ? "Done" : "Edit";
+            RenderNewClones();
             EditButton.IsEnabled = _model.AllTracked.Count > 0 || _model.IsEditing;
             NoMatches.Visibility = listed.Count > 0 && !rows.OfType<SidebarRepoRow>().Any() && filtering
                 ? Visibility.Visible : Visibility.Collapsed;
@@ -340,6 +342,43 @@ public partial class RepoSidebar : UserControl
         if (dialog.ShowDialog(Window.GetWindow(this)) != true || dialog.FolderNames.Length == 0) return;
         await _model.TrackFoldersAsync(dialog.FolderNames);
         RepoWorkspaceModel.NotifyRegistryChanged();
+    }
+
+    private void RenderNewClones()
+    {
+        var clones = _model!.NewClones;
+        NewClonesBar.Visibility = clones.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (clones.Count == 0) return;
+        NewClonesText.Text = $"{clones.Count} new {(clones.Count == 1 ? "repository" : "repositories")} found in {NewClonesPlace(clones)}";
+        NewClonesBar.ToolTip = string.Join("\n", clones.Select(c => c.Key?.DisplayName ?? c.Path));
+    }
+
+    /// <summary>The watched folder the new clones are in, or "your watched folders" when they span several.</summary>
+    private string NewClonesPlace(IReadOnlyList<DiscoveredCheckout> clones)
+    {
+        List<string> roots;
+        try { roots = _model!.Manager.Settings().ScanRoots; }
+        catch (Exception) { return "your watched folders"; }
+        var places = clones.Select(c => roots.FirstOrDefault(r =>
+        {
+            try
+            {
+                var root = RepoSettings.Normalize(r);
+                return c.Path.StartsWith(root + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception) { return false; }
+        })).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return places.Count == 1 && places[0] != null ? places[0]! : "your watched folders";
+    }
+
+    private async void OnAddNewClones(object sender, RoutedEventArgs e)
+    {
+        if (_model != null) await _model.ResolveNewClonesAsync(add: true);
+    }
+
+    private async void OnIgnoreNewClones(object sender, RoutedEventArgs e)
+    {
+        if (_model != null) await _model.ResolveNewClonesAsync(add: false);
     }
 
     private void OnEditClicked(object sender, RoutedEventArgs e)

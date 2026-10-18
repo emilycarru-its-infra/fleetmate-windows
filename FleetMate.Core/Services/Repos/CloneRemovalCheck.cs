@@ -84,26 +84,26 @@ public sealed record CloneRemovalCheck
         }
 
         // An empty repository has no commits to lose; rev-list fails on it.
-        var hasBranches = (await copy.GitAsync(new[] { "for-each-ref", "--count=1", "refs/heads" }, ct: ct)).StandardOutput.Trim().Length > 0;
+        var hasBranches = (await copy.InspectAsync(new[] { "for-each-ref", "--count=1", "refs/heads" }, ct: ct)).StandardOutput.Trim().Length > 0;
         if (hasBranches)
         {
-            var count = await copy.GitAsync(new[] { "rev-list", "--count", "--branches", "--not", "--remotes" }, ct: ct);
+            var count = await copy.InspectAsync(new[] { "rev-list", "--count", "--branches", "--not", "--remotes" }, ct: ct);
             if (count.Succeeded) check.UnpushedCount = int.TryParse(count.StandardOutput.Trim(), out var n) ? n : 0;
             else check.Problems.Add($"unpushed commits ({count.Message})");
             if (check.UnpushedCount > 0)
             {
-                var log = await copy.GitAsync(new[] { "log", "--branches", "--not", "--remotes", "--format=%h %s", "-n", SampleLimit.ToString() }, ct: ct);
+                var log = await copy.InspectAsync(new[] { "log", "--branches", "--not", "--remotes", "--format=%h %s", "-n", SampleLimit.ToString() }, ct: ct);
                 check.UnpushedSample.AddRange(Lines(log.StandardOutput));
-                var refs = await copy.GitAsync(new[] { "for-each-ref", "--format=%(refname:short)", "refs/heads" }, ct: ct);
+                var refs = await copy.InspectAsync(new[] { "for-each-ref", "--format=%(refname:short)", "refs/heads" }, ct: ct);
                 foreach (var branch in Lines(refs.StandardOutput))
                 {
-                    var ahead = await copy.GitAsync(new[] { "rev-list", "--count", $"refs/heads/{branch}", "--not", "--remotes" }, ct: ct);
+                    var ahead = await copy.InspectAsync(new[] { "rev-list", "--count", $"refs/heads/{branch}", "--not", "--remotes" }, ct: ct);
                     if (int.TryParse(ahead.StandardOutput.Trim(), out var a) && a > 0) check.UnpushedBranches.Add(branch);
                 }
             }
         }
 
-        var stash = await copy.GitAsync(new[] { "stash", "list" }, ct: ct);
+        var stash = await copy.InspectAsync(new[] { "stash", "list" }, ct: ct);
         if (stash.Succeeded) check.Stashes.AddRange(Lines(stash.StandardOutput));
         else check.Problems.Add($"stashes ({stash.Message})");
 
