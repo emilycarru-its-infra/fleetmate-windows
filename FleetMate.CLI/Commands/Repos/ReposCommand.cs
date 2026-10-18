@@ -35,6 +35,9 @@ public static class ReposCommand
         command.AddCommand(Unlink(manager));
         command.AddCommand(Track(manager, true));
         command.AddCommand(Track(manager, false));
+        command.AddCommand(Hide(manager, true));
+        command.AddCommand(Hide(manager, false));
+        command.AddCommand(RemoveClone(manager));
         command.AddCommand(Status(manager));
         command.AddCommand(Batch(manager, RepoBatchOperation.Fetch));
         command.AddCommand(Batch(manager, RepoBatchOperation.Pull));
@@ -244,7 +247,8 @@ public static class ReposCommand
         foreach (var (record, status) in records.Zip(statuses))
         {
             var marker = record.IsTracked ? "[green]●[/]" : "[cyan]○[/]";
-            AnsiConsole.MarkupLine($" {marker} {E(Pad(record.Key.DisplayName, 44))} {Summary(status)}");
+            var hidden = record.IsHidden ? " [grey](hidden)[/]" : "";
+            AnsiConsole.MarkupLine($" {marker} {E(Pad(record.Key.DisplayName, 44))} {Summary(status)}{hidden}");
         }
         Console.WriteLine();
     }
@@ -257,10 +261,12 @@ public static class ReposCommand
         var root = new Option<string[]>("--root", "Folder to scan instead of the configured roots (repeatable)") { AllowMultipleArgumentsPerToken = false };
         var depth = new Option<int?>("--depth", "Folder levels to descend below each root");
         var track = new Option<bool>("--track", "Also mark every linked repository as tracked");
+        var trackNew = new Option<bool>("--track-new", "Track only the clones this scan links for the first time");
         var json = JsonFlag();
         command.AddOption(root);
         command.AddOption(depth);
         command.AddOption(track);
+        command.AddOption(trackNew);
         command.AddOption(json);
         command.SetHandler(ctx => Run(async () =>
         {
@@ -268,7 +274,7 @@ public static class ReposCommand
             var settings = manager.Settings();
             if (r.GetValueForOption(root) is { Length: > 0 } roots) settings.ScanRoots = roots.ToList();
             if (r.GetValueForOption(depth) is { } d) settings.ScanDepth = Math.Max(1, d);
-            var results = await manager.DiscoverAsync(r.GetValueForOption(track), settings);
+            var results = await manager.DiscoverAsync(r.GetValueForOption(track), settings, r.GetValueForOption(trackNew));
             if (r.GetValueForOption(json)) { PrintJson(results); return; }
 
             var linked = results.Where(x => x.Action == DiscoveryAction.Linked).ToList();
@@ -367,6 +373,58 @@ public static class ReposCommand
                 else Console.WriteLine($"Stopped tracking {record.Key.DisplayName}");
             }
             return Task.CompletedTask;
+        }));
+        return command;
+    }
+
+    private static Command Hide(RepoManager manager, bool hidden)
+    {
+        var command = hidden
+            ? new Command("hide", "Leave repositories out of the Repos sidebar (they stay tracked)")
+            : new Command("unhide", "Show hidden repositories in the Repos sidebar again");
+        var repos = new Argument<string[]>("repos", "Repositories") { Arity = ArgumentArity.OneOrMore };
+        command.AddArgument(repos);
+        command.SetHandler(ctx => Run(() =>
+        {
+            foreach (var repo in ctx.ParseResult.GetValueForArgument(repos))
+            {
+                var record = manager.SetHidden(repo, hidden);
+                Console.WriteLine($"{(hidden ? "Hid" : "Showing")} {record.Key.DisplayName}");
+            }
+            return Task.CompletedTask;
+        }));
+        return command;
+    }
+
+    private static Command RemoveClone(RepoManager manager)
+    {
+        var command = new Command("remove-clone",
+            "Move a repository's local clone to the Recycle Bin and stop tracking it. Refuses when uncommitted changes, unpushed commits, stashes or other worktrees would be lost, unless --force is given.");
+        var repo = new Argument<string>("repo", "Repository");
+        var force = new Option<bool>("--force", "Delete even when work would be lost (it still goes to the Recycle Bin)");
+        var dryRun = new Option<bool>("--dry-run", "Only report what would be lost");
+        var json = JsonFlag();
+        command.AddArgument(repo);
+        command.AddOption(force);
+        command.AddOption(dryRun);
+        command.AddOption(json);
+        command.SetHandler(ctx => Run(async () =>
+        {
+            var r = ctx.ParseResult;
+            var name = r.GetValueForArgument(repo);
+            var record = manager.Resolve(name);
+            if (r.GetValueForOption(dryRun))
+            {
+                var preview = await manager.RemovalCheckAsync(name);
+                if (r.GetValueForOption(json)) { PrintJson(new { preview.Path, preview.IsSafe, losses = preview.LossDescription, check = preview }); return; }
+                Console.WriteLine(preview.IsSafe
+                    ? $"{record.Key.DisplayName}: nothing would be lost; {preview.Path} can go to the Recycle Bin."
+                    : $"{record.Key.DisplayName}: deleting {preview.Path} would lose:\n  " + string.Join("\n  ", preview.LossDescription));
+                return;
+            }
+            var check = await manager.RemoveCloneAsync(name, r.GetValueForOption(force));
+            if (r.GetValueForOption(json)) { PrintJson(new { check.Path, removed = true, losses = check.LossDescription }); return; }
+            Console.WriteLine($"Moved {check.Path} to the Recycle Bin and stopped tracking {record.Key.DisplayName}.");
         }));
         return command;
     }
@@ -722,7 +780,9 @@ public static class ReposCommand
         var cloneRoot = new Option<string?>("--clone-root", "Clone root for the standard layout");
         var owner = new Option<string[]>("--github-owner", "Replace the extra GitHub owners listed in the catalog (repeatable)");
         var concurrency = new Option<int?>("--concurrency", "Concurrent git processes for batch commands");
+        var autoTrack = new Option<string?>("--auto-track", "Track new clones that appear in the scan roots: on or off").FromAmong("on", "off");
         var json = JsonFlag();
+        command.AddOption(autoTrack);
         command.AddOption(scanRoot);
         command.AddOption(depth);
         command.AddOption(cloneRoot);
@@ -737,11 +797,13 @@ public static class ReposCommand
             var depthValue = r.GetValueForOption(depth);
             var cloneValue = r.GetValueForOption(cloneRoot);
             var concurrencyValue = r.GetValueForOption(concurrency);
-            if (roots.Length > 0 || owners.Length > 0 || depthValue != null || cloneValue != null || concurrencyValue != null)
+            var autoTrackValue = r.GetValueForOption(autoTrack);
+            if (roots.Length > 0 || owners.Length > 0 || depthValue != null || cloneValue != null || concurrencyValue != null || autoTrackValue != null)
             {
                 manager.UpdateSettings(s =>
                 {
-                    if (roots.Length > 0) s.ScanRoots = roots.ToList();
+                    if (roots.Length > 0) { s.ScanRoots = roots.ToList(); s.RootsChosen = true; }
+                    if (autoTrackValue != null) s.AutoTrackNewClones = autoTrackValue == "on";
                     if (depthValue is { } d) s.ScanDepth = Math.Max(1, d);
                     if (cloneValue != null) s.CloneRoot = cloneValue;
                     if (owners.Length > 0) s.GitHubOwners = owners.ToList();
@@ -752,7 +814,8 @@ public static class ReposCommand
             if (r.GetValueForOption(json)) { PrintJson(settings); return Task.CompletedTask; }
             Console.WriteLine($"registry:      {manager.Store.RegistryPath}");
             Console.WriteLine($"scan roots:    {string.Join(", ", settings.ScanRoots)} (depth {settings.ScanDepth})");
-            Console.WriteLine($"skip:          {string.Join(", ", settings.SkipDirectories)}");
+            Console.WriteLine($"auto-track:    {(settings.AutoTrackNewClones ? "on" : "off")}{(settings.RootsChosen ? "" : " (waiting for scan roots to be chosen)")}");
+            Console.WriteLine($"skip:          {string.Join(", ", settings.SkipDirectories)} + built-in {string.Join(", ", RepoDiscovery.BuiltInSkip)}");
             Console.WriteLine($"clone root:    {settings.CloneRoot}");
             Console.WriteLine($"GitHub owners: {(settings.GitHubOwners.Count == 0 ? "(your own and your organizations')" : string.Join(", ", settings.GitHubOwners))}");
             Console.WriteLine($"protected:     {string.Join(", ", settings.ProtectedBranches)} + each repository's default branch");

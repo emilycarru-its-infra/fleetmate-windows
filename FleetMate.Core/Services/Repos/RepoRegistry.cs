@@ -31,8 +31,35 @@ public sealed class RepoSettings
     public List<string> ProtectedBranches { get; set; } = new() { "main", "master" };
     /// <summary>Upper bound on git processes a batch command runs at once.</summary>
     public int Concurrency { get; set; } = 6;
+    /// <summary>
+    /// Whether a clone that appears in a scan root is tracked on the next
+    /// launch or refresh, without asking. Applies only once <see cref="RootsChosen"/>.
+    /// </summary>
+    public bool AutoTrackNewClones { get; set; } = true;
+    /// <summary>
+    /// True once the person has chosen the scan roots (setup, the Repos
+    /// sidebar's Choose Folder, Settings or the CLI). Until then the roots are
+    /// only the default guess, and nothing is tracked behind their back.
+    /// </summary>
+    public bool RootsChosen { get; set; }
+
+    /// <summary>Whether a scan should track clones it has not seen before.</summary>
+    [JsonIgnore]
+    public bool TracksNewClones => AutoTrackNewClones && RootsChosen;
 
     public static RepoSettings Default => new();
+
+    /// <summary><paramref name="path"/> with the profile folder written as <c>~</c>, the way roots are stored.</summary>
+    public static string Abbreviate(string path)
+    {
+        string full;
+        try { full = Normalize(path); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException) { return path; }
+        var home = Normalize(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        if (string.Equals(full, home, StringComparison.OrdinalIgnoreCase)) return "~";
+        var sep = System.IO.Path.DirectorySeparatorChar;
+        return full.StartsWith(home + sep, StringComparison.OrdinalIgnoreCase) ? "~" + full[home.Length..] : full;
+    }
 
     /// <summary>Expands a leading <c>~</c> and environment variables.</summary>
     public static string Expand(string path)
@@ -69,6 +96,12 @@ public sealed record RepoRegistryEntry
     public string? RemoteUrl { get; init; }
     public string? DefaultBranch { get; init; }
     public DateTimeOffset AddedAt { get; init; } = DateTimeOffset.Now;
+    /// <summary>
+    /// Left out of the Repos sidebar while staying tracked: batch commands and
+    /// the CLI still act on it. Written only when set.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Hidden { get; init; }
 }
 
 /// <summary>
