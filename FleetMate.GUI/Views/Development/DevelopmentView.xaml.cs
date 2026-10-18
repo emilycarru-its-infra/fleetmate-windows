@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using System.Windows.Input;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
 using FleetMate.GUI.Views.Shared;
@@ -31,6 +32,7 @@ public partial class DevelopmentView : UserControl
 
     public DevelopmentView()
     {
+        PullGroupCollapse.Load(UserPreferences.PullsCollapsedGroups);
         InitializeComponent();
         UpdatePullsSortTooltip();
         AgentContextMenu.Attach(PullRequestList);
@@ -231,7 +233,46 @@ public partial class DevelopmentView : UserControl
             Rerender();
         };
         menu.Items.Add(group);
+        if (_pullsGrouped)
+        {
+            menu.Items.Add(new Separator());
+            var expand = new MenuItem { Header = "Expand All Groups" };
+            expand.Click += OnPullGroupsExpandAll;
+            menu.Items.Add(expand);
+            var collapse = new MenuItem { Header = "Collapse All Groups" };
+            collapse.Click += OnPullGroupsCollapseAll;
+            menu.Items.Add(collapse);
+        }
         menu.IsOpen = true;
+    }
+
+    // ── Collapsible repository groups ─────────────────────────────────────
+
+    private IEnumerable<string> VisiblePullGroupKeys =>
+        (PullRequestList.ItemsSource as ListCollectionView)?.Groups?
+            .OfType<CollectionViewGroup>().Select(g => g.Name?.ToString() ?? "")
+        ?? Enumerable.Empty<string>();
+
+    private void OnPullGroupHeaderClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not string key) return;
+        var all = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+        ApplyPullGroups(PullGroupCollapse.Toggle(PullGroupCollapse.Collapsed, key, all, VisiblePullGroupKeys));
+    }
+
+    private void OnPullGroupsExpandAll(object sender, RoutedEventArgs e) =>
+        ApplyPullGroups(PullGroupCollapse.SetAll(PullGroupCollapse.Collapsed, false, VisiblePullGroupKeys));
+
+    private void OnPullGroupsCollapseAll(object sender, RoutedEventArgs e) =>
+        ApplyPullGroups(PullGroupCollapse.SetAll(PullGroupCollapse.Collapsed, true, VisiblePullGroupKeys));
+
+    private void ApplyPullGroups(HashSet<string> collapsed)
+    {
+        PullGroupCollapse.Set(collapsed);
+        UserPreferences.SetPullsCollapsedGroups(PullGroupCollapse.Format(collapsed));
+        // The group containers read the set through converters; rebuilding the
+        // view regenerates them.
+        Rerender();
     }
 
     private void UpdatePullsSortTooltip() =>
