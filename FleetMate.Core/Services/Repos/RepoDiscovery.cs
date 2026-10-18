@@ -373,112 +373,157 @@ public static class RepoDiscovery
         return texts.Count == 0 ? null : string.Join("\n", texts);
     }
 
-    private static readonly HashSet<string> Falsy = new(StringComparer.OrdinalIgnoreCase) { "false", "no", "off", "0" };
-
-    private static readonly HashSet<string> CoreDataKeys = new(StringComparer.Ordinal)
+    /// <summary>
+    /// Section → keys that hold data only. <c>*</c> allows every key in the
+    /// section. Keys are lowercased; whether a subsection is required is in
+    /// <see cref="IsDataOnlyKey"/>.
+    /// </summary>
+    internal static readonly IReadOnlyDictionary<string, HashSet<string>> DataOnlyKeys = new Dictionary<string, HashSet<string>>
     {
-        "repositoryformatversion", "filemode", "bare", "logallrefupdates", "ignorecase", "precomposeunicode",
-        "symlinks", "autocrlf", "eol", "safecrlf", "longpaths", "quotepath", "checkstat", "trustctime",
-        "sparsecheckout", "sparsecheckoutcone", "untrackedcache", "splitindex",
+        ["core"] = new() { "repositoryformatversion", "filemode", "bare", "logallrefupdates", "ignorecase", "precomposeunicode",
+                           "symlinks", "autocrlf", "eol", "safecrlf", "longpaths", "quotepath", "checkstat", "trustctime",
+                           "sparsecheckout", "sparsecheckoutcone", "untrackedcache", "splitindex" },
+        ["remote"] = new() { "url", "fetch", "pushurl", "push", "tagopt", "prune", "prunetags", "mirror", "skipdefaultupdate" },
+        ["branch"] = new() { "remote", "merge", "rebase", "pushremote", "description" },
+        ["user"] = new() { "*" }, ["pull"] = new() { "*" }, ["color"] = new() { "*" },
+        ["column"] = new() { "*" }, ["advice"] = new() { "*" }, ["i18n"] = new() { "*" },
+        ["fetch"] = new() { "prune", "prunetags", "writecommitgraph", "parallel" },
+        ["init"] = new() { "defaultbranch" },
+        ["extensions"] = new() { "objectformat", "refstorage" },
+        ["submodule"] = new() { "url", "active", "branch", "fetchrecursesubmodules", "ignore", "shallow" },
+        ["push"] = new() { "default", "autosetupremote", "followtags" },
+        ["merge"] = new() { "ff", "conflictstyle" },
+        ["rebase"] = new() { "autostash", "autosquash", "updaterefs" },
+        ["gc"] = new() { "auto", "autodetach" },
     };
+
+    /// <summary>Sections whose keys need a subsection; every other section without <c>*</c> must not have one.</summary>
+    private static readonly HashSet<string> SubsectionSections = new() { "remote", "branch", "submodule" };
 
     /// <summary>
     /// Whether a config key is known to hold only data. Everything else is
     /// flagged: an allowlist, so a key git learns to run tomorrow, or one this
-    /// list never heard of, is treated as able to run commands.
+    /// list never heard of, counts as able to run commands.
     /// </summary>
-    internal static bool IsDataOnlyKey(string section, string? subsection, string key, string value) => section switch
+    internal static bool IsDataOnlyKey(string section, string? subsection, string key, string value)
     {
-        "core" => subsection == null && (key == "fsmonitor" ? Falsy.Contains(value) : CoreDataKeys.Contains(key)),
-        "remote" => subsection != null && key is "url" or "fetch" or "pushurl" or "push" or "tagopt" or "prune" or "prunetags" or "mirror" or "skipdefaultupdate",
-        // Editors keep their own per-branch notes here.
-        "branch" => subsection != null && (key is "remote" or "merge" or "rebase" or "pushremote" or "description"
-            || key.StartsWith("vscode-", StringComparison.Ordinal) || key.StartsWith("github-pr-", StringComparison.Ordinal)),
-        "user" or "pull" or "color" or "column" or "advice" or "i18n" => true,
-        "fetch" => subsection == null && key is "prune" or "prunetags" or "writecommitgraph" or "parallel",
-        "init" => subsection == null && key == "defaultbranch",
-        "lfs" => subsection == null ? key == "repositoryformatversion" : key is "access" or "locksverify",
-        "extensions" => subsection == null && key is "objectformat" or "refstorage",
-        "submodule" => subsection == null
-            ? key == "active"
-            : key == "update" ? !value.StartsWith('!') : key is "url" or "active" or "branch" or "fetchrecursesubmodules" or "ignore" or "shallow",
-        "push" => subsection == null && key is "default" or "autosetupremote" or "followtags",
-        "merge" => subsection == null && key is "ff" or "conflictstyle",
-        "rebase" => subsection == null && key is "autostash" or "autosquash" or "updaterefs",
-        "gc" => subsection == null && key is "auto" or "autodetach",
-        _ => false,
-    };
+        switch (section)
+        {
+            case "core" when subsection == null && key == "fsmonitor":
+                return value.ToLowerInvariant() is "false" or "no" or "off" or "0";
+            case "lfs" when subsection == null && key == "repositoryformatversion":
+                return true;
+            case "lfs" when subsection != null && key is "access" or "locksverify":
+                return true;
+            case "submodule" when subsection == null && key == "active":
+                return true;
+            case "submodule" when subsection != null && key == "update":
+                return value is "checkout" or "rebase" or "merge" or "none";
+            case "branch" when subsection != null
+                && (key.StartsWith("vscode-", StringComparison.Ordinal) || key.StartsWith("github-pr-", StringComparison.Ordinal)):
+                return true;
+        }
+        if (!DataOnlyKeys.TryGetValue(section, out var keys)) return false;
+        var any = keys.Contains("*");
+        if (SubsectionSections.Contains(section) != (subsection != null) && !any) return false;
+        return any || keys.Contains(key);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex HeaderPattern =
+        new(@"^\[([A-Za-z0-9.-]+)(?: ""([^""\\]*)"")?\]$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    private static readonly System.Text.RegularExpressions.Regex EntryPattern =
+        new(@"^[ \t]*([A-Za-z][A-Za-z0-9-]*)[ \t]*=[ \t]*([^""\;#]*)$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    private static readonly System.Text.RegularExpressions.Regex BareKeyPattern =
+        new(@"^[ \t]*([A-Za-z][A-Za-z0-9-]*)[ \t]*$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     /// <summary>
-    /// <c>section[.subsection].key</c> names in git config text that are not
-    /// known to be data-only, in file order, each once. A key outside any
-    /// section and an unparsable header are flagged too.
+    /// Why a clone's config needs review, read strictly, or empty when it is
+    /// plain data. Fails closed: anything outside the plain form is flagged
+    /// rather than interpreted the way git might.
+    /// <list type="bullet">
+    /// <item>Bytes: 0x20–0x7E, tab and LF only; CR only before LF or at the end. Anything else (non-ASCII, invalid UTF-8, NUL, control characters) flags the whole file at once.</item>
+    /// <item>Lines split on LF alone; one trailing CR dropped. Blank and comment lines skipped.</item>
+    /// <item>Headers <c>[section]</c>, <c>[section "sub"]</c> (no quote or backslash inside) or legacy <c>[section.sub]</c>.</item>
+    /// <item>Entries <c>key = value</c> with no quote, backslash, <c>;</c> or <c>#</c> in the value, or a bare boolean key.</item>
+    /// <item>Keys on <see cref="DataOnlyKeys"/>; <c>submodule.&lt;x&gt;.update</c> only as checkout, rebase, merge or none; <c>core.fsmonitor</c> only as false.</item>
+    /// </list>
     /// </summary>
-    public static List<string> CommandConfigKeys(string text)
+    public static List<string> ConfigReview(byte[] bytes)
     {
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            var b = bytes[i];
+            if (b is >= 0x20 and <= 0x7E or 0x0A or 0x09) continue;
+            if (b == 0x0D && (i == bytes.Length - 1 || bytes[i + 1] == 0x0A)) continue;
+            return new List<string> { "(characters outside plain ASCII)" };
+        }
+
+        var found = new List<string>();
+        void Flag(string reason) { if (!found.Contains(reason)) found.Add(reason); }
         var section = "";
         string? subsection = null;
-        var found = new List<string>();
-        void Flag(string name) { if (!found.Contains(name)) found.Add(name); }
-        foreach (var rawLine in text.Split('\n'))
+        var start = 0;
+        while (start <= bytes.Length)
         {
-            var line = rawLine.Trim();
-            if (line.Length == 0 || line[0] is '#' or ';') continue;
-            if (line[0] == '[')
+            var end = Array.IndexOf(bytes, (byte)0x0A, start);
+            if (end < 0) end = bytes.Length;
+            var length = end - start;
+            if (length > 0 && bytes[end - 1] == 0x0D) length--;
+            var line = System.Text.Encoding.ASCII.GetString(bytes, start, length);
+            start = end + 1;
+
+            var trimmed = line.Trim(' ', '\t');
+            if (trimmed.Length == 0 || trimmed[0] is '#' or ';') continue;
+
+            var header = HeaderPattern.Match(trimmed);
+            if (header.Success)
             {
-                var close = line.IndexOf(']');
-                if (close < 0)
+                var name = header.Groups[1].Value;
+                var dot = name.IndexOf('.');
+                if (header.Groups[2].Success)
                 {
-                    Flag("(unparsable section header)");
-                    section = "";
-                    subsection = null;
-                    continue;
-                }
-                var header = line[1..close].Trim();
-                var quote = header.IndexOf('"');
-                var dot = header.IndexOf('.');
-                if (quote >= 0)
-                {
-                    section = header[..quote].Trim().ToLowerInvariant();
-                    subsection = header[(quote + 1)..].Trim().TrimEnd('"');
+                    section = name.ToLowerInvariant();
+                    subsection = header.Groups[2].Value;
                 }
                 else if (dot >= 0)
                 {
-                    section = header[..dot].ToLowerInvariant();
-                    subsection = header[(dot + 1)..];
+                    section = name[..dot].ToLowerInvariant();
+                    subsection = name[(dot + 1)..].ToLowerInvariant();
                 }
                 else
                 {
-                    section = header.ToLowerInvariant();
+                    section = name.ToLowerInvariant();
                     subsection = null;
                 }
-                line = line[(close + 1)..].Trim();
-                if (line.Length == 0 || line[0] is '#' or ';') continue;
+                continue;
             }
-            string name, value;
-            var equals = line.IndexOf('=');
-            if (equals >= 0)
+
+            string key, value;
+            var entry = EntryPattern.Match(line);
+            if (entry.Success)
             {
-                name = line[..equals].Trim().ToLowerInvariant();
-                value = ConfigValue(line[(equals + 1)..]);
+                key = entry.Groups[1].Value.ToLowerInvariant();
+                value = entry.Groups[2].Value.Trim(' ', '\t');
+            }
+            else if (BareKeyPattern.Match(line) is { Success: true } bare)
+            {
+                key = bare.Groups[1].Value.ToLowerInvariant();
+                value = "true";
             }
             else
             {
-                name = line.Split(' ', '\t', '#', ';')[0].ToLowerInvariant();
-                value = "";
-            }
-            var full = string.Join(".", new[] { section, subsection, name }.Where(p => !string.IsNullOrEmpty(p)));
-            if (name.Length == 0 || section.Length == 0)
-            {
-                Flag(full.Length == 0 || section.Length == 0 ? "(key outside a section)" : full);
+                Flag("(line not in the plain form)");
                 continue;
             }
-            if (!IsDataOnlyKey(section, subsection, name, value)) Flag(full);
+            if (section.Length == 0) { Flag("(key outside a section)"); continue; }
+            if (!IsDataOnlyKey(section, subsection, key, value))
+                Flag(subsection != null ? $"{section}.{subsection}.{key}" : $"{section}.{key}");
         }
         return found;
     }
 
-    private static readonly System.Text.Encoding StrictUtf8 = new System.Text.UTF8Encoding(false, throwOnInvalidBytes: true);
+    /// <summary><see cref="ConfigReview"/> for text, as tests and callers holding a string use it.</summary>
+    public static List<string> CommandConfigKeys(string text) => ConfigReview(System.Text.Encoding.UTF8.GetBytes(text));
 
     /// <summary>
     /// Why the clone's own files could make git run something: config keys not
@@ -503,12 +548,11 @@ public static class RepoDiscovery
             Add("commondir");
             try
             {
-                var target = File.ReadAllText(commondir, StrictUtf8).Trim().Replace('/', Path.DirectorySeparatorChar);
+                var target = File.ReadAllText(commondir).Trim().Replace('/', Path.DirectorySeparatorChar);
                 if (target.Length > 0 && !IsUncOrDevicePath(target))
                     gitDirs.Add(Path.GetFullPath(Path.IsPathRooted(target) ? target : Path.Combine(gitDir, target)));
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException
-                or NotSupportedException or System.Text.DecoderFallbackException) { }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { }
         }
         foreach (var dir in gitDirs)
         {
@@ -516,14 +560,14 @@ public static class RepoDiscovery
             {
                 var file = Path.Combine(dir, name);
                 if (!File.Exists(file)) continue;
-                try
-                {
-                    foreach (var key in CommandConfigKeys(File.ReadAllText(file, StrictUtf8))) Add(key);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.DecoderFallbackException)
+                byte[] bytes;
+                try { bytes = File.ReadAllBytes(file); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
                     Add($"{name} (unreadable)");
+                    continue;
                 }
+                foreach (var key in ConfigReview(bytes)) Add(key);
             }
             // Windows has no execute bit and Git for Windows runs any hook
             // file through sh, so every non-sample file counts.
