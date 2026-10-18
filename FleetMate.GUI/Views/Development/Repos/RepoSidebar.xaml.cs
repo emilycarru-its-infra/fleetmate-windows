@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -371,14 +372,83 @@ public partial class RepoSidebar : UserControl
         return places.Count == 1 && places[0] != null ? places[0]! : "your watched folders";
     }
 
-    private async void OnAddNewClones(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// The review list: a box per offered clone, ticked unless its settings can
+    /// run commands, which it then says. Ignore All records every one untracked;
+    /// Add tracks the ticked ones and leaves the rest offered.
+    /// </summary>
+    private void OnReviewNewClones(object sender, RoutedEventArgs e)
     {
-        if (_model != null) await _model.ResolveNewClonesAsync(add: true);
-    }
+        if (_model == null || _model.NewClones.Count == 0) return;
+        var model = _model;
+        var popup = new Popup
+        {
+            PlacementTarget = ReviewNewClonesButton,
+            Placement = PlacementMode.Bottom,
+            StaysOpen = false,
+            AllowsTransparency = true,
+        };
+        var panel = new StackPanel { Margin = new Thickness(14), MaxWidth = 420 };
+        panel.Children.Add(new TextBlock { Text = "New repositories", FontWeight = FontWeights.SemiBold, FontSize = 14 });
+        var list = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+        var add = new Button { Padding = new Thickness(12, 4, 12, 4), Margin = new Thickness(6, 0, 0, 0), IsDefault = true };
+        add.SetResourceReference(StyleProperty, "AccentButtonStyle");
+        void UpdateAdd()
+        {
+            var count = model.NewClones.Count(c => model.NewClonesSelected.Contains(c.Path));
+            add.Content = count == 0 ? "Add" : $"Add {count}";
+            add.IsEnabled = count > 0;
+        }
+        foreach (var clone in model.NewClones)
+        {
+            var label = new StackPanel();
+            label.Children.Add(new TextBlock { Text = clone.Key?.DisplayName ?? System.IO.Path.GetFileName(clone.Path), FontWeight = FontWeights.SemiBold });
+            var path = new TextBlock { Text = RepoShell.Abbreviate(clone.Path), FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis };
+            path.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
+            label.Children.Add(path);
+            if (clone.RunsCommands)
+                label.Children.Add(new TextBlock
+                {
+                    Text = "This repository's settings can run commands: " + string.Join(", ", clone.CommandConfig),
+                    FontSize = 11,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = RepoBrushes.Warning,
+                    Margin = new Thickness(0, 2, 0, 0),
+                });
+            var box = new CheckBox { Content = label, IsChecked = model.NewClonesSelected.Contains(clone.Path), Margin = new Thickness(0, 4, 0, 4) };
+            System.Windows.Automation.AutomationProperties.SetName(box, clone.Key?.DisplayName ?? clone.Path);
+            var clonePath = clone.Path;
+            box.Click += (_, _) =>
+            {
+                if (box.IsChecked == true) model.NewClonesSelected.Add(clonePath);
+                else model.NewClonesSelected.Remove(clonePath);
+                UpdateAdd();
+            };
+            list.Children.Add(box);
+        }
+        panel.Children.Add(new ScrollViewer { Content = list, MaxHeight = 360, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
 
-    private async void OnIgnoreNewClones(object sender, RoutedEventArgs e)
-    {
-        if (_model != null) await _model.ResolveNewClonesAsync(add: false);
+        var buttons = new DockPanel { Margin = new Thickness(0, 10, 0, 0), LastChildFill = false };
+        var ignore = new Button { Content = "Ignore All", Padding = new Thickness(12, 4, 12, 4), ToolTip = "Leave them untracked and don't ask about them again" };
+        var cancel = new Button { Content = "Cancel", Padding = new Thickness(12, 4, 12, 4), IsCancel = true };
+        DockPanel.SetDock(ignore, Dock.Left);
+        DockPanel.SetDock(add, Dock.Right);
+        DockPanel.SetDock(cancel, Dock.Right);
+        buttons.Children.Add(ignore);
+        buttons.Children.Add(add);
+        buttons.Children.Add(cancel);
+        panel.Children.Add(buttons);
+        ignore.Click += (_, _) => { popup.IsOpen = false; model.IgnoreNewClones(); };
+        cancel.Click += (_, _) => popup.IsOpen = false;
+        add.Click += async (_, _) => { popup.IsOpen = false; await model.AddSelectedNewClonesAsync(); };
+        UpdateAdd();
+
+        var border = new Border { Child = panel, CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1) };
+        border.SetResourceReference(Border.BackgroundProperty, "AppBackgroundBrush");
+        border.SetResourceReference(Border.BorderBrushProperty, "SystemControlForegroundBaseLowBrush");
+        border.SetResourceReference(TextElement.ForegroundProperty, "SystemControlForegroundBaseHighBrush");
+        popup.Child = border;
+        popup.IsOpen = true;
     }
 
     private void OnEditClicked(object sender, RoutedEventArgs e)

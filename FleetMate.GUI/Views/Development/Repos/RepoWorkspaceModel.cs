@@ -152,33 +152,62 @@ public sealed class RepoWorkspaceModel : RepoObservable
 
     private IReadOnlyList<DiscoveredCheckout> _newClones = Array.Empty<DiscoveredCheckout>();
 
-    /// <summary>Clones that appeared in the watched folders, waiting for Add or Ignore.</summary>
+    /// <summary>Clones offered for adding: new in the watched folders, or held back by Choose Folder for review.</summary>
     public IReadOnlyList<DiscoveredCheckout> NewClones { get => _newClones; private set => Set(ref _newClones, value); }
+
+    /// <summary>Paths of offered clones ticked in the review list. Ones whose config can run commands start unticked.</summary>
+    public HashSet<string> NewClonesSelected { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Looks for clones that appeared in the watched folders, when the person
-    /// left that on. Quiet: a failure only leaves the list as it was.
+    /// left that on. Clones held back for review stay offered. Quiet: a failure
+    /// only leaves the list as it was.
     /// </summary>
     public async Task LookForNewClonesAsync()
     {
         try
         {
-            NewClones = await Manager.NewClonesAsync() ?? new List<DiscoveredCheckout>();
+            var found = await Manager.NewClonesAsync() ?? new List<DiscoveredCheckout>();
+            var foundPaths = found.Select(c => c.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var held = _newClones.Where(c => c.RunsCommands && !foundPaths.Contains(c.Path));
+            Offer(found.Concat(held).ToList(), replacing: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or RepoException) { }
     }
 
-    /// <summary>Tracks the new clones (<paramref name="add"/>) or records them as untracked so FleetMate does not ask again.</summary>
-    public async Task ResolveNewClonesAsync(bool add)
+    private void Offer(IReadOnlyList<DiscoveredCheckout> clones, bool replacing = false)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var merged = (replacing ? clones : _newClones.Concat(clones)).Where(c => seen.Add(c.Path)).ToList();
+        var before = _newClones.Select(c => c.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var clone in merged.Where(c => !before.Contains(c.Path) && !c.RunsCommands))
+            NewClonesSelected.Add(clone.Path);
+        NewClonesSelected.IntersectWith(merged.Select(c => c.Path));
+        NewClones = merged;
+    }
+
+    /// <summary>
+    /// Tracks the ticked clones; the person ticked any flagged one knowing its
+    /// settings can run commands. The rest stay offered.
+    /// </summary>
+    public async Task AddSelectedNewClonesAsync()
+    {
+        var chosen = _newClones.Where(c => NewClonesSelected.Contains(c.Path)).ToList();
+        if (chosen.Count == 0) return;
+        NewClonesSelected.ExceptWith(chosen.Select(c => c.Path));
+        NewClones = _newClones.Except(chosen).ToList();
+        Change("Could not add the repositories", () => Manager.Register(chosen, track: true, trustCommandConfig: true));
+        await RefreshStatusesAsync();
+        NotifyRegistryChanged();
+    }
+
+    /// <summary>Records every offered clone as untracked, so FleetMate does not ask about them again.</summary>
+    public void IgnoreNewClones()
     {
         var clones = _newClones;
         NewClones = Array.Empty<DiscoveredCheckout>();
-        Change(add ? "Could not add the repositories" : "Could not ignore the repositories", () => Manager.Register(clones, track: add));
-        if (add)
-        {
-            await RefreshStatusesAsync();
-            NotifyRegistryChanged();
-        }
+        NewClonesSelected.Clear();
+        Change("Could not ignore the repositories", () => Manager.Register(clones));
     }
 
     /// <summary>Watches <paramref name="folders"/> and tracks every clone in them, with no further questions.</summary>
@@ -187,7 +216,8 @@ public sealed class RepoWorkspaceModel : RepoObservable
         IsScanning = true;
         try
         {
-            var results = await Manager.TrackFoldersAsync(folders);
+            var (results, review) = await Manager.TrackFoldersAsync(folders);
+            if (review.Count > 0) Offer(review);
             ReloadRecords();
             await RefreshStatusesAsync();
             return results.Count(r => r.Action is DiscoveryAction.Linked or DiscoveryAction.AlreadyLinked);

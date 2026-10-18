@@ -123,12 +123,9 @@
         <Border x:Name="NewClonesBar" Grid.Row="2" Visibility="Collapsed" Background="{DynamicResource SubtleFillBrush}"
                 CornerRadius="6" Padding="10,6" Margin="0,0,0,8" AutomationProperties.AutomationId="ReposNewClones">
             <DockPanel>
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="Add" Padding="10,3" Click="OnAddNewClones" Style="{DynamicResource AccentButtonStyle}"
-                            ToolTip="Track these repositories" />
-                    <Button Content="Ignore" Padding="10,3" Margin="6,0,0,0" Click="OnIgnoreNewClones"
-                            ToolTip="Leave them untracked and don't ask about them again" />
-                </StackPanel>
+                <Button x:Name="ReviewNewClonesButton" DockPanel.Dock="Right" Content="Review…" Padding="10,3"
+                        VerticalAlignment="Center" Click="OnReviewNewClones"
+                        ToolTip="Choose which of them to add" AutomationProperties.AutomationId="ReposReviewNewClones" />
                 <TextBlock x:Name="NewClonesText" TextWrapping="Wrap" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0" />
             </DockPanel>
         </Border>

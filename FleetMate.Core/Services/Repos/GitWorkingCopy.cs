@@ -59,7 +59,7 @@ public sealed class GitWorkingCopy
         if (includeIgnored) args.Add("--ignored");
         // Optional locks off: a status poll must never take the index lock
         // from under a commit running in a terminal.
-        var output = await CheckedAsync(InspectionConfig.Concat(args), OptionalLocksOff, ct);
+        var output = await CheckedAsync(args, OptionalLocksOff, ct);
         return GitOutputParser.Status(output);
     }
 
@@ -257,7 +257,7 @@ public sealed class GitWorkingCopy
     /// </summary>
     public async Task<List<string>> ListFilesAsync(CancellationToken ct = default)
     {
-        var output = await CheckedAsync(InspectionConfig.Concat(new[] { "ls-files", "--cached", "--others", "--exclude-standard", "-z" }), ct: ct);
+        var output = await CheckedAsync(new[] { "ls-files", "--cached", "--others", "--exclude-standard", "-z" }, ct: ct);
         // Deleted-but-tracked files still appear in --cached; keep only what exists.
         var seen = new HashSet<string>();
         return GitOutputParser.Paths(output).Where(p => seen.Add(p) && File.Exists(Absolute(p))).ToList();
@@ -382,38 +382,69 @@ public sealed class GitWorkingCopy
     private static readonly IReadOnlyDictionary<string, string> OptionalLocksOff =
         new Dictionary<string, string> { ["GIT_OPTIONAL_LOCKS"] = "0" };
 
-    /// <summary>
-    /// Settings for git FleetMate runs on its own (status polls, listings, the
-    /// removal check), never for what the person asked for: a clone's own
-    /// config must not start a filesystem monitor or run a hook just because
-    /// FleetMate looked at it.
-    /// </summary>
-    public static readonly IReadOnlyList<string> InspectionConfig = new[]
-    {
-        "-c", "core.fsmonitor=false",
-        "-c", "core.hooksPath=" + (OperatingSystem.IsWindows() ? "NUL" : "/dev/null"),
-    };
+    /// <summary>Commands people run on purpose, which keep the clone's hooks.</summary>
+    private static readonly HashSet<string> HookCommands = new(StringComparer.Ordinal)
+        { "commit", "push", "pull", "merge", "rebase", "switch", "checkout", "am", "cherry-pick", "revert" };
 
-    /// <summary>Runs git in this checkout with <see cref="InspectionConfig"/>.</summary>
+    private static string NullDevice => OperatingSystem.IsWindows() ? "NUL" : "/dev/null";
+
+    /// <summary>
+    /// <c>-c</c> options that keep a clone's config from running programs. A
+    /// clone reaches git only once someone added it, which is when it is
+    /// trusted (the way an editor trusts a workspace), so commit, push and the
+    /// other commands people run on purpose keep its hooks. Everything else,
+    /// the reads and background refreshes, turns off <c>core.fsmonitor</c>, the
+    /// pager and hooks.
+    /// </summary>
+    public static List<string> SafetyConfig(IReadOnlyList<string> arguments)
+    {
+        var config = new List<string> { "-c", "core.fsmonitor=false", "-c", "core.pager=cat" };
+        if (!HookCommands.Contains(Subcommand(arguments))) config.AddRange(new[] { "-c", "core.hooksPath=" + NullDevice });
+        return config;
+    }
+
+    /// <summary><c>diff</c>, <c>show</c> and <c>log</c> never run an external diff or textconv program; <c>grep</c> never runs textconv.</summary>
+    public static List<string> WithSafeDiffOptions(IReadOnlyList<string> arguments)
+    {
+        var list = arguments.ToList();
+        var at = SubcommandIndex(list);
+        if (at < 0) return list;
+        string[] extra = list[at] switch
+        {
+            "diff" or "show" or "log" => new[] { "--no-ext-diff", "--no-textconv" },
+            "grep" => new[] { "--no-textconv" },
+            _ => Array.Empty<string>(),
+        };
+        list.InsertRange(at + 1, extra);
+        return list;
+    }
+
+    /// <summary>Same as <see cref="GitAsync"/>; every call is already run with <see cref="SafetyConfig"/>.</summary>
     public Task<GitResult> InspectAsync(IEnumerable<string> arguments,
         IReadOnlyDictionary<string, string>? extraEnvironment = null, CancellationToken ct = default) =>
-        GitAsync(InspectionConfig.Concat(arguments), extraEnvironment, ct);
+        GitAsync(arguments, extraEnvironment, ct);
 
-    /// <summary>The git subcommand in an argument list, past any <c>-c</c> settings.</summary>
-    private static string Subcommand(IReadOnlyList<string> arguments)
+    private static int SubcommandIndex(IReadOnlyList<string> arguments)
     {
         for (var i = 0; i < arguments.Count; i++)
         {
             if (arguments[i] == "-c") { i++; continue; }
-            return arguments[i];
+            return i;
         }
-        return "";
+        return -1;
     }
+
+    /// <summary>The git subcommand in an argument list, past any <c>-c</c> settings.</summary>
+    private static string Subcommand(IReadOnlyList<string> arguments) =>
+        SubcommandIndex(arguments) is var i and >= 0 ? arguments[i] : "";
 
     /// <summary>Runs git in this checkout.</summary>
     public Task<GitResult> GitAsync(IEnumerable<string> arguments,
-        IReadOnlyDictionary<string, string>? extraEnvironment = null, CancellationToken ct = default) =>
-        RunGitAsync(new[] { "-C", Path }.Concat(arguments), extraEnvironment, ct);
+        IReadOnlyDictionary<string, string>? extraEnvironment = null, CancellationToken ct = default)
+    {
+        var list = arguments.ToList();
+        return RunGitAsync(new[] { "-C", Path }.Concat(SafetyConfig(list)).Concat(WithSafeDiffOptions(list)), extraEnvironment, ct);
+    }
 
     /// <summary>
     /// Runs git with prompts disabled — with no terminal to answer them, a

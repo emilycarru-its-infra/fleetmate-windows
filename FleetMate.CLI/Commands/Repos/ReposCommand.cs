@@ -289,6 +289,11 @@ public static class ReposCommand
             }
             foreach (var x in duplicates)
                 AnsiConsole.MarkupLine($"  [yellow]=[/] {E(Pad(x.DisplayName ?? "", 44))} [grey]{E(x.Path)}[/]  (already at {E(x.RegisteredPath)})");
+            var review = results.Where(x => x.Action == DiscoveryAction.NeedsReview).ToList();
+            foreach (var x in review)
+                AnsiConsole.MarkupLine($"  [yellow]![/] {E(Pad(x.DisplayName ?? "", 44))} [grey]{E(x.Path)}[/]  [yellow](its settings can run commands; linked, not tracked)[/]");
+            if (review.Count > 0)
+                AnsiConsole.MarkupLine($"[yellow]{review.Count} not tracked because their git config runs commands. Check them, then 'fleetmate repos track <repo>'.[/]");
             Console.WriteLine($"\n{linked.Count} linked, {known} already linked, {duplicates.Count} duplicate copies, {noRemote} without a usable origin");
         }));
         return command;
