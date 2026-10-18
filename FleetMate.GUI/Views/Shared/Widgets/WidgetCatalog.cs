@@ -257,6 +257,20 @@ public static partial class WidgetCatalog
         }.Where(x => x.Item1.Value > 0).ToList();
     }
 
+    /// <summary>Days without an Intune check-in after which a device counts as not synced, as on the Mac.</summary>
+    internal const int StaleDays = 30;
+
+    /// <summary>Devices whose last check-in is more than <see cref="StaleDays"/> days before <paramref name="now"/>; a device with no check-in is not counted.</summary>
+    internal static int StaleCount(IEnumerable<IntuneDevice> devices, DateTime now) =>
+        devices.Count(d => d.LastSyncDateTime is { } t && (now - t.ToUniversalTime()).TotalDays > StaleDays);
+
+    /// <summary>Cards in the Devices row share its height (see <see cref="WidgetFlowPanel.EqualHeights"/>).</summary>
+    private static System.Windows.Controls.Border Stretch(System.Windows.Controls.Border card)
+    {
+        card.VerticalAlignment = VerticalAlignment.Stretch;
+        return card;
+    }
+
     private static List<ErrorSummary>? _errors;
     private static int? _reportMateDevices;
     private static bool _loadingErrors;
@@ -277,27 +291,29 @@ public static partial class WidgetCatalog
 
         var cards = new List<UIElement>
         {
-            WidgetCards.KpiStack(new[]
+            WidgetCards.KpiColumn(new[]
             {
                 new KpiTile("Managed Devices", devices.Count.ToString("N0"), "", P.Hex(P.Blue), waiting),
                 new KpiTile("Non-Compliant", devices.Count(IsNonCompliant).ToString("N0"), "", P.Hex(P.Orange), waiting,
                     () => filter(Category.Compliance, "Non-Compliant")),
+                new KpiTile($"Not Synced in {StaleDays} Days", StaleCount(devices, DateTime.UtcNow).ToString("N0"), "\uE823",
+                    P.Hex(P.Gray), waiting),
             }),
         };
 
         var platforms = PlatformBreakdown(devices);
-        cards.Add(WidgetCards.Card("Platform Distribution",
+        cards.Add(Stretch(WidgetCards.Card("Platform Distribution",
             WidgetCards.ChartOr(platforms.Count > 0, loading, "No device data",
                 () => WidgetCards.Treemap(platforms.Select(p => p.Slice).ToList(), p => filter(Category.Platform, p),
                     platforms.Select(p => p.Color).ToList())),
-            loading: loading));
+            loading: loading)));
 
         var compliance = ComplianceBreakdown(devices);
-        cards.Add(WidgetCards.Card("Compliance",
+        cards.Add(Stretch(WidgetCards.Card("Compliance",
             WidgetCards.ChartOr(compliance.Count > 0, loading, "No device data",
                 () => WidgetCards.Donut(compliance.Select(c => c.Slice).ToList(), c => filter(Category.Compliance, c),
                     compliance.Select(c => P.Sk(c.Color)).ToList())),
-            loading: loading));
+            loading: loading)));
 
         // Errors by Category only when ReportMate is configured.
         if (app.ReportMateService is { } reportMate)
@@ -327,26 +343,36 @@ public static partial class WidgetCatalog
             var errors = _errors ?? new();
             var cats = ErrorCategorySlices(errors);
             var errorCount = errors.Count;
-            var stats = new System.Windows.Controls.StackPanel
+            UIElement body;
+            if (cats.Count > 0)
             {
-                Orientation = System.Windows.Controls.Orientation.Horizontal,
-                Margin = new Thickness(0, 0, 0, 6),
-                Children =
+                body = new System.Windows.Controls.StackPanel
                 {
-                    MiniStat("Managed", (_reportMateDevices ?? 0).ToString("N0"), P.Blue),
-                    MiniStat("Errors", errorCount.ToString("N0"), errorCount > 0 ? P.Orange : P.Green),
-                },
-            };
-            var body = new System.Windows.Controls.StackPanel
+                    Children =
+                    {
+                        new System.Windows.Controls.StackPanel
+                        {
+                            Orientation = System.Windows.Controls.Orientation.Horizontal,
+                            Margin = new Thickness(0, 0, 0, 6),
+                            Children =
+                            {
+                                MiniStat("Managed", (_reportMateDevices ?? 0).ToString("N0"), P.Blue),
+                                MiniStat("Errors", errorCount.ToString("N0"), P.Orange),
+                            },
+                        },
+                        WidgetCards.HorizontalBars(cats, _ => P.Orange),
+                    },
+                };
+            }
+            else
             {
-                Children =
-                {
-                    stats,
-                    WidgetCards.ChartOr(cats.Count > 0, _loadingErrors, "No errors found",
-                        () => WidgetCards.HorizontalBars(cats, _ => P.Orange)),
-                },
-            };
-            cards.Add(WidgetCards.Card("Errors by Category", body, loading: _loadingErrors));
+                // Nothing to chart: one centred line in the card's height
+                // instead of two zero figures over "No errors found".
+                body = _loadingErrors
+                    ? WidgetCards.Skeleton()
+                    : WidgetCards.AllClear("No errors reported", $"{_reportMateDevices ?? 0:N0} devices reporting");
+            }
+            cards.Add(Stretch(WidgetCards.Card("Errors by Category", body, loading: _loadingErrors)));
         }
 
         return cards;

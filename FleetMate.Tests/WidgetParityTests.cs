@@ -73,6 +73,17 @@ public class WidgetParityTests
     }
 
     [Fact]
+    public void StaleCount_CountsDevicesPastThirtyDaysAndSkipsNeverSynced()
+    {
+        var now = new DateTime(2026, 6, 1, 12, 0, 0, DateTimeKind.Utc);
+        IntuneDevice Synced(double daysAgo) => new() { OperatingSystem = "Windows", LastSyncDateTime = now.AddDays(-daysAgo) };
+        var devices = new[] { Synced(1), Synced(29.9), Synced(30.5), Synced(90), Device("Windows") };
+
+        Assert.Equal(2, WidgetCatalog.StaleCount(devices, now));
+        Assert.Equal(0, WidgetCatalog.StaleCount(Array.Empty<IntuneDevice>(), now));
+    }
+
+    [Fact]
     public void ErrorCategories_SumDevices_TopEight()
     {
         var errors = Enum.GetValues<ErrorCategory>().Take(9)
