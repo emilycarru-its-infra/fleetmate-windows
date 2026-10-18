@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -26,6 +27,8 @@ public sealed class TerminalPanel : UserControl
         public string? CustomName { get; set; }
         public string? AutomaticName { get; set; }
         public string Section { get; set; } = "Sessions";
+        /// <summary>What it runs, as a workspace saves it.</summary>
+        public string Command { get; init; } = "";
         public required Grid Body { get; init; }
         public List<TerminalView> Panes { get; } = new();
         public Border Row { get; set; } = null!;
@@ -72,6 +75,12 @@ public sealed class TerminalPanel : UserControl
 
     public bool HasSessions => _sessions.Count > 0;
 
+    /// <summary>Raised when a workspace opens: show the terminal, split or full window.</summary>
+    public event Action<bool>? WorkspaceShowRequested;
+
+    /// <summary>Whether the terminal fills the window now, saved with a workspace. Set by the window.</summary>
+    public Func<bool>? IsFullWindow { get; set; }
+
     /// <summary>Text was dropped on a pane; the window decides whether it is a row's block to hand over.</summary>
     public event Action<TerminalView, string>? TextDropped;
 
@@ -83,6 +92,8 @@ public sealed class TerminalPanel : UserControl
         var newButton = IconButton("", "New session (Ctrl+Shift+T)", "TerminalNewButton", (_, _) => OpenDefaultSession());
         var newMenu = IconButton("", "New session…", "TerminalNewMenuButton", (b, _) => OpenNewMenu((Button)b!));
         newMenu.Padding = new Thickness(2, 4, 4, 4);
+        _headerWide.Children.Add(IconButton("\uE8F1", "Workspaces: open, save, and choose the one FleetMate opens at launch",
+            "TerminalWorkspacesButton", (b, _) => OpenWorkspacesMenu((Button)b!)));
         _headerWide.Children.Add(newButton);
         _headerWide.Children.Add(newMenu);
         _headerWide.Children.Add(IconButton("", "New section", "TerminalNewSectionButton", (sender, _) =>
@@ -282,18 +293,30 @@ public sealed class TerminalPanel : UserControl
     private static TerminalLaunch ShellLaunch(RepoLocation? repo) =>
         new(repo?.Name ?? AgentCommands.Shell, AgentCommands.DefaultShell(AgentCommands.FindOnPath), repo?.Path, repo);
 
+    /// <summary>A session as a workspace names it: the shell for "" or "shell", otherwise the agent command, in its folder.</summary>
+    private static TerminalLaunch WorkspaceLaunch(string? command, string? directory)
+    {
+        var launch = string.IsNullOrWhiteSpace(command) || command.Equals(AgentCommands.Shell, StringComparison.OrdinalIgnoreCase)
+            ? ShellLaunch(null)
+            : AgentLaunch(command, null);
+        return launch with { WorkingDirectory = directory ?? launch.WorkingDirectory };
+    }
+
     private static TerminalLaunch AgentLaunch(string agentCommand, RepoLocation? repo)
     {
         var command = AgentCommands.Resolve(agentCommand, AgentCommands.FindInstalled);
         var label = string.IsNullOrWhiteSpace(agentCommand) || agentCommand.Equals(AgentCommands.Shell, StringComparison.OrdinalIgnoreCase)
             ? AgentCommands.Shell
             : agentCommand.Split(' ')[0];
-        return new TerminalLaunch(repo != null ? $"{label} · {repo.Name}" : label, command, repo?.Path, repo);
+        return new TerminalLaunch(repo != null ? $"{label} · {repo.Name}" : label, command, repo?.Path, repo)
+        {
+            AgentCommand = label == AgentCommands.Shell ? "" : agentCommand,
+        };
     }
 
     public void OpenSession(TerminalLaunch launch)
     {
-        var session = new Session { Label = launch.Title, Body = new Grid() };
+        var session = new Session { Label = launch.Title, Body = new Grid(), Command = launch.AgentCommand };
         _sessions.Add(session);
         _body.Children.Add(session.Body);
         BuildRow(session);
@@ -427,6 +450,20 @@ public sealed class TerminalPanel : UserControl
             row.ContextMenu = menu;
             menu.IsOpen = true;
         };
+        // Drag a row onto another to put it there, in that row's section.
+        Point? pressedAt = null;
+        row.PreviewMouseLeftButtonDown += (_, e) => pressedAt = e.GetPosition(row);
+        row.PreviewMouseLeftButtonUp += (_, _) => pressedAt = null;
+        row.MouseMove += (_, e) =>
+        {
+            if (pressedAt is not { } start || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed) return;
+            var delta = e.GetPosition(row) - start;
+            if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance
+                && Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+            pressedAt = null;
+            DragDrop.DoDragDrop(row, new DataObject(SessionDragFormat, session), DragDropEffects.Move);
+        };
+        AcceptSessionDrops(row, dropped => MoveSession(dropped, before: session, section: session.Section));
         session.Row = row;
         session.Details.Tag = close; // hidden with the details when collapsed
         Refresh(session);
@@ -536,8 +573,240 @@ public sealed class TerminalPanel : UserControl
             foreach (var member in _sessions.Where(s => s.Section == section).ToList()) member.Section = "Sessions";
             RebuildRows();
         }, enabled: section != "Sessions"));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(MenuItem("Move section up", (_, _) => MoveSection(section, -1), enabled: _sections.IndexOf(section) > 0));
+        menu.Items.Add(MenuItem("Move section down", (_, _) => MoveSection(section, 1), enabled: _sections.IndexOf(section) < _sections.Count - 1));
         header.ContextMenu = menu;
+        // A row dropped on the header goes to the end of the section.
+        AcceptSessionDrops(header, dropped => MoveSession(dropped, before: null, section: section));
         return header;
+    }
+
+    // ── Reordering ───────────────────────────────────────────────────────
+
+    /// <summary>Rows drag as this private format, so a row dropped on a terminal is not pasted as text.</summary>
+    private const string SessionDragFormat = "FleetMate.TerminalSession";
+
+    private void AcceptSessionDrops(Control target, Action<Session> drop)
+    {
+        target.AllowDrop = true;
+        target.DragOver += (_, e) =>
+        {
+            e.Effects = e.Data.GetDataPresent(SessionDragFormat) ? DragDropEffects.Move : DragDropEffects.None;
+            e.Handled = true;
+        };
+        target.DragEnter += (_, e) =>
+        {
+            if (e.Data.GetDataPresent(SessionDragFormat)) target.SetResourceReference(BackgroundProperty, "SubtleFillBrush");
+        };
+        target.DragLeave += (_, _) => target.Background = Brushes.Transparent;
+        target.Drop += (_, e) =>
+        {
+            target.Background = Brushes.Transparent;
+            if (e.Data.GetData(SessionDragFormat) is Session dropped && _sessions.Contains(dropped)) drop(dropped);
+            e.Handled = true;
+        };
+    }
+
+    private void AcceptSessionDrops(Border target, Action<Session> drop)
+    {
+        target.AllowDrop = true;
+        var thickness = target.BorderThickness;
+        target.DragOver += (_, e) =>
+        {
+            e.Effects = e.Data.GetDataPresent(SessionDragFormat) ? DragDropEffects.Move : DragDropEffects.None;
+            e.Handled = true;
+        };
+        target.DragEnter += (_, e) =>
+        {
+            if (!e.Data.GetDataPresent(SessionDragFormat)) return;
+            target.BorderThickness = new Thickness(0, 2, 0, 0);
+            target.SetResourceReference(Border.BorderBrushProperty, "SystemControlHighlightAccentBrush");
+        };
+        target.DragLeave += (_, _) => { target.BorderThickness = thickness; target.ClearValue(Border.BorderBrushProperty); };
+        target.Drop += (_, e) =>
+        {
+            target.BorderThickness = thickness;
+            target.ClearValue(Border.BorderBrushProperty);
+            if (e.Data.GetData(SessionDragFormat) is Session dropped && _sessions.Contains(dropped)) drop(dropped);
+            e.Handled = true;
+        };
+    }
+
+    /// <summary>Put <paramref name="session"/> before <paramref name="before"/>, or at the end of <paramref name="section"/>.</summary>
+    private void MoveSession(Session session, Session? before, string section)
+    {
+        if (ReferenceEquals(session, before) || !_sections.Contains(section)) return;
+        _sessions.Remove(session);
+        session.Section = section;
+        int index;
+        if (before != null) index = _sessions.IndexOf(before);
+        else
+        {
+            var last = _sessions.FindLastIndex(s => s.Section == section);
+            index = last >= 0 ? last + 1 : _sessions.Count;
+        }
+        _sessions.Insert(Math.Max(0, index), session);
+        RebuildRows();
+        RenumberRows();
+    }
+
+    private void MoveSection(string section, int offset)
+    {
+        var index = _sections.IndexOf(section);
+        var target = index + offset;
+        if (index < 0 || target < 0 || target >= _sections.Count) return;
+        (_sections[index], _sections[target]) = (_sections[target], _sections[index]);
+        RebuildRows();
+    }
+
+    // ── Saved workspaces ─────────────────────────────────────────────────
+
+    /// <summary>The sessions open now, by section, as a workspace named <paramref name="name"/>. A session keeps its name only when the person gave it one.</summary>
+    private TerminalWorkspace Snapshot(string name)
+    {
+        var workspace = new TerminalWorkspace { Name = name, Show = true, FullWindow = IsFullWindow?.Invoke() == true ? true : null };
+        foreach (var section in _sections)
+            workspace.Sections.Add(new TerminalWorkspaceSection
+            {
+                Name = section,
+                Collapsed = _collapsedSections.Contains(section) ? true : null,
+                Sessions = _sessions.Where(s => s.Section == section).Select(s => new TerminalWorkspaceSession
+                {
+                    Name = string.IsNullOrWhiteSpace(s.CustomName) ? null : s.CustomName,
+                    Command = s.Command,
+                    Directory = s.Panes.FirstOrDefault()?.Directory is { Length: > 0 } dir ? TerminalWorkspaceStore.Abbreviate(dir) : null,
+                }).ToList(),
+            });
+        return workspace;
+    }
+
+    /// <summary>
+    /// Open a workspace's sessions beside any already open. A session already
+    /// open with the same name and command is not opened twice, so opening a
+    /// workspace again only fills in what was closed.
+    /// </summary>
+    public void OpenWorkspace(TerminalWorkspace workspace, bool? show = null)
+    {
+        Session? first = null;
+        foreach (var section in workspace.Sections)
+        {
+            var name = section.Name?.Trim();
+            if (string.IsNullOrEmpty(name)) continue;
+            if (!_sections.Contains(name)) _sections.Add(name);
+            if (section.Collapsed == true) _collapsedSections.Add(name); else _collapsedSections.Remove(name);
+            foreach (var entry in section.Sessions ?? new())
+            {
+                var command = entry.Command ?? "";
+                var title = string.IsNullOrWhiteSpace(entry.Name) ? null : entry.Name.Trim();
+                if (_sessions.Any(s => string.Equals(s.Command, command, StringComparison.OrdinalIgnoreCase) && s.CustomName == title)) continue;
+                var directory = entry.Directory is { Length: > 0 } d ? TerminalWorkspaceStore.Expand(d) : null;
+                OpenSession(WorkspaceLaunch(command, directory) with { TakeFocus = false });
+                var session = _sessions[^1];
+                session.CustomName = title;
+                session.Section = name;
+                Refresh(session);
+                first ??= session;
+            }
+        }
+        RebuildRows();
+        if (first != null) Activate(first, false);
+        if (show ?? workspace.Show ?? true) WorkspaceShowRequested?.Invoke(workspace.FullWindow ?? false);
+    }
+
+    private static TerminalWorkspaceFile? LoadWorkspaces(out string? error)
+    {
+        try { error = null; return TerminalWorkspaceStore.Load(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            error = $"Could not read {TerminalWorkspaceStore.DefaultPath}: {ex.Message}";
+            return null;
+        }
+    }
+
+    private static void ChangeWorkspaces(Action<TerminalWorkspaceFile> change)
+    {
+        var file = LoadWorkspaces(out var error);
+        if (file == null) { ShowWorkspaceError(error!); return; }
+        change(file);
+        try { TerminalWorkspaceStore.Save(file); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ShowWorkspaceError($"Could not save the workspaces: {ex.Message}"); }
+    }
+
+    private static void ShowWorkspaceError(string message) =>
+        MessageBox.Show(message, "Terminal Workspaces", MessageBoxButton.OK, MessageBoxImage.Warning);
+
+    /// <summary>The workspaces menu, read from the file each time it opens so hand edits apply without a restart.</summary>
+    private void OpenWorkspacesMenu(Button anchor)
+    {
+        var menu = new ContextMenu { PlacementTarget = anchor, Placement = PlacementMode.Bottom };
+        var file = LoadWorkspaces(out var error);
+        if (file == null)
+            menu.Items.Add(new MenuItem { Header = "The workspaces file could not be read", IsEnabled = false, ToolTip = error });
+        else if (file.Workspaces.Count == 0)
+            menu.Items.Add(new MenuItem { Header = "No saved workspaces", IsEnabled = false });
+        foreach (var workspace in file?.Workspaces ?? new())
+        {
+            var w = workspace;
+            var count = w.SessionCount == 1 ? "1 session" : $"{w.SessionCount} sessions";
+            menu.Items.Add(MenuItem($"Open {w.Name} ({count})", (_, _) => OpenWorkspace(w, show: true)));
+        }
+        menu.Items.Add(new Separator());
+        menu.Items.Add(MenuItem("Save sessions as workspace…", (_, _) =>
+            EditName(anchor, "Save workspace", file?.LaunchWorkspace?.Name ?? "", name => {
+                if (string.IsNullOrWhiteSpace(name)) return;
+                var snapshot = Snapshot(name.Trim());
+                ChangeWorkspaces(f => f.Upsert(snapshot));
+            }), enabled: _sessions.Count > 0));
+        if (file is { Workspaces.Count: > 0 })
+        {
+            var launch = new MenuItem { Header = "Open at launch" };
+            AutomationProperties.SetAutomationId(launch, "TerminalWorkspaceOpenAtLaunch");
+            var none = new MenuItem { Header = "None", IsCheckable = true, IsChecked = file.LaunchWorkspace == null };
+            none.Click += (_, _) => ChangeWorkspaces(f => f.OpenAtLaunch = null);
+            launch.Items.Add(none);
+            foreach (var workspace in file.Workspaces)
+            {
+                var name = workspace.Name;
+                var item = new MenuItem { Header = name, IsCheckable = true, IsChecked = ReferenceEquals(file.LaunchWorkspace, workspace) };
+                item.Click += (_, _) => ChangeWorkspaces(f => f.OpenAtLaunch = name);
+                launch.Items.Add(item);
+            }
+            menu.Items.Add(launch);
+            var delete = new MenuItem { Header = "Delete workspace" };
+            foreach (var workspace in file.Workspaces)
+            {
+                var name = workspace.Name;
+                delete.Items.Add(MenuItem(name, (_, _) => ChangeWorkspaces(f => f.Remove(name))));
+            }
+            menu.Items.Add(delete);
+        }
+        menu.Items.Add(new Separator());
+        menu.Items.Add(MenuItem("Edit workspaces file", (_, _) => OpenWorkspacesFile(reveal: false)));
+        menu.Items.Add(MenuItem("Show workspaces file in Explorer", (_, _) => OpenWorkspacesFile(reveal: true)));
+        menu.IsOpen = true;
+    }
+
+    /// <summary>Open the workspaces file in its editor, or show it in Explorer, writing an empty one first so there is something to edit.</summary>
+    private static void OpenWorkspacesFile(bool reveal)
+    {
+        var path = TerminalWorkspaceStore.DefaultPath;
+        try
+        {
+            if (!File.Exists(path)) TerminalWorkspaceStore.Save(new TerminalWorkspaceFile(), path);
+            if (reveal)
+                System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{path}\"");
+            else
+            {
+                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true }); }
+                // JSON may have no default app; Notepad always opens it.
+                catch (System.ComponentModel.Win32Exception) { System.Diagnostics.Process.Start("notepad.exe", $"\"{path}\""); }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        {
+            ShowWorkspaceError($"Could not open {path}: {ex.Message}");
+        }
     }
 
     // ── Filters, sort and search ─────────────────────────────────────────

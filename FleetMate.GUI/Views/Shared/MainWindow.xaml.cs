@@ -79,12 +79,35 @@ public partial class MainWindow : Window
         }
         // An agent session started at launch must not take the keyboard.
         // TicketsMate has no terminal.
-        if (!TicketsOnly && Application.Current is App { Config.Terminal.AgentAutoStart: true })
+        // A saved workspace named to open at launch takes the place of the
+        // single session that otherwise starts.
+        Terminal.IsFullWindow = () => _terminalLayout.FullWindow && Terminal.Visibility == Visibility.Visible;
+        Terminal.WorkspaceShowRequested += fullWindow =>
+        {
+            SetTerminalVisible(true, takeFocus: false);
+            _terminalLayout.RestoreMode(fullWindow);
+            ApplyTerminalLayout();
+        };
+        var launchWorkspace = TicketsOnly ? null : LaunchWorkspace();
+        if (launchWorkspace != null)
+            Loaded += (_, _) => Terminal.OpenWorkspace(launchWorkspace);
+        else if (!TicketsOnly && Application.Current is App { Config.Terminal.AgentAutoStart: true })
             Loaded += (_, _) =>
             {
                 SetTerminalVisible(true, takeFocus: false);
                 Terminal.OpenDefaultSession(takeFocus: false);
             };
+    }
+
+    /// <summary>The workspace terminal-workspaces.json names to open at launch, or null.</summary>
+    private static FleetMate.Core.Services.Terminal.TerminalWorkspace? LaunchWorkspace()
+    {
+        try { return FleetMate.Core.Services.Terminal.TerminalWorkspaceStore.Load().LaunchWorkspace; }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Terminal workspaces: could not read {Path}", FleetMate.Core.Services.Terminal.TerminalWorkspaceStore.DefaultPath);
+            return null;
+        }
     }
 
     // ── Elevation status ──────────────────────────────────────────
