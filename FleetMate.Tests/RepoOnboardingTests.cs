@@ -251,15 +251,73 @@ public sealed class RepoDiscoveryScanTests : TempFolder
     public void CommandConfigKeys_FlagsKeysThatRunPrograms(string config, string key) =>
         Assert.Equal(new[] { key }, RepoDiscovery.CommandConfigKeys(config));
 
+
     [Theory]
-    [InlineData("[core]\n\tfsmonitor = true")]
+    [InlineData("[core]\n\tfsmonitor = true", "core.fsmonitor")]
+    [InlineData("[core]\n\tfsmonitor", "core.fsmonitor")]
+    [InlineData("[protocol]\n\tallow = user", "protocol.allow")]
+    [InlineData("[extensions]\n\tworktreeConfig = true", "extensions.worktreeconfig")]
+    [InlineData("[core]\n\tworktree = ../elsewhere", "core.worktree")]
+    [InlineData("[includeIf \"onbranch:main\"]\n\tpath = x", "includeif.onbranch:main.path")]
+    [InlineData("[somethingnew]\n\tkey = value", "somethingnew.key")]
+    [InlineData("[core \"sub\"]\n\tbare = false", "core.sub.bare")]
+    [InlineData("[submodule \"lib\"]\n\tupdate = !rm -rf /", "submodule.lib.update")]
+    [InlineData("[remote \"origin\"]\n\tvcs = ./x", "remote.origin.vcs")]
+    [InlineData("bare = true", "(key outside a section)")]
+    [InlineData("[core\n\tbare = true", "(unparsable section header)")]
+    public void CommandConfigKeys_FlagsEverythingNotKnownToBeData(string config, string key) =>
+        Assert.Contains(key, RepoDiscovery.CommandConfigKeys(config));
+
+    [Theory]
     [InlineData("[core]\n\tfsmonitor = false")]
+    [InlineData("[core]\n\tfsmonitor = off")]
     [InlineData("[core]\n\tfsmonitor = 0")]
-    [InlineData("[core]\n\tfsmonitor")]
-    [InlineData("[protocol]\n\tallow = user")]
-    [InlineData("[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n[remote \"origin\"]\n\turl = https://github.com/example-org/one.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\tremote = origin\n\tmerge = refs/heads/main\n# pager = less\n; editor = vim")]
-    public void CommandConfigKeys_LeavesAPlainConfigAlone(string config) =>
+    [InlineData("[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n\tignorecase = true\n\tsymlinks = false\n\tautocrlf = true\n\tlongpaths = true\n[remote \"origin\"]\n\turl = https://github.com/example-org/one.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"main\"]\n\tremote = origin\n\tmerge = refs/heads/main\n# pager = less\n; editor = vim")]
+    [InlineData("[branch \"feature/x\"]\n\tvscode-merge-base = origin/main\n\tgithub-pr-owner-number = \"example-org#1\"\n\tdescription = notes\n[user]\n\tname = Dev\n\temail = dev@example.com\n[pull]\n\trebase = true\n[push]\n\tautoSetupRemote = true\n[fetch]\n\tprune = true\n[init]\n\tdefaultBranch = main")]
+    [InlineData("[lfs]\n\trepositoryformatversion = 0\n[lfs \"https://example.com/x.git/info/lfs\"]\n\taccess = basic\n\tlocksverify = false\n[extensions]\n\tobjectFormat = sha1")]
+    [InlineData("[submodule]\n\tactive = .\n[submodule \"lib\"]\n\turl = https://example.com/lib.git\n\tactive = true\n\tupdate = rebase\n[merge]\n\tconflictStyle = zdiff3\n[rebase]\n\tautoStash = true\n[gc]\n\tauto = 0")]
+    public void CommandConfigKeys_LeavesAPlainOrEditorConfigAlone(string config) =>
         Assert.Empty(RepoDiscovery.CommandConfigKeys(config));
+
+    [Fact]
+    public void CommandConfig_FailsClosedOnUnreadableConfig()
+    {
+        var checkout = FakeCheckout("bad");
+        File.WriteAllBytes(Path.Combine(checkout, ".git", "config"), new byte[] { 0x5B, 0x63, 0xFF, 0xFE, 0x5D });
+        File.WriteAllBytes(Path.Combine(checkout, ".git", "config.worktree"), new byte[] { 0xC3, 0x28 });
+        Assert.Equal(new[] { "config (unreadable)", "config.worktree (unreadable)" }, RepoDiscovery.CommandConfig(checkout));
+    }
+
+    [Fact]
+    public void CommandConfig_FollowsCommondir()
+    {
+        var common = Dir("common");
+        File.WriteAllText(Path.Combine(common, "config"), "[core]\n\tpager = less\n");
+        Directory.CreateDirectory(Path.Combine(common, "hooks"));
+        File.WriteAllText(Path.Combine(common, "hooks", "pre-commit"), "#!/bin/sh\n");
+        var checkout = FakeCheckout("linked");
+        File.WriteAllText(Path.Combine(checkout, ".git", "commondir"), Path.GetRelativePath(Path.Combine(checkout, ".git"), common));
+        Assert.Equal(new[] { "commondir", "core.pager", "hooks/pre-commit" }, RepoDiscovery.CommandConfig(checkout));
+    }
+
+    [Fact]
+    public void CommandConfig_FlagsRealHooksButNotSamples()
+    {
+        var checkout = FakeCheckout("hooked");
+        var hooks = Directory.CreateDirectory(Path.Combine(checkout, ".git", "hooks")).FullName;
+        File.WriteAllText(Path.Combine(hooks, "pre-commit.sample"), "#!/bin/sh\n");
+        Assert.Empty(RepoDiscovery.CommandConfig(checkout));
+        File.WriteAllText(Path.Combine(hooks, "post-checkout"), "#!/bin/sh\n");
+        Assert.Equal(new[] { "hooks/post-checkout" }, RepoDiscovery.CommandConfig(checkout));
+    }
+
+    [Fact]
+    public void CommandConfig_FlagsAnUnreadableGitPointer()
+    {
+        var checkout = Dir("pointer");
+        File.WriteAllText(Path.Combine(checkout, ".git"), "not a gitdir line\n");
+        Assert.Equal(new[] { "(unreadable .git)" }, RepoDiscovery.CommandConfig(checkout));
+    }
 
     [Fact]
     public void CommandConfigKeys_ListsEachOnceAcrossRepeatedSections() =>
