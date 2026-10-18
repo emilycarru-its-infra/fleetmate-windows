@@ -222,6 +222,29 @@ public class AgentTerminalTests
         Assert.Equal(@"C:\FleetMate\;C:\Windows", again["PATH"]);
     }
 
+    [Theory]
+    [InlineData(true, "15;0")]
+    [InlineData(false, "0;15")]
+    public void ColorFgBg_NamesTheBackgroundLast(bool dark, string expected)
+    {
+        // Readers take the last number as the background: 0-6 and 8 are dark.
+        Assert.Equal(expected, TerminalEnvironment.ColorFgBg(dark));
+    }
+
+    [Fact]
+    public void TerminalPage_AnswersColourSchemeQueriesAndFollowsTheTheme()
+    {
+        using var stream = typeof(FleetMate.GUI.Views.Terminal.TerminalView).Assembly
+            .GetManifestResourceStream("FleetMate.GUI.Terminal.terminal.html");
+        using var reader = new System.IO.StreamReader(stream!);
+        var page = reader.ReadToEnd();
+        Assert.Contains("hasMode(params, 2031)", page);
+        Assert.Contains("params[0] !== 996", page);
+        Assert.Contains("?997;", page);
+        Assert.Contains("m.type === 'theme'", page);
+        Assert.Contains("brightYellow", page);
+    }
+
     [Fact]
     public void EnvironmentBlock_IsSortedAndDoubleNulTerminated() =>
         Assert.Equal("A=1\0b=2\0\0", TerminalEnvironment.ToEnvironmentBlock(new Dictionary<string, string> { ["b"] = "2", ["A"] = "1" }));
