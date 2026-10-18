@@ -59,6 +59,7 @@ public partial class DevelopmentView
     {
         if (_loadingCommits || AppInstance is not { } app) return;
         _loadingCommits = true;
+        using var tracking = app.TrackCacheLoad("Commits");
         LoadingRing.Visibility = Visibility.Visible;
 
         try
@@ -283,6 +284,28 @@ public partial class DevelopmentView
         RunsStatusRunning.IsChecked = _runsStatus == PipelineStatusFilter.Running;
         RunsStatusFailed.IsChecked = _runsStatus == PipelineStatusFilter.Failed;
         RunsStatusSucceeded.IsChecked = _runsStatus == PipelineStatusFilter.Succeeded;
+        RenderRuns();
+    }
+
+    /// <summary>Open Commits filtered to one repository — the Commits graphs' repository bar.</summary>
+    public void ShowCommitsRepository(string repository)
+    {
+        _commitsSource = DevelopmentSourceFilter.All;
+        CommitsSourceAll.IsChecked = true;
+        CommitsSourceDevOps.IsChecked = CommitsSourceGitHub.IsChecked = false;
+        _commitsRepository = repository;
+        CommitsSegment.IsChecked = true;
+        RenderCommits();
+    }
+
+    /// <summary>Open Pipelines filtered to one repository — the Pipelines graphs' repository bar.</summary>
+    public void ShowPipelinesRepository(string repository)
+    {
+        _runsSource = DevelopmentSourceFilter.All;
+        RunsSourceAll.IsChecked = true;
+        RunsSourceDevOps.IsChecked = RunsSourceGitHub.IsChecked = false;
+        _runsRepository = repository;
+        PipelinesSegment.IsChecked = true;
         RenderRuns();
     }
 

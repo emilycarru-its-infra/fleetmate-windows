@@ -5,7 +5,7 @@ using FleetMate.Core.Shared;
 namespace FleetMate.GUI.Views.Development.Repos;
 
 /// <summary>What the Repos workspace shows for the selected repository.</summary>
-public enum RepoPanel { Changes, History, Files, Insights }
+public enum RepoPanel { Changes, History, Files }
 
 public enum GitStatusKind { Info, Success, Error }
 

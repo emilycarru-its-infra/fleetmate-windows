@@ -4,6 +4,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Media;
 using FleetMate.Core.Services.Repos;
+using FleetMate.GUI.Views.Shared.Widgets;
 using ModernWpf.Controls;
 using static FleetMate.GUI.Views.Development.Repos.RepoInsightsModel;
 
@@ -12,7 +13,9 @@ namespace FleetMate.GUI.Views.Development.Repos;
 /// <summary>
 /// Charts of a repository's history, or of every tracked repository: commits
 /// and lines changed over time, who commits, where the changes land, and
-/// when. The numbers are the ones <c>fleetmate repos stats</c> prints.
+/// when. The numbers are the ones <c>fleetmate repos stats</c> prints. It is
+/// the Repos sub-tab's Graphs strip: the cards flow across the full width in
+/// rows of equal height, as the other sub-tabs' widgets do.
 /// </summary>
 public sealed class RepoInsightsView : UserControl
 {
@@ -21,7 +24,10 @@ public sealed class RepoInsightsView : UserControl
     private readonly ComboBox _period, _granularity;
     private readonly ProgressRing _ring;
     private readonly TextBlock _caption;
-    private readonly StackPanel _content = new() { Margin = new Thickness(0, 0, 12, 16) };
+    private readonly WidgetFlowPanel _content = new() { EqualHeights = true };
+
+    /// <summary>A card's units when it takes a whole row of the strip.</summary>
+    private const int FullRow = 99;
     private string? _requestedKey;
     private int _refresh;
 
@@ -62,12 +68,7 @@ public sealed class RepoInsightsView : UserControl
         var root = new DockPanel();
         DockPanel.SetDock(controls, Dock.Top);
         root.Children.Add(controls);
-        root.Children.Add(new ScrollViewer
-        {
-            Content = _content,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        });
+        root.Children.Add(_content);
         Content = root;
         IsVisibleChanged += (_, _) => { if (IsVisible) Load(); };
     }
@@ -129,7 +130,7 @@ public sealed class RepoInsightsView : UserControl
     private void Placeholder(string text)
     {
         _content.Children.Clear();
-        _content.Children.Add(new TextBlock { Text = text, Opacity = 0.7, Margin = new Thickness(4, 20, 4, 4), HorizontalAlignment = HorizontalAlignment.Center });
+        _content.Children.Add(Whole(new TextBlock { Text = text, Opacity = 0.7, Margin = new Thickness(4, 20, 4, 20), HorizontalAlignment = HorizontalAlignment.Center }));
     }
 
     /// <summary>Builds the cards for what the model holds now.</summary>
@@ -139,7 +140,7 @@ public sealed class RepoInsightsView : UserControl
         var insights = _model.Insights;
         _content.Children.Clear();
         if (insights.Error is { } error)
-            _content.Children.Add(new TextBlock { Text = "⚠ " + error, Foreground = RepoBrushes.Warning, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) });
+            _content.Children.Add(Whole(new TextBlock { Text = "⚠ " + error, Foreground = RepoBrushes.Warning, TextWrapping = TextWrapping.Wrap }));
         if (insights.Scope == InsightsScope.Repository)
         {
             if (insights.Report is { } report) RenderReport(report);
@@ -159,15 +160,14 @@ public sealed class RepoInsightsView : UserControl
         _content.Children.Add(Tiles(report.Total));
         var commits = new TimelineChart();
         commits.ShowCommits(report.Timeline, report.Bucket);
-        _content.Children.Add(Card($"Commits per {bucket}", commits));
+        _content.Children.Add(Card($"Commits per {bucket}", commits, 2));
         _content.Children.Add(ChurnCard(report.Timeline, report.Bucket));
-        _content.Children.Add(TwoUp(
-            Card("Authors", Ranked(report.Contributors.Take(10).Select(c => (c.Name, c.Commits, $"+{c.Added:N0} −{c.Removed:N0}")), "commits")),
-            Card("Top-level folders", Ranked(report.Areas.Take(10).Select(a => (a.Path, a.Commits, $"+{a.Added:N0} −{a.Removed:N0}")), "commits"))));
-        _content.Children.Add(Card("Most-changed files", FileList(report.Files)));
+        _content.Children.Add(Card("Authors", Ranked(report.Contributors.Take(10).Select(c => (c.Name, c.Commits, $"+{c.Added:N0} −{c.Removed:N0}")), "commits")));
+        _content.Children.Add(Card("Top-level folders", Ranked(report.Areas.Take(10).Select(a => (a.Path, a.Commits, $"+{a.Added:N0} −{a.Removed:N0}")), "commits")));
+        _content.Children.Add(Card("Most-changed files", FileList(report.Files), 2));
         var heat = new ActivityHeatmap();
         heat.Show(report.Activity);
-        _content.Children.Add(Card("When commits happen", heat));
+        _content.Children.Add(Card("When commits happen", heat, 2));
     }
 
     // ── All repositories ────────────────────────────────────────────────
@@ -191,17 +191,16 @@ public sealed class RepoInsightsView : UserControl
         var stacked = new TimelineChart();
         stacked.ShowStacked(summary.BucketStarts, series.Select(s => (s.Item1, s.Item2, (IReadOnlyList<int>)s.Item3)).ToList(), summary.Bucket);
         _content.Children.Add(Card($"Commits per {bucket} by repository",
-            new StackPanel { Children = { stacked, Legend(series.Select(s => (s.Item1, s.Item2)).ToArray()) } }));
+            new StackPanel { Children = { stacked, Legend(series.Select(s => (s.Item1, s.Item2)).ToArray()) } }, 2));
 
         _content.Children.Add(ChurnCard(summary.Combined.Timeline, summary.Bucket));
-        _content.Children.Add(Card("Repositories", SummaryTable(summary.Rows)));
-        _content.Children.Add(TwoUp(
-            Card("Authors", Ranked(summary.Combined.Contributors.Take(10).Select(c => (c.Name, c.Commits, $"+{c.Added:N0} −{c.Removed:N0}")), "commits")),
-            Card("Behind upstream", Ranked(summary.Rows.Where(r => r.Behind > 0).OrderByDescending(r => r.Behind).Take(10)
-                .Select(r => (r.DisplayName, r.Behind, r.Branch ?? "")), "commits behind"))));
+        _content.Children.Add(Card("Authors", Ranked(summary.Combined.Contributors.Take(10).Select(c => (c.Name, c.Commits, $"+{c.Added:N0} −{c.Removed:N0}")), "commits")));
+        _content.Children.Add(Card("Behind upstream", Ranked(summary.Rows.Where(r => r.Behind > 0).OrderByDescending(r => r.Behind).Take(10)
+            .Select(r => (r.DisplayName, r.Behind, r.Branch ?? "")), "commits behind")));
+        _content.Children.Add(Card("Repositories", SummaryTable(summary.Rows), 2));
         var heat = new ActivityHeatmap();
         heat.Show(summary.Combined.Activity);
-        _content.Children.Add(Card("When commits happen", heat));
+        _content.Children.Add(Card("When commits happen", heat, 2));
     }
 
     private UIElement ChurnCard(IReadOnlyList<RepoStatsReport.TimelinePoint> points, RepoStatsBucket bucket)
@@ -227,7 +226,7 @@ public sealed class RepoInsightsView : UserControl
         controls.Children.Add(caption);
         var churn = new TimelineChart();
         churn.ShowChurn(points, bucket, effective);
-        return Card($"Lines changed per {TimelineChart.Bucket(bucket)}", new StackPanel { Children = { controls, churn, Legend(("Added", RepoBrushes.Added), ("Removed", RepoBrushes.Removed)) } });
+        return Card($"Lines changed per {TimelineChart.Bucket(bucket)}", new StackPanel { Children = { controls, churn, Legend(("Added", RepoBrushes.Added), ("Removed", RepoBrushes.Removed)) } }, 2);
     }
 
     private UIElement SummaryTable(IReadOnlyList<RepoStatsSummaryRow> rows)
@@ -273,7 +272,15 @@ public sealed class RepoInsightsView : UserControl
 
     // ── Pieces ──────────────────────────────────────────────────────────
 
-    private static Border Card(string title, UIElement content)
+    /// <summary>An element that takes a whole row of the strip.</summary>
+    private static UIElement Whole(UIElement element)
+    {
+        WidgetFlowPanel.SetUnits(element, FullRow);
+        return element;
+    }
+
+    /// <summary>A titled card spanning <paramref name="units"/> of the strip's width.</summary>
+    private static Border Card(string title, UIElement content, int units = 1)
     {
         var heading = new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 10) };
         var body = new Grid();
@@ -284,30 +291,20 @@ public sealed class RepoInsightsView : UserControl
         body.Children.Add(content);
         var border = new Border { Child = body, VerticalAlignment = VerticalAlignment.Stretch };
         border.SetResourceReference(StyleProperty, "CardStyle");
+        WidgetFlowPanel.SetUnits(border, units);
         return border;
-    }
-
-    private static UIElement TwoUp(UIElement left, UIElement right)
-    {
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition());
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition());
-        Grid.SetColumn(right, 2);
-        grid.Children.Add(left);
-        grid.Children.Add(right);
-        return grid;
     }
 
     private static UIElement Tiles(RepoStatsReport.Totals totals)
     {
-        var grid = new UniformGrid { Rows = 1, Margin = new Thickness(0, 0, 0, 10) };
+        var grid = new UniformGrid { Rows = 1, Margin = new Thickness(-4, 0, -4, 0) };
+        WidgetFlowPanel.SetUnits(grid, FullRow);
         void Tile(string title, string value)
         {
             var label = new TextBlock { Text = title, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis };
             label.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
             var figure = new TextBlock { Text = value, FontSize = 20, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = value };
-            var border = new Border { Child = new StackPanel { Children = { label, figure } }, Margin = new Thickness(0, 0, 8, 0) };
+            var border = new Border { Child = new StackPanel { Children = { label, figure } }, Margin = new Thickness(4, 0, 4, 0) };
             border.SetResourceReference(StyleProperty, "CardStyle");
             System.Windows.Automation.AutomationProperties.SetName(border, $"{title}: {value}");
             grid.Children.Add(border);

@@ -38,6 +38,7 @@ public static class WidgetPalette
     public static readonly Color Indigo = Color.FromRgb(63, 81, 181);
     public static readonly Color Pink = Color.FromRgb(236, 64, 122);
     public static readonly Color Gray = Color.FromRgb(158, 158, 158);
+    public static readonly Color Yellow = Color.FromRgb(255, 193, 7);
 
     public static SKColor Sk(Color c) => new(c.R, c.G, c.B, c.A);
 
