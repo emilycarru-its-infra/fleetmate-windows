@@ -58,6 +58,7 @@ public partial class BoardsPage
         KanbanBoard.Visibility = Show(board && !githubBoard);
         FlatTasks.Visibility = Show(flat);
         QueriesList.Visibility = Show(queries && useQueries);
+        SortQueriesButton.Visibility = Show(queries && useQueries);
         WorkItemsList.Visibility = Show(queries && !useQueries);
         ProjectsBoard.Visibility = Show(githubBoard);
 
