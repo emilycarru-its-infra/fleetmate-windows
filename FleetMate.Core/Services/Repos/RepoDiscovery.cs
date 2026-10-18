@@ -342,6 +342,31 @@ public static class RepoDiscovery
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { return null; }
     }
 
+    /// <summary>
+    /// A git config value as git reads it: quotes removed, <c>\\</c>, <c>\"</c>,
+    /// <c>\n</c>, <c>\t</c> and <c>\b</c> unescaped, and a <c>#</c> or <c>;</c>
+    /// comment outside quotes dropped. Git writes a Windows path as <c>C:\\Users</c>.
+    /// </summary>
+    internal static string ConfigValue(string raw)
+    {
+        var value = new System.Text.StringBuilder();
+        var quoted = false;
+        for (var i = 0; i < raw.Length; i++)
+        {
+            var c = raw[i];
+            if (c == '\\' && i + 1 < raw.Length)
+            {
+                var next = raw[++i];
+                value.Append(next switch { 'n' => '\n', 't' => '\t', 'b' => '\b', _ => next });
+                continue;
+            }
+            if (c == '"') { quoted = !quoted; continue; }
+            if (!quoted && c is '#' or ';') break;
+            value.Append(c);
+        }
+        return value.ToString().Trim();
+    }
+
     /// <summary>The <c>url</c> of <c>[remote "origin"]</c> in a git config file's text.</summary>
     internal static string? OriginFromConfig(string text)
     {
@@ -361,8 +386,7 @@ public static class RepoDiscovery
             if (!inOrigin) continue;
             var equals = line.IndexOf('=');
             if (equals <= 0 || !line[..equals].Trim().Equals("url", StringComparison.OrdinalIgnoreCase)) continue;
-            var value = line[(equals + 1)..].Trim();
-            if (value.Length >= 2 && value[0] == '"' && value[^1] == '"') value = value[1..^1];
+            var value = ConfigValue(line[(equals + 1)..]);
             return value.Length > 0 ? value : null;
         }
         return null;
