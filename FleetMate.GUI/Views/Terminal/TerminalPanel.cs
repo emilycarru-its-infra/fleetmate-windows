@@ -48,6 +48,17 @@ public sealed class TerminalPanel : UserControl
     private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly List<string> _sections = new() { "Sessions" };
     private readonly HashSet<string> _collapsedSections = new();
+    private readonly StackPanel _filterRow = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+    private readonly Button _filterActive;
+    private readonly Button _filterRunning;
+    private readonly Button _filterPaused;
+    private readonly Button _sortButton;
+    private readonly TextBox _search = new() { MinWidth = 60, Width = 92, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) };
+    private TerminalSessionFilter _filter = new(UserPreferences.TerminalFilterActive, UserPreferences.TerminalFilterRunning, UserPreferences.TerminalFilterPaused);
+    private TerminalSessionSort _sort = UserPreferences.TerminalSort;
+    /// <summary>Each session's traits, read on the slow tick; activity changes without the panel announcing it.</summary>
+    private Dictionary<Session, TerminalSessionTraits> _traits = new();
+    private string _shownKey = "";
     private Popup? _nameEditor;
     private Session? _active;
     private bool _collapsed;
@@ -84,8 +95,32 @@ public sealed class TerminalPanel : UserControl
         _headerNarrow.Children.Add(IconButton("", "Expand the list", "TerminalExpandButton", (_, _) => SetCollapsed(false)));
         _headerNarrow.Children.Add(IconButton("", "New session (Ctrl+Shift+T)", "TerminalNewButtonCollapsed", (_, _) => OpenDefaultSession()));
 
+        // Status filters with neutral counts, the sort menu and search.
+        _filterActive = FilterButton("\uE91F", "Active", "Show only sessions running an agent", "TerminalFilterActive",
+            () => SetFilter(_filter with { Active = !_filter.Active }));
+        _filterRunning = FilterButton("\uE945", "Running", "Show only sessions that are working", "TerminalFilterRunning",
+            () => SetFilter(_filter with { Running = !_filter.Running }));
+        _filterPaused = FilterButton("\uE769", "Paused", "Show only agents waiting on you", "TerminalFilterPaused",
+            () => SetFilter(_filter with { Paused = !_filter.Paused }));
+        _sortButton = IconButton("\uE8CB", "Sort sessions", "TerminalSortButton", (b, _) => OpenSortMenu((Button)b!));
+        ModernWpf.Controls.Primitives.ControlHelper.SetPlaceholderText(_search, "Search");
+        AutomationProperties.SetName(_search, "Search sessions");
+        AutomationProperties.SetAutomationId(_search, "TerminalSessionSearch");
+        _search.TextChanged += (_, _) => SetFilter(_filter with { Query = _search.Text }, save: false);
+        _search.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == System.Windows.Input.Key.Escape && _search.Text.Length > 0) { _search.Clear(); e.Handled = true; }
+        };
+        _filterRow.Children.Add(_filterActive);
+        _filterRow.Children.Add(_filterRunning);
+        _filterRow.Children.Add(_filterPaused);
+        _filterRow.Children.Add(_sortButton);
+        _filterRow.Children.Add(_search);
+        UpdateFilterControls();
+
         var header = new StackPanel { Margin = new Thickness(4, 4, 4, 4) };
         header.Children.Add(_headerWide);
+        header.Children.Add(_filterRow);
         header.Children.Add(_headerNarrow);
 
         var list = new DockPanel();
@@ -116,6 +151,7 @@ public sealed class TerminalPanel : UserControl
         {
             if (++_tickCount % 4 == 0)
                 foreach (var pane in _sessions.SelectMany(s => s.Panes)) pane.PollDirectory();
+            if (_tickCount % 3 == 0) RefreshTraits();
             var sectionsChanged = false;
             foreach (var session in _sessions)
             {
@@ -427,34 +463,206 @@ public sealed class TerminalPanel : UserControl
         Dispatcher.BeginInvoke(() => { if (anchor.IsLoaded && ReferenceEquals(_nameEditor, popup)) popup.IsOpen = true; }, DispatcherPriority.Input);
     }
 
+    private bool FiltersApply => !_collapsed && (_filter.IsFiltering || _sort != TerminalSessionSort.Manual);
+
     private void RebuildRows()
     {
         _rows.Children.Clear();
+        if (FiltersApply) { RebuildFilteredRows(); return; }
+        _shownKey = "";
         foreach (var section in _sections.ToList())
         {
             var members = _sessions.Where(s => s.Section == section).ToList();
-            var header = new Button { Content = $"{(_collapsedSections.Contains(section) ? "▸" : "▾")} {section} ({members.Count})", HorizontalContentAlignment = HorizontalAlignment.Left, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Margin = new Thickness(4) };
-            header.Click += (_, _) => { if (!_collapsedSections.Add(section)) _collapsedSections.Remove(section); RebuildRows(); };
-            var menu = new ContextMenu();
-            menu.Items.Add(MenuItem("Rename section…", (_, _) => {
-                EditName(header, "Rename section", section, name => {
-                    var index = _sections.IndexOf(section);
-                    if (index < 0 || string.IsNullOrWhiteSpace(name) || _sections.Contains(name)) return;
-                    _sections[index] = name;
-                    foreach (var member in _sessions.Where(s => s.Section == section).ToList()) member.Section = name;
-                    if (_collapsedSections.Remove(section)) _collapsedSections.Add(name);
-                    RebuildRows();
-                });
-            }, enabled: section != "Sessions"));
-            menu.Items.Add(MenuItem("Remove section", (_, _) => {
-                _sections.Remove(section); _collapsedSections.Remove(section);
-                foreach (var member in members) member.Section = "Sessions";
-                RebuildRows();
-            }, enabled: section != "Sessions"));
-            header.ContextMenu = menu;
+            var header = SectionHeader(section, members);
             _rows.Children.Add(header);
             if (!_collapsedSections.Contains(section)) foreach (var member in members) _rows.Children.Add(member.Row);
         }
+    }
+
+    /// <summary>
+    /// Filtered or sorted: sections with no match are left out and the rest
+    /// open, so a search finds sessions in a collapsed section too; sorted by
+    /// activity, one list across sections.
+    /// </summary>
+    private void RebuildFilteredRows()
+    {
+        var all = _sessions.Select(TraitsOf).ToList();
+        var shown = TerminalSessionFilter.Order(all, _sort).Where(i => _filter.Matches(all[i])).Select(i => _sessions[i]).ToList();
+        _shownKey = ShownKey(shown);
+        if (_sort == TerminalSessionSort.Manual)
+        {
+            foreach (var section in _sections.ToList())
+            {
+                var members = shown.Where(s => s.Section == section).ToList();
+                if (members.Count == 0) continue;
+                _rows.Children.Add(SectionHeader(section, members));
+                foreach (var member in members) _rows.Children.Add(member.Row);
+            }
+        }
+        else foreach (var session in shown) _rows.Children.Add(session.Row);
+        if (shown.Count > 0) return;
+
+        var empty = new StackPanel { Margin = new Thickness(8, 16, 8, 16), HorizontalAlignment = HorizontalAlignment.Center };
+        var text = new TextBlock { Text = "No matching sessions", FontSize = 12, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center };
+        text.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
+        var clear = new Button { Content = "Clear Filters", Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
+        AutomationProperties.SetAutomationId(clear, "TerminalClearFilters");
+        clear.Click += (_, _) => { _search.Clear(); SetFilter(new TerminalSessionFilter()); };
+        empty.Children.Add(text);
+        empty.Children.Add(clear);
+        _rows.Children.Add(empty);
+    }
+
+    private static string ShownKey(IEnumerable<Session> shown) =>
+        string.Join("|", shown.Select(s => s.GetHashCode()));
+
+    private Button SectionHeader(string section, List<Session> members)
+    {
+        var header = new Button { Content = $"{(_collapsedSections.Contains(section) && !FiltersApply ? "▸" : "▾")} {section} ({members.Count})", HorizontalContentAlignment = HorizontalAlignment.Left, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Margin = new Thickness(4) };
+        header.Click += (_, _) => { if (!_collapsedSections.Add(section)) _collapsedSections.Remove(section); RebuildRows(); };
+        var menu = new ContextMenu();
+        menu.Items.Add(MenuItem("Rename section…", (_, _) => {
+            EditName(header, "Rename section", section, name => {
+                var index = _sections.IndexOf(section);
+                if (index < 0 || string.IsNullOrWhiteSpace(name) || _sections.Contains(name)) return;
+                _sections[index] = name;
+                foreach (var member in _sessions.Where(s => s.Section == section).ToList()) member.Section = name;
+                if (_collapsedSections.Remove(section)) _collapsedSections.Add(name);
+                RebuildRows();
+            });
+        }, enabled: section != "Sessions"));
+        menu.Items.Add(MenuItem("Remove section", (_, _) => {
+            _sections.Remove(section); _collapsedSections.Remove(section);
+            foreach (var member in _sessions.Where(s => s.Section == section).ToList()) member.Section = "Sessions";
+            RebuildRows();
+        }, enabled: section != "Sessions"));
+        header.ContextMenu = menu;
+        return header;
+    }
+
+    // ── Filters, sort and search ─────────────────────────────────────────
+
+    private TerminalSessionTraits TraitsOf(Session session) =>
+        _traits.TryGetValue(session, out var traits) ? traits : ReadTraits(session, null);
+
+    private TerminalSessionTraits ReadTraits(Session session, List<AgentProcessTree.Entry>? snapshot)
+    {
+        var now = DateTime.UtcNow;
+        var state = StateOf(session, now);
+        var lead = session.Panes.FirstOrDefault();
+        var isAgent = snapshot != null && session.Panes.Any(p =>
+            p.Activity.State(now) != ActivityState.Exited && p.ProcessId > 0 && AgentProcessTree.HasAgent(snapshot, p.ProcessId));
+        var name = session.CustomName ?? session.AutomaticName ?? lead?.Title ?? session.Label;
+        var directory = TerminalPathDisplay.Compact(lead?.Directory, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        return new TerminalSessionTraits(
+            isAgent,
+            state == ActivityState.Active,
+            TerminalSessionTraits.Paused(state, isAgent),
+            new[] { name, directory ?? "", session.Section, lead?.Title ?? session.Label },
+            session.Panes.Select(p => p.Activity.LastActivity).Max());
+    }
+
+    /// <summary>Read every session's traits with one process snapshot, update the counts, and redraw a filtered list that changed.</summary>
+    private void RefreshTraits()
+    {
+        if (_sessions.Count == 0 && _traits.Count == 0) return;
+        List<AgentProcessTree.Entry> snapshot;
+        try { snapshot = AgentProcessTree.Snapshot(); }
+        catch (Exception) { snapshot = new(); }
+        _traits = _sessions.ToDictionary(s => s, s => ReadTraits(s, snapshot));
+        UpdateFilterControls();
+        if (!FiltersApply) return;
+        var all = _sessions.Select(TraitsOf).ToList();
+        var shown = TerminalSessionFilter.Order(all, _sort).Where(i => _filter.Matches(all[i])).Select(i => _sessions[i]);
+        if (ShownKey(shown) != _shownKey) RebuildRows();
+    }
+
+    private void SetFilter(TerminalSessionFilter filter, bool save = true)
+    {
+        _filter = filter;
+        if (save) UserPreferences.SetTerminalFilters(filter.Active, filter.Running, filter.Paused);
+        UpdateFilterControls();
+        RebuildRows();
+    }
+
+    private void SetSort(TerminalSessionSort sort)
+    {
+        _sort = sort;
+        UserPreferences.SetTerminalSort(sort);
+        UpdateFilterControls();
+        RebuildRows();
+    }
+
+    private void OpenSortMenu(Button anchor)
+    {
+        var menu = new ContextMenu { PlacementTarget = anchor, Placement = PlacementMode.Bottom };
+        foreach (var sort in Enum.GetValues<TerminalSessionSort>())
+        {
+            var option = sort;
+            var item = new MenuItem { Header = option.Title(), IsCheckable = true, IsChecked = option == _sort };
+            AutomationProperties.SetAutomationId(item, "TerminalSort_" + option);
+            item.Click += (_, _) => SetSort(option);
+            menu.Items.Add(item);
+        }
+        menu.IsOpen = true;
+    }
+
+    private void UpdateFilterControls()
+    {
+        var all = _traits.Values.ToList();
+        SetFilterButton(_filterActive, _filter.Active, all.Count(t => t.IsAgent));
+        SetFilterButton(_filterRunning, _filter.Running, all.Count(t => t.IsRunning));
+        SetFilterButton(_filterPaused, _filter.Paused, all.Count(t => t.IsPaused));
+        var sortGlyph = _sort switch { TerminalSessionSort.RecentFirst => "\uE74A", TerminalSessionSort.RecentLast => "\uE74B", _ => "\uE8CB" };
+        var sortIcon = (FontIcon)_sortButton.Content;
+        sortIcon.Glyph = sortGlyph;
+        if (_sort == TerminalSessionSort.Manual) sortIcon.SetResourceReference(FontIcon.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
+        else sortIcon.SetResourceReference(FontIcon.ForegroundProperty, "SystemControlHighlightAccentBrush");
+        _sortButton.ToolTip = $"Sort: {_sort.Title()}";
+        AutomationProperties.SetHelpText(_sortButton, _sort.Title());
+    }
+
+    /// <summary>A status filter: an icon and a neutral count, tinted while it is on.</summary>
+    private static Button FilterButton(string glyph, string name, string tip, string automationId, Action toggle)
+    {
+        var icon = new FontIcon { Glyph = glyph, FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
+        var count = new TextBlock { FontSize = 11, Margin = new Thickness(3, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        count.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
+        var content = new StackPanel { Orientation = Orientation.Horizontal };
+        content.Children.Add(icon);
+        content.Children.Add(count);
+        var button = new Button
+        {
+            Content = content, Tag = (name, tip), Padding = new Thickness(5, 3, 5, 3), Margin = new Thickness(0, 0, 1, 0),
+            Background = Brushes.Transparent, BorderThickness = new Thickness(0), VerticalAlignment = VerticalAlignment.Center
+        };
+        AutomationProperties.SetAutomationId(button, automationId);
+        button.Click += (_, _) => toggle();
+        return button;
+    }
+
+    private static void SetFilterButton(Button button, bool on, int count)
+    {
+        var content = (StackPanel)button.Content;
+        var icon = (FontIcon)content.Children[0];
+        var text = (TextBlock)content.Children[1];
+        var (name, tip) = ((string, string))button.Tag;
+        text.Text = count > 0 ? count.ToString(System.Globalization.CultureInfo.CurrentCulture) : "";
+        // One that is on stays clickable so it can be turned off with no matches.
+        button.IsEnabled = on || count > 0;
+        button.Opacity = button.IsEnabled ? 1 : 0.45;
+        if (on)
+        {
+            icon.SetResourceReference(FontIcon.ForegroundProperty, "SystemControlHighlightAccentBrush");
+            button.SetResourceReference(BackgroundProperty, "SubtleFillBrush");
+        }
+        else
+        {
+            icon.SetResourceReference(FontIcon.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
+            button.Background = Brushes.Transparent;
+        }
+        button.ToolTip = on ? "Show all sessions" : tip;
+        AutomationProperties.SetName(button, $"{name}, {count} {(count == 1 ? "session" : "sessions")}{(on ? ", on" : "")}");
     }
 
     private void RenumberRows()
@@ -521,6 +729,7 @@ public sealed class TerminalPanel : UserControl
         _listColumn.Width = new GridLength(collapsed ? CollapsedListWidth : ListWidth);
         _headerWide.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
         _headerNarrow.Visibility = collapsed ? Visibility.Visible : Visibility.Collapsed;
+        _filterRow.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
         foreach (var s in _sessions)
         {
             var hidden = collapsed ? Visibility.Collapsed : Visibility.Visible;
@@ -528,6 +737,7 @@ public sealed class TerminalPanel : UserControl
             s.HintText.Visibility = hidden;
             ((Button)s.Details.Tag).Visibility = hidden;
         }
+        RebuildRows();
     }
 
     // ── Showing, activating, closing ─────────────────────────────────────
@@ -567,6 +777,7 @@ public sealed class TerminalPanel : UserControl
         foreach (var pane in session.Panes) pane.Dispose();
         var index = _sessions.IndexOf(session);
         _sessions.Remove(session);
+        _traits.Remove(session);
         RebuildRows();
         _body.Children.Remove(session.Body);
         RenumberRows();

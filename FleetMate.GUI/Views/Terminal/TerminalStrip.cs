@@ -10,11 +10,11 @@ using ModernWpf.Controls;
 namespace FleetMate.GUI.Views.Terminal;
 
 /// <summary>
-/// The bar on the window's bottom edge, open or closed: the agent, the
-/// sessions, and the controls to show, hide or fill the window with the
-/// terminal. While the terminal is closed, clicking the bar or dragging it up
-/// opens it; while it is open, dragging the bar down hides it. Plain text
-/// throughout; nothing here is a badge.
+/// The bar on the window's bottom edge, open or closed: icon buttons to split,
+/// fill the window or hide, then the agent and the sessions. While the
+/// terminal is closed, clicking anywhere on the bar or dragging it up opens it
+/// in the mode it was last used in; while it is open, dragging the bar down
+/// hides it. Plain text throughout; nothing here is a badge.
 /// </summary>
 public sealed class TerminalStrip : UserControl
 {
@@ -23,6 +23,7 @@ public sealed class TerminalStrip : UserControl
     private readonly TextBlock _agent = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
     private readonly TextBlock _status = new() { FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
     private readonly Border _surface;
+    private readonly Button _split;
     private readonly Button _fullWindow;
     private readonly Button _toggle;
     // Session activity changes without the panel announcing it, so the strip
@@ -62,23 +63,22 @@ public sealed class TerminalStrip : UserControl
             else ShowRequested?.Invoke(this, EventArgs.Empty);
         });
 
+        _split = BarButton("TerminalSplitViewButton", (_, _) => SplitViewRequested?.Invoke(this, EventArgs.Empty));
+        SetButton(_split, "\uE90E", "Show the terminal in half the content area", "Split View");
+
         var left = new StackPanel { Orientation = Orientation.Horizontal };
+        left.Children.Add(_split);
+        left.Children.Add(_fullWindow);
+        left.Children.Add(_toggle);
+        var separator = new Border { Width = 1, Height = 14, Margin = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+        separator.SetResourceReference(Border.BackgroundProperty, "SystemControlForegroundBaseLowBrush");
+        left.Children.Add(separator);
         left.Children.Add(icon);
         left.Children.Add(title);
         left.Children.Add(_agent);
         left.Children.Add(_status);
-        var right = new StackPanel { Orientation = Orientation.Horizontal };
-        var split = BarButton("TerminalSplitViewButton", (_, _) => SplitViewRequested?.Invoke(this, EventArgs.Empty));
-        split.Content = "Split View";
-        split.ToolTip = "Show the terminal in half the content area";
-        AutomationProperties.SetName(split, "Split View");
-        right.Children.Add(split);
-        right.Children.Add(_fullWindow);
-        right.Children.Add(_toggle);
 
-        var row = new DockPanel { Margin = new Thickness(12, 0, 8, 0), LastChildFill = false };
-        DockPanel.SetDock(right, Dock.Right);
-        row.Children.Add(right);
+        var row = new DockPanel { Margin = new Thickness(8, 0, 8, 0), LastChildFill = false };
         row.Children.Add(left);
 
         _surface = new Border { BorderThickness = new Thickness(0, 1, 0, 0), Child = row };
@@ -101,7 +101,9 @@ public sealed class TerminalStrip : UserControl
         };
         MouseLeftButtonUp += (_, e) =>
         {
-            if (_pressedAt != null) Release(_showing ? HideRequested : ShowRequested);
+            // A click opens the closed terminal; on the open one it does
+            // nothing, so a stray click never hides work in progress.
+            if (_pressedAt != null) Release(_showing ? null : ShowRequested);
             e.Handled = true;
         };
         LostMouseCapture += (_, _) => _pressedAt = null;
@@ -130,8 +132,11 @@ public sealed class TerminalStrip : UserControl
         Cursor = showing ? Cursors.Arrow : Cursors.Hand;
         ToolTip = showing ? null : "Show the Agent Terminal (Ctrl+`): click or drag up";
         if (showing) _surface.SetResourceReference(Border.BackgroundProperty, "AppBackgroundBrush");
-        SetButton(_fullWindow, controls.FullWindow ? "" : "", controls.FullWindowTip, controls.FullWindowName);
-        SetButton(_toggle, controls.Showing ? "" : "", controls.ToggleTip, controls.ToggleName);
+        SetButton(_fullWindow, controls.FullWindow ? "\uE73F" : "\uE740", controls.FullWindowTip, controls.FullWindowName);
+        SetButton(_toggle, controls.Showing ? "\uE70D" : "\uE70E", controls.ToggleTip, controls.ToggleName);
+        // The mode the terminal is in is drawn in the accent colour, as a pane toggle is.
+        SetOn(_split, showing && !fullWindow);
+        SetOn(_fullWindow, controls.FullWindow);
     }
 
     /// <summary>Read the default agent and the sessions' state again.</summary>
@@ -146,8 +151,8 @@ public sealed class TerminalStrip : UserControl
     {
         var button = new Button
         {
-            Content = new FontIcon { FontSize = 10 },
-            Padding = new Thickness(6, 2, 6, 2),
+            Content = new FontIcon { FontSize = 12 },
+            Padding = new Thickness(6, 4, 6, 4),
             Margin = new Thickness(2, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
             Background = Brushes.Transparent,
@@ -161,8 +166,23 @@ public sealed class TerminalStrip : UserControl
 
     private static void SetButton(Button button, string glyph, string tip, string name)
     {
-        button.Content = name.Replace(" Agent Terminal", "");
+        ((FontIcon)button.Content).Glyph = glyph;
         button.ToolTip = tip;
         AutomationProperties.SetName(button, name);
+    }
+
+    private static void SetOn(Button button, bool on)
+    {
+        var icon = (FontIcon)button.Content;
+        if (on)
+        {
+            icon.SetResourceReference(FontIcon.ForegroundProperty, "SystemControlHighlightAccentBrush");
+            button.SetResourceReference(BackgroundProperty, "SubtleFillBrush");
+        }
+        else
+        {
+            icon.SetResourceReference(FontIcon.ForegroundProperty, "SystemControlForegroundBaseHighBrush");
+            button.Background = Brushes.Transparent;
+        }
     }
 }
