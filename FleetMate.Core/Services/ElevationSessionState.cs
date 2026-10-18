@@ -61,28 +61,61 @@ public static class ElevationStatusText
     {
         ElevationSessionState.Ready => "Elevation ready",
         ElevationSessionState.Starting => "Elevation starting…",
-        ElevationSessionState.Expired => "Elevation stopped",
-        ElevationSessionState.None => "Elevation idle",
-        ElevationSessionState.Unknown => "Elevation unknown",
+        // Stopped, idle and unchecked stay quiet: the next action starts the
+        // session, so there is nothing for the operator to do.
+        ElevationSessionState.Expired or ElevationSessionState.None or ElevationSessionState.Unknown => "Elevation",
         _ => "Elevation off",
     };
 
+    /// <summary>What the feature is called wherever it is listed.</summary>
+    public const string Title = "Elevated sessions";
+
+    /// <summary>One line on what an elevated session is, for tooltips.</summary>
+    public static string Explainer(int ttlHours = 8) =>
+        "Elevated sessions are Azure containers that run admin actions as a managed identity, "
+        + "authorized by your az sign-in. One starts on first use, takes about a minute, "
+        + $"and then stays ready for up to {ttlHours} hours.";
+
+    /// <summary>The short state in a session's pill.</summary>
+    public static string StateLabel(ElevationSessionState state) => state switch
+    {
+        ElevationSessionState.Ready => "Ready",
+        ElevationSessionState.Starting => "Starting…",
+        ElevationSessionState.Expired or ElevationSessionState.None => "Stopped",
+        ElevationSessionState.Unknown => "Not checked",
+        _ => "Off",
+    };
+
+    /// <summary>The line under a session's name: what happens next, or time left.</summary>
+    public static string Detail(ElevationSessionState state, DateTimeOffset? expires, DateTimeOffset now) => state switch
+    {
+        ElevationSessionState.Ready when expires is { } e => $"Ready, {FormatRemaining(e - now)} left",
+        ElevationSessionState.Ready => "Ready",
+        ElevationSessionState.Starting => "Starting… a cold start takes about a minute",
+        ElevationSessionState.Expired or ElevationSessionState.None => "Stopped, restarts on next use",
+        ElevationSessionState.Unknown => "Not checked yet",
+        _ => "Off",
+    };
+
+    /// <summary>What a domain's session is used for, so its row reads as more than an internal name.</summary>
+    public static string DomainTitle(GraphDomain domain) => domain switch
+    {
+        GraphDomain.Devices => "Devices (Intune, Microsoft Graph)",
+        GraphDomain.Identity => "Identity (Entra ID)",
+        GraphDomain.Systems => "Systems (app registrations)",
+        GraphDomain.Cloud => "Cloud (SharePoint, Teams)",
+        GraphDomain.Security => "Security",
+        _ => "Infrastructure",
+    };
+
+    /// <summary>One domain's line in the chrome tooltip.</summary>
     public static string DomainLine(GraphDomain domain, ElevationSessionState state,
         DateTimeOffset? expires, string? error, DateTimeOffset now)
     {
-        var name = domain.DomainName();
-        return state switch
-        {
-            ElevationSessionState.Ready when expires is { } e =>
-                $"{name}: ready, expires in {FormatRemaining(e - now)}",
-            ElevationSessionState.Ready => $"{name}: ready",
-            ElevationSessionState.Starting => $"{name}: starting (first boot takes about a minute)",
-            ElevationSessionState.Expired => $"{name}: stopped — the next action restarts it",
-            ElevationSessionState.None => $"{name}: not started — the next action starts it",
-            ElevationSessionState.Unknown when !string.IsNullOrWhiteSpace(error) => $"{name}: unknown ({error})",
-            ElevationSessionState.Unknown => $"{name}: not checked yet",
-            _ => $"{name}: off",
-        };
+        var name = DomainTitle(domain);
+        if (state == ElevationSessionState.Unknown && !string.IsNullOrWhiteSpace(error))
+            return $"{name}: not checked ({error})";
+        return $"{name}: {Detail(state, expires, now)}";
     }
 
     private static string FormatRemaining(TimeSpan span)

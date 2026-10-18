@@ -162,6 +162,25 @@ public sealed class ElevationMonitor : IDisposable
         await RefreshAsync();
     }
 
+    /// <summary>
+    /// Start one domain's session now, from Settings › Authentication, so the
+    /// cold start is paid before the action that needs it.
+    /// </summary>
+    public async Task StartAsync(GraphDomain domain)
+    {
+        if (!_enabled) return;
+        try { await new ElevationSession(_config!).EnsureSessionAsync(domain); }
+        catch (Exception ex)
+        {
+            Log.Warning("Elevated session start failed for {Domain}: {Message}", domain.Slug(), ex.Message);
+            lock (_gate) _errors[domain] = ex.Message;
+        }
+        await RefreshAsync();
+    }
+
+    /// <summary>The configured session lifetime, for wording.</summary>
+    public int TtlHours => _config?.DefaultTtlHours ?? 8;
+
     private void OnCreatingChanged(GraphDomain domain, bool creating)
     {
         lock (_gate)

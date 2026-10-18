@@ -116,7 +116,7 @@ public static class AuthProviderGrouping
     public static string MethodDescription(AuthSystemId system, FleetMateConfig config, bool graphUsesElevation) => system switch
     {
         AuthSystemId.Intune or AuthSystemId.Graph or AuthSystemId.Entra =>
-            graphUsesElevation ? "Elevation session" : "Your token (direct)",
+            graphUsesElevation ? "Elevated session" : "Your token (direct)",
         AuthSystemId.DevOps => "Your token",
         AuthSystemId.Snipe => config.SnipeUsesOidc ? "Brokered bearer" : "API key",
         AuthSystemId.Tdx => "Silent SSO",
@@ -220,6 +220,11 @@ public static class CliAccountProbe
 public sealed record AuthDisplayStatus(AuthDisplayKind Kind, string? Text = null)
 {
     public static readonly AuthDisplayStatus Valid = new(AuthDisplayKind.Valid);
+    /// <summary>Verified, and its elevated session is running.</summary>
+    public static readonly AuthDisplayStatus Ready = new(AuthDisplayKind.Ready);
+    /// <summary>Verified, but its elevated session is stopped. Grey, not a
+    /// problem: the next action restarts it.</summary>
+    public static readonly AuthDisplayStatus Standby = new(AuthDisplayKind.Standby);
     public static readonly AuthDisplayStatus NeedsSignIn = new(AuthDisplayKind.NeedsSignIn);
     public static readonly AuthDisplayStatus NotConfigured = new(AuthDisplayKind.NotConfigured);
     public static AuthDisplayStatus Checking(string? text = null) => new(AuthDisplayKind.Checking, text);
@@ -245,6 +250,8 @@ public sealed record AuthDisplayStatus(AuthDisplayKind Kind, string? Text = null
     {
         AuthDisplayKind.Checking => Text ?? "Checking…",
         AuthDisplayKind.Valid => "Valid",
+        AuthDisplayKind.Ready => "Ready",
+        AuthDisplayKind.Standby => "Stopped",
         AuthDisplayKind.NeedsSignIn => "Needs sign-in",
         AuthDisplayKind.NotConfigured => "Not configured",
         _ => "Failed",
@@ -253,8 +260,8 @@ public sealed record AuthDisplayStatus(AuthDisplayKind Kind, string? Text = null
     public AuthDisplayTone Tone => Kind switch
     {
         AuthDisplayKind.Checking => AuthDisplayTone.Neutral,
-        AuthDisplayKind.Valid => AuthDisplayTone.Positive,
-        AuthDisplayKind.NotConfigured => AuthDisplayTone.Inactive,
+        AuthDisplayKind.Valid or AuthDisplayKind.Ready => AuthDisplayTone.Positive,
+        AuthDisplayKind.NotConfigured or AuthDisplayKind.Standby => AuthDisplayTone.Inactive,
         _ => AuthDisplayTone.Attention,
     };
 
@@ -278,6 +285,6 @@ public sealed record AuthDisplayStatus(AuthDisplayKind Kind, string? Text = null
     }
 }
 
-public enum AuthDisplayKind { Checking, Valid, NeedsSignIn, NotConfigured, Failed }
+public enum AuthDisplayKind { Checking, Valid, Ready, Standby, NeedsSignIn, NotConfigured, Failed }
 
 public enum AuthDisplayTone { Positive, Neutral, Attention, Inactive }
