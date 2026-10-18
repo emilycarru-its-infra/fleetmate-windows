@@ -41,10 +41,22 @@ public sealed class TerminalPanel : UserControl
 
     private const double ListWidth = 230;
     private const double CollapsedListWidth = 34;
+    private const double MinListWidth = 180;
+    private const double MaxListWidth = 520;
+    private readonly GridSplitter _listSplitter = new()
+    {
+        Width = 5, HorizontalAlignment = HorizontalAlignment.Stretch, Background = Brushes.Transparent,
+        ResizeBehavior = GridResizeBehavior.PreviousAndNext, ResizeDirection = GridResizeDirection.Columns,
+        Cursor = System.Windows.Input.Cursors.SizeWE, Focusable = false,
+        ToolTip = "Drag to resize the session list; double-click to collapse or expand it",
+    };
+
+    /// <summary>The expanded list's width, remembered across launches.</summary>
+    private static double SavedListWidth => Math.Clamp(UserPreferences.TerminalListWidth ?? ListWidth, MinListWidth, MaxListWidth);
 
     private readonly StackPanel _rows = new();
     private readonly Grid _body = new();
-    private readonly ColumnDefinition _listColumn = new() { Width = new GridLength(ListWidth) };
+    private readonly ColumnDefinition _listColumn = new() { Width = new GridLength(ListWidth), MinWidth = MinListWidth, MaxWidth = MaxListWidth };
     private readonly StackPanel _headerWide = new() { Orientation = Orientation.Horizontal };
     private readonly StackPanel _headerNarrow = new() { Orientation = Orientation.Vertical, Visibility = Visibility.Collapsed };
     private readonly List<Session> _sessions = new();
@@ -77,6 +89,9 @@ public sealed class TerminalPanel : UserControl
 
     /// <summary>Raised when a workspace opens: show the terminal, split or full window.</summary>
     public event Action<bool>? WorkspaceShowRequested;
+
+    /// <summary>Raised to show the Repos tab, where a repository is cloned.</summary>
+    public event EventHandler? ReposRequested;
 
     /// <summary>Whether the terminal fills the window now, saved with a workspace. Set by the window.</summary>
     public Func<bool>? IsFullWindow { get; set; }
@@ -144,12 +159,22 @@ public sealed class TerminalPanel : UserControl
         var listBorder = new Border { BorderThickness = new Thickness(0, 0, 1, 0), Child = list };
         listBorder.SetResourceReference(Border.BorderBrushProperty, "SystemControlForegroundBaseLowBrush");
 
+        // Drag the divider to widen or narrow the list; double-click collapses or expands it.
+        _listColumn.Width = new GridLength(SavedListWidth);
+        AutomationProperties.SetAutomationId(_listSplitter, "TerminalSessionListSplitter");
+        AutomationProperties.SetName(_listSplitter, "Session list divider");
+        _listSplitter.DragCompleted += (_, _) => { if (!_collapsed) UserPreferences.SetTerminalListWidth(_listColumn.ActualWidth); };
+        _listSplitter.MouseDoubleClick += (_, e) => { SetCollapsed(!_collapsed); e.Handled = true; };
+
         var root = new Grid();
         root.ColumnDefinitions.Add(_listColumn);
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         Grid.SetColumn(listBorder, 0);
-        Grid.SetColumn(_body, 1);
+        Grid.SetColumn(_listSplitter, 1);
+        Grid.SetColumn(_body, 2);
         root.Children.Add(listBorder);
+        root.Children.Add(_listSplitter);
         root.Children.Add(_body);
 
         var border = new Border { BorderThickness = new Thickness(0, 1, 0, 0), Child = root };
@@ -714,6 +739,70 @@ public sealed class TerminalPanel : UserControl
         if (show ?? workspace.Show ?? true) WorkspaceShowRequested?.Invoke(workspace.FullWindow ?? false);
     }
 
+    /// <summary>The checkouts the Repos tab knows, with their activity.</summary>
+    private static IReadOnlyList<TerminalWorkspaceBaseline.Checkout> RepoCheckouts()
+    {
+        try { return TerminalWorkspaceBaseline.Checkouts(new FleetMate.Core.Services.Repos.RepoRegistryStore().Load()); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            return Array.Empty<TerminalWorkspaceBaseline.Checkout>();
+        }
+    }
+
+    /// <summary>
+    /// The first time, with no workspaces file yet, write a Repos workspace from
+    /// the checkouts on this PC. With nothing checked out, write nothing, so the
+    /// next launch tries again once a repository is cloned.
+    /// </summary>
+    public static void SeedBaselineWorkspaceIfNeeded()
+    {
+        if (File.Exists(TerminalWorkspaceStore.DefaultPath)) return;
+        if (TerminalWorkspaceBaseline.Make(RepoCheckouts(), DefaultCommand, DateTime.UtcNow) is not { } baseline) return;
+        try
+        {
+            var file = new TerminalWorkspaceFile();
+            file.Upsert(baseline);
+            TerminalWorkspaceStore.Save(file);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Serilog.Log.Warning(ex, "Terminal workspaces: could not write the Repos workspace");
+        }
+    }
+
+    private const string NoCheckouts = "No repositories are checked out yet. Clone one in Development ▸ Repos.";
+
+    /// <summary>Rebuild the Repos workspace from the checkouts now, keeping its name and place; every other workspace is left alone.</summary>
+    private static void RegenerateBaselineWorkspace()
+    {
+        if (TerminalWorkspaceBaseline.Make(RepoCheckouts(), DefaultCommand, DateTime.UtcNow) is not { } baseline)
+        {
+            ShowWorkspaceError(NoCheckouts);
+            return;
+        }
+        ChangeWorkspaces(file =>
+        {
+            if (file.Baseline is { } existing)
+            {
+                baseline.Name = existing.Name;
+                file.Workspaces[file.Workspaces.IndexOf(existing)] = baseline;
+            }
+            else file.Upsert(baseline);
+        });
+    }
+
+    /// <summary>Add checkouts the Repos workspace lacks, keeping every edit to it.</summary>
+    private static void AddMissingReposToBaseline()
+    {
+        var checkouts = RepoCheckouts();
+        if (checkouts.Count == 0) { ShowWorkspaceError(NoCheckouts); return; }
+        ChangeWorkspaces(file =>
+        {
+            if (file.Baseline is { } existing) TerminalWorkspaceBaseline.AddMissing(checkouts, existing, DefaultCommand, DateTime.UtcNow);
+            else if (TerminalWorkspaceBaseline.Make(checkouts, DefaultCommand, DateTime.UtcNow) is { } baseline) file.Upsert(baseline);
+        });
+    }
+
     private static TerminalWorkspaceFile? LoadWorkspaces(out string? error)
     {
         try { error = null; return TerminalWorkspaceStore.Load(); }
@@ -744,7 +833,14 @@ public sealed class TerminalPanel : UserControl
         if (file == null)
             menu.Items.Add(new MenuItem { Header = "The workspaces file could not be read", IsEnabled = false, ToolTip = error });
         else if (file.Workspaces.Count == 0)
+        {
             menu.Items.Add(new MenuItem { Header = "No saved workspaces", IsEnabled = false });
+            if (RepoCheckouts().Count > 0)
+                menu.Items.Add(MenuItem("Create workspace from Repos", (_, _) => RegenerateBaselineWorkspace()));
+            else
+                // Someone with nothing cloned yet: the way to get started.
+                menu.Items.Add(MenuItem("Clone a repository in Repos…", (_, _) => ReposRequested?.Invoke(this, EventArgs.Empty)));
+        }
         foreach (var workspace in file?.Workspaces ?? new())
         {
             var w = workspace;
@@ -781,6 +877,13 @@ public sealed class TerminalPanel : UserControl
             }
             menu.Items.Add(delete);
         }
+        menu.Items.Add(new Separator());
+        var addMissing = MenuItem("Add missing repos", (_, _) => AddMissingReposToBaseline());
+        addMissing.ToolTip = "Add checked-out repositories the Repos workspace lacks, keeping your edits";
+        menu.Items.Add(addMissing);
+        var regenerate = MenuItem("Regenerate Repos workspace", (_, _) => RegenerateBaselineWorkspace());
+        regenerate.ToolTip = "Rebuild the Repos workspace from your active checkouts; other workspaces are left alone";
+        menu.Items.Add(regenerate);
         menu.Items.Add(new Separator());
         menu.Items.Add(MenuItem("Edit workspaces file", (_, _) => OpenWorkspacesFile(reveal: false)));
         menu.Items.Add(MenuItem("Show workspaces file in Explorer", (_, _) => OpenWorkspacesFile(reveal: true)));
@@ -995,7 +1098,10 @@ public sealed class TerminalPanel : UserControl
     private void SetCollapsed(bool collapsed)
     {
         _collapsed = collapsed;
-        _listColumn.Width = new GridLength(collapsed ? CollapsedListWidth : ListWidth);
+        // Collapsed, the divider still takes a double-click to expand, but a drag does nothing.
+        _listColumn.MinWidth = collapsed ? CollapsedListWidth : MinListWidth;
+        _listColumn.MaxWidth = collapsed ? CollapsedListWidth : MaxListWidth;
+        _listColumn.Width = new GridLength(collapsed ? CollapsedListWidth : SavedListWidth);
         _headerWide.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
         _headerNarrow.Visibility = collapsed ? Visibility.Visible : Visibility.Collapsed;
         _filterRow.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;

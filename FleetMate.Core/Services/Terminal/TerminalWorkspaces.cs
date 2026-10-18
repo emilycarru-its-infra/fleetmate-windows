@@ -31,6 +31,12 @@ public sealed class TerminalWorkspaceFile
         else Workspaces.Add(workspace);
     }
 
+    /// <summary>The workspace generated from Repos, by its mark or else its name; null when there is none.</summary>
+    [JsonIgnore]
+    public TerminalWorkspace? Baseline =>
+        Workspaces.FirstOrDefault(w => w.Source == TerminalWorkspaceBaseline.Source)
+        ?? Workspace(TerminalWorkspaceBaseline.Name);
+
     public void Remove(string name)
     {
         Workspaces.RemoveAll(w => string.Equals(w.Name, name, StringComparison.OrdinalIgnoreCase));
@@ -41,6 +47,8 @@ public sealed class TerminalWorkspaceFile
 public sealed class TerminalWorkspace
 {
     public string Name { get; set; } = "";
+    /// <summary>"repos" for the workspace FleetMate generated from the Repos tab, so Add missing repos finds it after a rename; null for the person's own.</summary>
+    public string? Source { get; set; }
     /// <summary>Show the terminal when the workspace opens. Default true.</summary>
     public bool? Show { get; set; }
     /// <summary>Open the terminal filling the window rather than split.</summary>

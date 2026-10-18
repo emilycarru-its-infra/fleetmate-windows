@@ -52,9 +52,18 @@ public static class UserPreferences
         Write("agentTerminalFontOffset", offset == 0 ? null : offset.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
     /// <summary>The terminal was last open filling the window rather than split (the macOS app's key).</summary>
-    public static bool TerminalLastFullWindow => Read("agentTerminalLastFullWindow") == "1";
+    /// Full window until the person has used it split.
+    public static bool TerminalLastFullWindow => Read("agentTerminalLastFullWindow") != "0";
 
-    public static void SetTerminalLastFullWindow(bool on) => Write("agentTerminalLastFullWindow", on ? "1" : null);
+    public static void SetTerminalLastFullWindow(bool on) => Write("agentTerminalLastFullWindow", on ? "1" : "0");
+
+    /// <summary>The terminal session list's width, dragged at its divider (the macOS app's key).</summary>
+    public static double? TerminalListWidth =>
+        double.TryParse(Read("agentTerminalListWidth"), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var value) && double.IsFinite(value) ? value : null;
+
+    public static void SetTerminalListWidth(double width) =>
+        Write("agentTerminalListWidth", width.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
     /// <summary>The session list's status filters and sort, with the macOS app's keys.</summary>
     public static bool TerminalFilterActive => Read("agentTerminalFilterActive") == "1";

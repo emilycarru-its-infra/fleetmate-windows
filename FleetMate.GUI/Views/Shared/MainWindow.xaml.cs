@@ -88,15 +88,15 @@ public partial class MainWindow : Window
             _terminalLayout.RestoreMode(fullWindow);
             ApplyTerminalLayout();
         };
+        Terminal.ReposRequested += (_, _) => { SetTerminalVisible(false); NavigateToTab("Development"); };
+        if (!TicketsOnly) TerminalPanel.SeedBaselineWorkspaceIfNeeded();
         var launchWorkspace = TicketsOnly ? null : LaunchWorkspace();
         if (launchWorkspace != null)
             Loaded += (_, _) => Terminal.OpenWorkspace(launchWorkspace);
         else if (!TicketsOnly && Application.Current is App { Config.Terminal.AgentAutoStart: true })
-            Loaded += (_, _) =>
-            {
-                SetTerminalVisible(true, takeFocus: false);
-                Terminal.OpenDefaultSession(takeFocus: false);
-            };
+            // Ready behind the Agent button rather than taking the window:
+            // the terminal opens full window by default.
+            Loaded += (_, _) => Terminal.OpenDefaultSession(takeFocus: false);
     }
 
     /// <summary>The workspace terminal-workspaces.json names to open at launch, or null.</summary>
@@ -184,7 +184,7 @@ public partial class MainWindow : Window
     {
         const System.Windows.Input.ModifierKeys Ctrl = System.Windows.Input.ModifierKeys.Control;
         const System.Windows.Input.ModifierKeys Shift = System.Windows.Input.ModifierKeys.Shift;
-        return (key == System.Windows.Input.Key.Oem3 && mods == Ctrl)
+        return ((key == System.Windows.Input.Key.Oem3 || key == System.Windows.Input.Key.J) && mods == Ctrl)
             || (key == System.Windows.Input.Key.T && (mods == Ctrl || mods == (Ctrl | Shift)))
             || (key == System.Windows.Input.Key.Enter && mods == (Ctrl | Shift));
     }
@@ -206,8 +206,10 @@ public partial class MainWindow : Window
         {
             // TicketsMate has no terminal; its keys do nothing.
         }
-        else if (key == System.Windows.Input.Key.Oem3 && mods == Ctrl)
+        else if ((key == System.Windows.Input.Key.Oem3 || key == System.Windows.Input.Key.J) && mods == Ctrl)
         {
+            // Ctrl+J or Ctrl+`: Agent mode on and off. Inside a terminal Ctrl+J
+            // stays the shell's newline; Ctrl+` works there too.
             ToggleTerminal();
             e.Handled = true;
         }
@@ -343,9 +345,9 @@ public partial class MainWindow : Window
 
         Terminal.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         TerminalToggleButton.IsChecked = visible;
-        var label = visible ? "Hide Agent Terminal" : "Show Agent Terminal";
-        TerminalToggleButton.ToolTip = $"{label} (Ctrl+`)";
-        System.Windows.Automation.AutomationProperties.SetName(TerminalToggleButton, label);
+        var label = visible ? "Hide Agent" : "Show Agent";
+        TerminalToggleButton.ToolTip = $"{label} (Ctrl+J or Ctrl+`)";
+        System.Windows.Automation.AutomationProperties.SetName(TerminalToggleButton, "Agent");
         ApplyTerminalLayout();
         Terminal.OnVisibilityChanged();
         if (!visible)
