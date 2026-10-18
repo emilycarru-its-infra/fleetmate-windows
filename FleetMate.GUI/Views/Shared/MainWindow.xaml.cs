@@ -26,6 +26,7 @@ public partial class MainWindow : Window
         // Development is the launch tab; there is no Dashboard. TicketsMate
         // opens on Tickets, the only tab it has.
         ContentFrame.Navigate(GetOrCreatePage(LaunchTab));
+        HostPageToolbar(GetOrCreatePage(LaunchTab));
         (TicketsOnly ? TabTickets : TabDevelopment).IsChecked = true;
         if (TicketsOnly) ApplyTicketsOnlyChrome();
         UpdateGraphsButton();
@@ -362,7 +363,7 @@ public partial class MainWindow : Window
         if (ContentFrame == null) return; // Not yet initialized
         if (sender is RadioButton radio && radio.Tag is string tag)
         {
-            RecordTabVisit(tag);
+            RecordVisit(new NavigationLocation(tag, ChromeSections.Current(ToolbarOf(GetOrCreatePage(tag)))));
             NavigateToPage(tag);
             UpdateGraphsButton();
         }
@@ -435,12 +436,53 @@ public partial class MainWindow : Window
         FleetMate.GUI.Views.Terminal.ContextPublisher.Tab(tag);
         var page = GetOrCreatePage(tag);
         ContentFrame.Navigate(page);
+        HostPageToolbar(page);
         AttachSearchScope(page, tag);
     }
 
     public void ResetPageCache()
     {
         _pageCache.Clear();
+        // The page showing keeps its toolbar until the next tab change brings a new page.
+        _pageToolbars.Clear();
+    }
+
+    // ── Page toolbar in the title bar ─────────────────────────────
+
+    /// <summary>Each page's title-bar toolbar, lifted out of its markup the first time it is asked for.</summary>
+    private readonly Dictionary<Page, FrameworkElement?> _pageToolbars = new();
+
+    /// <summary>
+    /// The sub-tabs <paramref name="page"/> puts in the title bar, or null.
+    /// The element is taken out of the page's own tree once and kept with the
+    /// page, so the page's handlers and names keep working, and it reads the
+    /// page's data context wherever it is shown.
+    /// </summary>
+    private FrameworkElement? ToolbarOf(Page page)
+    {
+        if (_pageToolbars.TryGetValue(page, out var known)) return known;
+        var toolbar = (page as IChromeToolbar)?.ChromeToolbar;
+        if (toolbar != null)
+        {
+            switch (toolbar.Parent)
+            {
+                case Panel panel: panel.Children.Remove(toolbar); break;
+                case Decorator decorator: decorator.Child = null; break;
+                case ContentControl content: content.Content = null; break;
+            }
+            toolbar.SetBinding(DataContextProperty, new System.Windows.Data.Binding(nameof(DataContext)) { Source = page });
+        }
+        _pageToolbars[page] = toolbar;
+        return toolbar;
+    }
+
+    private void HostPageToolbar(Page page)
+    {
+        var toolbar = ToolbarOf(page);
+        if (ReferenceEquals(PageToolbarHost.Child, toolbar)) return;
+        PageToolbarHost.Child = toolbar;
+        PageToolbarHost.Visibility = toolbar == null ? Visibility.Collapsed : Visibility.Visible;
+        FitToolbar();
     }
 
     // ── Authentication popover ────────────────────────────────────

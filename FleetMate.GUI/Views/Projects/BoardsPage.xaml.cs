@@ -17,8 +17,10 @@ using FleetMate.GUI.Views.Shared;
 
 namespace FleetMate.GUI.Views.Projects;
 
-public partial class BoardsPage : Page
+public partial class BoardsPage : Page, IChromeToolbar
 {
+    public FrameworkElement? ChromeToolbar => ViewModeChrome;
+
     private readonly FleetMateConfig _config;
     private readonly App? _app;
     private TaskProviderRegistry? _registry;
@@ -51,6 +53,9 @@ public partial class BoardsPage : Page
     public BoardsPage()
     {
         InitializeComponent();
+        // Set here rather than bound by element name: the switch moves to the
+        // window's title bar, outside this page's name scope.
+        ViewModeMenu.Segments = ViewModeSegments;
         // Cards drag between columns; that drag carries the block too.
         AgentContextMenu.Attach(TaskBoardColumnsControl, drag: false);
         AgentContextMenu.Attach(FlatTaskList);

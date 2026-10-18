@@ -69,10 +69,7 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <StackPanel Grid.Column="0">
-                <TextBlock Text="Projects" Style="{StaticResource TitleTextStyle}" />
-                <TextBlock Text="Unified task management across all providers" Style="{StaticResource SubtitleTextStyle}" />
-            </StackPanel>
+            <!-- No page heading: the tab bar names the tab, as on Mac. -->
 
             <ui:SimpleStackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                 <ComboBox x:Name="ProviderFilter" 
@@ -121,9 +118,11 @@
         </Grid>
 
         <!-- Mine | Queries | Recent | Board (macOS BoardsViewMode). Queries
-             opens first: every Shared Query expanded. Too narrow for all
-             four, they fold into one pill naming the open one. -->
-        <Grid Grid.Row="1" Margin="0,8,0,0">
+             opens first: every Shared Query expanded. Lifted into the window's
+             title bar after Back and Forward (IChromeToolbar), as on Mac. Too
+             little room there for all four, they fold into one pill naming the
+             open one. -->
+        <Grid x:Name="ViewModeChrome" Grid.Row="1" VerticalAlignment="Center">
             <StackPanel x:Name="ViewModeSegments" Orientation="Horizontal">
                 <RadioButton x:Name="MineModeRadio" Content="Mine"
                              GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
@@ -134,7 +133,7 @@
                 <RadioButton x:Name="BoardModeRadio" Content="Board"
                              GroupName="ViewMode" Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
             </StackPanel>
-            <shared:SegmentMenuButton Segments="{Binding ElementName=ViewModeSegments}"
+            <shared:SegmentMenuButton x:Name="ViewModeMenu"
                                       AutomationProperties.AutomationId="ProjectsViewModeMenu" />
         </Grid>
 

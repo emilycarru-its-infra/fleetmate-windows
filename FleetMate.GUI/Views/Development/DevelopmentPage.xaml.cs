@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using FleetMate.GUI.Views.Shared;
 using FleetMate.GUI.Views.Shared.Widgets;
 
 namespace FleetMate.GUI.Views.Development;
@@ -8,8 +9,18 @@ namespace FleetMate.GUI.Views.Development;
 /// The Development tab: a page shell around <see cref="DevelopmentView"/>,
 /// which owns the pull requests, the inbox and the activity sidebar.
 /// </summary>
-public partial class DevelopmentPage : Page, IWidgetFilterHost
+public partial class DevelopmentPage : Page, IWidgetFilterHost, IChromeToolbar, IPageCommands
 {
+    public FrameworkElement? ChromeToolbar => View.ChromeToolbar;
+
+    /// <summary>F5 and Ctrl+R: the toolbar's Refresh lives in the view, outside this page's names.</summary>
+    bool IPageCommands.Execute(AppShortcut shortcut)
+    {
+        if (shortcut != AppShortcut.Refresh) return false;
+        OnRefreshClicked(this, new RoutedEventArgs());
+        return true;
+    }
+
     /// <summary>
     /// Each Development widget opens the segment and filter it counts: a
     /// repository bar opens Pulls for that repository, the Inbox and pull
@@ -39,6 +50,7 @@ public partial class DevelopmentPage : Page, IWidgetFilterHost
     {
         InitializeComponent();
         // Pull-request widgets say nothing about a checkout being edited.
+        View.RefreshRequested += (_, _) => OnRefreshClicked(this, new RoutedEventArgs());
         View.ReposShownChanged += (_, _) =>
             Widgets.Visibility = View.IsReposShown ? Visibility.Collapsed : Visibility.Visible;
     }

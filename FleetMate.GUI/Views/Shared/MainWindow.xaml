@@ -37,12 +37,36 @@
              centered even when window actions are added on the right. -->
         <Border Grid.Row="0" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
                 BorderThickness="0,0,0,1" Padding="12,7">
-            <Grid>
+            <Grid x:Name="ToolbarGrid">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
+
+                <!-- Leading group, as in the macOS toolbar's navigation group: Back
+                     and Forward over the tabs and sub-tabs visited (Alt+Left and
+                     Alt+Right, and the mouse's back and forward buttons), then the
+                     showing tab's own sub-tabs, which the tab hands over
+                     (IChromeToolbar). Tabs without sub-tabs leave it empty. -->
+                <StackPanel x:Name="ToolbarLeft" Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left"
+                            VerticalAlignment="Center" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <StackPanel x:Name="HistoryButtons" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="BackButton" Click="OnBackClicked" IsEnabled="False"
+                                ToolTip="Back (Alt+Left)"
+                                AutomationProperties.AutomationId="BackButton" AutomationProperties.Name="Back"
+                                Style="{StaticResource ChromeHistoryButtonStyle}">
+                            <ui:FontIcon Glyph="&#xE76B;" FontFamily="Segoe Fluent Icons" FontSize="12" />
+                        </Button>
+                        <Button x:Name="ForwardButton" Click="OnForwardClicked" IsEnabled="False"
+                                ToolTip="Forward (Alt+Right)"
+                                AutomationProperties.AutomationId="ForwardButton" AutomationProperties.Name="Forward"
+                                Style="{StaticResource ChromeHistoryButtonStyle}" Margin="2,0,0,0">
+                            <ui:FontIcon Glyph="&#xE76C;" FontFamily="Segoe Fluent Icons" FontSize="12" />
+                        </Button>
+                    </StackPanel>
+                    <Border x:Name="PageToolbarHost" Margin="12,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
 
                 <Border x:Name="TabBarBorder" Grid.Column="1" CornerRadius="9"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True"
