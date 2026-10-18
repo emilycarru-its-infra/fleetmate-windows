@@ -24,11 +24,14 @@ public sealed class TimelineChart : FrameworkElement
     private RepoChurnScale _churnScale;
     private int _hovered = -1;
 
-    private const double Top = 22, Bottom = 18, Left = 48;
+    private const double Top = 22, Bottom = 20, Left = 52;
+
+    /// <summary>Axis and hover text: the widgets' caption size, never smaller.</summary>
+    private const double ChartText = FleetMate.GUI.Views.Shared.Widgets.WidgetCards.CaptionSize;
 
     public TimelineChart()
     {
-        Height = 200;
+        MinHeight = 130;
         MouseMove += (_, e) => Hover(e.GetPosition(this));
         MouseLeave += (_, _) => { _hovered = -1; InvalidateVisual(); };
         Focusable = false;
@@ -115,15 +118,15 @@ public sealed class TimelineChart : FrameworkElement
                 dc.Pop();
             }
             dc.DrawLine(axisPen, new Point(Left, zero), new Point(ActualWidth, zero));
-            Text(dc, "0", new Point(2, zero - 6), RepoBrushes.Secondary, 10);
+            Text(dc, "0", new Point(2, zero - 6), RepoBrushes.Secondary, ChartText);
             var previousOffset = 0.0;
             foreach (var value in RepoChurnScaling.Ticks(peak, _churnScale).Where(v => v > 0))
             {
                 var offset = plotHeight / 2 * RepoChurnScaling.Transform(value, _churnScale) / transformedPeak;
                 if (offset - previousOffset < 12) continue;
                 previousOffset = offset;
-                Text(dc, Compact(value), new Point(2, zero - offset - 6), RepoBrushes.Secondary, 10);
-                Text(dc, "−" + Compact(value), new Point(2, zero + offset - 6), RepoBrushes.Secondary, 10);
+                Text(dc, Compact(value), new Point(2, zero - offset - 6), RepoBrushes.Secondary, ChartText);
+                Text(dc, "−" + Compact(value), new Point(2, zero + offset - 6), RepoBrushes.Secondary, ChartText);
                 var gridPen = new Pen(RepoBrushes.Secondary, 0.3);
                 dc.PushOpacity(0.25);
                 dc.DrawLine(gridPen, new Point(Left, zero - offset), new Point(ActualWidth, zero - offset));
@@ -151,8 +154,8 @@ public sealed class TimelineChart : FrameworkElement
                 dc.Pop();
             }
             dc.DrawLine(axisPen, new Point(Left, baseline), new Point(ActualWidth, baseline));
-            Text(dc, peak.ToString("N0"), new Point(2, Top - 6), RepoBrushes.Secondary, 10);
-            Text(dc, "0", new Point(2, baseline - 8), RepoBrushes.Secondary, 10);
+            Text(dc, peak.ToString("N0"), new Point(2, Top - 6), RepoBrushes.Secondary, ChartText);
+            Text(dc, "0", new Point(2, baseline - 8), RepoBrushes.Secondary, ChartText);
         }
 
         // Dates under the first, middle and last bars.
@@ -160,7 +163,7 @@ public sealed class TimelineChart : FrameworkElement
         {
             var label = Label(_starts[i], _bucket).Replace("Week of ", "");
             var x = Left + i * slot;
-            var formatted = Formatted(label, RepoBrushes.Secondary, 10);
+            var formatted = Formatted(label, RepoBrushes.Secondary, ChartText);
             x = Math.Min(Math.Max(Left, x), ActualWidth - formatted.Width);
             dc.DrawText(formatted, new Point(x, ActualHeight - Bottom + 3));
         }
@@ -175,7 +178,7 @@ public sealed class TimelineChart : FrameworkElement
                     .Select(s => $"   {s.Name} {s.Values[_hovered]}")),
                 _ => $"{Total(_hovered):N0} commit{(Total(_hovered) == 1 ? "" : "s")}",
             };
-            var formatted = Formatted($"{Label(_starts[_hovered], _bucket)}:  {lines}", RepoBrushes.Text, 11);
+            var formatted = Formatted($"{Label(_starts[_hovered], _bucket)}:  {lines}", RepoBrushes.Text, ChartText);
             var x = Math.Min(Math.Max(Left, Left + _hovered * slot - formatted.Width / 2), Math.Max(Left, ActualWidth - formatted.Width - 8));
             var box = new Rect(x - 4, 0, formatted.Width + 8, formatted.Height + 4);
             dc.DrawRoundedRectangle(RepoBrushes.Subtle, new Pen(RepoBrushes.Secondary, 0.5), box, 4, 4);
@@ -199,11 +202,13 @@ public sealed class ActivityHeatmap : FrameworkElement
 {
     private IReadOnlyList<RepoStatsReport.ActivityCell> _cells = Array.Empty<RepoStatsReport.ActivityCell>();
     private (int Weekday, int Hour)? _hovered;
-    private const double Left = 40, Top = 4, Bottom = 18;
+    private const double Left = 42, Top = 4, Bottom = 20;
+
+    private const double ChartText = FleetMate.GUI.Views.Shared.Widgets.WidgetCards.CaptionSize;
 
     public ActivityHeatmap()
     {
-        Height = 190;
+        MinHeight = 130;
         System.Windows.Automation.AutomationProperties.SetName(this, "Commits by weekday and hour");
         MouseMove += (_, e) => Hover(e.GetPosition(this));
         MouseLeave += (_, _) => { _hovered = null; InvalidateVisual(); };
@@ -242,7 +247,7 @@ public sealed class ActivityHeatmap : FrameworkElement
         {
             var y = Top + (weekday - 1) * h;
             dc.DrawText(new FormattedText(names[weekday - 1], CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
-                new Typeface("Segoe UI"), 10, RepoBrushes.Secondary, dpi), new Point(2, y + h / 2 - 7));
+                new Typeface("Segoe UI"), ChartText, RepoBrushes.Secondary, dpi), new Point(2, y + h / 2 - 7));
             for (var hour = 0; hour < 24; hour++)
             {
                 var count = counts.GetValueOrDefault((weekday, hour));
@@ -254,13 +259,13 @@ public sealed class ActivityHeatmap : FrameworkElement
         }
         foreach (var hour in new[] { 0, 3, 6, 9, 12, 15, 18, 21 })
             dc.DrawText(new FormattedText($"{hour:00}:00", CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
-                new Typeface("Segoe UI"), 10, RepoBrushes.Secondary, dpi), new Point(Left + hour * w, ActualHeight - Bottom + 3));
+                new Typeface("Segoe UI"), ChartText, RepoBrushes.Secondary, dpi), new Point(Left + hour * w, ActualHeight - Bottom + 3));
 
         if (_hovered is { } cell)
         {
             var count = counts.GetValueOrDefault(cell);
             var text = new FormattedText($"{names[cell.Weekday - 1]} {cell.Hour:00}:00  {count} commit{(count == 1 ? "" : "s")}",
-                CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 11, RepoBrushes.Text, dpi);
+                CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), ChartText, RepoBrushes.Text, dpi);
             var x = Math.Min(Left + cell.Hour * w, ActualWidth - text.Width - 8);
             var y = Math.Max(0, Top + (cell.Weekday - 1) * h - text.Height - 4);
             dc.DrawRoundedRectangle(RepoBrushes.Subtle, new Pen(RepoBrushes.Secondary, 0.5), new Rect(x - 4, y, text.Width + 8, text.Height + 4), 4, 4);

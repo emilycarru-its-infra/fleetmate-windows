@@ -13,11 +13,15 @@ namespace FleetMate.GUI.Views.Development;
 /// </summary>
 public partial class DevelopmentPage : Page, IWidgetFilterHost
 {
-    /// <summary>Repos Insights never take more than this share of the page; past it they scroll.</summary>
-    private const double InsightsShare = 0.45;
+    /// <summary>
+    /// The graphs never take more than this share of the page, nor less than
+    /// <see cref="StripMinimum"/>; past it they scroll, so the repository
+    /// workspace and the lists keep the screen.
+    /// </summary>
+    private const double StripShare = 0.4;
+    private const double StripMinimum = 180;
 
     private RepoInsightsView? _insights;
-    private ScrollViewer? _insightsHost;
 
     /// <summary>
     /// Each Development widget opens the segment and filter it counts: a
@@ -47,6 +51,13 @@ public partial class DevelopmentPage : Page, IWidgetFilterHost
             case WidgetCatalog.Category.PipelineStatus when Enum.TryParse<PipelineStatusFilter>(value, out var status):
                 View.ShowPipelines(status);
                 break;
+            case WidgetCatalog.Category.Search when View.SearchScope is { } scope:
+                scope.Box.Text = value;
+                break;
+            case WidgetCatalog.Category.PullRequest when Application.Current is App { DevelopmentPullRequests: { } queue }
+                                                     && queue.PullRequests.FirstOrDefault(p => p.Id == value) is { } pr:
+                View.ShowPullRequest(pr);
+                break;
         }
     }
 
@@ -57,7 +68,7 @@ public partial class DevelopmentPage : Page, IWidgetFilterHost
         View.SegmentChanged += (_, _) => Widgets.Invalidate();
         View.ReposShownChanged += (_, _) => Widgets.Invalidate();
         Loaded += (_, _) => HookSkills();
-        SizeChanged += (_, _) => SizeInsights();
+        SizeChanged += (_, _) => SizeStrip();
     }
 
     private bool _skillsHooked;
@@ -84,23 +95,16 @@ public partial class DevelopmentPage : Page, IWidgetFilterHost
     /// <summary>The Repos strip: the workspace's Insights, kept across redraws so its charts are not reread.</summary>
     private UIElement InsightsHost()
     {
-        if (_insightsHost != null) return _insightsHost;
+        if (_insights != null) return _insights;
         _insights = new RepoInsightsView { OpenFile = View.OpenRepoFile };
         _insights.Attach(View.ReposModel);
-        _insightsHost = new ScrollViewer
-        {
-            Content = _insights,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        };
-        WidgetFlowPanel.SetUnits(_insightsHost, 99);
-        SizeInsights();
-        return _insightsHost;
+        WidgetFlowPanel.SetUnits(_insights, WidgetFlowPanel.FullRow);
+        return _insights;
     }
 
-    private void SizeInsights()
+    private void SizeStrip()
     {
-        if (_insightsHost != null && ActualHeight > 0) _insightsHost.MaxHeight = Math.Max(240, ActualHeight * InsightsShare);
+        if (ActualHeight > 0) Widgets.MaxStripHeight = Math.Max(StripMinimum, ActualHeight * StripShare);
     }
 
     private async void OnRefreshClicked(object sender, RoutedEventArgs e)

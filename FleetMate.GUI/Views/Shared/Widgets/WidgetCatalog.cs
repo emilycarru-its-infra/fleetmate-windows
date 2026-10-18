@@ -44,6 +44,10 @@ public static partial class WidgetCatalog
         public const string CommitRepository = "CommitRepository";
         /// <summary>Development: open Pipelines filtered to a repository.</summary>
         public const string PipelineRepository = "PipelineRepository";
+        /// <summary>Development: type a value into the open sub-tab's search field (an author, a pipeline).</summary>
+        public const string Search = "Search";
+        /// <summary>Development: open one pull request in Pulls (its id).</summary>
+        public const string PullRequest = "PullRequest";
     }
 
     public const string InboxSegment = "Inbox";
@@ -174,25 +178,43 @@ public static partial class WidgetCatalog
         var mine = app.CachedMyWorkItems ?? new List<WorkItem>();
         var loading = app.IsCacheLoading(App.MyWorkItemsKey);
 
+        var stats = WorkItemStats.From(mine, DateTime.UtcNow);
+        var waiting = loading && mine.Count == 0;
+        void None() { }
         var cards = new List<UIElement>
         {
-            WidgetCards.KpiStack(new[]
+            TicketWidgets.KpiGrid(new TicketWidgets.Tile[]
             {
-                new KpiTile("Active Work Items", mine.Count.ToString("N0"), "", P.Hex(P.Indigo), loading && mine.Count == 0),
-            }),
+                new("Assigned to Me", stats.Open, "\uE8FD", P.Indigo, false, "Your open work items", None),
+                new("In Progress", stats.InProgress, "\uE768", P.Blue, false, "Open and past New", None),
+                new("New This Week", stats.NewThisWeek, "\uE734", P.Green, false, "Created in the last 7 days", None),
+                new("Updated This Week", stats.UpdatedThisWeek, "\uE81C", P.Teal, false, "Changed in the last 7 days", None),
+                new("Blocked", stats.Blocked, "\uE8F8", P.Orange, false, "Tagged Blocked, or on a Blocked column or state", None),
+                new("Overdue", stats.Overdue, "\uE787", P.Purple, false, "Past their due date", None),
+                new($"No Change in {WorkItemStats.StaleDays} Days", stats.Stale, "\uE916", P.Gray, false, $"Not changed in {WorkItemStats.StaleDays} days", None),
+                new("GitHub Issues", _issues?.Count ?? 0, "\uE946", P.Indigo, false, "Open GitHub issues in your list", None),
+            }, waiting, units: 2, maxColumns: 4),
         };
 
         var slices = WorkItemSlices(mine);
-        cards.Add(WidgetCards.Card("Work Items", WidgetCards.ChartOr(slices.Count > 0, loading, "No work item data", () =>
+        cards.Add(WidgetCards.Card("By State", WidgetCards.ChartOr(slices.Count > 0, loading, "No work item data", () =>
         {
             var body = new System.Windows.Controls.StackPanel
             {
-                Children = { WidgetCards.Donut(slices, colors: slices.Select((_, i) => P.Sk(WorkItemColors[i % WorkItemColors.Length])).ToList()) },
+                Children = { WidgetCards.Donut(slices, colors: slices.Select((_, i) => P.Sk(WorkItemColors[i % WorkItemColors.Length])).ToList(), adaptive: true) },
             };
             if (app.CachedSprints.FirstOrDefault(s => s.IsCurrent) is { } sprint)
                 body.Children.Add(WidgetCards.Caption(SprintCaption(string.IsNullOrEmpty(sprint.Name) ? "Current" : sprint.Name, mine)));
             return body;
         }), loading: loading));
+
+        var byType = WorkItemStats.Ranked(mine, w => w.WorkItemType).Take(8).Select(r => new ChartSlice(r.Label, r.Count)).ToList();
+        cards.Add(WidgetCards.Card("By Type", WidgetCards.ChartOr(byType.Count > 0, loading, "No work item data",
+            () => WidgetCards.HorizontalBars(byType, _ => P.Indigo)), loading: loading));
+
+        var byProject = WorkItemStats.Ranked(mine, w => w.Fields.TeamProject).Take(8).Select(r => new ChartSlice(r.Label, r.Count)).ToList();
+        cards.Add(WidgetCards.Card("By Project", WidgetCards.ChartOr(byProject.Count > 0, loading, "No work item data",
+            () => WidgetCards.HorizontalBars(byProject, _ => P.Teal)), loading: loading));
 
         var orgRoot = app.Config.AzureDevOps?.BaseUrl?.TrimEnd('/');
         var workRows = mine
@@ -390,7 +412,7 @@ public static partial class WidgetCatalog
             },
             new System.Windows.Controls.TextBlock
             {
-                Text = label, FontSize = 10,
+                Text = label, FontSize = WidgetCards.CaptionSize,
                 Foreground = (Brush)Application.Current.FindResource("SystemControlForegroundBaseMediumBrush"),
             },
         },
