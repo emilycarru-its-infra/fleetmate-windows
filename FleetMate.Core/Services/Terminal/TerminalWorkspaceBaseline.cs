@@ -112,11 +112,12 @@ public static class TerminalWorkspaceBaseline
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
     }
 
-    /// <summary>The registry's tracked checkouts that exist on disk (every registered one when none is tracked), with their activity.</summary>
+    /// <summary>The registry's tracked checkouts that exist on disk (every registered one when none is tracked), with their activity. Repositories hidden from the Repos sidebar are left out.</summary>
     public static IReadOnlyList<Checkout> Checkouts(RepoRegistryDocument document)
     {
-        var tracked = document.TrackedEntries;
-        var entries = tracked.Count > 0 ? tracked : document.Entries;
+        var shown = document.Entries.Where(e => !e.Hidden).ToList();
+        var tracked = shown.Where(e => e.Tracked).ToList();
+        var entries = tracked.Count > 0 ? tracked : shown;
         return entries
             .Where(e => Directory.Exists(e.Path))
             .Select(e => new Checkout(e.Key.Provider, e.Key.Scope, e.Key.DisplayName, e.Path, LastActivity(e.Path)))

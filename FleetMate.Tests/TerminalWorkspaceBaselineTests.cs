@@ -85,4 +85,31 @@ public class TerminalWorkspaceBaselineTests
         file.Upsert(new TerminalWorkspace { Name = "Daily repos", Source = TerminalWorkspaceBaseline.Source });
         Assert.Equal("Daily repos", file.Baseline?.Name);
     }
+
+    [Fact]
+    public void Checkouts_LeaveOutReposHiddenFromTheSidebar()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "fm-baseline-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            RepoRegistryEntry Entry(RepoProvider provider, string owner, string? project, string name, bool hidden)
+            {
+                var path = Path.Combine(root, name);
+                Directory.CreateDirectory(path);
+                return new RepoRegistryEntry { Key = new RepoKey(provider, owner, project, name), Path = path, Tracked = true, Hidden = hidden };
+            }
+            var shown = Entry(RepoProvider.GitHub, "example", null, "shown", hidden: false);
+            var hidden = Entry(RepoProvider.GitHub, "example", null, "hidden", hidden: true);
+            var hiddenAzure = Entry(RepoProvider.AzureDevOps, "example", "Sample", "secret", hidden: true);
+            var document = new RepoRegistryDocument();
+            foreach (var e in new[] { shown, hidden, hiddenAzure }) document.Repos[e.Key.Id] = e;
+
+            var checkouts = TerminalWorkspaceBaseline.Checkouts(document);
+
+            Assert.Equal(new[] { shown.Path }, checkouts.Select(c => c.Path));
+            var workspace = TerminalWorkspaceBaseline.Make(checkouts, "codex", Now)!;
+            Assert.Equal(new[] { "GitHub" }, workspace.Sections.Select(s => s.Name));
+        }
+        finally { try { Directory.Delete(root, recursive: true); } catch (IOException) { } }
+    }
 }
