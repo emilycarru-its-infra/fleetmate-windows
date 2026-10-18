@@ -430,9 +430,9 @@ public static class RepoDiscovery
     }
 
     private static readonly System.Text.RegularExpressions.Regex HeaderPattern =
-        new(@"^\[([A-Za-z0-9.-]+)(?: ""([^""\\]*)"")?\]$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
-    private static readonly System.Text.RegularExpressions.Regex EntryPattern =
-        new(@"^[ \t]*([A-Za-z][A-Za-z0-9-]*)[ \t]*=[ \t]*([^""\;#]*)$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        new(@"^\[([A-Za-z0-9.-]+)(?: ""([^""\x5C]*)"")?\]$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    internal static readonly System.Text.RegularExpressions.Regex EntryPattern =
+        new(@"^[ \t]*([A-Za-z][A-Za-z0-9-]*)[ \t]*=[ \t]*([^""\x5C;#]*)$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
     private static readonly System.Text.RegularExpressions.Regex BareKeyPattern =
         new(@"^[ \t]*([A-Za-z][A-Za-z0-9-]*)[ \t]*$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
@@ -472,6 +472,9 @@ public static class RepoDiscovery
             var line = System.Text.Encoding.ASCII.GetString(bytes, start, length);
             start = end + 1;
 
+            // A trailing backslash continues the line in git's reading; never
+            // let one through, whatever the patterns below would say.
+            if (line.EndsWith('\\')) { Flag("(continuation line)"); continue; }
             var trimmed = line.Trim(' ', '\t');
             if (trimmed.Length == 0 || trimmed[0] is '#' or ';') continue;
 

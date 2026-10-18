@@ -251,6 +251,7 @@ public sealed class RepoDiscoveryScanTests : TempFolder
         { "submodule update command", "[submodule \"lib\"]\n\tupdate = !sh -c x\n", true },
         { "submodule update quoted empty then command", "[submodule \"lib\"]\n\tupdate = \"\"!sh -c x\n", true },
         { "submodule update other value", "[submodule \"lib\"]\n\tupdate = merge-ish\n", true },
+        { "url continuation hiding a header", "[remote \"origin\"]\n\turl = x \\\n[user]\n\tpager = less\n", true },
         { "continuation backslash", "[user]\n\tname = Someone \\\n[core]\n\tpager = less\n", true },
         { "quoted value", "[user]\n\tname = \"Some one\"\n", true },
         { "quote spanning lines", "[user]\n\tname = \"Some\n\tone\"\n", true },
@@ -282,6 +283,14 @@ public sealed class RepoDiscoveryScanTests : TempFolder
     [Fact]
     public void InvalidUtf8_IsFlagged() =>
         Assert.NotEmpty(RepoDiscovery.ConfigReview(new byte[] { 0x5B, 0x63, 0x5D, 0x0A, 0xC3, 0x28 }));
+
+    [Fact]
+    public void EntryPattern_RejectsBackslash()
+    {
+        Assert.False(RepoDiscovery.EntryPattern.IsMatch("\turl = x \\"));
+        Assert.Equal(new[] { "(continuation line)" },
+            RepoDiscovery.CommandConfigKeys("[remote \"origin\"]\n\turl = x \\\n[user]\n\tpager = less\n"));
+    }
 
     [Fact]
     public void FlaggedKeys_AreNamed() =>
