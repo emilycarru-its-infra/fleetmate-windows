@@ -53,7 +53,20 @@
 
     <!-- Widgets sit above the page; the DockPanel keeps the page's own grid untouched. -->
     <DockPanel>
-    <widgets:WidgetsSection DockPanel.Dock="Top" Tab="Projects" Margin="16,14,16,0" />
+    <widgets:WidgetsSection x:Name="Widgets" DockPanel.Dock="Top" Tab="Projects" Margin="16,14,16,0" />
+    <!-- Shown while a strip tile filters the lists: names the filter and clears it. -->
+    <Border x:Name="TileFilterBar" DockPanel.Dock="Top" Margin="16,8,16,0" Padding="10,4,4,4"
+            CornerRadius="7" Visibility="Collapsed"
+            Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+            AutomationProperties.AutomationId="ProjectsTileFilterBar">
+        <DockPanel LastChildFill="True">
+            <Button x:Name="ClearTileFilterButton" DockPanel.Dock="Right" Content="Clear" Padding="10,2"
+                    Click="OnClearTileFilter" ToolTip="Show every item again"
+                    AutomationProperties.AutomationId="ProjectsTileFilterClear" />
+            <TextBlock x:Name="TileFilterLabel" VerticalAlignment="Center" FontSize="12"
+                       TextTrimming="CharacterEllipsis" />
+        </DockPanel>
+    </Border>
     <Grid Margin="16,14,16,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />

@@ -180,19 +180,24 @@ public static partial class WidgetCatalog
 
         var stats = WorkItemStats.From(mine, DateTime.UtcNow);
         var waiting = loading && mine.Count == 0;
-        void None() { }
+        // Each figure filters the page's lists to the set it counts; the picked one lights up.
+        var picked = ProjectsTileFilter.Shared;
+        TicketWidgets.Tile Tile(ProjectsTile tile, int value, string glyph, Color color, string help) =>
+            new(ProjectsTileFilter.Title(tile), value, glyph, color, picked.Selected == tile,
+                picked.Selected == tile ? $"{help}. Click again to show everything" : $"{help}. Click to show only these",
+                () => picked.Toggle(tile));
         var cards = new List<UIElement>
         {
             TicketWidgets.KpiGrid(new TicketWidgets.Tile[]
             {
-                new("Assigned to Me", stats.Open, "\uE8FD", P.Indigo, false, "Your open work items", None),
-                new("In Progress", stats.InProgress, "\uE768", P.Blue, false, "Open and past New", None),
-                new("New This Week", stats.NewThisWeek, "\uE734", P.Green, false, "Created in the last 7 days", None),
-                new("Updated This Week", stats.UpdatedThisWeek, "\uE81C", P.Teal, false, "Changed in the last 7 days", None),
-                new("Blocked", stats.Blocked, "\uE8F8", P.Orange, false, "Tagged Blocked, or on a Blocked column or state", None),
-                new("Overdue", stats.Overdue, "\uE787", P.Purple, false, "Past their due date", None),
-                new($"No Change in {WorkItemStats.StaleDays} Days", stats.Stale, "\uE916", P.Gray, false, $"Not changed in {WorkItemStats.StaleDays} days", None),
-                new("GitHub Issues", _issues?.Count ?? 0, "\uE946", P.Indigo, false, "Open GitHub issues in your list", None),
+                Tile(ProjectsTile.AssignedToMe, stats.Open, "\uE8FD", P.Indigo, "Your open work items"),
+                Tile(ProjectsTile.InProgress, stats.InProgress, "\uE768", P.Blue, "Open and past New"),
+                Tile(ProjectsTile.NewThisWeek, stats.NewThisWeek, "\uE734", P.Green, "Created in the last 7 days"),
+                Tile(ProjectsTile.UpdatedThisWeek, stats.UpdatedThisWeek, "\uE81C", P.Teal, "Changed in the last 7 days"),
+                Tile(ProjectsTile.Blocked, stats.Blocked, "\uE8F8", P.Orange, "Tagged Blocked, or on a Blocked column or state"),
+                Tile(ProjectsTile.Overdue, stats.Overdue, "\uE787", P.Purple, "Past their due date"),
+                Tile(ProjectsTile.Stale, stats.Stale, "\uE916", P.Gray, $"Not changed in {WorkItemStats.StaleDays} days"),
+                Tile(ProjectsTile.GitHubIssues, _issues?.Count ?? 0, "\uE946", P.Indigo, "Open GitHub issues in your list"),
             }, waiting, units: 2, maxColumns: 4),
         };
 
