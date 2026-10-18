@@ -32,8 +32,9 @@ public sealed class RepoSettings
     /// <summary>Upper bound on git processes a batch command runs at once.</summary>
     public int Concurrency { get; set; } = 6;
     /// <summary>
-    /// Whether a clone that appears in a scan root is tracked on the next
-    /// launch or refresh, without asking. Applies only once <see cref="RootsChosen"/>.
+    /// Whether FleetMate looks for clones that appeared in a scan root on launch
+    /// and refresh, and offers to add them. Applies only once <see cref="RootsChosen"/>.
+    /// The key keeps its first name so the file stays shared with the Mac app.
     /// </summary>
     public bool AutoTrackNewClones { get; set; } = true;
     /// <summary>
@@ -43,7 +44,7 @@ public sealed class RepoSettings
     /// </summary>
     public bool RootsChosen { get; set; }
 
-    /// <summary>Whether a scan should track clones it has not seen before.</summary>
+    /// <summary>Whether to look for clones the registry has not seen before.</summary>
     [JsonIgnore]
     public bool TracksNewClones => AutoTrackNewClones && RootsChosen;
 

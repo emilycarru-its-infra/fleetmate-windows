@@ -1,7 +1,11 @@
 namespace FleetMate.Core.Services.Repos;
 
-/// <summary>A git checkout found on disk.</summary>
-public sealed record DiscoveredCheckout(string Path, string? RemoteUrl, RepoKey? Key);
+/// <summary>
+/// A git checkout found on disk. <see cref="FromWorkspace"/> marks one found
+/// only because a VS Code workspace file lists it: a proposal for the person to
+/// accept, never registered or tracked without asking.
+/// </summary>
+public sealed record DiscoveredCheckout(string Path, string? RemoteUrl, RepoKey? Key, bool FromWorkspace = false);
 
 /// <summary>
 /// Walks scan roots for git checkouts.
@@ -15,9 +19,13 @@ public sealed record DiscoveredCheckout(string Path, string? RemoteUrl, RepoKey?
 /// its contents are never walked. Linked worktrees are not reported: they belong
 /// to the checkout they were added from.
 ///
-/// VS Code multi-root workspaces (<c>*.code-workspace</c>) found on the way, in a
-/// visited folder or at the top of a checkout, contribute the checkouts their
-/// <c>folders</c> name, wherever those live.
+/// VS Code multi-root workspaces (<c>*.code-workspace</c>) sitting directly in a
+/// scan root or the profile folder contribute the checkouts their
+/// <c>folders</c> name, but only folders that resolve inside a scan root, and
+/// only as proposals (<see cref="ScanResult.WorkspaceCheckouts"/>).
+///
+/// Nothing here runs git: a clone's origin is read from its config file, so a
+/// scan never executes anything a clone's own configuration names.
 /// </summary>
 public static class RepoDiscovery
 {
@@ -47,10 +55,14 @@ public static class RepoDiscovery
     public static List<string> ExistingCommonLocations() =>
         CommonLocations.Where(l => Directory.Exists(RepoSettings.Expand(l))).ToList();
 
-    /// <summary>What one walk found: checkouts in walk order, each once, and the workspace files read.</summary>
-    public sealed record ScanResult(List<string> Checkouts, List<string> WorkspaceFiles);
+    /// <summary>
+    /// What one scan found: checkouts the walk reached, in walk order; checkouts
+    /// only a workspace file names, not reached by the walk; and the workspace
+    /// files read.
+    /// </summary>
+    public sealed record ScanResult(List<string> Checkouts, List<string> WorkspaceCheckouts, List<string> WorkspaceFiles);
 
-    /// <summary>Paths of checkouts under <paramref name="roots"/>, found without spawning a process.</summary>
+    /// <summary>Paths of checkouts the walk reaches under <paramref name="roots"/>, found without spawning a process.</summary>
     public static List<string> FindCheckouts(IEnumerable<string> roots, int maxDepth, IEnumerable<string> skip) =>
         Scan(roots, maxDepth, skip).Checkouts;
 
@@ -73,25 +85,13 @@ public static class RepoDiscovery
             if (seen.Add(key)) found.Add(path);
         }
 
-        void CollectWorkspaces(string directory)
-        {
-            try
-            {
-                workspaceFiles.AddRange(Directory.EnumerateFiles(directory, "*.code-workspace", SearchOption.TopDirectoryOnly)
-                    .OrderBy(f => f, StringComparer.OrdinalIgnoreCase));
-            }
-            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException) { }
-        }
-
         void Walk(string directory, int depth)
         {
             if (IsCheckout(directory))
             {
                 Note(directory);
-                CollectWorkspaces(directory);
                 return;
             }
-            CollectWorkspaces(directory);
             if (depth >= maxDepth) return;
             IEnumerable<DirectoryInfo> children;
             try
@@ -121,19 +121,94 @@ public static class RepoDiscovery
             }
         }
 
+        var walkedRoots = new List<string>();
         foreach (var root in roots)
         {
             string expanded;
             try { expanded = RepoSettings.Normalize(root); }
             catch (Exception ex) when (ex is ArgumentException or NotSupportedException) { continue; }
-            if (Directory.Exists(expanded)) Walk(expanded, 0);
+            if (IsUncOrDevicePath(expanded) || !Directory.Exists(expanded)) continue;
+            walkedRoots.Add(expanded);
+            Walk(expanded, 0);
         }
 
+        // Workspace files are read only at the top of a scan root or the
+        // profile folder, and a folder they list counts only when it really
+        // lies inside a scan root.
+        var resolvedRoots = walkedRoots.Select(ResolveLinks).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var walked = new HashSet<string>(found.Select(p => ResolveLinks(p) ?? p), StringComparer.OrdinalIgnoreCase);
+        var proposals = new List<string>();
+        var proposed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var places = home.Length > 0 ? walkedRoots.Append(home) : walkedRoots;
+        foreach (var place in places.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                workspaceFiles.AddRange(Directory.EnumerateFiles(place, "*.code-workspace", SearchOption.TopDirectoryOnly)
+                    .Where(f => !workspaceFiles.Contains(f, StringComparer.OrdinalIgnoreCase))
+                    .OrderBy(f => f, StringComparer.OrdinalIgnoreCase));
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException) { }
+        }
         foreach (var file in workspaceFiles)
+        {
             foreach (var folder in WorkspaceFolders(file))
-                if (EnclosingCheckout(folder) is { } checkout) Note(checkout);
+            {
+                if (ResolveLinks(folder) is not { } resolved || !IsInside(resolved, resolvedRoots)) continue;
+                if (EnclosingCheckout(resolved) is not { } checkout || !IsInside(checkout, resolvedRoots)) continue;
+                if (walked.Contains(checkout) || !proposed.Add(checkout)) continue;
+                proposals.Add(checkout);
+            }
+        }
 
-        return new ScanResult(found, workspaceFiles);
+        return new ScanResult(found, proposals, workspaceFiles);
+    }
+
+    /// <summary>UNC shares (<c>\\server\share</c>, <c>//server</c>) and <c>\\?\</c> or <c>\\.\</c> device paths.</summary>
+    internal static bool IsUncOrDevicePath(string path) =>
+        path.StartsWith(@"\\", StringComparison.Ordinal) || path.StartsWith("//", StringComparison.Ordinal)
+        || path.StartsWith(@"\??\", StringComparison.Ordinal);
+
+    /// <summary>Whether <paramref name="path"/> is one of <paramref name="roots"/> or below one, on a separator boundary.</summary>
+    internal static bool IsInside(string path, IEnumerable<string> roots)
+    {
+        var sep = Path.DirectorySeparatorChar;
+        return roots.Any(root =>
+        {
+            var prefix = root.EndsWith(sep) ? root : root + sep;
+            return string.Equals(path, root, StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    /// <summary>
+    /// The full path with every symbolic link and junction along it followed, or
+    /// null for a UNC or device path or one that cannot be resolved.
+    /// </summary>
+    internal static string? ResolveLinks(string path)
+    {
+        try
+        {
+            if (IsUncOrDevicePath(path)) return null;
+            var full = Path.GetFullPath(path);
+            if (IsUncOrDevicePath(full)) return null;
+            var root = Path.GetPathRoot(full) ?? "";
+            var current = root;
+            foreach (var part in full[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+            {
+                current = Path.Combine(current, part);
+                var info = new DirectoryInfo(current);
+                if (info.Exists && info.LinkTarget != null)
+                {
+                    var target = info.ResolveLinkTarget(returnFinalTarget: true);
+                    if (target == null) return null;
+                    current = Path.GetFullPath(target.FullName);
+                    if (IsUncOrDevicePath(current)) return null;
+                }
+            }
+            return current.Length > (Path.GetPathRoot(current) ?? "").Length ? current.TrimEnd(Path.DirectorySeparatorChar) : current;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { return null; }
     }
 
     /// <summary>
@@ -202,10 +277,14 @@ public static class RepoDiscovery
                     || pathElement.ValueKind != System.Text.Json.JsonValueKind.String) continue;
                 var raw = pathElement.GetString();
                 if (string.IsNullOrWhiteSpace(raw)) continue;
+                // A workspace file is someone else's text: no ~ or %VARIABLE%
+                // expansion, and never a network share or device path.
+                if (IsUncOrDevicePath(raw)) continue;
                 try
                 {
-                    var expanded = RepoSettings.Expand(raw.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar));
-                    result.Add(Path.GetFullPath(Path.IsPathRooted(expanded) ? expanded : Path.Combine(relativeTo, expanded)));
+                    var local = raw.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+                    var full = Path.GetFullPath(Path.IsPathRooted(local) ? local : Path.Combine(relativeTo, local));
+                    if (!IsUncOrDevicePath(full)) result.Add(full);
                 }
                 catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { }
             }
@@ -214,15 +293,79 @@ public static class RepoDiscovery
         return result;
     }
 
-    /// <summary>Finds checkouts and reads each one's origin, a bounded number at a time.</summary>
-    public static Task<List<DiscoveredCheckout>> DiscoverAsync(RepoSettings settings, CancellationToken ct = default)
-    {
-        var paths = FindCheckouts(settings.ScanRoots, settings.ScanDepth, settings.SkipDirectories);
-        return Bounded.MapAsync(paths, settings.Concurrency, async path =>
+    /// <summary>
+    /// Finds checkouts and reads each one's origin from its config file, with no
+    /// git process. Workspace-file proposals are included, marked, only when
+    /// <paramref name="includeWorkspaceFolders"/> is set.
+    /// </summary>
+    public static Task<List<DiscoveredCheckout>> DiscoverAsync(RepoSettings settings, CancellationToken ct = default) =>
+        DiscoverAsync(settings, includeWorkspaceFolders: false, ct);
+
+    public static Task<List<DiscoveredCheckout>> DiscoverAsync(RepoSettings settings, bool includeWorkspaceFolders, CancellationToken ct = default) =>
+        Task.Run(() =>
         {
-            var origin = await new GitWorkingCopy(path).OriginUrlAsync(ct);
-            return new DiscoveredCheckout(path, origin, RepoRemoteUrl.Parse(origin));
-        });
+            var scan = Scan(settings.ScanRoots, settings.ScanDepth, settings.SkipDirectories);
+            var found = scan.Checkouts.Select(path => Checkout(path, fromWorkspace: false));
+            if (includeWorkspaceFolders) found = found.Concat(scan.WorkspaceCheckouts.Select(path => Checkout(path, fromWorkspace: true)));
+            return found.ToList();
+        }, ct);
+
+    private static DiscoveredCheckout Checkout(string path, bool fromWorkspace)
+    {
+        var origin = ReadOrigin(path);
+        return new DiscoveredCheckout(path, origin, RepoRemoteUrl.Parse(origin), fromWorkspace);
+    }
+
+    /// <summary>
+    /// The <c>origin</c> remote's URL, read from the checkout's git config
+    /// (following a <c>gitdir:</c> file for a submodule), or null.
+    /// </summary>
+    public static string? ReadOrigin(string checkout)
+    {
+        try
+        {
+            var dotGit = Path.Combine(checkout, ".git");
+            string gitDir;
+            if (Directory.Exists(dotGit)) gitDir = dotGit;
+            else if (File.Exists(dotGit))
+            {
+                var line = File.ReadLines(dotGit).FirstOrDefault()?.Trim() ?? "";
+                if (!line.StartsWith("gitdir:", StringComparison.OrdinalIgnoreCase)) return null;
+                var target = line["gitdir:".Length..].Trim().Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+                if (target.Length == 0 || IsUncOrDevicePath(target)) return null;
+                gitDir = Path.GetFullPath(Path.IsPathRooted(target) ? target : Path.Combine(checkout, target));
+            }
+            else return null;
+            var config = Path.Combine(gitDir, "config");
+            return File.Exists(config) ? OriginFromConfig(File.ReadAllText(config)) : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { return null; }
+    }
+
+    /// <summary>The <c>url</c> of <c>[remote "origin"]</c> in a git config file's text.</summary>
+    internal static string? OriginFromConfig(string text)
+    {
+        var inOrigin = false;
+        foreach (var raw in text.Split('\n'))
+        {
+            var line = raw.Trim();
+            if (line.Length == 0 || line[0] is '#' or ';') continue;
+            if (line[0] == '[')
+            {
+                var close = line.IndexOf(']');
+                var header = close > 0 ? line[1..close].Trim() : "";
+                inOrigin = header.StartsWith("remote", StringComparison.OrdinalIgnoreCase)
+                    && header[6..].Trim() == "\"origin\"";
+                continue;
+            }
+            if (!inOrigin) continue;
+            var equals = line.IndexOf('=');
+            if (equals <= 0 || !line[..equals].Trim().Equals("url", StringComparison.OrdinalIgnoreCase)) continue;
+            var value = line[(equals + 1)..].Trim();
+            if (value.Length >= 2 && value[0] == '"' && value[^1] == '"') value = value[1..^1];
+            return value.Length > 0 ? value : null;
+        }
+        return null;
     }
 }
 

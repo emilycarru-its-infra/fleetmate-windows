@@ -59,26 +59,26 @@ public sealed class GitWorkingCopy
         if (includeIgnored) args.Add("--ignored");
         // Optional locks off: a status poll must never take the index lock
         // from under a commit running in a terminal.
-        var output = await CheckedAsync(args, OptionalLocksOff, ct);
+        var output = await CheckedAsync(InspectionConfig.Concat(args), OptionalLocksOff, ct);
         return GitOutputParser.Status(output);
     }
 
     public async Task<List<RepoWorktree>> WorktreesAsync(CancellationToken ct = default)
     {
-        var result = await GitAsync(new[] { "worktree", "list", "--porcelain" }, ct: ct);
+        var result = await InspectAsync(new[] { "worktree", "list", "--porcelain" }, ct: ct);
         return result.Succeeded ? GitOutputParser.Worktrees(result.StandardOutput) : new();
     }
 
     public async Task<string?> CurrentBranchAsync(CancellationToken ct = default)
     {
-        var result = await GitAsync(new[] { "symbolic-ref", "--quiet", "--short", "HEAD" }, ct: ct);
+        var result = await InspectAsync(new[] { "symbolic-ref", "--quiet", "--short", "HEAD" }, ct: ct);
         var branch = result.StandardOutput.Trim();
         return result.Succeeded && branch.Length > 0 ? branch : null;
     }
 
     public async Task<string?> OriginUrlAsync(CancellationToken ct = default)
     {
-        var result = await GitAsync(new[] { "config", "--get", "remote.origin.url" }, ct: ct);
+        var result = await InspectAsync(new[] { "config", "--get", "remote.origin.url" }, ct: ct);
         var url = result.StandardOutput.Trim();
         return result.Succeeded && url.Length > 0 ? url : null;
     }
@@ -86,7 +86,7 @@ public sealed class GitWorkingCopy
     /// <summary>When HEAD was last committed, or null for an empty repository.</summary>
     public async Task<DateTimeOffset?> LastCommitDateAsync(CancellationToken ct = default)
     {
-        var result = await GitAsync(new[] { "log", "-1", "--format=%ct" }, OptionalLocksOff, ct);
+        var result = await InspectAsync(new[] { "log", "-1", "--format=%ct" }, OptionalLocksOff, ct);
         return result.Succeeded && long.TryParse(result.StandardOutput.Trim(), out var seconds)
             ? DateTimeOffset.FromUnixTimeSeconds(seconds).ToLocalTime()
             : null;
@@ -257,7 +257,7 @@ public sealed class GitWorkingCopy
     /// </summary>
     public async Task<List<string>> ListFilesAsync(CancellationToken ct = default)
     {
-        var output = await CheckedAsync(new[] { "ls-files", "--cached", "--others", "--exclude-standard", "-z" }, ct: ct);
+        var output = await CheckedAsync(InspectionConfig.Concat(new[] { "ls-files", "--cached", "--others", "--exclude-standard", "-z" }), ct: ct);
         // Deleted-but-tracked files still appear in --cached; keep only what exists.
         var seen = new HashSet<string>();
         return GitOutputParser.Paths(output).Where(p => seen.Add(p) && File.Exists(Absolute(p))).ToList();
@@ -382,6 +382,34 @@ public sealed class GitWorkingCopy
     private static readonly IReadOnlyDictionary<string, string> OptionalLocksOff =
         new Dictionary<string, string> { ["GIT_OPTIONAL_LOCKS"] = "0" };
 
+    /// <summary>
+    /// Settings for git FleetMate runs on its own (status polls, listings, the
+    /// removal check), never for what the person asked for: a clone's own
+    /// config must not start a filesystem monitor or run a hook just because
+    /// FleetMate looked at it.
+    /// </summary>
+    public static readonly IReadOnlyList<string> InspectionConfig = new[]
+    {
+        "-c", "core.fsmonitor=false",
+        "-c", "core.hooksPath=" + (OperatingSystem.IsWindows() ? "NUL" : "/dev/null"),
+    };
+
+    /// <summary>Runs git in this checkout with <see cref="InspectionConfig"/>.</summary>
+    public Task<GitResult> InspectAsync(IEnumerable<string> arguments,
+        IReadOnlyDictionary<string, string>? extraEnvironment = null, CancellationToken ct = default) =>
+        GitAsync(InspectionConfig.Concat(arguments), extraEnvironment, ct);
+
+    /// <summary>The git subcommand in an argument list, past any <c>-c</c> settings.</summary>
+    private static string Subcommand(IReadOnlyList<string> arguments)
+    {
+        for (var i = 0; i < arguments.Count; i++)
+        {
+            if (arguments[i] == "-c") { i++; continue; }
+            return arguments[i];
+        }
+        return "";
+    }
+
     /// <summary>Runs git in this checkout.</summary>
     public Task<GitResult> GitAsync(IEnumerable<string> arguments,
         IReadOnlyDictionary<string, string>? extraEnvironment = null, CancellationToken ct = default) =>
@@ -450,7 +478,7 @@ public sealed class GitWorkingCopy
         if (!result.Succeeded)
         {
             if (result.Message.Contains("not a git repository")) throw RepoException.NotAGitRepository(Path);
-            throw RepoException.GitFailed(list.FirstOrDefault() ?? "", result.Message);
+            throw RepoException.GitFailed(Subcommand(list), result.Message);
         }
         // Network commands report progress on stderr; keep it for the caller.
         return result.StandardOutput.Length == 0 ? result.StandardError : result.StandardOutput;

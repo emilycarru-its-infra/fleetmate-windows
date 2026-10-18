@@ -150,18 +150,35 @@ public sealed class RepoWorkspaceModel : RepoObservable
 
     // ── Tracking, hiding, deleting ──────────────────────────────────────
 
+    private IReadOnlyList<DiscoveredCheckout> _newClones = Array.Empty<DiscoveredCheckout>();
+
+    /// <summary>Clones that appeared in the watched folders, waiting for Add or Ignore.</summary>
+    public IReadOnlyList<DiscoveredCheckout> NewClones { get => _newClones; private set => Set(ref _newClones, value); }
+
     /// <summary>
-    /// Links and tracks clones that appeared in the watched folders, when the
-    /// person turned that on. Quiet: a failure only leaves the list as it was.
+    /// Looks for clones that appeared in the watched folders, when the person
+    /// left that on. Quiet: a failure only leaves the list as it was.
     /// </summary>
-    public async Task TrackNewClonesAsync()
+    public async Task LookForNewClonesAsync()
     {
         try
         {
-            var results = await Manager.TrackNewClonesAsync();
-            if (results?.Any(r => r.Action == DiscoveryAction.Linked) == true) ReloadRecords();
+            NewClones = await Manager.NewClonesAsync() ?? new List<DiscoveredCheckout>();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or RepoException) { }
+    }
+
+    /// <summary>Tracks the new clones (<paramref name="add"/>) or records them as untracked so FleetMate does not ask again.</summary>
+    public async Task ResolveNewClonesAsync(bool add)
+    {
+        var clones = _newClones;
+        NewClones = Array.Empty<DiscoveredCheckout>();
+        Change(add ? "Could not add the repositories" : "Could not ignore the repositories", () => Manager.Register(clones, track: add));
+        if (add)
+        {
+            await RefreshStatusesAsync();
+            NotifyRegistryChanged();
+        }
     }
 
     /// <summary>Watches <paramref name="folders"/> and tracks every clone in them, with no further questions.</summary>

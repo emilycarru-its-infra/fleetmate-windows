@@ -57,9 +57,9 @@
                                  KeyDown="OnNewScanRootKey" AutomationProperties.Name="Folder to watch" />
                     </DockPanel>
                     <CheckBox x:Name="AutoTrackBox" Margin="0,10,0,0" Click="OnAutoTrackClicked"
-                              Content="Automatically track new clones in these folders"
+                              Content="Look for new clones in these folders"
                               AutomationProperties.AutomationId="ReposAutoTrack"
-                              ToolTip="A clone that appears in a watched folder joins the Repos sidebar the next time FleetMate starts or refreshes" />
+                              ToolTip="When FleetMate starts or refreshes, the Repos sidebar offers to add clones that appeared in a watched folder" />
 
                     <DockPanel Margin="0,12,0,0">
                         <Button x:Name="SaveButton" DockPanel.Dock="Right" Content="Save" IsEnabled="False" Click="OnSaveSettings"

@@ -104,37 +104,119 @@ public sealed class RepoDiscoveryScanTests : TempFolder
     }
 
     [Fact]
-    public void CodeWorkspaceFolders_AreAdded_WithCommentsAndTrailingCommas()
+    public void CodeWorkspaceFolders_AreProposals_WithCommentsAndTrailingCommas()
     {
         var outside = Path.Combine(Path.GetTempPath(), "fleetmate-outside-" + Guid.NewGuid().ToString("N"));
         try
         {
             Directory.CreateDirectory(Path.Combine(outside, "elsewhere", ".git"));
-            Directory.CreateDirectory(Path.Combine(outside, "monorepo", ".git"));
-            Directory.CreateDirectory(Path.Combine(outside, "monorepo", "apps", "web"));
-            var scanRoot = Dir("workspaces");
-            var relativeElsewhere = Path.GetRelativePath(scanRoot, Path.Combine(outside, "elsewhere")).Replace('\\', '/');
-            File.WriteAllText(Path.Combine(scanRoot, "team.code-workspace"), $$"""
+            // Deeper than the walk goes, so only the workspace file finds it.
+            FakeCheckout("a", "b", "c", "d", "e", "deep");
+            FakeCheckout("monorepo");
+            Dir("monorepo", "apps", "web");
+            var outsideRelative = Path.GetRelativePath(Root, Path.Combine(outside, "elsewhere")).Replace('\\', '/');
+            File.WriteAllText(Path.Combine(Root, "team.code-workspace"), $$"""
                 {
                   // the folders the team opens together
                   "folders": [
-                    { "path": "{{relativeElsewhere}}" },
-                    /* a subfolder of a repository */
-                    { "name": "web", "path": "{{Path.Combine(outside, "monorepo", "apps", "web").Replace("\\", "\\\\")}}", },
+                    { "path": "a/b/c/d/e/deep" },
+                    /* a subfolder of a repository the walk already found */
+                    { "name": "web", "path": "{{Path.Combine(Root, "monorepo", "apps", "web").Replace("\\", "\\\\")}}", },
+                    { "path": "{{outsideRelative}}" },
+                    { "path": "//server/share/repo" },
+                    { "path": "\\\\server\\share\\repo" },
+                    { "path": "~/elsewhere" },
                     { "path": "does-not-exist" },
                   ],
                   "settings": { "files.exclude": { "**/bin": true, }, },
                 }
                 """);
 
-            var result = RepoDiscovery.Scan(new[] { Root }, 4, Array.Empty<string>());
+            var result = RepoDiscovery.Scan(new[] { Root }, 3, Array.Empty<string>());
             Assert.Single(result.WorkspaceFiles);
-            Assert.Equal(new[] { "elsewhere", "monorepo" }, result.Checkouts.Select(Path.GetFileName).OrderBy(n => n));
+            Assert.Equal(new[] { "monorepo" }, result.Checkouts.Select(Path.GetFileName));
+            Assert.Equal(new[] { "deep" }, result.WorkspaceCheckouts.Select(Path.GetFileName));
+            Assert.DoesNotContain(RepoDiscovery.FindCheckouts(new[] { Root }, 3, Array.Empty<string>()), p => p.EndsWith("deep"));
         }
         finally
         {
             Directory.Delete(outside, true);
         }
+    }
+
+    [Fact]
+    public void WorkspaceFilesBelowTheTopOfARoot_AreNotRead()
+    {
+        FakeCheckout("a", "b", "c", "d", "e", "deep");
+        var checkout = FakeCheckout("repo");
+        File.WriteAllText(Path.Combine(checkout, "inside.code-workspace"), """{ "folders": [ { "path": "../a/b/c/d/e/deep" } ] }""");
+        File.WriteAllText(Path.Combine(Dir("nested"), "nested.code-workspace"), """{ "folders": [ { "path": "../a/b/c/d/e/deep" } ] }""");
+        var result = RepoDiscovery.Scan(new[] { Root }, 3, Array.Empty<string>());
+        Assert.Empty(result.WorkspaceFiles);
+        Assert.Empty(result.WorkspaceCheckouts);
+    }
+
+    [Fact]
+    public void AWorkspaceFolderReachedThroughALinkOutOfTheRoot_IsRejected()
+    {
+        var outside = Path.Combine(Path.GetTempPath(), "fleetmate-outside-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(outside, "target", ".git"));
+            try { Directory.CreateSymbolicLink(Path.Combine(Root, "link"), outside); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return; }
+            File.WriteAllText(Path.Combine(Root, "team.code-workspace"), """{ "folders": [ { "path": "link/target" } ] }""");
+            Assert.Empty(RepoDiscovery.Scan(new[] { Root }, 3, Array.Empty<string>()).WorkspaceCheckouts);
+        }
+        finally
+        {
+            Directory.Delete(outside, true);
+        }
+    }
+
+    [Fact]
+    public void IsInside_ComparesOnASeparatorBoundary()
+    {
+        var root = Path.Combine(Root, "code");
+        Assert.True(RepoDiscovery.IsInside(Path.Combine(root, "x"), new[] { root }));
+        Assert.True(RepoDiscovery.IsInside(root, new[] { root }));
+        Assert.False(RepoDiscovery.IsInside(root + "-other", new[] { root }));
+    }
+
+    [Theory]
+    [InlineData(@"\\server\share")]
+    [InlineData("//server/share")]
+    [InlineData(@"\\?\C:\repo")]
+    [InlineData(@"\\.\pipe\x")]
+    public void UncAndDevicePaths_AreRefused(string path)
+    {
+        Assert.True(RepoDiscovery.IsUncOrDevicePath(path));
+        Assert.Null(RepoDiscovery.ResolveLinks(path));
+    }
+
+    [Fact]
+    public void ReadOrigin_ParsesTheConfig_AndFollowsAGitdirFile()
+    {
+        var checkout = FakeCheckout("one");
+        File.WriteAllText(Path.Combine(checkout, ".git", "config"), """
+            [core]
+            	bare = false
+            ; a comment
+            [remote "upstream"]
+            	url = https://github.com/example-org/upstream.git
+            [remote "origin"]
+            	fetch = +refs/heads/*:refs/remotes/origin/*
+            	url = "https://github.com/example-org/one.git"
+            """);
+        Assert.Equal("https://github.com/example-org/one.git", RepoDiscovery.ReadOrigin(checkout));
+
+        var modules = Dir("one", ".git", "modules", "sub");
+        File.WriteAllText(Path.Combine(modules, "config"), "[remote \"origin\"]\n\turl = git@github.com:example-org/sub.git\n");
+        var sub = Dir("one", "sub");
+        File.WriteAllText(Path.Combine(sub, ".git"), "gitdir: ../.git/modules/sub\n");
+        Assert.Equal("git@github.com:example-org/sub.git", RepoDiscovery.ReadOrigin(sub));
+
+        Assert.Null(RepoDiscovery.ReadOrigin(FakeCheckout("no-remote")));
     }
 
     [Fact]
@@ -241,16 +323,50 @@ public sealed class RepoRegisterTests : TempFolder
         Assert.True(record.IsTracked);
     }
 
+    private static void WriteOrigin(string checkout, string name) =>
+        File.WriteAllText(Path.Combine(checkout, ".git", "config"), $"[remote \"origin\"]\n\turl = https://github.com/example-org/{name}.git\n");
+
     [Fact]
-    public async Task TrackNewClones_DoesNothingUntilRootsAreChosen()
+    public async Task NewClones_AreOfferedNotRegistered_AndOnlyOnceRootsAreChosen()
     {
         var manager = Manager;
-        Assert.Null(await manager.TrackNewClonesAsync());
+        var known = Found("known");
+        WriteOrigin(known.Path, "known");
+        manager.Register(new[] { known });
+        WriteOrigin(FakeCheckout("code", "fresh"), "fresh");
+
+        Assert.Null(await manager.NewClonesAsync());
         manager.AddScanRoots(new[] { Path.Combine(Root, "code") });
         Assert.True(manager.Settings().RootsChosen);
-        Assert.NotNull(await manager.TrackNewClonesAsync());
+
+        var offered = await manager.NewClonesAsync();
+        Assert.Equal(new[] { "fresh" }, offered!.Select(c => c.Key!.Name));
+        Assert.Throws<RepoException>(() => manager.Resolve("fresh"));
+
+        manager.Register(offered!);
+        Assert.Empty((await manager.NewClonesAsync())!);
+        Assert.False(manager.Resolve("fresh").IsTracked);
+
         manager.UpdateSettings(s => s.AutoTrackNewClones = false);
-        Assert.Null(await manager.TrackNewClonesAsync());
+        Assert.Null(await manager.NewClonesAsync());
+    }
+
+    [Fact]
+    public async Task TrackFolders_TracksWhatTheWalkFinds_ButNotWorkspaceProposals()
+    {
+        var manager = Manager;
+        WriteOrigin(FakeCheckout("code", "walked"), "walked");
+        var deep = FakeCheckout("code", "a", "b", "c", "d", "e", "deep");
+        WriteOrigin(deep, "deep");
+        File.WriteAllText(Path.Combine(Root, "code", "team.code-workspace"), """{ "folders": [ { "path": "a/b/c/d/e/deep" } ] }""");
+
+        await manager.TrackFoldersAsync(new[] { Path.Combine(Root, "code") });
+        Assert.True(manager.Resolve("walked").IsTracked);
+        Assert.Throws<RepoException>(() => manager.Resolve("deep"));
+
+        var preview = await manager.PreviewAsync(new[] { Path.Combine(Root, "code") });
+        Assert.Contains(preview, c => c.Key?.Name == "deep" && c.FromWorkspace);
+        Assert.Contains(preview, c => c.Key?.Name == "walked" && !c.FromWorkspace);
     }
 
     [Fact]
@@ -315,6 +431,17 @@ public sealed class CloneRemovalTests : IAsyncLifetime
         var key = new RepoKey(RepoProvider.GitHub, "example-org", null, "example-repo");
         manager.Register(new[] { new DiscoveredCheckout(Clone, "https://github.com/example-org/example-repo.git", key) }, track: true);
         return manager;
+    }
+
+    [Fact]
+    public void Discovery_ReadsTheOriginWithoutGit() =>
+        Assert.Equal(Remote, RepoDiscovery.ReadOrigin(Clone));
+
+    [Fact]
+    public void InspectionConfig_TurnsOffFsmonitorAndHooks()
+    {
+        Assert.Contains("core.fsmonitor=false", GitWorkingCopy.InspectionConfig);
+        Assert.Contains(GitWorkingCopy.InspectionConfig, a => a.StartsWith("core.hooksPath="));
     }
 
     [Fact]
