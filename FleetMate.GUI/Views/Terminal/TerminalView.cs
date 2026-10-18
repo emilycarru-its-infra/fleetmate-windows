@@ -189,8 +189,9 @@ public sealed class TerminalView : UserControl, IDisposable
             core.AddWebResourceRequestedFilter($"https://{Host}/*", CoreWebView2WebResourceContext.All);
             core.WebResourceRequested += OnResourceRequested;
             core.WebMessageReceived += OnMessage;
-            var theme = ModernWpf.ThemeManager.Current.ActualApplicationTheme == ModernWpf.ApplicationTheme.Light ? "light" : "dark";
+            var theme = IsDark ? "dark" : "light";
             core.Navigate($"https://{Host}/terminal.html?theme={theme}");
+            ModernWpf.ThemeManager.Current.ActualApplicationThemeChanged += OnAppThemeChanged;
         }
         catch (Exception ex)
         {
@@ -198,6 +199,15 @@ public sealed class TerminalView : UserControl, IDisposable
             Content = new TextBlock { Text = $"The terminal needs the WebView2 runtime: {ex.Message}", Margin = new Thickness(12), TextWrapping = TextWrapping.Wrap };
         }
     }
+
+    private static bool IsDark => ModernWpf.ThemeManager.Current.ActualApplicationTheme != ModernWpf.ApplicationTheme.Light;
+
+    /// <summary>
+    /// Follow the app between light and dark: the page redraws in the new
+    /// colours, answers colour queries with them, and tells a program that
+    /// asked for colour-scheme reports.
+    /// </summary>
+    private void OnAppThemeChanged(object? sender, object args) => Post(new { type = "theme", dark = IsDark });
 
     /// <summary>Serve terminal.html, xterm.js and its stylesheet from the app's embedded resources.</summary>
     private void OnResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
@@ -286,6 +296,7 @@ public sealed class TerminalView : UserControl, IDisposable
             var prepared = await Task.Run(() => app.Agent.Prepare(_sessionId, _launch.Command, workingDirectory, place));
             var env = TerminalEnvironment.Build(Environment.GetEnvironmentVariables(), app.Context.Path,
                 TerminalEnvironment.FindCliDirectory(AppContext.BaseDirectory), prepared.Environment);
+            env["COLORFGBG"] = TerminalEnvironment.ColorFgBg(IsDark);
             _session = new PseudoConsoleSession();
             _session.Output += Write;
             _session.Exited += code =>
@@ -374,6 +385,7 @@ public sealed class TerminalView : UserControl, IDisposable
 
     public void Dispose()
     {
+        ModernWpf.ThemeManager.Current.ActualApplicationThemeChanged -= OnAppThemeChanged;
         _session?.Dispose();
         (Application.Current as App)?.Agent.Release(_sessionId);
         _web.Dispose();
