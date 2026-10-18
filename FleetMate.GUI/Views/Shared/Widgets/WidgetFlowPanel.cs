@@ -1,24 +1,30 @@
 using System.Windows;
 using System.Windows.Controls;
+using FleetMate.Core.Shared;
 
 namespace FleetMate.GUI.Views.Shared.Widgets;
 
 /// <summary>
-/// Lays widget cards out in rows that fill the full width. A card spans one
-/// or more units (<see cref="UnitsProperty"/>); a row takes as many units as
-/// fit while each unit stays at least <see cref="MinUnitWidth"/> wide, and
-/// wraps otherwise. Cards keep their natural height (capped by their own
-/// MaxHeight) unless <see cref="EqualHeights"/> is set, which gives every
-/// card in a row the row's tallest height so the row reads as one band.
-/// With <see cref="SingleRow"/> every card shares one row at any width, each
-/// unit taking an equal share, so nothing wraps beneath it.
+/// A responsive grid for a tab's cards, matching the macOS app. The width is
+/// cut into units of at least <see cref="MinUnitWidth"/>; a card takes its
+/// span of them (<see cref="UnitsProperty"/>). Cards keep their order and are
+/// split into the fewest rows that hold them, then balanced so every row
+/// carries about the same number of units (<see cref="WidgetRowPacking"/>) —
+/// never a full row followed by one stretched leftover. A card spanning
+/// <see cref="FullRow"/> takes a row of its own. Every row spans the full
+/// width, and every card in a row is given the row's tallest height, so a
+/// row reads as one level band; cards must stretch vertically to use it.
+/// With <see cref="SingleRow"/> every card shares one row at any width.
 /// </summary>
 public sealed class WidgetFlowPanel : Panel
 {
     public const double MinUnitWidth = 240;
     public const double Gap = 12;
 
-    private bool _equalHeights;
+    /// <summary>A card's units when it takes a whole row.</summary>
+    public const int FullRow = 1000;
+
+    private bool _equalHeights = true;
     private bool _singleRow;
 
     /// <summary>Keep every card on one row, narrowing them rather than wrapping.</summary>
@@ -28,7 +34,7 @@ public sealed class WidgetFlowPanel : Panel
         set { _singleRow = value; InvalidateMeasure(); }
     }
 
-    /// <summary>Offer every card its row's tallest height. Cards must stretch vertically to use it.</summary>
+    /// <summary>Offer every card its row's tallest height. On by default.</summary>
     public bool EqualHeights
     {
         get => _equalHeights;
@@ -42,36 +48,17 @@ public sealed class WidgetFlowPanel : Panel
     public static int GetUnits(UIElement element) => (int)element.GetValue(UnitsProperty);
     public static void SetUnits(UIElement element, int value) => element.SetValue(UnitsProperty, value);
 
+    internal static int UnitsPerRow(double width) => Math.Max(1, (int)Math.Floor((width + Gap) / (MinUnitWidth + Gap)));
+
     /// <summary>
-    /// Rows of child indices. A unit is never narrower than <see cref="MinUnitWidth"/>;
-    /// a card wider than the whole row still gets a row of its own. With
-    /// <paramref name="singleRow"/> every card is on the one row.
+    /// Rows of child indices, balanced (see <see cref="WidgetRowPacking"/>).
+    /// With <paramref name="singleRow"/> every card is on the one row.
     /// </summary>
     internal static List<List<int>> Rows(IReadOnlyList<int> units, double width, bool singleRow = false)
     {
         if (singleRow)
             return units.Count == 0 ? new List<List<int>>() : new List<List<int>> { Enumerable.Range(0, units.Count).ToList() };
-
-        var perRow = Math.Max(1, (int)Math.Floor((width + Gap) / (MinUnitWidth + Gap)));
-        var rows = new List<List<int>>();
-        var current = new List<int>();
-        var used = 0;
-
-        for (var i = 0; i < units.Count; i++)
-        {
-            var u = Math.Max(1, units[i]);
-            if (current.Count > 0 && used + u > perRow)
-            {
-                rows.Add(current);
-                current = new List<int>();
-                used = 0;
-            }
-            current.Add(i);
-            used += u;
-        }
-
-        if (current.Count > 0) rows.Add(current);
-        return rows;
+        return WidgetRowPacking.Rows(units, UnitsPerRow(width), FullRow);
     }
 
     private List<(int Index, Rect Slot)> Arrange(double width)
@@ -85,7 +72,9 @@ public sealed class WidgetFlowPanel : Panel
 
         foreach (var row in rows)
         {
-            var rowUnits = row.Sum(r => Math.Max(1, GetUnits(visible[r].c)));
+            var perRow = SingleRow ? int.MaxValue : UnitsPerRow(width);
+            int Span(UIElement c) => Math.Min(Math.Max(1, GetUnits(c)), perRow);
+            var rowUnits = row.Sum(r => Span(visible[r].c));
             var unitWidth = (width - Gap * (row.Count - 1)) / rowUnits;
             var x = 0.0;
             var rowHeight = 0.0;
@@ -94,7 +83,7 @@ public sealed class WidgetFlowPanel : Panel
             foreach (var r in row)
             {
                 var (child, index) = visible[r];
-                var w = unitWidth * Math.Max(1, GetUnits(child));
+                var w = unitWidth * Span(child);
                 child.Measure(new Size(w, double.PositiveInfinity));
                 var h = child.DesiredSize.Height;
                 slots.Add((index, new Rect(x, y, w, h)));

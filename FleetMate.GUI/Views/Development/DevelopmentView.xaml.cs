@@ -6,6 +6,7 @@ using System.Windows.Data;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
 using FleetMate.GUI.Views.Shared;
+using FleetMate.GUI.Views.Shared.Widgets;
 using Serilog;
 
 namespace FleetMate.GUI.Views.Development;
@@ -379,6 +380,17 @@ public partial class DevelopmentView : UserControl
 
     // MARK: - Segments
 
+    /// <summary>Raised whenever another sub-tab opens, so the Graphs strip can follow it.</summary>
+    public event EventHandler? SegmentChanged;
+
+    /// <summary>The sub-tab the Graphs strip describes.</summary>
+    public DevelopmentSegment CurrentSegment =>
+        IsReposShown ? DevelopmentSegment.Repos
+        : CommitsSegment.IsChecked == true ? DevelopmentSegment.Commits
+        : PipelinesSegment.IsChecked == true ? DevelopmentSegment.Pipelines
+        : SkillsSegment.IsChecked == true ? DevelopmentSegment.Skills
+        : DevelopmentSegment.Pulls;
+
     private async void OnSegmentChanged(object sender, RoutedEventArgs e)
     {
         if (!IsInitialized) return;
@@ -399,6 +411,7 @@ public partial class DevelopmentView : UserControl
         SkillsList.Visibility = Show(skills);
         EmptyText.Visibility = Visibility.Collapsed;
         SearchScopeChanged?.Invoke(this, EventArgs.Empty);
+        SegmentChanged?.Invoke(this, EventArgs.Empty);
         FleetMate.GUI.Views.Terminal.ContextPublisher.Segment("Development",
             pulls ? "Pulls" : commits ? "Commits" : pipelines ? "Pipelines" : skills ? "Skills" : null);
 
