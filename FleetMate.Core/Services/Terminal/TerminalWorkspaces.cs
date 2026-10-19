@@ -82,7 +82,15 @@ public sealed class TerminalWorkspace
     /// runs the default launch as it is when the row starts. True once the
     /// commands older versions wrote in have been cleared.
     /// </summary>
-    public bool? CommandsFollowDefault { get; set; }
+    public bool? SessionsFollowDefault { get; set; }
+
+    /// <summary>The marker's first name, read once so a file written under it is not migrated twice; never written.</summary>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public bool? CommandsFollowDefault
+    {
+        get => null;
+        set { if (value == true) SessionsFollowDefault ??= true; }
+    }
 
     [JsonIgnore]
     public int SessionCount => Sections.Sum(s => s.Sessions?.Count ?? 0);

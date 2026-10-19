@@ -59,7 +59,7 @@ public static class TerminalWorkspaceBaseline
     {
         var chosen = ActiveCheckouts(checkouts, now);
         if (chosen.Count == 0) return null;
-        var workspace = new TerminalWorkspace { Name = Name, Source = Source, Show = true, CommandsFollowDefault = true };
+        var workspace = new TerminalWorkspace { Name = Name, Source = Source, Show = true, SessionsFollowDefault = true };
         Add(chosen, workspace);
         workspace.Generated = chosen.Select(c => Normalized(c.Path)).Distinct().OrderBy(p => p, StringComparer.Ordinal).ToList();
         return workspace;
@@ -127,17 +127,17 @@ public static class TerminalWorkspaceBaseline
     /// </summary>
     public static void MigrateCommands(TerminalWorkspace workspace, IReadOnlyCollection<string> formerDefaults)
     {
-        if (workspace.CommandsFollowDefault == true) return;
+        if (workspace.SessionsFollowDefault == true) return;
         var placed = (workspace.Generated
             ?? workspace.Sections.SelectMany(s => s.Sessions).Where(s => s.Directory != null).Select(s => s.Directory!).ToList())
             .Select(Normalized).ToHashSet();
-        var defaults = formerDefaults.Select(c => c.Trim()).Where(c => c.Length > 0).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var defaults = formerDefaults.Select(c => c.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var session in workspace.Sections.SelectMany(s => s.Sessions))
         {
             if (session.Directory is not { } directory || !placed.Contains(Normalized(directory))) continue;
             if (session.Command is { } command && defaults.Contains(command.Trim())) session.Command = null;
         }
-        workspace.CommandsFollowDefault = true;
+        workspace.SessionsFollowDefault = true;
     }
 
     /// <summary>
