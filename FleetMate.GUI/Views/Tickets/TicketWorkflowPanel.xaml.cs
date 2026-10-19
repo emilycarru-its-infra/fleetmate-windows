@@ -7,7 +7,15 @@ using FleetMate.Core.Services.Tickets;
 namespace FleetMate.GUI.Views.Tickets;
 
 /// <summary>An action button: one action TeamDynamix offered on one step.</summary>
-public sealed record WorkflowActionRow(int TicketId, string StepId, string StepName, string ActionId, string Name, string? Tooltip);
+public sealed record WorkflowActionRow(int TicketId, string StepId, string StepName, string ActionId, string Name, string? Tooltip)
+{
+    public string WithCommentHeader => $"{Name} with Comment…";
+
+    /// <summary>The button's tooltip: what the action does, then how to add a comment.</summary>
+    public string ButtonTooltip => Tooltip == null
+        ? $"{Name} now. Right-click to add a comment."
+        : $"{Tooltip}\nRight-click to add a comment.";
+}
 
 /// <summary>An active step as the panel draws it.</summary>
 public sealed record WorkflowStepRow(
@@ -236,11 +244,27 @@ public partial class TicketWorkflowPanel : UserControl
         if (_ticketId is int id) await LoadAsync(id);
     }
 
-    private void OnActionClicked(object sender, RoutedEventArgs e)
+    /// <summary>The action a button or menu item stands for, if it may be used right now.</summary>
+    private WorkflowActionRow? UsableAction(object sender)
     {
-        if (sender is not FrameworkElement { Tag: WorkflowActionRow action } || _loading || _submitting || _managing) return;
+        if (sender is not FrameworkElement { Tag: WorkflowActionRow action } || Busy) return null;
         if (action.TicketId != _ticketId || _controller?.Current is not { Phase: TicketWorkflowPhase.Loaded } current
-            || current.TicketId != action.TicketId) return;
+            || current.TicketId != action.TicketId) return null;
+        return action;
+    }
+
+    /// <summary>One click: the action goes straight to TeamDynamix, with no comments.</summary>
+    private async void OnActionClicked(object sender, RoutedEventArgs e)
+    {
+        if (UsableAction(sender) is not { } action) return;
+        HideConfirm();
+        await SubmitAsync(action, comments: null, fromConfirm: false);
+    }
+
+    /// <summary>The right-click path: confirm the action with a comment first.</summary>
+    private void OnActionWithCommentClicked(object sender, RoutedEventArgs e)
+    {
+        if (UsableAction(sender) is not { } action) return;
 
         // Comments from an earlier attempt on this ticket are kept, so a retry
         // after a failure does not mean retyping them; anything else starts empty.
@@ -269,28 +293,50 @@ public partial class TicketWorkflowPanel : UserControl
 
     private async void OnConfirmClicked(object sender, RoutedEventArgs e)
     {
-        if (_controller == null || _pending is not { } action || _loading || _submitting || _managing) return;
+        if (_controller == null || _pending is not { } action || Busy) return;
+        await SubmitAsync(action, ConfirmCommentsBox.Text, fromConfirm: true);
+    }
+
+    /// <summary>
+    /// Send <paramref name="action"/>. Whatever the outcome, the loaded actions
+    /// are spent and the page reloads the workflow before any can be offered
+    /// again: a failure may still have been applied, so nothing is resent.
+    /// </summary>
+    private async Task SubmitAsync(WorkflowActionRow action, string? comments, bool fromConfirm)
+    {
+        if (_controller == null || Busy) return;
 
         // The choice is used up the moment it is sent; it is never sendable twice.
         _pending = null;
         _submitting = true;
+        ResultBorder.Visibility = Visibility.Collapsed;
+        if (!fromConfirm)
+        {
+            SendingText.Text = $"{action.Name} “{action.StepName}”…";
+            SendingPanel.Visibility = Visibility.Visible;
+        }
         UpdateInteractivity();
         TicketWorkflowSubmitOutcome outcome;
         try
         {
-            outcome = await _controller.SubmitAsync(action.TicketId, action.StepId, action.ActionId, ConfirmCommentsBox.Text);
+            outcome = await _controller.SubmitAsync(action.TicketId, action.StepId, action.ActionId, comments);
         }
         finally
         {
             _submitting = false;
+            SendingPanel.Visibility = Visibility.Collapsed;
         }
 
         if (_ticketId == outcome.TicketId)
         {
-            if (outcome.Succeeded)
+            if (outcome.Succeeded || !fromConfirm)
             {
                 HideConfirm();
-                ShowResult(outcome.Message, isError: false);
+                ShowResult(outcome.Succeeded || outcome.Status == TicketWorkflowSubmitStatus.NotSent
+                    ? outcome.Message
+                    : $"{action.Name} “{action.StepName}” may not have gone through: {outcome.Message} "
+                      + "The workflow is being refreshed; check it before trying again.",
+                    isError: !outcome.Succeeded);
             }
             else
             {
@@ -299,7 +345,7 @@ public partial class TicketWorkflowPanel : UserControl
                 // workflow and a fresh choice — the failed request may still
                 // have been applied.
                 ConfirmPromptText.Text = $"{action.Name} “{action.StepName}” was not confirmed.";
-                ConfirmTooltipText.Text = "The workflow is being refreshed. Choose an action again to retry; your comments are kept.";
+                ConfirmTooltipText.Text = "The workflow is being refreshed. Right-click an action and choose it with a comment to retry; your comments are kept.";
                 ConfirmTooltipText.Visibility = Visibility.Visible;
                 ShowResult(outcome.Message, isError: true);
             }
