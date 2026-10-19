@@ -291,6 +291,7 @@ public sealed class TerminalPanel : UserControl
     private static IReadOnlyCollection<string> FormerDefaultCommands => new[]
     {
         DefaultCommand, Settings.AgentCommand, Settings.AgentCommandFallback, TerminalSettings.DefaultAgentCommand, AgentCommands.Shell,
+        "", "claude", "codex", "claude-remote", "codex-remote",
     };
 
     /// <summary>The name of last resort for a session running <paramref name="command"/>.</summary>

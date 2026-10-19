@@ -11,7 +11,7 @@ public class TerminalWorkspaceSyncTests
     private static TerminalWorkspaceBaseline.Checkout Tracked(RepoProvider provider, string scope, string name) =>
         new(provider, scope, $"{scope}/{name}", $@"C:\src\{scope}\{name}", Now.AddDays(-300), Tracked: true);
 
-    private static readonly string[] Defaults = { "codex", "shell" };
+    private static readonly string[] Defaults = { "", "claude", "codex", "claude-remote", "codex-remote", "shell" };
 
     private static string Folder(string scope, string name) => $@"c:\src\{scope}\{name}".ToLowerInvariant();
 
@@ -151,12 +151,49 @@ public class TerminalWorkspaceSyncTests
         var checkouts = new[] { Tracked(RepoProvider.GitHub, "o", "a"), Tracked(RepoProvider.GitHub, "o", "b"), Tracked(RepoProvider.GitHub, "o", "c") };
         TerminalWorkspaceBaseline.Sync(workspace, checkouts, Defaults, Now);
         Assert.Equal(new string?[] { null, "claude --model opus", null, "codex" }, workspace.Sections[0].Sessions.Select(s => s.Command));
-        Assert.True(workspace.CommandsFollowDefault);
+        Assert.True(workspace.SessionsFollowDefault);
 
         // Once migrated, a command written in later is the person's choice and stays.
         workspace.Sections[0].Sessions[0].Command = "codex";
         TerminalWorkspaceBaseline.Sync(workspace, checkouts, Defaults, Now);
         Assert.Equal("codex", workspace.Sections[0].Sessions[0].Command);
+    }
+
+    [Fact]
+    public void AFileWrittenUnderTheMarkersFirstName_IsNotMigratedAgain()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "fm-marker-" + Guid.NewGuid().ToString("N"), "terminal-workspaces.json");
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, """
+                { "workspaces": [ { "name": "Repos", "source": "repos", "commandsFollowDefault": true,
+                  "generated": [ "c:\\src\\o\\a" ],
+                  "sections": [ { "name": "GitHub", "sessions": [ { "label": "o/a", "command": "codex", "directory": "C:\\src\\o\\a" } ] } ] } ] }
+                """);
+            var workspace = TerminalWorkspaceStore.Load(path).Workspaces[0];
+            Assert.True(workspace.SessionsFollowDefault);
+            TerminalWorkspaceBaseline.MigrateCommands(workspace, Defaults);
+            Assert.Equal("codex", workspace.Sections[0].Sessions[0].Command);
+        }
+        finally { try { Directory.Delete(Path.GetDirectoryName(path)!, recursive: true); } catch (IOException) { } }
+    }
+
+    [Fact]
+    public void RemoteAndEmptyDefaults_AreClearedToo()
+    {
+        var workspace = new TerminalWorkspace
+        {
+            Name = "Repos", Source = TerminalWorkspaceBaseline.Source,
+            Sections = { new TerminalWorkspaceSection { Name = "GitHub", Sessions =
+            {
+                new TerminalWorkspaceSession { Command = "claude-remote", Directory = "~/src/o/a" },
+                new TerminalWorkspaceSession { Command = "codex-remote", Directory = "~/src/o/b" },
+                new TerminalWorkspaceSession { Command = "", Directory = "~/src/o/c" },
+            } } },
+        };
+        TerminalWorkspaceBaseline.MigrateCommands(workspace, Defaults);
+        Assert.All(workspace.Sections[0].Sessions, s => Assert.Null(s.Command));
     }
 
     [Fact]
@@ -187,14 +224,17 @@ public class TerminalWorkspaceSyncTests
                     } } },
                 },
             };
-            file.Workspaces.Add(new TerminalWorkspace { Name = "Repos", Source = "repos", Generated = new() { @"c:\src\o\a" }, CommandsFollowDefault = true });
+            file.Workspaces.Add(new TerminalWorkspace { Name = "Repos", Source = "repos", Generated = new() { @"c:\src\o\a" }, SessionsFollowDefault = true });
             TerminalWorkspaceStore.Save(file, path);
             var loaded = TerminalWorkspaceStore.Load(path);
             Assert.False(loaded.GenerateFromRepos);
             var session = loaded.Restore!.Sections[0].Sessions[0];
             Assert.Equal(("o/a", "claude", true, true), (session.Label, session.Command, session.Pinned, session.Resume));
             Assert.Equal(new[] { @"c:\src\o\a" }, loaded.Workspaces[0].Generated);
-            Assert.True(loaded.Workspaces[0].CommandsFollowDefault);
+            Assert.True(loaded.Workspaces[0].SessionsFollowDefault);
+            var json = File.ReadAllText(path);
+            Assert.Contains("\"sessionsFollowDefault\": true", json);
+            Assert.DoesNotContain("commandsFollowDefault", json);
             Assert.DoesNotContain("\"name\": null", File.ReadAllText(path));
         }
         finally { try { Directory.Delete(Path.GetDirectoryName(path)!, recursive: true); } catch (IOException) { } }

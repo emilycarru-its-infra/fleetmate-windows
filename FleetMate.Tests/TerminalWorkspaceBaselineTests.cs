@@ -29,7 +29,7 @@ public class TerminalWorkspaceBaselineTests
         Assert.Equal(new[] { "alpha/c", "zed/b" }, workspace.Sections[1].Sessions.Select(s => s.Label));
         // No command: the row runs the default launch as it is when it starts.
         Assert.Null(workspace.Sections[0].Sessions[0].Command);
-        Assert.True(workspace.CommandsFollowDefault);
+        Assert.True(workspace.SessionsFollowDefault);
     }
 
     [Fact]
