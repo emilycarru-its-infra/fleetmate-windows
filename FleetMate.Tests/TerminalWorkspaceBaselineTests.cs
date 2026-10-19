@@ -13,7 +13,7 @@ public class TerminalWorkspaceBaselineTests
 
     [Fact]
     public void NoCheckouts_MakesNoWorkspace() =>
-        Assert.Null(TerminalWorkspaceBaseline.Make(Array.Empty<TerminalWorkspaceBaseline.Checkout>(), "codex", Now));
+        Assert.Null(TerminalWorkspaceBaseline.Make(Array.Empty<TerminalWorkspaceBaseline.Checkout>(), Now));
 
     [Fact]
     public void AFewCheckouts_AreAllIncluded_GroupedByHost()
@@ -23,11 +23,13 @@ public class TerminalWorkspaceBaselineTests
             Checkout(RepoProvider.GitHub, "zed", "b", 400),
             Checkout(RepoProvider.AzureDevOps, "Proj", "a", null),
             Checkout(RepoProvider.GitHub, "alpha", "c", 1),
-        }, "codex", Now)!;
+        }, Now)!;
         Assert.Equal(TerminalWorkspaceBaseline.Source, workspace.Source);
         Assert.Equal(new[] { "Azure DevOps", "GitHub" }, workspace.Sections.Select(s => s.Name));
         Assert.Equal(new[] { "alpha/c", "zed/b" }, workspace.Sections[1].Sessions.Select(s => s.Label));
-        Assert.Equal("codex", workspace.Sections[0].Sessions[0].Command);
+        // No command: the row runs the default launch as it is when it starts.
+        Assert.Null(workspace.Sections[0].Sessions[0].Command);
+        Assert.True(workspace.CommandsFollowDefault);
     }
 
     [Fact]
@@ -50,14 +52,14 @@ public class TerminalWorkspaceBaselineTests
     [Fact]
     public void AddMissing_KeepsEdits_AndAddsOnlyNewFolders()
     {
-        var workspace = TerminalWorkspaceBaseline.Make(new[] { Checkout(RepoProvider.GitHub, "o", "a", 1) }, "codex", Now)!;
+        var workspace = TerminalWorkspaceBaseline.Make(new[] { Checkout(RepoProvider.GitHub, "o", "a", 1) }, Now)!;
         workspace.Sections[0].Sessions[0].Command = "claude";
         workspace.Sections.Add(new TerminalWorkspaceSection { Name = "Mine" });
         var added = TerminalWorkspaceBaseline.AddMissing(new[]
         {
             Checkout(RepoProvider.GitHub, "o", "a", 1),
             Checkout(RepoProvider.AzureDevOps, "P", "b", 1),
-        }, workspace, "codex", Now);
+        }, workspace, Now);
         Assert.Equal(1, added);
         Assert.Equal("claude", workspace.Sections[0].Sessions[0].Command);
         Assert.Equal(new[] { "GitHub", "Mine", "Azure DevOps" }, workspace.Sections.Select(s => s.Name));
@@ -107,7 +109,7 @@ public class TerminalWorkspaceBaselineTests
             var checkouts = TerminalWorkspaceBaseline.Checkouts(document);
 
             Assert.Equal(new[] { shown.Path }, checkouts.Select(c => c.Path));
-            var workspace = TerminalWorkspaceBaseline.Make(checkouts, "codex", Now)!;
+            var workspace = TerminalWorkspaceBaseline.Make(checkouts, Now)!;
             Assert.Equal(new[] { "GitHub" }, workspace.Sections.Select(s => s.Name));
         }
         finally { try { Directory.Delete(root, recursive: true); } catch (IOException) { } }

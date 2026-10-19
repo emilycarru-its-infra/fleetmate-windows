@@ -50,13 +50,17 @@ public static class TerminalWorkspaceBaseline
         _ => "Other",
     };
 
-    /// <summary>The baseline workspace, or null when nothing is checked out.</summary>
-    public static TerminalWorkspace? Make(IReadOnlyList<Checkout> checkouts, string command, DateTime now)
+    /// <summary>
+    /// The baseline workspace, or null when nothing is checked out. Its
+    /// sessions carry no command: each runs the default launch as it is when
+    /// the row starts, so a change in Settings reaches rows already listed.
+    /// </summary>
+    public static TerminalWorkspace? Make(IReadOnlyList<Checkout> checkouts, DateTime now)
     {
         var chosen = ActiveCheckouts(checkouts, now);
         if (chosen.Count == 0) return null;
-        var workspace = new TerminalWorkspace { Name = Name, Source = Source, Show = true };
-        Add(chosen, workspace, command);
+        var workspace = new TerminalWorkspace { Name = Name, Source = Source, Show = true, CommandsFollowDefault = true };
+        Add(chosen, workspace);
         workspace.Generated = chosen.Select(c => Normalized(c.Path)).Distinct().OrderBy(p => p, StringComparer.Ordinal).ToList();
         return workspace;
     }
@@ -68,10 +72,13 @@ public static class TerminalWorkspaceBaseline
     /// tracked, is hidden or is gone is taken out, and its section with it only
     /// when this emptied it. Everything else stays as arranged: renamed, moved,
     /// reordered and re-pointed sessions, sessions the person added, and the
-    /// absence of one they removed.
+    /// absence of one they removed. <paramref name="formerDefaults"/> are the
+    /// commands a default launch could have been written as, for
+    /// <see cref="MigrateCommands"/>.
     /// </summary>
-    public static Change Sync(TerminalWorkspace workspace, IReadOnlyList<Checkout> checkouts, string command, DateTime now)
+    public static Change Sync(TerminalWorkspace workspace, IReadOnlyList<Checkout> checkouts, IReadOnlyCollection<string> formerDefaults, DateTime now)
     {
+        MigrateCommands(workspace, formerDefaults);
         MigrateNames(workspace);
         var wanted = ActiveCheckouts(checkouts, now);
         var wantedPaths = wanted.Select(c => Normalized(c.Path)).ToHashSet();
@@ -102,13 +109,35 @@ public static class TerminalWorkspaceBaseline
             .Where(s => s.Directory != null).Select(s => Normalized(s.Directory!)).ToHashSet();
         var fresh = wanted.Where(c => !placed.Contains(Normalized(c.Path)) && !present.Contains(Normalized(c.Path)))
             .GroupBy(c => Normalized(c.Path)).Select(g => g.First()).ToList();
-        Add(fresh, workspace, command);
+        Add(fresh, workspace);
         var added = fresh.Select(c => Normalized(c.Path)).ToList();
         placed.UnionWith(added);
         // A folder the person already had in the workspace counts as placed too.
         placed.UnionWith(present.Where(wantedPaths.Contains));
         workspace.Generated = placed.OrderBy(p => p, StringComparer.Ordinal).ToList();
         return new Change(added, removed);
+    }
+
+    /// <summary>
+    /// Sessions FleetMate placed before they followed the default carried the
+    /// default command of the day, so a later change in Settings never reached
+    /// them. Once per workspace, a placed session whose command is still one a
+    /// default launch was written as loses it and follows the default; any
+    /// other command was set by the person and is kept.
+    /// </summary>
+    public static void MigrateCommands(TerminalWorkspace workspace, IReadOnlyCollection<string> formerDefaults)
+    {
+        if (workspace.CommandsFollowDefault == true) return;
+        var placed = (workspace.Generated
+            ?? workspace.Sections.SelectMany(s => s.Sessions).Where(s => s.Directory != null).Select(s => s.Directory!).ToList())
+            .Select(Normalized).ToHashSet();
+        var defaults = formerDefaults.Select(c => c.Trim()).Where(c => c.Length > 0).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var session in workspace.Sections.SelectMany(s => s.Sessions))
+        {
+            if (session.Directory is not { } directory || !placed.Contains(Normalized(directory))) continue;
+            if (session.Command is { } command && defaults.Contains(command.Trim())) session.Command = null;
+        }
+        workspace.CommandsFollowDefault = true;
     }
 
     /// <summary>
@@ -135,19 +164,19 @@ public static class TerminalWorkspaceBaseline
     /// by folder) to their host's section, leaving every existing session and
     /// section as the person arranged it. Returns how many were added.
     /// </summary>
-    public static int AddMissing(IReadOnlyList<Checkout> checkouts, TerminalWorkspace workspace, string command, DateTime now)
+    public static int AddMissing(IReadOnlyList<Checkout> checkouts, TerminalWorkspace workspace, DateTime now)
     {
         var present = workspace.Sections.SelectMany(s => s.Sessions)
             .Where(s => s.Directory != null).Select(s => Normalized(s.Directory!)).ToHashSet();
         var missing = ActiveCheckouts(checkouts, now).Where(c => !present.Contains(Normalized(c.Path))).ToList();
-        Add(missing, workspace, command);
+        Add(missing, workspace);
         if (workspace.Generated != null)
             workspace.Generated = workspace.Generated.Concat(missing.Select(c => Normalized(c.Path))).Distinct()
                 .OrderBy(p => p, StringComparer.Ordinal).ToList();
         return missing.Count;
     }
 
-    private static void Add(IEnumerable<Checkout> checkouts, TerminalWorkspace workspace, string command)
+    private static void Add(IEnumerable<Checkout> checkouts, TerminalWorkspace workspace)
     {
         var ordered = checkouts
             .OrderBy(c => c.Provider switch { RepoProvider.AzureDevOps => 0, RepoProvider.GitHub => 1, _ => 2 })
@@ -161,7 +190,6 @@ public static class TerminalWorkspaceBaseline
             section.Sessions.Add(new TerminalWorkspaceSession
             {
                 Label = checkout.DisplayName,
-                Command = command,
                 Directory = TerminalWorkspaceStore.Abbreviate(checkout.Path),
             });
         }
@@ -216,16 +244,16 @@ public static class TerminalWorkspaceBaseline
     /// empty one, gets it too) at index 0, then synced. Nothing is written once
     /// the person deleted it. Returns whether the file changed.
     /// </summary>
-    public static bool SyncBaseline(TerminalWorkspaceFile file, IReadOnlyList<Checkout> checkouts, string command, DateTime now)
+    public static bool SyncBaseline(TerminalWorkspaceFile file, IReadOnlyList<Checkout> checkouts, IReadOnlyCollection<string> formerDefaults, DateTime now)
     {
         if (file.BaselineIndex is { } index)
         {
             var workspace = file.Workspaces[index];
             var before = TerminalWorkspaceStore.Serialize(workspace);
-            Sync(workspace, checkouts, command, now);
+            Sync(workspace, checkouts, formerDefaults, now);
             return TerminalWorkspaceStore.Serialize(workspace) != before;
         }
-        if (file.GenerateFromRepos == false || Make(checkouts, command, now) is not { } baseline) return false;
+        if (file.GenerateFromRepos == false || Make(checkouts, now) is not { } baseline) return false;
         file.Workspaces.Insert(0, baseline);
         return true;
     }
