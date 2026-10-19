@@ -44,6 +44,47 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
+                <!-- Agent comes first, on every tab: the one filled accent button,
+                     semibold name and icon in white, the icon a check while the
+                     terminal is open. Ctrl+J or Ctrl+`. -->
+                <StackPanel x:Name="ToolbarLeft" Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left"
+                            VerticalAlignment="Center" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <ToggleButton x:Name="TerminalToggleButton" ToolTip="Show Agent (Ctrl+J or Ctrl+`)" Click="OnTerminalToggleClicked"
+                                  AutomationProperties.AutomationId="TerminalToggleButton"
+                                  AutomationProperties.Name="Agent"
+                                  shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                                  Cursor="Hand">
+                        <ToggleButton.Template>
+                            <ControlTemplate TargetType="ToggleButton">
+                                <Border x:Name="AgentChrome" CornerRadius="6" Padding="12,4"
+                                        Background="{DynamicResource SystemControlHighlightAccentBrush}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:FontIcon x:Name="AgentIcon" Glyph="&#xE756;" FontFamily="Segoe Fluent Icons" FontSize="14"
+                                                     Foreground="White" VerticalAlignment="Center" />
+                                        <TextBlock Text="Agent" Margin="6,0,0,0" FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="White" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsChecked" Value="True">
+                                        <Setter TargetName="AgentIcon" Property="Glyph" Value="&#xE73E;" />
+                                    </Trigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="AgentChrome" Property="Opacity" Value="0.88" />
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="AgentChrome" Property="Opacity" Value="0.75" />
+                                    </Trigger>
+                                    <Trigger Property="IsKeyboardFocused" Value="True">
+                                        <Setter TargetName="AgentChrome" Property="BorderBrush" Value="White" />
+                                        <Setter TargetName="AgentChrome" Property="BorderThickness" Value="1" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </ToggleButton.Template>
+                    </ToggleButton>
+                </StackPanel>
+
                 <Border x:Name="TabBarBorder" Grid.Column="1" CornerRadius="9"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True"
                         BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
@@ -116,43 +157,6 @@
                      just before Minimize. -->
                 <StackPanel x:Name="ToolbarRight" Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right"
                             Margin="0,0,132,0">
-                    <!-- Agent leads the trailing controls as the one filled accent
-                         button: semibold name and icon in white, the icon a check
-                         while the terminal is open. Ctrl+J or Ctrl+`. -->
-                    <ToggleButton x:Name="TerminalToggleButton" ToolTip="Show Agent (Ctrl+J or Ctrl+`)" Click="OnTerminalToggleClicked"
-                                  AutomationProperties.AutomationId="TerminalToggleButton"
-                                  AutomationProperties.Name="Agent"
-                                  shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                                  Cursor="Hand" Margin="0,0,8,0">
-                        <ToggleButton.Template>
-                            <ControlTemplate TargetType="ToggleButton">
-                                <Border x:Name="AgentChrome" CornerRadius="6" Padding="12,4"
-                                        Background="{DynamicResource SystemControlHighlightAccentBrush}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <ui:FontIcon x:Name="AgentIcon" Glyph="&#xE756;" FontFamily="Segoe Fluent Icons" FontSize="14"
-                                                     Foreground="White" VerticalAlignment="Center" />
-                                        <TextBlock Text="Agent" Margin="6,0,0,0" FontSize="13" FontWeight="SemiBold"
-                                                   Foreground="White" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Border>
-                                <ControlTemplate.Triggers>
-                                    <Trigger Property="IsChecked" Value="True">
-                                        <Setter TargetName="AgentIcon" Property="Glyph" Value="&#xE73E;" />
-                                    </Trigger>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter TargetName="AgentChrome" Property="Opacity" Value="0.88" />
-                                    </Trigger>
-                                    <Trigger Property="IsPressed" Value="True">
-                                        <Setter TargetName="AgentChrome" Property="Opacity" Value="0.75" />
-                                    </Trigger>
-                                    <Trigger Property="IsKeyboardFocused" Value="True">
-                                        <Setter TargetName="AgentChrome" Property="BorderBrush" Value="White" />
-                                        <Setter TargetName="AgentChrome" Property="BorderThickness" Value="1" />
-                                    </Trigger>
-                                </ControlTemplate.Triggers>
-                            </ControlTemplate>
-                        </ToggleButton.Template>
-                    </ToggleButton>
                     <!-- Elevation session status. The per-user session container
                          takes a while to boot and lives for its TTL, so the chrome
                          says whether the next elevated action will wait on it.
