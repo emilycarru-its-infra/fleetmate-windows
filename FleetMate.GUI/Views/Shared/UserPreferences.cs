@@ -66,6 +66,11 @@ public static class UserPreferences
         Write("agentTerminalListWidth", width.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
     /// <summary>The session list's status filters and sort, with the macOS app's keys.</summary>
+    /// <summary>Reopen the sessions open at the last quit when FleetMate starts. On unless turned off.</summary>
+    public static bool TerminalRestoreSessions => Read("agentTerminalRestoreSessions") != "0";
+
+    public static void SetTerminalRestoreSessions(bool on) => Write("agentTerminalRestoreSessions", on ? null : "0");
+
     public static bool TerminalFilterActive => Read("agentTerminalFilterActive") == "1";
     public static bool TerminalFilterRunning => Read("agentTerminalFilterRunning") == "1";
     public static bool TerminalFilterPaused => Read("agentTerminalFilterPaused") == "1";

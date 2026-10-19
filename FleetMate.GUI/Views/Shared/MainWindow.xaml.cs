@@ -89,14 +89,19 @@ public partial class MainWindow : Window
             ApplyTerminalLayout();
         };
         Terminal.ReposRequested += (_, _) => { SetTerminalVisible(false); NavigateToTab("Development"); };
-        if (!TicketsOnly) TerminalPanel.SeedBaselineWorkspaceIfNeeded();
-        var launchWorkspace = TicketsOnly ? null : LaunchWorkspace();
-        if (launchWorkspace != null)
-            Loaded += (_, _) => Terminal.OpenWorkspace(launchWorkspace);
-        else if (!TicketsOnly && Application.Current is App { Config.Terminal.AgentAutoStart: true })
-            // Ready behind the Agent button rather than taking the window:
-            // the terminal opens full window by default.
-            Loaded += (_, _) => Terminal.OpenDefaultSession(takeFocus: false);
+        if (!TicketsOnly)
+            Loaded += (_, _) =>
+            {
+                // The Repos rows first, so reopened sessions find theirs; then what was open at the last quit.
+                Terminal.SyncRepos();
+                var restored = Terminal.RestoreSessions();
+                var launchWorkspace = LaunchWorkspace();
+                if (launchWorkspace != null) Terminal.OpenWorkspace(launchWorkspace);
+                else if (!restored && Application.Current is App { Config.Terminal.AgentAutoStart: true })
+                    // Ready behind the Agent button rather than taking the window:
+                    // the terminal opens full window by default.
+                    Terminal.OpenDefaultSession(takeFocus: false);
+            };
     }
 
     /// <summary>The workspace terminal-workspaces.json names to open at launch, or null.</summary>

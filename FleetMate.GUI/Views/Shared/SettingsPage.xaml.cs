@@ -126,6 +126,7 @@ public partial class SettingsPage : Page
         AgentCustomCommandTextBox.Text = customCommand;
         AgentCommandPicker.SelectedValue = pickerKey;
         AgentAutoStartCheckBox.IsChecked = terminal.AgentAutoStart;
+        TerminalRestoreSessionsCheckBox.IsChecked = UserPreferences.TerminalRestoreSessions;
         ShowPolicySource(AgentCommandSourceText, terminal.AgentCommandFromPolicy);
         ShowPolicySource(AgentAutoStartSourceText, terminal.AgentAutoStartFromPolicy);
         ReposTextBox.Text = string.Join(Environment.NewLine, terminal.EffectiveRepos);
@@ -331,5 +332,7 @@ public partial class SettingsPage : Page
         return s.Length > 14 ? $"{s[..14]}..." : s;
     }
 
+    /// <summary>Saved at once, like the other per-person terminal preferences.</summary>
+    private void OnTerminalRestoreSessionsClicked(object sender, RoutedEventArgs e) =>
+        UserPreferences.SetTerminalRestoreSessions(TerminalRestoreSessionsCheckBox.IsChecked == true);
 }
-

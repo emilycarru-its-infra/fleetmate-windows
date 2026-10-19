@@ -71,6 +71,8 @@ public sealed class TerminalView : UserControl, IDisposable
 
     /// <summary>The command's label, until the program sets a title with OSC 0 or 2.</summary>
     public string Title { get; private set; }
+    /// <summary>The last title the program set (OSC 0 or 2), as sent; null until it sets one. Read for the session row's task and working glyph.</summary>
+    public string? ProgramTitle { get; private set; }
     public string? Directory { get; private set; }
     /// <summary>"osc" once the shell has reported its directory itself; "poll" while it is read from the process.</summary>
     public string DirectorySource { get; private set; } = "poll";
@@ -347,7 +349,10 @@ public sealed class TerminalView : UserControl, IDisposable
             {
                 switch (signal)
                 {
-                    case TitleSignal t when TerminalTitle.IsMeaningful(t.Title): Title = t.Title.Trim(); break;
+                    case TitleSignal t:
+                        ProgramTitle = t.Title;
+                        if (TerminalTitle.IsMeaningful(t.Title)) Title = t.Title.Trim();
+                        break;
                     case DirectorySignal d: Directory = d.Path; DirectorySource = "osc"; break;
                     case BellSignal: Activity.Bell(IsShown); break;
                 }
