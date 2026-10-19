@@ -15,6 +15,10 @@ public sealed class TerminalWorkspaceFile
     /// <summary>The workspace opened at launch, by name (case-insensitive); null opens none.</summary>
     public string? OpenAtLaunch { get; set; }
     public List<TerminalWorkspace> Workspaces { get; set; } = new();
+    /// <summary>False once the person deleted the workspace generated from Repos, so it is not written again behind their back. Null or true keeps it.</summary>
+    public bool? GenerateFromRepos { get; set; }
+    /// <summary>The sessions open when FleetMate last quit, put back in the session list at the next launch. Written by FleetMate; null when none.</summary>
+    public TerminalWorkspace? Restore { get; set; }
 
     public TerminalWorkspace? Workspace(string name) =>
         Workspaces.FirstOrDefault(w => string.Equals(w.Name, name, StringComparison.OrdinalIgnoreCase));
@@ -33,12 +37,25 @@ public sealed class TerminalWorkspaceFile
 
     /// <summary>The workspace generated from Repos, by its mark or else its name; null when there is none.</summary>
     [JsonIgnore]
-    public TerminalWorkspace? Baseline =>
-        Workspaces.FirstOrDefault(w => w.Source == TerminalWorkspaceBaseline.Source)
-        ?? Workspace(TerminalWorkspaceBaseline.Name);
+    public TerminalWorkspace? Baseline => BaselineIndex is { } i ? Workspaces[i] : null;
 
+    /// <summary>Where the workspace generated from Repos sits, by its mark or else its name.</summary>
+    [JsonIgnore]
+    public int? BaselineIndex
+    {
+        get
+        {
+            var index = Workspaces.FindIndex(w => w.Source == TerminalWorkspaceBaseline.Source);
+            if (index < 0) index = Workspaces.FindIndex(w => string.Equals(w.Name, TerminalWorkspaceBaseline.Name, StringComparison.OrdinalIgnoreCase));
+            return index >= 0 ? index : null;
+        }
+    }
+
+    /// <summary>Remove a workspace. Removing the Repos workspace also stops FleetMate writing it again.</summary>
     public void Remove(string name)
     {
+        if (Baseline is { } baseline && string.Equals(baseline.Name, name, StringComparison.OrdinalIgnoreCase))
+            GenerateFromRepos = false;
         Workspaces.RemoveAll(w => string.Equals(w.Name, name, StringComparison.OrdinalIgnoreCase));
         if (string.Equals(OpenAtLaunch, name, StringComparison.OrdinalIgnoreCase)) OpenAtLaunch = null;
     }
@@ -54,6 +71,12 @@ public sealed class TerminalWorkspace
     /// <summary>Open the terminal filling the window rather than split.</summary>
     public bool? FullWindow { get; set; }
     public List<TerminalWorkspaceSection> Sections { get; set; } = new();
+    /// <summary>
+    /// For the Repos workspace: every folder FleetMate has put in it. A folder
+    /// listed here and missing from the sessions was removed by the person, so
+    /// it is not added again; one no longer tracked is taken out.
+    /// </summary>
+    public List<string>? Generated { get; set; }
 
     [JsonIgnore]
     public int SessionCount => Sections.Sum(s => s.Sessions?.Count ?? 0);
@@ -68,12 +91,18 @@ public sealed class TerminalWorkspaceSection
 
 public sealed class TerminalWorkspaceSession
 {
-    /// <summary>The session's name in the list; null takes the program's own title.</summary>
+    /// <summary>The name the person gave the session. It wins over every automatic name; null follows the program's own title.</summary>
     public string? Name { get; set; }
+    /// <summary>The row's name until the program sets a title, such as the repository's name for a session generated from Repos.</summary>
+    public string? Label { get; set; }
     /// <summary>What it runs: "codex", "claude", any command; null or "" is the shell.</summary>
     public string? Command { get; set; }
     /// <summary>Where it starts; "~" is the home folder. Null is the default start folder.</summary>
     public string? Directory { get; set; }
+    /// <summary>Listed under Pinned at the top of the session list.</summary>
+    public bool? Pinned { get; set; }
+    /// <summary>Resume the agent's last conversation in this folder when the session next starts (<c>claude --continue</c>, <c>codex resume --last</c>).</summary>
+    public bool? Resume { get; set; }
 }
 
 public static class TerminalWorkspaceStore
@@ -100,13 +129,16 @@ public static class TerminalWorkspaceStore
         var file = JsonSerializer.Deserialize<TerminalWorkspaceFile>(text, Options) ?? new TerminalWorkspaceFile();
         // Hand-written files may leave lists out; read them as empty.
         file.Workspaces ??= new();
-        foreach (var workspace in file.Workspaces)
+        foreach (var workspace in file.Restore is { } restore ? file.Workspaces.Append(restore) : file.Workspaces)
         {
             workspace.Sections ??= new();
             foreach (var section in workspace.Sections) section.Sessions ??= new();
         }
         return file;
     }
+
+    /// <summary>The JSON a workspace saves as, to tell whether a change altered it.</summary>
+    public static string Serialize(TerminalWorkspace workspace) => JsonSerializer.Serialize(workspace, Options);
 
     public static void Save(TerminalWorkspaceFile file, string? path = null)
     {

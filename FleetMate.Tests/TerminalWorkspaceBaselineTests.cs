@@ -26,7 +26,7 @@ public class TerminalWorkspaceBaselineTests
         }, "codex", Now)!;
         Assert.Equal(TerminalWorkspaceBaseline.Source, workspace.Source);
         Assert.Equal(new[] { "Azure DevOps", "GitHub" }, workspace.Sections.Select(s => s.Name));
-        Assert.Equal(new[] { "alpha/c", "zed/b" }, workspace.Sections[1].Sessions.Select(s => s.Name));
+        Assert.Equal(new[] { "alpha/c", "zed/b" }, workspace.Sections[1].Sessions.Select(s => s.Label));
         Assert.Equal("codex", workspace.Sections[0].Sessions[0].Command);
     }
 
