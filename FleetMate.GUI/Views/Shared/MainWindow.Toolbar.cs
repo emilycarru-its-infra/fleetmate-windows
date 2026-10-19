@@ -146,10 +146,15 @@ public partial class MainWindow
     /// <summary>A folded sub-tab pill's width, near enough, for keeping room for it.</summary>
     private const double FoldedSegmentsWidth = 96;
 
-    /// <summary>Back and Forward, plus the showing tab's toolbar with its sub-tabs folded.</summary>
+    /// <summary>Agent and Back and Forward: the leading buttons that never fold.</summary>
+    private double LeadingButtonsWidth =>
+        TerminalToggleButton.ActualWidth + TerminalToggleButton.Margin.Left + TerminalToggleButton.Margin.Right
+        + HistoryButtons.ActualWidth;
+
+    /// <summary>Agent, Back and Forward, plus the showing tab's toolbar with its sub-tabs folded.</summary>
     private double LeadingMinimum()
     {
-        var history = HistoryButtons.ActualWidth;
+        var history = LeadingButtonsWidth;
         if (PageToolbarHost.Child is not FrameworkElement toolbar || PageToolbarHost.Visibility != Visibility.Visible)
             return history;
         var (_, others) = SegmentsOf(toolbar);
@@ -192,7 +197,7 @@ public partial class MainWindow
         var (pill, others) = SegmentsOf(toolbar);
         if (pill == null) return;
         var tabsLeft = (ToolbarGrid.ActualWidth - TabBarBorder.ActualWidth) / 2 - shift;
-        var room = tabsLeft - ToolbarGap - HistoryButtons.ActualWidth - PageToolbarHost.Margin.Left - others;
+        var room = tabsLeft - ToolbarGap - LeadingButtonsWidth - PageToolbarHost.Margin.Left - others;
         pill.AvailableWidth = Math.Max(1, room);
     }
 

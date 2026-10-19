@@ -44,13 +44,53 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <!-- Leading group, as in the macOS toolbar's navigation group: Back
-                     and Forward over the tabs and sub-tabs visited (Alt+Left and
-                     Alt+Right, and the mouse's back and forward buttons), then the
-                     showing tab's own sub-tabs, which the tab hands over
-                     (IChromeToolbar). Tabs without sub-tabs leave it empty. -->
+                <!-- Leading group, as in the macOS toolbar. Agent comes first on every
+                     tab, as a pill: accent-filled with a white name and icon while
+                     the terminal is closed, a subtle surface with a check while it is
+                     open (Ctrl+J or Ctrl+`). Then Back and Forward over the tabs and
+                     sub-tabs visited (Alt+Left and Alt+Right, and the mouse's back and
+                     forward buttons), then the showing tab's own sub-tabs, which the
+                     tab hands over (IChromeToolbar). -->
                 <StackPanel x:Name="ToolbarLeft" Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left"
                             VerticalAlignment="Center" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <ToggleButton x:Name="TerminalToggleButton" ToolTip="Show Agent (Ctrl+J or Ctrl+`)" Click="OnTerminalToggleClicked"
+                                  AutomationProperties.AutomationId="TerminalToggleButton"
+                                  AutomationProperties.Name="Agent"
+                                  shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                                  Cursor="Hand" Margin="0,0,8,0">
+                        <ToggleButton.Template>
+                            <ControlTemplate TargetType="ToggleButton">
+                                <Border x:Name="AgentChrome" Height="28" CornerRadius="14" Padding="14,0" BorderThickness="1"
+                                        BorderBrush="Transparent"
+                                        Background="{DynamicResource SystemControlHighlightAccentBrush}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:FontIcon x:Name="AgentIcon" Glyph="&#xE756;" FontFamily="Segoe Fluent Icons" FontSize="14"
+                                                     Foreground="White" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="AgentLabel" Text="Agent" Margin="6,0,0,0" FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="White" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsChecked" Value="True">
+                                        <Setter TargetName="AgentIcon" Property="Glyph" Value="&#xE73E;" />
+                                        <Setter TargetName="AgentChrome" Property="Background" Value="{DynamicResource SystemControlBackgroundBaseLowBrush}" />
+                                        <Setter TargetName="AgentChrome" Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+                                        <Setter TargetName="AgentIcon" Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                                        <Setter TargetName="AgentLabel" Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                                    </Trigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="AgentChrome" Property="Opacity" Value="0.88" />
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="AgentChrome" Property="Opacity" Value="0.75" />
+                                    </Trigger>
+                                    <Trigger Property="IsKeyboardFocused" Value="True">
+                                        <Setter TargetName="AgentChrome" Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </ToggleButton.Template>
+                    </ToggleButton>
                     <StackPanel x:Name="HistoryButtons" Orientation="Horizontal" VerticalAlignment="Center">
                         <Button x:Name="BackButton" Click="OnBackClicked" IsEnabled="False"
                                 ToolTip="Back (Alt+Left)"
@@ -155,13 +195,6 @@
                                        VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <ToggleButton x:Name="TerminalToggleButton" ToolTip="Show Agent Terminal (Ctrl+`)" Click="OnTerminalToggleClicked"
-                                  AutomationProperties.AutomationId="TerminalToggleButton"
-                                  AutomationProperties.Name="Show Agent Terminal"
-                                  shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                                  Background="Transparent" BorderThickness="0" Padding="8,5" Margin="0,0,4,0">
-                        <ui:FontIcon Glyph="&#xE756;" FontFamily="Segoe Fluent Icons" FontSize="14" />
-                    </ToggleButton>
                     <!-- Graphs: shows or hides this tab's widget strip (Ctrl+Alt+G).
                          Accent while shown, secondary while hidden; absent on tabs
                          with no widgets. -->
