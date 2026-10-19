@@ -110,13 +110,14 @@ public class ElevationSessionStateTests
     }
 
     [Theory]
-    [InlineData(ElevationSessionState.Ready, "Elevation ready")]
-    [InlineData(ElevationSessionState.Starting, "Elevation starting…")]
-    [InlineData(ElevationSessionState.Expired, "Elevation")]
-    [InlineData(ElevationSessionState.None, "Elevation")]
-    public void ChromeTextStaysQuietWhenStopped(ElevationSessionState state, string expected)
+    [InlineData(ElevationSessionState.Ready, ElevationDotTone.Green)]
+    [InlineData(ElevationSessionState.Starting, ElevationDotTone.Blue)]
+    [InlineData(ElevationSessionState.Expired, ElevationDotTone.Grey)]
+    [InlineData(ElevationSessionState.None, ElevationDotTone.Grey)]
+    [InlineData(ElevationSessionState.Unknown, ElevationDotTone.Grey)]
+    public void ShieldDotStaysGreyWhenStopped(ElevationSessionState state, ElevationDotTone expected)
     {
-        Assert.Equal(expected, ElevationStatusText.Label(state));
+        Assert.Equal(expected, ElevationStatusText.DotTone(state));
     }
 
     [Fact]
