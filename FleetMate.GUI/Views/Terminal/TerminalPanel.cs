@@ -68,7 +68,8 @@ public sealed class TerminalPanel : UserControl
     private readonly Button _filterRunning;
     private readonly Button _filterPaused;
     private readonly Button _sortButton;
-    private readonly TextBox _search = new() { MinWidth = 60, Width = 92, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) };
+    // Search gets its own row under the filters, the list's width less 8 each side.
+    private readonly TextBox _search = new() { FontSize = 12, HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(4, 6, 4, 0) };
     private TerminalSessionFilter _filter = new(UserPreferences.TerminalFilterActive, UserPreferences.TerminalFilterRunning, UserPreferences.TerminalFilterPaused);
     private TerminalSessionSort _sort = UserPreferences.TerminalSort;
     /// <summary>Each session's traits, read on the slow tick; activity changes without the panel announcing it.</summary>
@@ -141,12 +142,12 @@ public sealed class TerminalPanel : UserControl
         _filterRow.Children.Add(_filterRunning);
         _filterRow.Children.Add(_filterPaused);
         _filterRow.Children.Add(_sortButton);
-        _filterRow.Children.Add(_search);
         UpdateFilterControls();
 
         var header = new StackPanel { Margin = new Thickness(4, 4, 4, 4) };
         header.Children.Add(_headerWide);
         header.Children.Add(_filterRow);
+        header.Children.Add(_search);
         header.Children.Add(_headerNarrow);
 
         var list = new DockPanel();
@@ -156,7 +157,8 @@ public sealed class TerminalPanel : UserControl
         AutomationProperties.SetAutomationId(scroller, "TerminalSessionList");
         list.Children.Add(scroller);
 
-        var listBorder = new Border { BorderThickness = new Thickness(0, 0, 1, 0), Child = list };
+        // Clip, so nothing in the list draws past its divider over the terminal.
+        var listBorder = new Border { BorderThickness = new Thickness(0, 0, 1, 0), Child = list, ClipToBounds = true };
         listBorder.SetResourceReference(Border.BorderBrushProperty, "SystemControlForegroundBaseLowBrush");
 
         // Drag the divider to widen or narrow the list; double-click collapses or expands it.
@@ -1105,6 +1107,7 @@ public sealed class TerminalPanel : UserControl
         _headerWide.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
         _headerNarrow.Visibility = collapsed ? Visibility.Visible : Visibility.Collapsed;
         _filterRow.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+        _search.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
         foreach (var s in _sessions)
         {
             var hidden = collapsed ? Visibility.Collapsed : Visibility.Visible;
