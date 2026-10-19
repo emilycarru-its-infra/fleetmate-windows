@@ -23,21 +23,42 @@ public sealed class TerminalPanel : UserControl
 {
     private sealed class Session
     {
+        /// <summary>The command's label ("codex", "shell"): the name of last resort.</summary>
         public required string Label { get; init; }
         public string? CustomName { get; set; }
+        /// <summary>The title the agent wrote to its session file.</summary>
         public string? AutomaticName { get; set; }
+        /// <summary>The row's name until the program titles it, such as <c>owner/repo</c> for a Repos row.</summary>
+        public string? WorkspaceLabel { get; set; }
         public string Section { get; set; } = "Sessions";
         /// <summary>What it runs, as a workspace saves it.</summary>
-        public string Command { get; init; } = "";
+        public string Command { get; set; } = "";
+        /// <summary>For a row from the Repos workspace: its folder, normalized, the key renames and moves are written back by. Null for the person's own sessions.</summary>
+        public string? RepoFolder { get; set; }
+        /// <summary>Where a row that has not started will start.</summary>
+        public string? StartDirectory { get; set; }
+        public bool Pinned { get; set; }
+        /// <summary>Resume the agent's last conversation when this row next starts.</summary>
+        public bool Resume { get; set; }
+        /// <summary>When the current process started, and whether it was a resume, to fall back to a fresh start when resuming fails.</summary>
+        public DateTime StartedAt { get; set; }
+        public bool StartedResuming { get; set; }
+        public bool IsStarted => Panes.Count > 0;
+        public bool IsRepoRow => RepoFolder != null;
         public required Grid Body { get; init; }
         public List<TerminalView> Panes { get; } = new();
         public Border Row { get; set; } = null!;
         public Ellipse Dot { get; set; } = null!;
         public TextBlock TitleText { get; set; } = null!;
         public TextBlock DirectoryText { get; set; } = null!;
+        public FontIcon StatusIcon { get; set; } = null!;
+        public TextBlock StatusText { get; set; } = null!;
         public TextBlock HintText { get; set; } = null!;
         public StackPanel Details { get; set; } = null!;
     }
+
+    /// <summary>The Pinned group's key in the collapsed set, which no section name can take.</summary>
+    private const string PinnedGroup = "\u0001Pinned";
 
     private const double ListWidth = 230;
     private const double CollapsedListWidth = 34;
@@ -79,6 +100,14 @@ public sealed class TerminalPanel : UserControl
     private Session? _active;
     private bool _collapsed;
     private int _tickCount;
+    /// <summary>The registry's scan roots and clone root, which row breadcrumbs start below.</summary>
+    private IReadOnlyList<string> _roots = Array.Empty<string>();
+    /// <summary>Polls the repos registry, so tracking or hiding a repository shows in the list within a few seconds.</summary>
+    private readonly DispatcherTimer _repoTimer = new() { Interval = TimeSpan.FromSeconds(5) };
+    private DateTime? _registryStamp;
+    private DateTime _lastRepoSync = DateTime.MinValue;
+    /// <summary>Repos sections whose collapsed state has been read from the workspace once; after that the list's own state is written back.</summary>
+    private readonly HashSet<string> _repoSectionsSeen = new(StringComparer.Ordinal);
 
     /// <summary>Raised when the panel should hide (Ctrl+` inside a terminal; the bar below holds the button).</summary>
     public event EventHandler? HideRequested;
@@ -86,7 +115,8 @@ public sealed class TerminalPanel : UserControl
     /// <summary>Raised when full-window mode should turn on or off (Ctrl+Shift+Enter inside a terminal; the bar below holds the button).</summary>
     public event EventHandler? FullWindowRequested;
 
-    public bool HasSessions => _sessions.Count > 0;
+    /// <summary>Whether a session is selected, started or waiting to start when the panel shows. Repos rows alone do not count.</summary>
+    public bool HasSessions => _active != null;
 
     /// <summary>Raised when a workspace opens: show the terminal, split or full window.</summary>
     public event Action<bool>? WorkspaceShowRequested;
@@ -210,6 +240,18 @@ public sealed class TerminalPanel : UserControl
         };
         _tick.Start();
 
+        // The Repos rows follow the registry: within 5 seconds of a change, and when the app comes back to the front.
+        _repoTimer.Tick += (_, _) =>
+        {
+            var stamp = RegistryStamp();
+            if (stamp == _registryStamp) return;
+            _registryStamp = stamp;
+            SyncRepos();
+        };
+        _repoTimer.Start();
+        if (Application.Current != null)
+            Application.Current.Activated += (_, _) => { if (DateTime.UtcNow - _lastRepoSync > TimeSpan.FromSeconds(2)) SyncRepos(); };
+
         // The text follows the app's text size as it changes.
         UserPreferences.Changed += OnPreferencesChanged;
     }
@@ -261,7 +303,12 @@ public sealed class TerminalPanel : UserControl
         foreach (var pane in _sessions.SelectMany(s => s.Panes)) pane.SetAgentDragActive(active);
     }
 
-    public void FocusActive() => _active?.Panes.FirstOrDefault()?.FocusTerminal();
+    public void FocusActive()
+    {
+        if (_active == null) return;
+        if (!_active.IsStarted && IsVisible) Start(_active);
+        _active.Panes.FirstOrDefault()?.FocusTerminal();
+    }
 
     /// <summary>
     /// Put <paramref name="text"/> into an agent's input without pressing
@@ -343,7 +390,7 @@ public sealed class TerminalPanel : UserControl
 
     public void OpenSession(TerminalLaunch launch)
     {
-        var session = new Session { Label = launch.Title, Body = new Grid(), Command = launch.AgentCommand };
+        var session = new Session { Label = launch.Title, Body = new Grid(), Command = launch.AgentCommand, StartedAt = DateTime.UtcNow };
         _sessions.Add(session);
         _body.Children.Add(session.Body);
         BuildRow(session);
@@ -371,6 +418,7 @@ public sealed class TerminalPanel : UserControl
         view.StateChanged += (_, _) => Refresh(session);
         view.KeyAction += OnKeyAction;
         view.TextDropped += (pane, text) => TextDropped?.Invoke(pane, text);
+        view.Exited += (_, _) => OnPaneExited(session, view);
         session.Panes.Add(view);
 
         // Append after a splitter when it is not the first; existing panes stay put
@@ -397,7 +445,7 @@ public sealed class TerminalPanel : UserControl
         switch (action)
         {
             case TerminalAction.NewSession: OpenDefaultSession(); break;
-            case TerminalAction.CloseSession: if (_active != null) CloseSession(_active); break;
+            case TerminalAction.CloseSession: if (_active != null) CloseRequested(_active); break;
             case TerminalAction.Split: SplitActive(); break;
             case TerminalAction.Clear: (source ?? _active?.Panes.FirstOrDefault())?.Clear(); break;
             case TerminalAction.Select: if (index < _sessions.Count) Activate(_sessions[index], true); break;
@@ -418,11 +466,13 @@ public sealed class TerminalPanel : UserControl
         return true;
     }
 
+    /// <summary>Next or previous session, skipping rows that have not started, so cycling never starts one.</summary>
     private void Cycle(int step)
     {
-        if (_sessions.Count == 0 || _active == null) return;
-        var i = (_sessions.IndexOf(_active) + step + _sessions.Count) % _sessions.Count;
-        Activate(_sessions[i], true);
+        var started = _sessions.Where(s => s.IsStarted || ReferenceEquals(s, _active)).ToList();
+        if (started.Count == 0 || _active == null) return;
+        var i = (started.IndexOf(_active) + step + started.Count) % started.Count;
+        Activate(started[i], true);
     }
 
     // ── List rows ────────────────────────────────────────────────────────
@@ -436,12 +486,22 @@ public sealed class TerminalPanel : UserControl
         session.HintText = new TextBlock { FontSize = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0) };
         session.HintText.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
 
+        session.StatusIcon = new FontIcon { FontSize = 9, Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center };
+        session.StatusText = new TextBlock { FontSize = 10, VerticalAlignment = VerticalAlignment.Center };
+        session.StatusText.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
+        session.StatusIcon.SetResourceReference(FontIcon.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
+        var status = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 1, 0, 0) };
+        status.Children.Add(session.StatusIcon);
+        status.Children.Add(session.StatusText);
+
         session.Details = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         session.Details.Children.Add(session.TitleText);
         session.Details.Children.Add(session.DirectoryText);
+        session.Details.Children.Add(status);
 
         var close = new Button { Content = new FontIcon { Glyph = "", FontSize = 9 }, Padding = new Thickness(4), Background = Brushes.Transparent, BorderThickness = new Thickness(0), ToolTip = "Close (Ctrl+Shift+W)", VerticalAlignment = VerticalAlignment.Center };
-        close.Click += (_, e) => { CloseSession(session); e.Handled = true; };
+        close.Click += (_, e) => { CloseRequested(session); e.Handled = true; };
+        close.ToolTipOpening += (_, _) => close.ToolTip = $"{CloseTitle(session)} (Ctrl+Shift+W)";
 
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -461,19 +521,29 @@ public sealed class TerminalPanel : UserControl
         row.MouseRightButtonUp += (_, _) => {
             var menu = new ContextMenu();
             menu.Items.Add(MenuItem("Rename session…", (_, _) => {
-                EditName(row, "Rename session", session.CustomName ?? session.AutomaticName ?? session.Panes.FirstOrDefault()?.Title ?? session.Label, name => {
+                EditName(row, "Rename session", DisplayName(session), name => {
                     if (!_sessions.Contains(session)) return;
                     session.CustomName = string.IsNullOrWhiteSpace(name) ? null : name;
                     Refresh(session);
+                    WriteBackRepos();
                 });
             }));
-            menu.Items.Add(MenuItem("Use automatic title", (_, _) => { session.CustomName = null; Refresh(session); }));
+            menu.Items.Add(MenuItem("Use automatic name", (_, _) => { session.CustomName = null; Refresh(session); WriteBackRepos(); },
+                enabled: session.CustomName != null));
+            menu.Items.Add(MenuItem(session.Pinned ? "Unpin" : "Pin", (_, _) => { session.Pinned = !session.Pinned; RebuildRows(); WriteBackRepos(); }));
             var move = new MenuItem { Header = "Move to section" };
             foreach (var section in _sections) {
                 var target = section;
-                move.Items.Add(MenuItem(target, (_, _) => { session.Section = target; RebuildRows(); }));
+                move.Items.Add(MenuItem(target, (_, _) => MoveSession(session, before: null, section: target)));
             }
             menu.Items.Add(move);
+            menu.Items.Add(new Separator());
+            var folder = FolderOf(session);
+            menu.Items.Add(MenuItem("Copy path", (_, _) => { try { Clipboard.SetText(folder!); } catch (System.Runtime.InteropServices.COMException) { } },
+                enabled: folder != null));
+            menu.Items.Add(MenuItem("Show in Explorer", (_, _) => ShowInExplorer(folder!), enabled: folder != null && Directory.Exists(folder)));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(MenuItem(CloseTitle(session), (_, _) => CloseRequested(session)));
             row.ContextMenu = menu;
             menu.IsOpen = true;
         };
@@ -534,14 +604,36 @@ public sealed class TerminalPanel : UserControl
         _rows.Children.Clear();
         if (FiltersApply) { RebuildFilteredRows(); return; }
         _shownKey = "";
+        // Pinned rows come out of their sections into a group at the top.
+        var pinned = _sessions.Where(s => s.Pinned).ToList();
+        if (pinned.Count > 0)
+        {
+            _rows.Children.Add(PinnedHeader(pinned));
+            if (!_collapsedSections.Contains(PinnedGroup)) foreach (var member in pinned) _rows.Children.Add(member.Row);
+        }
         foreach (var section in _sections.ToList())
         {
-            var members = _sessions.Where(s => s.Section == section).ToList();
+            var members = _sessions.Where(s => s.Section == section && !s.Pinned).ToList();
+            // A Repos section the person has emptied of rows still shows, so rows can be dragged back.
             var header = SectionHeader(section, members);
             _rows.Children.Add(header);
             if (!_collapsedSections.Contains(section)) foreach (var member in members) _rows.Children.Add(member.Row);
         }
     }
+
+    /// <summary>The Pinned group's header: collapsible, and counting the running sessions in it.</summary>
+    private Button PinnedHeader(List<Session> members)
+    {
+        var running = members.Count(IsRunningSession);
+        var header = new Button { Content = $"{(_collapsedSections.Contains(PinnedGroup) && !FiltersApply ? "▸" : "▾")} Pinned{(running > 0 ? $" ({running})" : "")}", HorizontalContentAlignment = HorizontalAlignment.Left, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Margin = new Thickness(4) };
+        AutomationProperties.SetAutomationId(header, "TerminalPinnedHeader");
+        header.Click += (_, _) => { if (!_collapsedSections.Add(PinnedGroup)) _collapsedSections.Remove(PinnedGroup); RebuildRows(); };
+        return header;
+    }
+
+    /// <summary>Started and not ended: what the header and strip counts count.</summary>
+    private static bool IsRunningSession(Session session) =>
+        session.IsStarted && StateOf(session, DateTime.UtcNow) != ActivityState.Exited;
 
     /// <summary>
     /// Filtered or sorted: sections with no match are left out and the rest
@@ -555,9 +647,15 @@ public sealed class TerminalPanel : UserControl
         _shownKey = ShownKey(shown);
         if (_sort == TerminalSessionSort.Manual)
         {
+            var pinned = shown.Where(s => s.Pinned).ToList();
+            if (pinned.Count > 0)
+            {
+                _rows.Children.Add(PinnedHeader(pinned));
+                foreach (var member in pinned) _rows.Children.Add(member.Row);
+            }
             foreach (var section in _sections.ToList())
             {
-                var members = shown.Where(s => s.Section == section).ToList();
+                var members = shown.Where(s => s.Section == section && !s.Pinned).ToList();
                 if (members.Count == 0) continue;
                 _rows.Children.Add(SectionHeader(section, members));
                 foreach (var member in members) _rows.Children.Add(member.Row);
@@ -582,8 +680,10 @@ public sealed class TerminalPanel : UserControl
 
     private Button SectionHeader(string section, List<Session> members)
     {
-        var header = new Button { Content = $"{(_collapsedSections.Contains(section) && !FiltersApply ? "▸" : "▾")} {section} ({members.Count})", HorizontalContentAlignment = HorizontalAlignment.Left, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Margin = new Thickness(4) };
-        header.Click += (_, _) => { if (!_collapsedSections.Add(section)) _collapsedSections.Remove(section); RebuildRows(); };
+        // The count is of running sessions: Repos rows waiting to start are not counted.
+        var running = members.Count(IsRunningSession);
+        var header = new Button { Content = $"{(_collapsedSections.Contains(section) && !FiltersApply ? "▸" : "▾")} {section} ({running})", HorizontalContentAlignment = HorizontalAlignment.Left, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Margin = new Thickness(4) };
+        header.Click += (_, _) => { if (!_collapsedSections.Add(section)) _collapsedSections.Remove(section); RebuildRows(); WriteBackRepos(); };
         var menu = new ContextMenu();
         menu.Items.Add(MenuItem("Rename section…", (_, _) => {
             EditName(header, "Rename section", section, name => {
@@ -592,13 +692,16 @@ public sealed class TerminalPanel : UserControl
                 _sections[index] = name;
                 foreach (var member in _sessions.Where(s => s.Section == section).ToList()) member.Section = name;
                 if (_collapsedSections.Remove(section)) _collapsedSections.Add(name);
+                if (_repoSectionsSeen.Remove(section)) _repoSectionsSeen.Add(name);
                 RebuildRows();
+                WriteBackRepos();
             });
         }, enabled: section != "Sessions"));
         menu.Items.Add(MenuItem("Remove section", (_, _) => {
             _sections.Remove(section); _collapsedSections.Remove(section);
             foreach (var member in _sessions.Where(s => s.Section == section).ToList()) member.Section = "Sessions";
             RebuildRows();
+            WriteBackRepos();
         }, enabled: section != "Sessions"));
         menu.Items.Add(new Separator());
         menu.Items.Add(MenuItem("Move section up", (_, _) => MoveSection(section, -1), enabled: _sections.IndexOf(section) > 0));
@@ -676,6 +779,7 @@ public sealed class TerminalPanel : UserControl
         _sessions.Insert(Math.Max(0, index), session);
         RebuildRows();
         RenumberRows();
+        WriteBackRepos();
     }
 
     private void MoveSection(string section, int offset)
@@ -685,6 +789,7 @@ public sealed class TerminalPanel : UserControl
         if (index < 0 || target < 0 || target >= _sections.Count) return;
         (_sections[index], _sections[target]) = (_sections[target], _sections[index]);
         RebuildRows();
+        WriteBackRepos();
     }
 
     // ── Saved workspaces ─────────────────────────────────────────────────
@@ -701,8 +806,10 @@ public sealed class TerminalPanel : UserControl
                 Sessions = _sessions.Where(s => s.Section == section).Select(s => new TerminalWorkspaceSession
                 {
                     Name = string.IsNullOrWhiteSpace(s.CustomName) ? null : s.CustomName,
+                    Label = s.WorkspaceLabel,
                     Command = s.Command,
-                    Directory = s.Panes.FirstOrDefault()?.Directory is { Length: > 0 } dir ? TerminalWorkspaceStore.Abbreviate(dir) : null,
+                    Directory = FolderOf(s) is { Length: > 0 } dir ? TerminalWorkspaceStore.Abbreviate(dir) : null,
+                    Pinned = s.Pinned ? true : null,
                 }).ToList(),
             });
         return workspace;
@@ -715,6 +822,13 @@ public sealed class TerminalPanel : UserControl
     /// </summary>
     public void OpenWorkspace(TerminalWorkspace workspace, bool? show = null)
     {
+        // The Repos workspace is always in the list as rows that start when chosen; opening it only brings them up to date.
+        if (workspace.Source == TerminalWorkspaceBaseline.Source)
+        {
+            SyncRepos();
+            if (show ?? workspace.Show ?? true) WorkspaceShowRequested?.Invoke(workspace.FullWindow ?? false);
+            return;
+        }
         Session? first = null;
         foreach (var section in workspace.Sections)
         {
@@ -726,11 +840,13 @@ public sealed class TerminalPanel : UserControl
             {
                 var command = entry.Command ?? "";
                 var title = string.IsNullOrWhiteSpace(entry.Name) ? null : entry.Name.Trim();
-                if (_sessions.Any(s => string.Equals(s.Command, command, StringComparison.OrdinalIgnoreCase) && s.CustomName == title)) continue;
+                if (_sessions.Any(s => !s.IsRepoRow && string.Equals(s.Command, command, StringComparison.OrdinalIgnoreCase) && s.CustomName == title)) continue;
                 var directory = entry.Directory is { Length: > 0 } d ? TerminalWorkspaceStore.Expand(d) : null;
                 OpenSession(WorkspaceLaunch(command, directory) with { TakeFocus = false });
                 var session = _sessions[^1];
                 session.CustomName = title;
+                session.WorkspaceLabel = string.IsNullOrWhiteSpace(entry.Label) ? null : entry.Label.Trim();
+                session.Pinned = entry.Pinned == true;
                 session.Section = name;
                 Refresh(session);
                 first ??= session;
@@ -741,41 +857,299 @@ public sealed class TerminalPanel : UserControl
         if (show ?? workspace.Show ?? true) WorkspaceShowRequested?.Invoke(workspace.FullWindow ?? false);
     }
 
+    // ── Repos rows ───────────────────────────────────────────────────────
+
+    private static readonly FleetMate.Core.Services.Repos.RepoRegistryStore Registry = new();
+
     /// <summary>The checkouts the Repos tab knows, with their activity.</summary>
     private static IReadOnlyList<TerminalWorkspaceBaseline.Checkout> RepoCheckouts()
     {
-        try { return TerminalWorkspaceBaseline.Checkouts(new FleetMate.Core.Services.Repos.RepoRegistryStore().Load()); }
+        try { return TerminalWorkspaceBaseline.Checkouts(Registry.Load()); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         {
             return Array.Empty<TerminalWorkspaceBaseline.Checkout>();
         }
     }
 
-    /// <summary>
-    /// The first time, with no workspaces file yet, write a Repos workspace from
-    /// the checkouts on this PC. With nothing checked out, write nothing, so the
-    /// next launch tries again once a repository is cloned.
-    /// </summary>
-    public static void SeedBaselineWorkspaceIfNeeded()
+    private static DateTime? RegistryStamp()
     {
-        if (File.Exists(TerminalWorkspaceStore.DefaultPath)) return;
-        if (TerminalWorkspaceBaseline.Make(RepoCheckouts(), DefaultCommand, DateTime.UtcNow) is not { } baseline) return;
+        try { return File.Exists(Registry.RegistryPath) ? File.GetLastWriteTimeUtc(Registry.RegistryPath) : null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    /// <summary>The registry's scan roots and clone root, expanded, for breadcrumbs.</summary>
+    private static IReadOnlyList<string> RepoRoots()
+    {
         try
         {
-            var file = new TerminalWorkspaceFile();
-            file.Upsert(baseline);
-            TerminalWorkspaceStore.Save(file);
+            var settings = Registry.Load().Settings;
+            return settings.ScanRoots.Append(settings.CloneRoot).Where(r => !string.IsNullOrWhiteSpace(r))
+                .Select(FleetMate.Core.Services.Repos.RepoSettings.Expand).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    /// <summary>
+    /// Bring the Repos workspace in step with the registry (written whenever
+    /// the file has none, unless the person deleted it), then the list's Repos
+    /// rows in step with the workspace. Runs at launch, when the app comes to
+    /// the front, and within five seconds of the registry changing.
+    /// </summary>
+    public void SyncRepos()
+    {
+        _lastRepoSync = DateTime.UtcNow;
+        _registryStamp ??= RegistryStamp();
+        _roots = RepoRoots();
+        var file = LoadWorkspaces(out _);
+        if (file == null) return;
+        if (TerminalWorkspaceBaseline.SyncBaseline(file, RepoCheckouts(), DefaultCommand, DateTime.UtcNow))
+        {
+            try { TerminalWorkspaceStore.Save(file); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Serilog.Log.Warning(ex, "Terminal workspaces: could not write the Repos workspace");
+            }
+        }
+        ApplyRepoWorkspace(file.Baseline);
+    }
+
+    /// <summary>
+    /// Rows for the Repos workspace's sessions, matched by folder: new folders
+    /// get a row that waits to start, and a row whose folder left the workspace
+    /// goes, or, when it is running, stays as an ordinary session.
+    /// </summary>
+    private void ApplyRepoWorkspace(TerminalWorkspace? workspace)
+    {
+        var entries = new Dictionary<string, (TerminalWorkspaceSession Entry, TerminalWorkspaceSection Section)>(StringComparer.Ordinal);
+        foreach (var section in workspace?.Sections ?? new())
+            foreach (var entry in section.Sessions)
+                if (entry.Directory is { Length: > 0 } directory)
+                    entries.TryAdd(TerminalWorkspaceBaseline.Normalized(directory), (entry, section));
+
+        var changed = false;
+        foreach (var session in _sessions.Where(s => s.IsRepoRow && !entries.ContainsKey(s.RepoFolder!)).ToList())
+        {
+            if (session.IsStarted) session.RepoFolder = null;
+            else RemoveRow(session);
+            changed = true;
+        }
+
+        var present = _sessions.Where(s => s.IsRepoRow).Select(s => s.RepoFolder!).ToHashSet(StringComparer.Ordinal);
+        foreach (var section in workspace?.Sections ?? new())
+        {
+            var name = section.Name?.Trim();
+            if (string.IsNullOrEmpty(name)) continue;
+            // Repos sections follow the person's own; a new session never lands in one.
+            if (!_sections.Contains(name)) { _sections.Add(name); changed = true; }
+            if (_repoSectionsSeen.Add(name) && section.Collapsed == true) _collapsedSections.Add(name);
+            foreach (var entry in section.Sessions)
+            {
+                if (entry.Directory is not { Length: > 0 } directory) continue;
+                var folder = TerminalWorkspaceBaseline.Normalized(directory);
+                if (!present.Add(folder)) continue;
+                AddWaitingRow(entry, name, folder);
+                changed = true;
+            }
+        }
+        if (!changed) return;
+        RebuildRows();
+        RenumberRows();
+    }
+
+    /// <summary>A row that runs nothing until it is chosen.</summary>
+    private Session AddWaitingRow(TerminalWorkspaceSession entry, string section, string? repoFolder)
+    {
+        var command = entry.Command ?? "";
+        var label = string.IsNullOrWhiteSpace(command) || command.Equals(AgentCommands.Shell, StringComparison.OrdinalIgnoreCase)
+            ? AgentCommands.Shell
+            : command.Split(' ')[0];
+        var session = new Session
+        {
+            Label = label,
+            Body = new Grid(),
+            Command = command,
+            CustomName = string.IsNullOrWhiteSpace(entry.Name) ? null : entry.Name.Trim(),
+            WorkspaceLabel = string.IsNullOrWhiteSpace(entry.Label) ? null : entry.Label.Trim(),
+            Section = section,
+            RepoFolder = repoFolder,
+            StartDirectory = entry.Directory is { Length: > 0 } d ? TerminalWorkspaceStore.Expand(d) : null,
+            Pinned = entry.Pinned == true,
+            Resume = entry.Resume == true,
+        };
+        _sessions.Add(session);
+        _body.Children.Add(session.Body);
+        session.Body.Visibility = Visibility.Hidden;
+        BuildRow(session);
+        if (_collapsed) ApplyCollapsedTo(session);
+        return session;
+    }
+
+    /// <summary>Start a waiting row's program in its folder, resuming the agent's last conversation when the row asks for it.</summary>
+    private void Start(Session session)
+    {
+        if (session.IsStarted) return;
+        var resume = session.Resume ? AgentResume.Command(session.Command) : null;
+        session.Resume = false;
+        session.StartedResuming = resume != null;
+        session.StartedAt = DateTime.UtcNow;
+        AddPane(session, WorkspaceLaunch(resume ?? session.Command, session.StartDirectory) with { TakeFocus = false });
+        Refresh(session);
+    }
+
+    /// <summary>
+    /// A resumed agent that quits within moments found nothing to resume (or
+    /// failed to): start it again fresh, once.
+    /// </summary>
+    private void OnPaneExited(Session session, TerminalView pane)
+    {
+        if (!session.StartedResuming || DateTime.UtcNow - session.StartedAt > TimeSpan.FromSeconds(15)) return;
+        session.StartedResuming = false;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (!_sessions.Contains(session) || !session.Panes.Contains(pane)) return;
+            Serilog.Log.Information("Terminal: resuming {Command} ended at once; starting it fresh", session.Command);
+            StopProcesses(session);
+            Start(session);
+            if (ReferenceEquals(_active, session)) Show(session);
+        });
+    }
+
+    /// <summary>
+    /// Write the Repos rows back to the Repos workspace by folder: names,
+    /// pins, sections and their order and collapsed state, and the rows the
+    /// person removed (they stay out, since the workspace remembers placing them).
+    /// </summary>
+    private void WriteBackRepos()
+    {
+        var file = LoadWorkspaces(out _);
+        if (file?.Baseline is not { } workspace) return;
+        var before = TerminalWorkspaceStore.Serialize(workspace);
+        var byFolder = new Dictionary<string, TerminalWorkspaceSession>(StringComparer.Ordinal);
+        foreach (var entry in workspace.Sections.SelectMany(s => s.Sessions))
+            if (entry.Directory is { Length: > 0 } d) byFolder.TryAdd(TerminalWorkspaceBaseline.Normalized(d), entry);
+
+        var sections = new List<TerminalWorkspaceSection>();
+        foreach (var name in _sections)
+        {
+            var old = workspace.Sections.FirstOrDefault(s => s.Name == name);
+            var rows = _sessions.Where(s => s.IsRepoRow && s.Section == name).ToList();
+            // Sessions written by hand without a folder have no row; they keep their section.
+            var unkeyed = old?.Sessions.Where(e => e.Directory is not { Length: > 0 }).ToList() ?? new();
+            if (rows.Count == 0 && unkeyed.Count == 0 && old is not { Sessions.Count: 0 }) continue;
+            var section = new TerminalWorkspaceSection { Name = name, Collapsed = _collapsedSections.Contains(name) ? true : null };
+            foreach (var row in rows)
+            {
+                var entry = byFolder.TryGetValue(row.RepoFolder!, out var existing) ? existing : new TerminalWorkspaceSession
+                {
+                    Label = row.WorkspaceLabel,
+                    Command = row.Command,
+                    Directory = row.StartDirectory is { } start ? TerminalWorkspaceStore.Abbreviate(start) : null,
+                };
+                entry.Name = row.CustomName;
+                entry.Pinned = row.Pinned ? true : null;
+                section.Sessions.Add(entry);
+            }
+            section.Sessions.AddRange(unkeyed);
+            sections.Add(section);
+        }
+        workspace.Sections = sections;
+        if (TerminalWorkspaceStore.Serialize(workspace) == before) return;
+        try { TerminalWorkspaceStore.Save(file); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Serilog.Log.Warning(ex, "Terminal workspaces: could not write the Repos workspace");
+            Serilog.Log.Warning(ex, "Terminal workspaces: could not write back the Repos rows");
         }
+    }
+
+    // ── Reopening at launch ──────────────────────────────────────────────
+
+    /// <summary>
+    /// At quit: the running sessions, saved so the next launch puts them back.
+    /// The person's own sessions are saved by their current folder, Repos rows
+    /// by their repository's folder. Nothing is saved with the setting off.
+    /// </summary>
+    private void SaveRestore()
+    {
+        var file = LoadWorkspaces(out _);
+        if (file == null) return;
+        if (!UserPreferences.TerminalRestoreSessions) { file.Restore = null; }
+        else
+        {
+            var restore = new TerminalWorkspace { Name = "Restore" };
+            foreach (var name in _sections)
+            {
+                var running = _sessions.Where(s => s.Section == name && IsRunningSession(s)).ToList();
+                if (running.Count == 0) continue;
+                restore.Sections.Add(new TerminalWorkspaceSection
+                {
+                    Name = name,
+                    Sessions = running.Select(s => new TerminalWorkspaceSession
+                    {
+                        Name = s.IsRepoRow ? null : s.CustomName,
+                        Label = s.WorkspaceLabel,
+                        Command = s.Command,
+                        Directory = (s.IsRepoRow ? s.StartDirectory : FolderOf(s)) is { Length: > 0 } dir ? TerminalWorkspaceStore.Abbreviate(dir) : null,
+                        Pinned = !s.IsRepoRow && s.Pinned ? true : null,
+                        // Only Claude Code and Codex can resume; a shell or a remote wrapper starts fresh.
+                        Resume = AgentResume.Command(s.Command) != null ? true : null,
+                    }).ToList(),
+                });
+            }
+            file.Restore = restore.Sections.Count > 0 ? restore : null;
+        }
+        try { TerminalWorkspaceStore.Save(file); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Serilog.Log.Warning(ex, "Terminal workspaces: could not save the sessions to reopen");
+        }
+    }
+
+    /// <summary>
+    /// At launch: put back the sessions open at the last quit. Repos rows are
+    /// marked to resume; the person's own sessions come back as rows that wait
+    /// to start, the first of them selected. The saved list is kept, so a crash
+    /// reopens them again. Returns whether any of the person's own came back.
+    /// </summary>
+    public bool RestoreSessions()
+    {
+        if (!UserPreferences.TerminalRestoreSessions) return false;
+        var file = LoadWorkspaces(out _);
+        if (file?.Restore is not { } restore) return false;
+        Session? first = null;
+        foreach (var section in restore.Sections)
+        {
+            var name = string.IsNullOrWhiteSpace(section.Name) ? "Sessions" : section.Name.Trim();
+            foreach (var entry in section.Sessions)
+            {
+                var folder = entry.Directory is { Length: > 0 } d ? TerminalWorkspaceBaseline.Normalized(d) : null;
+                if (folder != null && _sessions.FirstOrDefault(s => s.RepoFolder == folder) is { } repoRow)
+                {
+                    repoRow.Resume = entry.Resume == true;
+                    Refresh(repoRow);
+                    continue;
+                }
+                if (!_sections.Contains(name)) _sections.Add(name);
+                var row = AddWaitingRow(entry, name, repoFolder: null);
+                first ??= row;
+            }
+        }
+        RebuildRows();
+        RenumberRows();
+        if (first == null) return false;
+        // Selected, but it starts only once the panel is shown.
+        _active = first;
+        HighlightActive();
+        if (IsVisible) Activate(first, false);
+        return true;
     }
 
     private const string NoCheckouts = "No repositories are checked out yet. Clone one in Development ▸ Repos.";
 
     /// <summary>Rebuild the Repos workspace from the checkouts now, keeping its name and place; every other workspace is left alone.</summary>
-    private static void RegenerateBaselineWorkspace()
+    private void RegenerateBaselineWorkspace()
     {
         if (TerminalWorkspaceBaseline.Make(RepoCheckouts(), DefaultCommand, DateTime.UtcNow) is not { } baseline)
         {
@@ -784,26 +1158,32 @@ public sealed class TerminalPanel : UserControl
         }
         ChangeWorkspaces(file =>
         {
-            if (file.Baseline is { } existing)
+            file.GenerateFromRepos = null;
+            if (file.BaselineIndex is { } index)
             {
-                baseline.Name = existing.Name;
-                file.Workspaces[file.Workspaces.IndexOf(existing)] = baseline;
+                baseline.Name = file.Workspaces[index].Name;
+                file.Workspaces[index] = baseline;
             }
-            else file.Upsert(baseline);
+            else file.Workspaces.Insert(0, baseline);
         });
+        // Rows for folders the new workspace no longer has go; the rest are kept as they are.
+        SyncRepos();
     }
 
     /// <summary>Add checkouts the Repos workspace lacks, keeping every edit to it.</summary>
-    private static void AddMissingReposToBaseline()
+    private void AddMissingReposToBaseline()
     {
         var checkouts = RepoCheckouts();
         if (checkouts.Count == 0) { ShowWorkspaceError(NoCheckouts); return; }
         ChangeWorkspaces(file =>
         {
+            file.GenerateFromRepos = null;
             if (file.Baseline is { } existing) TerminalWorkspaceBaseline.AddMissing(checkouts, existing, DefaultCommand, DateTime.UtcNow);
-            else if (TerminalWorkspaceBaseline.Make(checkouts, DefaultCommand, DateTime.UtcNow) is { } baseline) file.Upsert(baseline);
+            else if (TerminalWorkspaceBaseline.Make(checkouts, DefaultCommand, DateTime.UtcNow) is { } baseline) file.Workspaces.Insert(0, baseline);
         });
+        SyncRepos();
     }
+
 
     private static TerminalWorkspaceFile? LoadWorkspaces(out string? error)
     {
@@ -922,17 +1302,18 @@ public sealed class TerminalPanel : UserControl
     private TerminalSessionTraits ReadTraits(Session session, List<AgentProcessTree.Entry>? snapshot)
     {
         var now = DateTime.UtcNow;
-        var state = StateOf(session, now);
         var lead = session.Panes.FirstOrDefault();
+        // A row that has not started is never running, paused or an agent; search still finds it.
+        var state = session.IsStarted ? StateOf(session, now) : ActivityState.Idle;
         var isAgent = snapshot != null && session.Panes.Any(p =>
             p.Activity.State(now) != ActivityState.Exited && p.ProcessId > 0 && AgentProcessTree.HasAgent(snapshot, p.ProcessId));
-        var name = session.CustomName ?? session.AutomaticName ?? lead?.Title ?? session.Label;
-        var directory = TerminalPathDisplay.Compact(lead?.Directory, Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        var working = state != ActivityState.Exited && TerminalTitleTask.Parse(lead?.ProgramTitle).Working == true;
+        var directory = TerminalPathDisplay.Compact(FolderOf(session), Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
         return new TerminalSessionTraits(
             isAgent,
-            state == ActivityState.Active,
+            state == ActivityState.Active || working,
             TerminalSessionTraits.Paused(state, isAgent),
-            new[] { name, directory ?? "", session.Section, lead?.Title ?? session.Label },
+            new[] { DisplayName(session), directory ?? "", Breadcrumb(session), session.WorkspaceLabel ?? "", session.Section, lead?.Title ?? session.Label },
             session.Panes.Select(p => p.Activity.LastActivity).Max());
     }
 
@@ -1049,24 +1430,72 @@ public sealed class TerminalPanel : UserControl
         }
     }
 
+    /// <summary>
+    /// The row's name: a name the person typed, then the agent's own, the task
+    /// in the terminal title, the row's label, and last what it runs.
+    /// </summary>
+    private static string DisplayName(Session session)
+    {
+        var lead = session.Panes.FirstOrDefault();
+        return TerminalSessionName.Resolve(session.CustomName, session.AutomaticName,
+            TerminalTitleTask.Parse(lead?.ProgramTitle).Task, session.WorkspaceLabel, session.Label);
+    }
+
+    /// <summary>The folder the row is in now, or will start in.</summary>
+    private static string? FolderOf(Session session) =>
+        session.Panes.FirstOrDefault()?.Directory is { Length: > 0 } dir ? dir : session.StartDirectory;
+
+    private string Breadcrumb(Session session) =>
+        FolderOf(session) is { Length: > 0 } folder ? TerminalBreadcrumb.Make(folder, _roots) : "";
+
+    private static void ShowInExplorer(string folder)
+    {
+        try { System.Diagnostics.Process.Start("explorer.exe", $"\"{folder}\""); }
+        catch (System.ComponentModel.Win32Exception ex) { Serilog.Log.Warning(ex, "Terminal: could not show {Folder}", folder); }
+    }
+
+    private static readonly Brush RunningBrush = Frozen(new SolidColorBrush(Color.FromRgb(0x2E, 0x9E, 0x4F)));
+    private static readonly Brush AttentionBrush = Frozen(new SolidColorBrush(Color.FromRgb(0xE8, 0x89, 0x0C)));
+    private static Brush Frozen(SolidColorBrush brush) { brush.Freeze(); return brush; }
+
     private void Refresh(Session session)
     {
         var lead = session.Panes.FirstOrDefault();
-        if (lead == null) return;
-        var state = StateOf(session, DateTime.UtcNow);
-        session.Dot.Fill = state switch
-        {
-            ActivityState.Active => new SolidColorBrush(Color.FromRgb(0x2E, 0x9E, 0x4F)),
-            ActivityState.Attention => new SolidColorBrush(Color.FromRgb(0xE8, 0x89, 0x0C)),
-            _ => Brushes.Gray,
-        };
-        var displayName = session.CustomName ?? session.AutomaticName ?? lead.Title;
+        var displayName = DisplayName(session);
         session.TitleText.Text = displayName;
-        session.DirectoryText.Text = TerminalPathDisplay.Compact(lead.Directory,
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-        var rowName = $"{displayName}, {state}";
-        AutomationProperties.SetName(session.Row, rowName);
-        session.Row.ToolTip = $"{displayName}\nProgram: {lead.Title}\n{lead.Directory}\n{state} · directory from {(lead.DirectorySource == "osc" ? "the shell" : "the process")}";
+        session.DirectoryText.Text = Breadcrumb(session);
+        string status, glyph;
+        if (lead == null)
+        {
+            // Waiting to start: an outlined dot.
+            session.Dot.Fill = Brushes.Transparent;
+            session.Dot.Stroke = Brushes.Gray;
+            session.Dot.StrokeThickness = 1;
+            (status, glyph) = session.Resume ? ("Resumes when opened", "") : ("Not started", "");
+        }
+        else
+        {
+            var state = StateOf(session, DateTime.UtcNow);
+            var working = state != ActivityState.Exited && TerminalTitleTask.Parse(lead.ProgramTitle).Working == true;
+            session.Dot.Stroke = null;
+            session.Dot.StrokeThickness = 0;
+            session.Dot.Fill = state == ActivityState.Attention ? AttentionBrush
+                : state == ActivityState.Active || working ? RunningBrush
+                : Brushes.Gray;
+            var paused = _traits.TryGetValue(session, out var traits) && traits.IsPaused;
+            (status, glyph) = state == ActivityState.Exited ? ("Ended", "")
+                : state == ActivityState.Active || working ? ("Running", "")
+                : paused || state == ActivityState.Attention ? ("Paused", "")
+                : ("Idle", "");
+        }
+        session.StatusText.Text = status;
+        session.StatusIcon.Glyph = glyph;
+        session.StatusIcon.Visibility = glyph.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        AutomationProperties.SetName(session.Row, $"{displayName}, {status}");
+        var folder = FolderOf(session);
+        session.Row.ToolTip = lead == null
+            ? $"{displayName}\n{folder}\n{status} · starts when chosen"
+            : $"{displayName}\nProgram: {lead.Title}\n{folder}\n{status} · directory from {(lead.DirectorySource == "osc" ? "the shell" : "the process")}";
     }
 
     private static ActivityState StateOf(Session session, DateTime now)
@@ -1078,11 +1507,11 @@ public sealed class TerminalPanel : UserControl
             : ActivityState.Idle;
     }
 
-    /// <summary>Each session's state, for the strip shown while the panel is closed.</summary>
+    /// <summary>Each running session's state, for the strip shown while the panel is closed. Rows waiting to start are not counted.</summary>
     public IReadOnlyCollection<ActivityState> SessionStates()
     {
         var now = DateTime.UtcNow;
-        return _sessions.Select(s => StateOf(s, now)).ToList();
+        return _sessions.Where(s => s.IsStarted).Select(s => StateOf(s, now)).ToList();
     }
 
     /// <summary>The name of what a new session runs, for the strip: "codex", "claude", "shell".</summary>
@@ -1108,35 +1537,46 @@ public sealed class TerminalPanel : UserControl
         _headerNarrow.Visibility = collapsed ? Visibility.Visible : Visibility.Collapsed;
         _filterRow.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
         _search.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
-        foreach (var s in _sessions)
-        {
-            var hidden = collapsed ? Visibility.Collapsed : Visibility.Visible;
-            s.Details.Visibility = hidden;
-            s.HintText.Visibility = hidden;
-            ((Button)s.Details.Tag).Visibility = hidden;
-        }
+        foreach (var s in _sessions) ApplyCollapsedTo(s);
         RebuildRows();
+    }
+
+    private void ApplyCollapsedTo(Session session)
+    {
+        var shown = _collapsed ? Visibility.Collapsed : Visibility.Visible;
+        session.Details.Visibility = shown;
+        session.HintText.Visibility = shown;
+        ((Button)session.Details.Tag).Visibility = shown;
     }
 
     // ── Showing, activating, closing ─────────────────────────────────────
 
+    /// <summary>Select a session; a Repos row or a reopened one starts now.</summary>
     private void Activate(Session session, bool takeFocus)
     {
-        _collapsedSections.Remove(session.Section);
+        if (session.Pinned) _collapsedSections.Remove(PinnedGroup);
+        else _collapsedSections.Remove(session.Section);
+        Start(session);
         RebuildRows();
         _active = session;
         Show(session);
-        foreach (var s in _sessions)
-        {
-            if (ReferenceEquals(s, session)) s.Row.SetResourceReference(Border.BackgroundProperty, "SubtleFillBrush");
-            else s.Row.Background = Brushes.Transparent;
-        }
+        HighlightActive();
         if (takeFocus) Dispatcher.BeginInvoke(FocusActive, DispatcherPriority.Input);
     }
 
-    /// <summary>Only the active session is on screen; showing it answers any bell.</summary>
+    private void HighlightActive()
+    {
+        foreach (var s in _sessions)
+        {
+            if (ReferenceEquals(s, _active)) s.Row.SetResourceReference(Border.BackgroundProperty, "SubtleFillBrush");
+            else s.Row.Background = Brushes.Transparent;
+        }
+    }
+
+    /// <summary>Only the active session is on screen; showing it answers any bell. A selected row waiting to start starts once it is on screen.</summary>
     private void Show(Session session)
     {
+        if (IsVisible && !session.IsStarted) Start(session);
         foreach (var s in _sessions)
         {
             var on = ReferenceEquals(s, session) && IsVisible;
@@ -1150,35 +1590,83 @@ public sealed class TerminalPanel : UserControl
         }
     }
 
-    private void CloseSession(Session session)
+    /// <summary>What closing a row does, as its menu and close button say it.</summary>
+    private static string CloseTitle(Session session) =>
+        !session.IsRepoRow ? "Close session"
+        : session.IsStarted ? "Stop session"
+        : "Remove from list";
+
+    /// <summary>
+    /// Close a row: a running Repos row stops its program and stays in the
+    /// list; a Repos row that has not started leaves the list, and the Repos
+    /// workspace with it; any other session closes.
+    /// </summary>
+    private void CloseRequested(Session session)
+    {
+        if (session.IsRepoRow && session.IsStarted)
+        {
+            StopProcesses(session);
+            Refresh(session);
+            if (ReferenceEquals(_active, session)) SelectNearestRunning(_sessions.IndexOf(session));
+            RebuildRows();
+            return;
+        }
+        var wasRepoRow = session.IsRepoRow;
+        RemoveRow(session);
+        if (wasRepoRow) WriteBackRepos();
+    }
+
+    /// <summary>End the row's programs and empty its body, leaving the row.</summary>
+    private void StopProcesses(Session session)
     {
         foreach (var pane in session.Panes) pane.Dispose();
+        session.Panes.Clear();
+        session.Body.Children.Clear();
+        session.Body.ColumnDefinitions.Clear();
+        _traits.Remove(session);
+    }
+
+    private void RemoveRow(Session session)
+    {
+        StopProcesses(session);
         var index = _sessions.IndexOf(session);
         _sessions.Remove(session);
-        _traits.Remove(session);
         RebuildRows();
         _body.Children.Remove(session.Body);
         RenumberRows();
-        if (ReferenceEquals(_active, session))
-        {
-            _active = null;
-            if (_sessions.Count > 0) Activate(_sessions[Math.Min(index, _sessions.Count - 1)], true);
-        }
+        if (ReferenceEquals(_active, session)) SelectNearestRunning(index);
     }
 
-    /// <summary>Called when the panel is shown or hidden, so bells from a hidden panel count as unseen.</summary>
+    /// <summary>After a close: the running session nearest where the closed one was, never a row that would start.</summary>
+    private void SelectNearestRunning(int index)
+    {
+        _active = null;
+        var nearest = _sessions.Select((s, i) => (Session: s, Distance: Math.Abs(i - index)))
+            .Where(c => c.Session.IsStarted)
+            .OrderBy(c => c.Distance)
+            .Select(c => c.Session)
+            .FirstOrDefault();
+        if (nearest != null) Activate(nearest, true);
+        else HighlightActive();
+    }
+
+    /// <summary>Called when the panel is shown or hidden, so bells from a hidden panel count as unseen. Shown with nothing selected, it opens a fresh session, never a Repos row.</summary>
     public void OnVisibilityChanged()
     {
         if (!IsVisible && _nameEditor != null) _nameEditor.IsOpen = false;
         if (_active != null) Show(_active);
+        else if (IsVisible) OpenDefaultSession(takeFocus: false);
     }
 
     public void DisposeAll()
     {
         _tick.Stop();
+        _repoTimer.Stop();
         if (_nameEditor != null) _nameEditor.IsOpen = false;
         UserPreferences.Changed -= OnPreferencesChanged;
-        foreach (var session in _sessions.ToList()) CloseSession(session);
+        SaveRestore();
+        foreach (var session in _sessions.ToList()) StopProcesses(session);
+        _sessions.Clear();
     }
 
     private static Button IconButton(string glyph, string tip, string automationId, RoutedEventHandler click)
