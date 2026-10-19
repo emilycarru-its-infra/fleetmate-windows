@@ -55,16 +55,22 @@ public sealed record ElevationSessionInfo(string? ContainerState, long? ExpiresU
 }
 
 /// <summary>Operator-facing wording for elevation states, shared by chrome and tests.</summary>
+/// <summary>The shield dot's colours. Never red or amber.</summary>
+public enum ElevationDotTone { Grey, Blue, Green }
+
 public static class ElevationStatusText
 {
-    public static string Label(ElevationSessionState state) => state switch
+    /// <summary>
+    /// The colour of the dot on the toolbar's Authentication shield. The toolbar
+    /// shows no elevation text: stopped, idle and unchecked stay a quiet grey,
+    /// since the next action starts the session. The state is spelled out in
+    /// the Authentication popover.
+    /// </summary>
+    public static ElevationDotTone DotTone(ElevationSessionState state) => state switch
     {
-        ElevationSessionState.Ready => "Elevation ready",
-        ElevationSessionState.Starting => "Elevation starting…",
-        // Stopped, idle and unchecked stay quiet: the next action starts the
-        // session, so there is nothing for the operator to do.
-        ElevationSessionState.Expired or ElevationSessionState.None or ElevationSessionState.Unknown => "Elevation",
-        _ => "Elevation off",
+        ElevationSessionState.Ready => ElevationDotTone.Green,
+        ElevationSessionState.Starting => ElevationDotTone.Blue,
+        _ => ElevationDotTone.Grey,
     };
 
     /// <summary>What the feature is called wherever it is listed.</summary>
