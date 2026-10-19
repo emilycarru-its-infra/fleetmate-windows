@@ -24,7 +24,7 @@ public sealed class TerminalPanel : UserControl
     private sealed class Session
     {
         /// <summary>The command's label ("codex", "shell"): the name of last resort.</summary>
-        public required string Label { get; init; }
+        public required string Label { get; set; }
         public string? CustomName { get; set; }
         /// <summary>The title the agent wrote to its session file.</summary>
         public string? AutomaticName { get; set; }
@@ -33,6 +33,8 @@ public sealed class TerminalPanel : UserControl
         public string Section { get; set; } = "Sessions";
         /// <summary>What it runs, as a workspace saves it.</summary>
         public string Command { get; set; } = "";
+        /// <summary>For a Repos row with no command of its own: it runs the default launch as it is when it starts or resumes.</summary>
+        public bool FollowsDefault { get; set; }
         /// <summary>For a row from the Repos workspace: its folder, normalized, the key renames and moves are written back by. Null for the person's own sessions.</summary>
         public string? RepoFolder { get; set; }
         /// <summary>Where a row that has not started will start.</summary>
@@ -284,6 +286,18 @@ public sealed class TerminalPanel : UserControl
         Settings.AgentCommandIsBuiltInDefault && AgentCommands.FindInstalled(Settings.AgentCommand) == null
             ? AgentCommands.Shell
             : Settings.AgentCommand;
+
+    /// <summary>Every command a default launch may have been written into a Repos session as, before those sessions followed the default.</summary>
+    private static IReadOnlyCollection<string> FormerDefaultCommands => new[]
+    {
+        DefaultCommand, Settings.AgentCommand, Settings.AgentCommandFallback, TerminalSettings.DefaultAgentCommand, AgentCommands.Shell,
+    };
+
+    /// <summary>The name of last resort for a session running <paramref name="command"/>.</summary>
+    private static string CommandLabel(string command) =>
+        string.IsNullOrWhiteSpace(command) || command.Equals(AgentCommands.Shell, StringComparison.OrdinalIgnoreCase)
+            ? AgentCommands.Shell
+            : command.Split(' ')[0];
 
     // ── Opening sessions ─────────────────────────────────────────────────
 
@@ -905,7 +919,7 @@ public sealed class TerminalPanel : UserControl
         _roots = RepoRoots();
         var file = LoadWorkspaces(out _);
         if (file == null) return;
-        if (TerminalWorkspaceBaseline.SyncBaseline(file, RepoCheckouts(), DefaultCommand, DateTime.UtcNow))
+        if (TerminalWorkspaceBaseline.SyncBaseline(file, RepoCheckouts(), FormerDefaultCommands, DateTime.UtcNow))
         {
             try { TerminalWorkspaceStore.Save(file); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -932,7 +946,7 @@ public sealed class TerminalPanel : UserControl
         var changed = false;
         foreach (var session in _sessions.Where(s => s.IsRepoRow && !entries.ContainsKey(s.RepoFolder!)).ToList())
         {
-            if (session.IsStarted) session.RepoFolder = null;
+            if (session.IsStarted) { session.RepoFolder = null; session.FollowsDefault = false; }
             else RemoveRow(session);
             changed = true;
         }
@@ -959,18 +973,17 @@ public sealed class TerminalPanel : UserControl
         RenumberRows();
     }
 
-    /// <summary>A row that runs nothing until it is chosen.</summary>
+    /// <summary>A row that runs nothing until it is chosen. A Repos row with no command follows the default launch.</summary>
     private Session AddWaitingRow(TerminalWorkspaceSession entry, string section, string? repoFolder)
     {
-        var command = entry.Command ?? "";
-        var label = string.IsNullOrWhiteSpace(command) || command.Equals(AgentCommands.Shell, StringComparison.OrdinalIgnoreCase)
-            ? AgentCommands.Shell
-            : command.Split(' ')[0];
+        var followsDefault = repoFolder != null && entry.Command == null;
+        var command = followsDefault ? DefaultCommand : entry.Command ?? "";
         var session = new Session
         {
-            Label = label,
+            Label = CommandLabel(command),
             Body = new Grid(),
             Command = command,
+            FollowsDefault = followsDefault,
             CustomName = string.IsNullOrWhiteSpace(entry.Name) ? null : entry.Name.Trim(),
             WorkspaceLabel = string.IsNullOrWhiteSpace(entry.Label) ? null : entry.Label.Trim(),
             Section = section,
@@ -991,6 +1004,11 @@ public sealed class TerminalPanel : UserControl
     private void Start(Session session)
     {
         if (session.IsStarted) return;
+        if (session.FollowsDefault)
+        {
+            session.Command = DefaultCommand;
+            session.Label = CommandLabel(session.Command);
+        }
         var resume = session.Resume ? AgentResume.Command(session.Command) : null;
         session.Resume = false;
         session.StartedResuming = resume != null;
@@ -1045,7 +1063,7 @@ public sealed class TerminalPanel : UserControl
                 var entry = byFolder.TryGetValue(row.RepoFolder!, out var existing) ? existing : new TerminalWorkspaceSession
                 {
                     Label = row.WorkspaceLabel,
-                    Command = row.Command,
+                    Command = row.FollowsDefault ? null : row.Command,
                     Directory = row.StartDirectory is { } start ? TerminalWorkspaceStore.Abbreviate(start) : null,
                 };
                 entry.Name = row.CustomName;
@@ -1151,7 +1169,7 @@ public sealed class TerminalPanel : UserControl
     /// <summary>Rebuild the Repos workspace from the checkouts now, keeping its name and place; every other workspace is left alone.</summary>
     private void RegenerateBaselineWorkspace()
     {
-        if (TerminalWorkspaceBaseline.Make(RepoCheckouts(), DefaultCommand, DateTime.UtcNow) is not { } baseline)
+        if (TerminalWorkspaceBaseline.Make(RepoCheckouts(), DateTime.UtcNow) is not { } baseline)
         {
             ShowWorkspaceError(NoCheckouts);
             return;
@@ -1178,8 +1196,8 @@ public sealed class TerminalPanel : UserControl
         ChangeWorkspaces(file =>
         {
             file.GenerateFromRepos = null;
-            if (file.Baseline is { } existing) TerminalWorkspaceBaseline.AddMissing(checkouts, existing, DefaultCommand, DateTime.UtcNow);
-            else if (TerminalWorkspaceBaseline.Make(checkouts, DefaultCommand, DateTime.UtcNow) is { } baseline) file.Workspaces.Insert(0, baseline);
+            if (file.Baseline is { } existing) TerminalWorkspaceBaseline.AddMissing(checkouts, existing, DateTime.UtcNow);
+            else if (TerminalWorkspaceBaseline.Make(checkouts, DateTime.UtcNow) is { } baseline) file.Workspaces.Insert(0, baseline);
         });
         SyncRepos();
     }

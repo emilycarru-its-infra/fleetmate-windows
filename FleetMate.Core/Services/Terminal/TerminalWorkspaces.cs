@@ -77,6 +77,12 @@ public sealed class TerminalWorkspace
     /// it is not added again; one no longer tracked is taken out.
     /// </summary>
     public List<string>? Generated { get; set; }
+    /// <summary>
+    /// For the Repos workspace: a session FleetMate placed with no command
+    /// runs the default launch as it is when the row starts. True once the
+    /// commands older versions wrote in have been cleared.
+    /// </summary>
+    public bool? CommandsFollowDefault { get; set; }
 
     [JsonIgnore]
     public int SessionCount => Sections.Sum(s => s.Sessions?.Count ?? 0);
@@ -95,7 +101,7 @@ public sealed class TerminalWorkspaceSession
     public string? Name { get; set; }
     /// <summary>The row's name until the program sets a title, such as the repository's name for a session generated from Repos.</summary>
     public string? Label { get; set; }
-    /// <summary>What it runs: "codex", "claude", any command; null or "" is the shell.</summary>
+    /// <summary>What it runs: "codex", "claude", any command; "" is the shell. Null is the shell, except in the Repos workspace, where it is the default launch.</summary>
     public string? Command { get; set; }
     /// <summary>Where it starts; "~" is the home folder. Null is the default start folder.</summary>
     public string? Directory { get; set; }
