@@ -5,8 +5,9 @@
              Visibility="Collapsed">
     <!-- The ticket's workflow: its name and state, every active step (all of
          them when branches run in parallel) and, per step, only the actions
-         TeamDynamix offers the signed-in user. Pressing an action asks for
-         confirmation, with optional comments, before anything is sent.
+         TeamDynamix offers the signed-in user. Pressing an action performs it
+         at once, with no comments. Its right-click menu offers the same action
+         with a comment, which opens the confirmation with a comments box.
          Collapsed until opened; the header says which workflow it is and
          where it stands. Restart and Change sit beside Refresh, and in the
          section's right-click menu. -->
@@ -97,7 +98,15 @@
                                             <DataTemplate>
                                                 <Button Content="{Binding Name}" Tag="{Binding}" Click="OnActionClicked"
                                                         Margin="0,4,6,0" Padding="10,4"
-                                                        ToolTip="{Binding Tooltip}" AutomationProperties.Name="{Binding Name}" />
+                                                        ToolTip="{Binding ButtonTooltip}" AutomationProperties.Name="{Binding Name}"
+                                                        AutomationProperties.HelpText="Right-click to add a comment">
+                                                    <Button.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="{Binding WithCommentHeader}" Tag="{Binding}"
+                                                                      Click="OnActionWithCommentClicked" />
+                                                        </ContextMenu>
+                                                    </Button.ContextMenu>
+                                                </Button>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
@@ -107,8 +116,15 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
-                <!-- Confirmation: names the action, the step and the ticket, and takes
-                     optional comments that TeamDynamix adds to the ticket's feed. -->
+                <!-- A one-click action on its way to TeamDynamix. -->
+                <StackPanel x:Name="SendingPanel" Orientation="Horizontal" Margin="0,2,0,6" Visibility="Collapsed">
+                    <ui:ProgressRing IsActive="True" Width="14" Height="14" Margin="0,0,8,0" />
+                    <TextBlock x:Name="SendingText" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                </StackPanel>
+
+                <!-- Action with comment: names the action, the step and the ticket, and
+                     takes comments that TeamDynamix adds to the ticket's feed. -->
                 <Border x:Name="ConfirmPanel" Visibility="Collapsed" Padding="10" Margin="0,2,0,6" CornerRadius="6"
                         BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundAccentBrush}">
                     <StackPanel>
