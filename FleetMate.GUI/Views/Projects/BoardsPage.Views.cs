@@ -59,6 +59,7 @@ public partial class BoardsPage
         FlatTasks.Visibility = Show(flat);
         QueriesList.Visibility = Show(queries && useQueries);
         SortQueriesButton.Visibility = Show(queries && useQueries);
+        SortQueriesButton.IsEnabled = _queryRuns.Count > 0;
         WorkItemsList.Visibility = Show(queries && !useQueries);
         ProjectsBoard.Visibility = Show(githubBoard);
 
