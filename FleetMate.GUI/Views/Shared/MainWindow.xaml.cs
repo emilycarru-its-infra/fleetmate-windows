@@ -100,7 +100,22 @@ public partial class MainWindow : Window
 
     private void OnElevationChanged() => Dispatcher.BeginInvoke(UpdateElevationStatus);
 
-    private const string AuthTooltip = "Authentication status";
+    /// <summary>A small blue spinner in the dot's place while a session starts, the slow first action of the day.</summary>
+    private ModernWpf.Controls.ProgressRing? _elevationSpinner;
+
+    private ModernWpf.Controls.ProgressRing ElevationSpinner()
+    {
+        if (_elevationSpinner != null) return _elevationSpinner;
+        _elevationSpinner = new ModernWpf.Controls.ProgressRing
+        {
+            Width = 9, Height = 9, IsActive = false, Visibility = Visibility.Collapsed,
+            Foreground = new SolidColorBrush(Colors.DodgerBlue),
+            HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, -3, -4, 0), IsHitTestVisible = false,
+        };
+        ((Panel)ElevationDot.Parent).Children.Add(_elevationSpinner);
+        return _elevationSpinner;
+    }
 
     private void UpdateElevationStatus()
     {
@@ -108,19 +123,24 @@ public partial class MainWindow : Window
         if (monitor is not { Enabled: true })
         {
             ElevationDot.Visibility = Visibility.Collapsed;
-            AuthButton.ToolTip = AuthTooltip;
+            if (_elevationSpinner != null) { _elevationSpinner.IsActive = false; _elevationSpinner.Visibility = Visibility.Collapsed; }
+            AuthButton.ToolTip = ElevationStatusText.ShieldTooltipTitle;
+            System.Windows.Automation.AutomationProperties.SetName(AuthButton, ElevationStatusText.ShieldAccessibleName(ElevationSessionState.Off));
             return;
         }
 
-        ElevationDot.Visibility = Visibility.Visible;
-        ElevationDot.Fill = new SolidColorBrush(ElevationStatusText.DotTone(monitor.Overall()) switch
-        {
-            ElevationDotTone.Green => Colors.Green,
-            ElevationDotTone.Blue => Colors.DodgerBlue,
-            _ => Colors.Gray,
-        });
-        AuthButton.ToolTip = AuthTooltip + Environment.NewLine + Environment.NewLine
-            + ElevationStatusText.Explainer(monitor.TtlHours);
+        var overall = monitor.Overall();
+        var tone = ElevationStatusText.DotTone(overall);
+        var spinner = ElevationSpinner();
+        spinner.IsActive = tone == ElevationDotTone.Blue;
+        spinner.Visibility = tone == ElevationDotTone.Blue ? Visibility.Visible : Visibility.Collapsed;
+        ElevationDot.Visibility = tone == ElevationDotTone.Blue ? Visibility.Collapsed : Visibility.Visible;
+        ElevationDot.Fill = new SolidColorBrush(tone == ElevationDotTone.Green ? Colors.Green : Colors.Gray);
+        var now = DateTimeOffset.Now;
+        AuthButton.ToolTip = ElevationStatusText.ShieldTooltip(
+            ElevationMonitor.DesktopDomains.Select(d => (d, monitor.StateOf(d), monitor.ExpiresOf(d), monitor.ErrorOf(d))),
+            monitor.TtlHours, now);
+        System.Windows.Automation.AutomationProperties.SetName(AuthButton, ElevationStatusText.ShieldAccessibleName(overall));
         if (AuthPopup.IsOpen) PopulateAuthPopup();
     }
 
