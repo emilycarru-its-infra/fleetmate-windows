@@ -385,7 +385,7 @@ public static class RepoDiscovery
                            "sparsecheckout", "sparsecheckoutcone", "untrackedcache", "splitindex" },
         ["remote"] = new() { "url", "fetch", "pushurl", "push", "tagopt", "prune", "prunetags", "mirror", "skipdefaultupdate" },
         ["branch"] = new() { "remote", "merge", "rebase", "pushremote", "description" },
-        ["user"] = new() { "*" }, ["pull"] = new() { "*" }, ["color"] = new() { "*" },
+        ["user"] = new() { "name", "email", "useconfigonly" }, ["pull"] = new() { "*" }, ["color"] = new() { "*" },
         ["column"] = new() { "*" }, ["advice"] = new() { "*" }, ["i18n"] = new() { "*" },
         ["fetch"] = new() { "prune", "prunetags", "writecommitgraph", "parallel" },
         ["init"] = new() { "defaultbranch" },
@@ -414,8 +414,6 @@ public static class RepoDiscovery
             // Signing on or off is data; the program or key that signs is not.
             case "commit" when subsection == null && key == "gpgsign":
                 return value.ToLowerInvariant() is "true" or "false";
-            case "user" when key == "signingkey":
-                return false;
             case "lfs" when subsection == null && key == "repositoryformatversion":
                 return true;
             case "lfs" when subsection != null && key is "access" or "locksverify":

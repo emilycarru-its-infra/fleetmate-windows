@@ -97,6 +97,9 @@ public partial class RepoSidebar : UserControl
             }
         };
         Unloaded += (_, _) => _timer.Stop();
+        // Ctrl+Shift+O chooses a folder while the empty sidebar asks for one, from anywhere in the window.
+        Loaded += (_, _) => { if (Window.GetWindow(this) is { } window) { _window = window; window.PreviewKeyDown += OnWindowKey; } };
+        Unloaded += (_, _) => { if (_window != null) _window.PreviewKeyDown -= OnWindowKey; _window = null; };
         UpdateSortTooltip();
     }
 
@@ -118,6 +121,7 @@ public partial class RepoSidebar : UserControl
             case nameof(RepoWorkspaceModel.IsEditing):
             case nameof(RepoWorkspaceModel.IsScanning):
             case nameof(RepoWorkspaceModel.NewClones):
+            case nameof(RepoWorkspaceModel.SuggestedRoots):
             case nameof(RepoWorkspaceModel.Statuses):
             case nameof(RepoWorkspaceModel.Fetching):
             case nameof(RepoWorkspaceModel.SelectedId):
@@ -188,8 +192,14 @@ public partial class RepoSidebar : UserControl
             }
             RepoList.ItemsSource = rows;
             RepoList.SelectedItem = rows.OfType<SidebarRepoRow>().FirstOrDefault(r => r.Id == _model.SelectedId);
-            EmptyState.Visibility = _model.AllTracked.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            var empty = _model.AllTracked.Count == 0;
+            if (empty && EmptyState.Visibility != Visibility.Visible) _ = _model.LoadSuggestedRootsAsync();
+            EmptyState.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
             ChooseFolderButton.IsEnabled = !_model.IsScanning;
+            var names = string.Join(", ", _model.SuggestedRoots);
+            UseSuggestedButton.Content = $"Use {names}";
+            UseSuggestedButton.ToolTip = $"Track every clone in {names}, where FleetMate found some";
+            UseSuggestedButton.Visibility = _model.SuggestedRoots.Count > 0 && !_model.IsScanning ? Visibility.Visible : Visibility.Collapsed;
             ScanningState.Visibility = _model.IsScanning ? Visibility.Visible : Visibility.Collapsed;
             EditButton.Content = _model.IsEditing ? "Done" : "Edit";
             RenderNewClones();
@@ -271,6 +281,17 @@ public partial class RepoSidebar : UserControl
             Render();
         };
         menu.Items.Add(group);
+        if (_model != null)
+        {
+            menu.Items.Add(new Separator());
+            var addFolder = new MenuItem { Header = "Add Folder…" };
+            addFolder.Click += (_, _) => ChooseFolders();
+            var findNew = new MenuItem { Header = "Find New Clones", ToolTip = "Look for clones that appeared in the watched folders" };
+            var model = _model;
+            findNew.Click += async (_, _) => await model.FindNewClonesAsync();
+            menu.Items.Add(addFolder);
+            menu.Items.Add(findNew);
+        }
         if (_grouped && _model != null)
         {
             var expand = new MenuItem { Header = "Expand All" };
@@ -278,7 +299,8 @@ public partial class RepoSidebar : UserControl
             var collapse = new MenuItem { Header = "Collapse All" };
             collapse.Click += (_, _) =>
             {
-                var sections = RepoSidebarOrganizer.Sections(_model.Tracked, new Dictionary<string, RepoStatus>(), RepoSidebarSort.Name);
+                var listed = _model.IsEditing ? _model.AllTracked : _model.Tracked;
+                var sections = RepoSidebarOrganizer.Sections(listed, new Dictionary<string, RepoStatus>(), RepoSidebarSort.Name);
                 _collapsed.Clear();
                 foreach (var g in sections.SelectMany(s => s.Groups)) _collapsed.Add(g.Id);
                 SaveCollapsed();
@@ -329,7 +351,26 @@ public partial class RepoSidebar : UserControl
     /// Picks one or more folders, watches them and tracks every clone found in
     /// them. No further questions: the person said where their code is.
     /// </summary>
-    private async void OnChooseFolder(object sender, RoutedEventArgs e)
+    private void OnChooseFolder(object sender, RoutedEventArgs e) => ChooseFolders();
+
+    private Window? _window;
+
+    private void OnWindowKey(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.O || Keyboard.Modifiers != (ModifierKeys.Control | ModifierKeys.Shift)) return;
+        if (!EmptyState.IsVisible || !ChooseFolderButton.IsEnabled) return;
+        e.Handled = true;
+        ChooseFolders();
+    }
+
+    private async void OnUseSuggested(object sender, RoutedEventArgs e)
+    {
+        if (_model == null || _model.SuggestedRoots.Count == 0) return;
+        await _model.TrackFoldersAsync(_model.SuggestedRoots.ToList());
+        RepoWorkspaceModel.NotifyRegistryChanged();
+    }
+
+    private async void ChooseFolders()
     {
         if (_model == null) return;
         var dialog = new Microsoft.Win32.OpenFolderDialog
