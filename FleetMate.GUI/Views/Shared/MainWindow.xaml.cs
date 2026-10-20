@@ -218,6 +218,12 @@ public partial class MainWindow : Window
             ToggleFullWindow();
             e.Handled = true;
         }
+        else if (key == System.Windows.Input.Key.S && mods == (Ctrl | Shift) && Terminal.Visibility == Visibility.Visible)
+        {
+            // Ctrl+Shift+S: show or hide the session list while the terminal is open.
+            Terminal.ToggleSessionList();
+            e.Handled = true;
+        }
         else if (key == System.Windows.Input.Key.G && mods == (Ctrl | System.Windows.Input.ModifierKeys.Alt))
         {
             ToggleGraphs();

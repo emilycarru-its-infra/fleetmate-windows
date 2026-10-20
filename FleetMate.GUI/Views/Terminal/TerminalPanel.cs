@@ -155,14 +155,14 @@ public sealed class TerminalPanel : UserControl
                 if (!string.IsNullOrWhiteSpace(name) && !_sections.Contains(name)) { _sections.Add(name); RebuildRows(); }
             })));
         _headerWide.Children.Add(IconButton("", "Split (Alt+Shift+D)", "TerminalSplitButton", (_, _) => SplitActive()));
-        _headerWide.Children.Add(IconButton("", "Collapse the list", "TerminalCollapseButton", (_, _) => SetCollapsed(true)));
+        _headerWide.Children.Add(IconButton("", "Collapse the list (Ctrl+Shift+S)", "TerminalCollapseButton", (_, _) => SetCollapsed(true)));
         // The terminal's own layout: fill the window or restore, and hide. The bar that held them is gone.
         _layoutButton = IconButton("\uE740", "", "TerminalFullWindowButton", (_, _) => FullWindowRequested?.Invoke(this, EventArgs.Empty));
         _hideButton = IconButton("\uE70D", "", "TerminalHideButton", (_, _) => HideRequested?.Invoke(this, EventArgs.Empty));
         _headerWide.Children.Add(_layoutButton);
         _headerWide.Children.Add(_hideButton);
 
-        _headerNarrow.Children.Add(IconButton("", "Expand the list", "TerminalExpandButton", (_, _) => SetCollapsed(false)));
+        _headerNarrow.Children.Add(IconButton("", "Expand the list (Ctrl+Shift+S)", "TerminalExpandButton", (_, _) => SetCollapsed(false)));
         _headerNarrow.Children.Add(IconButton("", "New session (Ctrl+Shift+T)", "TerminalNewButtonCollapsed", (_, _) => OpenDefaultSession()));
         _layoutButtonNarrow = IconButton("\uE740", "", "TerminalFullWindowButtonCollapsed", (_, _) => FullWindowRequested?.Invoke(this, EventArgs.Empty));
         _hideButtonNarrow = IconButton("\uE70D", "", "TerminalHideButtonCollapsed", (_, _) => HideRequested?.Invoke(this, EventArgs.Empty));
@@ -486,6 +486,7 @@ public sealed class TerminalPanel : UserControl
             case TerminalAction.ZoomIn: StepFont(1); break;
             case TerminalAction.ZoomOut: StepFont(-1); break;
             case TerminalAction.ActualSize: UserPreferences.SetTerminalFontOffset(0); break;
+            case TerminalAction.ToggleSessionList: ToggleSessionList(); break;
         }
     }
 
@@ -1644,6 +1645,9 @@ public sealed class TerminalPanel : UserControl
             AutomationProperties.SetName(button, controls.ToggleName);
         }
     }
+
+    /// <summary>Ctrl+Shift+S: show or hide the session list, as the divider's double-click does.</summary>
+    public void ToggleSessionList() => SetCollapsed(!_collapsed);
 
     private void SetCollapsed(bool collapsed)
     {
