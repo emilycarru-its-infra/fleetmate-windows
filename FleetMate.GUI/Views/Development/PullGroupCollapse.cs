@@ -55,6 +55,39 @@ internal static class PullGroupCollapse
     }
 
     internal static void Set(HashSet<string> collapsed) => Collapsed = collapsed;
+
+    /// <summary>The header menu's own item: Expand when the group is collapsed, Collapse when it is not.</summary>
+    internal static string ToggleLabel(bool collapsed) => collapsed ? "Expand" : "Collapse";
+
+    /// <summary>The header's tooltip, naming the group and the Ctrl-click for every group.</summary>
+    internal static string Tip(string key, bool collapsed) => collapsed
+        ? $"Expand {key} (Ctrl-click expands every group)"
+        : $"Collapse {key} (Ctrl-click collapses every group)";
+
+    /// <summary>What a screen reader hears after the group's name.</summary>
+    internal static string Status(bool collapsed) => collapsed ? "Collapsed" : "Expanded";
+}
+
+/// <summary>
+/// Group name → the header's text for the converter parameter: "toggle" for
+/// the menu item, "tip" for the tooltip, "status" for the accessibility status.
+/// </summary>
+public sealed class PullGroupTextConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        var key = value as string ?? "";
+        var collapsed = PullGroupCollapse.Collapsed.Contains(key);
+        return parameter as string switch
+        {
+            "toggle" => PullGroupCollapse.ToggleLabel(collapsed),
+            "tip" => PullGroupCollapse.Tip(key, collapsed),
+            _ => PullGroupCollapse.Status(collapsed),
+        };
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
 }
 
 /// <summary>Group name → Collapsed when that group is collapsed, for the group's rows.</summary>

@@ -260,6 +260,13 @@ public partial class DevelopmentView : UserControl
         ApplyPullGroups(PullGroupCollapse.Toggle(PullGroupCollapse.Collapsed, key, all, VisiblePullGroupKeys));
     }
 
+    /// <summary>The header menu's Expand or Collapse: that group alone.</summary>
+    private void OnPullGroupToggle(object sender, RoutedEventArgs e)
+    {
+        if ((sender as MenuItem)?.Parent is not ContextMenu { PlacementTarget: FrameworkElement { Tag: string key } }) return;
+        ApplyPullGroups(PullGroupCollapse.Toggle(PullGroupCollapse.Collapsed, key, all: false, VisiblePullGroupKeys));
+    }
+
     private void OnPullGroupsExpandAll(object sender, RoutedEventArgs e) =>
         ApplyPullGroups(PullGroupCollapse.SetAll(PullGroupCollapse.Collapsed, false, VisiblePullGroupKeys));
 

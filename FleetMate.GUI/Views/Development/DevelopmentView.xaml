@@ -10,6 +10,7 @@
     <UserControl.Resources>
         <local:PullGroupChevronConverter x:Key="PullGroupChevron" />
         <local:PullGroupRowsVisibilityConverter x:Key="PullGroupRowsVisibility" />
+        <local:PullGroupTextConverter x:Key="PullGroupText" />
         <DataTemplate x:Key="PullRequestRowTemplate">
             <StackPanel Margin="2,4" Background="Transparent">
                 <StackPanel.ContextMenu>
@@ -312,10 +313,14 @@
                                                                 HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                                                                 Padding="8,4" BorderThickness="0" Cursor="Hand"
                                                                 Background="{DynamicResource SubtleFillBrush}"
-                                                                ToolTip="Click to collapse or expand. Ctrl-click for every group."
-                                                                AutomationProperties.Name="{Binding Name, Mode=OneWay}">
+                                                                ToolTip="{Binding Name, Mode=OneWay, Converter={StaticResource PullGroupText}, ConverterParameter=tip}"
+                                                                AutomationProperties.Name="{Binding Name, Mode=OneWay}"
+                                                                AutomationProperties.ItemStatus="{Binding Name, Mode=OneWay, Converter={StaticResource PullGroupText}, ConverterParameter=status}">
                                                             <Button.ContextMenu>
                                                                 <ContextMenu>
+                                                                    <MenuItem Header="{Binding Name, Mode=OneWay, Converter={StaticResource PullGroupText}, ConverterParameter=toggle}"
+                                                                              Click="OnPullGroupToggle" />
+                                                                    <Separator />
                                                                     <MenuItem Header="Expand All Groups" Click="OnPullGroupsExpandAll" />
                                                                     <MenuItem Header="Collapse All Groups" Click="OnPullGroupsCollapseAll" />
                                                                 </ContextMenu>

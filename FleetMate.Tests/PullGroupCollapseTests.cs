@@ -36,6 +36,17 @@ public class PullGroupCollapseTests
     }
 
     [Fact]
+    public void HeaderText_FollowsTheGroupsState()
+    {
+        Assert.Equal("Expand", PullGroupCollapse.ToggleLabel(collapsed: true));
+        Assert.Equal("Collapse", PullGroupCollapse.ToggleLabel(collapsed: false));
+        Assert.Equal("Expand o/app (Ctrl-click expands every group)", PullGroupCollapse.Tip("o/app", collapsed: true));
+        Assert.Equal("Collapse o/app (Ctrl-click collapses every group)", PullGroupCollapse.Tip("o/app", collapsed: false));
+        Assert.Equal("Collapsed", PullGroupCollapse.Status(collapsed: true));
+        Assert.Equal("Expanded", PullGroupCollapse.Status(collapsed: false));
+    }
+
+    [Fact]
     public void StoredOneKeyPerLine()
     {
         Assert.Null(PullGroupCollapse.Format(Array.Empty<string>()));
