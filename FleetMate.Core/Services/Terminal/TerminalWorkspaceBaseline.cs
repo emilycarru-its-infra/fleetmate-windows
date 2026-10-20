@@ -83,9 +83,7 @@ public static class TerminalWorkspaceBaseline
         var wanted = ActiveCheckouts(checkouts, now);
         var wantedPaths = wanted.Select(c => Normalized(c.Path)).ToHashSet();
         // A workspace from before Generated existed: what it holds was placed.
-        var placed = (workspace.Generated
-            ?? workspace.Sections.SelectMany(s => s.Sessions).Where(s => s.Directory != null).Select(s => s.Directory!).ToList())
-            .Select(Normalized).ToHashSet();
+        var placed = PlacedFolders(workspace);
 
         var stale = placed.Where(p => !wantedPaths.Contains(p)).ToHashSet();
         var removed = new List<string>();
@@ -95,7 +93,7 @@ public static class TerminalWorkspaceBaseline
             var before = section.Sessions.Count;
             section.Sessions.RemoveAll(session =>
             {
-                if (session.Directory is not { } directory || !stale.Contains(Normalized(directory))) return false;
+                if (session.Added == true || session.Directory is not { } directory || !stale.Contains(Normalized(directory))) return false;
                 removed.Add(Normalized(directory));
                 return true;
             });
@@ -105,8 +103,7 @@ public static class TerminalWorkspaceBaseline
         foreach (var section in emptied) workspace.Sections.Remove(section);
         placed.ExceptWith(stale);
 
-        var present = workspace.Sections.SelectMany(s => s.Sessions)
-            .Where(s => s.Directory != null).Select(s => Normalized(s.Directory!)).ToHashSet();
+        var present = PlacedSessionFolders(workspace);
         var fresh = wanted.Where(c => !placed.Contains(Normalized(c.Path)) && !present.Contains(Normalized(c.Path)))
             .GroupBy(c => Normalized(c.Path)).Select(g => g.First()).ToList();
         Add(fresh, workspace);
@@ -128,13 +125,11 @@ public static class TerminalWorkspaceBaseline
     public static void MigrateCommands(TerminalWorkspace workspace, IReadOnlyCollection<string> formerDefaults)
     {
         if (workspace.SessionsFollowDefault == true) return;
-        var placed = (workspace.Generated
-            ?? workspace.Sections.SelectMany(s => s.Sessions).Where(s => s.Directory != null).Select(s => s.Directory!).ToList())
-            .Select(Normalized).ToHashSet();
+        var placed = PlacedFolders(workspace);
         var defaults = formerDefaults.Select(c => c.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var session in workspace.Sections.SelectMany(s => s.Sessions))
         {
-            if (session.Directory is not { } directory || !placed.Contains(Normalized(directory))) continue;
+            if (session.Added == true || session.Directory is not { } directory || !placed.Contains(Normalized(directory))) continue;
             if (session.Command is { } command && defaults.Contains(command.Trim())) session.Command = null;
         }
         workspace.SessionsFollowDefault = true;
@@ -166,8 +161,7 @@ public static class TerminalWorkspaceBaseline
     /// </summary>
     public static int AddMissing(IReadOnlyList<Checkout> checkouts, TerminalWorkspace workspace, DateTime now)
     {
-        var present = workspace.Sections.SelectMany(s => s.Sessions)
-            .Where(s => s.Directory != null).Select(s => Normalized(s.Directory!)).ToHashSet();
+        var present = PlacedSessionFolders(workspace);
         var missing = ActiveCheckouts(checkouts, now).Where(c => !present.Contains(Normalized(c.Path))).ToList();
         Add(missing, workspace);
         if (workspace.Generated != null)
@@ -194,6 +188,25 @@ public static class TerminalWorkspaceBaseline
             });
         }
     }
+
+    /// <summary>Every folder FleetMate has placed; a workspace from before Generated existed counts what it holds.</summary>
+    private static HashSet<string> PlacedFolders(TerminalWorkspace workspace) =>
+        (workspace.Generated?.Select(Normalized) ?? PlacedSessionFolders(workspace)).ToHashSet();
+
+    /// <summary>The folders of the sessions in the workspace, leaving out the ones the person added.</summary>
+    private static HashSet<string> PlacedSessionFolders(TerminalWorkspace workspace) =>
+        workspace.Sections.SelectMany(s => s.Sessions)
+            .Where(s => s.Added != true && s.Directory != null).Select(s => Normalized(s.Directory!)).ToHashSet();
+
+    /// <summary>
+    /// What a Repos row is keyed by: its folder, and for a session the person
+    /// added, its id as well, so it never stands in for the repository's row.
+    /// </summary>
+    public static string RowKey(TerminalWorkspaceSession session) =>
+        RowKey(session.Directory ?? "", session.Added == true ? session.Id : null);
+
+    public static string RowKey(string directory, string? addedId) =>
+        Normalized(directory) + (addedId is { Length: > 0 } id ? "|" + id : "");
 
     /// <summary>A folder as compared: home expanded, backslashes, no trailing separator, any case.</summary>
     public static string Normalized(string path) =>

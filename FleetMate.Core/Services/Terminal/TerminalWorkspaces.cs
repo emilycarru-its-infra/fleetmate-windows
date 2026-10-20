@@ -117,6 +117,14 @@ public sealed class TerminalWorkspaceSession
     public bool? Pinned { get; set; }
     /// <summary>Resume the agent's last conversation in this folder when the session next starts (<c>claude --continue</c>, <c>codex resume --last</c>).</summary>
     public bool? Resume { get; set; }
+    /// <summary>
+    /// In the Repos workspace: a session the person added there, such as a
+    /// duplicate of a repository's row. It is never one FleetMate placed, so
+    /// sync never takes it out, and <see cref="Id"/> tells it apart from the
+    /// repository's own row in the same folder.
+    /// </summary>
+    public bool? Added { get; set; }
+    public string? Id { get; set; }
 }
 
 public static class TerminalWorkspaceStore

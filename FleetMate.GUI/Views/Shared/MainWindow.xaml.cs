@@ -49,19 +49,8 @@ public partial class MainWindow : Window
         // window, and with AgentAutoStart (on by default) open a session at launch.
         Terminal.HideRequested += (_, _) => SetTerminalVisible(false);
         Terminal.FullWindowRequested += (_, _) => ToggleFullWindow();
-        // The bar below the panel stays on the window edge and holds show,
-        // hide and full window.
-        TerminalStrip.Panel = Terminal;
         // The terminal opens in the mode it was last used in, split or full window.
         _terminalLayout.RestoreMode(UserPreferences.TerminalLastFullWindow);
-        TerminalStrip.ShowRequested += (_, _) => SetTerminalVisible(true);
-        TerminalStrip.HideRequested += (_, _) => SetTerminalVisible(false);
-        TerminalStrip.SplitViewRequested += (_, _) => {
-            SetTerminalVisible(true, takeFocus: false);
-            _terminalLayout.Split(AvailableHeight);
-            ApplyTerminalLayout();
-        };
-        TerminalStrip.FullWindowRequested += (_, _) => ToggleFullWindow();
         Closed += (_, _) => Terminal.DisposeAll();
         Loaded += (_, _) => InitToolbarFit();
         InitPreferences();
@@ -181,7 +170,6 @@ public partial class MainWindow : Window
         Icon = new System.Windows.Media.Imaging.BitmapImage(new Uri("pack://application:,,,/Assets/TicketsMate.ico"));
         TabBarBorder.Visibility = Visibility.Collapsed;
         TerminalToggleButton.Visibility = Visibility.Collapsed;
-        TerminalStrip.Visibility = Visibility.Collapsed;
     }
 
     /// <summary>Ctrl+`, Ctrl+T and Ctrl+Shift+Enter: the keys that open or size the terminal.</summary>
@@ -251,7 +239,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private double AvailableHeight => Math.Max(0, RootGrid.ActualHeight - RootGrid.RowDefinitions[0].ActualHeight - TerminalDivider.ActualHeight - TerminalStrip.ActualHeight);
+    private double AvailableHeight => Math.Max(0, RootGrid.ActualHeight - RootGrid.RowDefinitions[0].ActualHeight - TerminalDivider.ActualHeight);
 
     private void OnDividerDragStarted(object sender, System.Windows.Controls.Primitives.DragStartedEventArgs e) =>
         _terminalLayout.BeginDrag();
@@ -263,12 +251,12 @@ public partial class MainWindow : Window
     private void OnDividerDragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
     {
         var pointer = System.Windows.Input.Mouse.GetPosition(RootGrid).Y;
-        var height = RootGrid.ActualHeight - TerminalStrip.ActualHeight - pointer - TerminalDivider.ActualHeight / 2;
+        var height = RootGrid.ActualHeight - pointer - TerminalDivider.ActualHeight / 2;
         _terminalLayout.Drag(height, AvailableHeight);
         ApplyTerminalLayout();
     }
 
-    /// <summary>Released near the bottom, the panel folds into the strip and keeps its height for next time.</summary>
+    /// <summary>Released near the bottom, the panel hides and keeps its height for next time.</summary>
     private void OnDividerDragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
     {
         if (_terminalLayout.EndDrag()) SetTerminalVisible(false);
@@ -301,7 +289,7 @@ public partial class MainWindow : Window
         if (visible && _terminalLayout.FullWindow != UserPreferences.TerminalLastFullWindow)
             UserPreferences.SetTerminalLastFullWindow(_terminalLayout.FullWindow);
         TerminalDivider.Visibility = visible && !full ? Visibility.Visible : Visibility.Collapsed;
-        TerminalStrip.SetState(visible, full);
+        Terminal.SetLayoutState(full);
         ContentFrame.Visibility = full ? Visibility.Hidden : Visibility.Visible;
         ContentRow.Height = full ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
         TerminalRow.Height = !visible ? GridLength.Auto

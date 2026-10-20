@@ -318,8 +318,8 @@
         <!-- The divider is a Thumb, not a GridSplitter: its height comes from
              the pointer's position in the window, so it tracks smoothly, and
              dragging it near the top switches to full-window mode. Dragging it
-             to the bottom, or double-clicking it, folds the terminal into the
-             bar below it. Full window, it is not drawn. -->
+             to the bottom, or double-clicking it, hides the terminal. Full
+             window, it is not drawn. -->
         <Thumb x:Name="TerminalDivider" Grid.Row="2" Height="5" Cursor="SizeNS" Visibility="Collapsed"
                AutomationProperties.AutomationId="TerminalDivider"
                AutomationProperties.Name="Agent Terminal divider"
@@ -333,7 +333,5 @@
             </Thumb.Template>
         </Thumb>
         <term:TerminalPanel x:Name="Terminal" Grid.Row="4" Visibility="Collapsed" />
-        <!-- The bar stays on the window edge, open or closed. -->
-        <term:TerminalStrip x:Name="TerminalStrip" Grid.Row="3" />
     </Grid>
 </Window>
