@@ -60,7 +60,7 @@
             Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
             AutomationProperties.AutomationId="ProjectsTileFilterBar">
         <DockPanel LastChildFill="True">
-            <Button x:Name="ClearTileFilterButton" DockPanel.Dock="Right" Content="Clear" Padding="10,2"
+            <Button x:Name="ClearTileFilterButton" DockPanel.Dock="Right" Content="Clear Filter" Padding="10,2"
                     Click="OnClearTileFilter" ToolTip="Show every item again"
                     AutomationProperties.AutomationId="ProjectsTileFilterClear" />
             <TextBlock x:Name="TileFilterLabel" VerticalAlignment="Center" FontSize="12"
@@ -180,6 +180,12 @@
                     <ComboBoxItem Content="Azure DevOps" Tag="azdo" />
                     <ComboBoxItem Content="GitHub Project" Tag="github" />
                 </ComboBox>
+                <!-- Mine only: the strip's tiles as a menu, for the keyboard. -->
+                <ComboBox x:Name="MyItemsCombo" Grid.Column="2" Width="170" Margin="8,0,0,0"
+                          Visibility="Collapsed" SelectionChanged="OnMyItemsChanged"
+                          ToolTip="Show only the items one of the tiles above counts"
+                          AutomationProperties.Name="My items"
+                          AutomationProperties.AutomationId="ProjectsMyItemsFilter" />
                 <ComboBox x:Name="GroupByCombo"
                           Grid.Column="2"
                           Width="130"

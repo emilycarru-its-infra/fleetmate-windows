@@ -118,6 +118,9 @@ public static partial class WidgetCatalog
     // MARK: - Projects
 
     private static List<GitHubIssueSummary>? _issues;
+
+    /// <summary>The open GitHub issues the Projects strip counts, once fetched; the GitHub Issues tile lists these.</summary>
+    internal static IReadOnlyList<GitHubIssueSummary>? ProjectsIssues => _issues;
     private static bool _loadingIssues;
 
     /// <summary>GitHub issues for the Projects list, fetched once and kept; a redraw follows the fetch.</summary>

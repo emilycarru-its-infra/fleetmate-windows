@@ -52,6 +52,8 @@ public static class WidgetRowPacking
             used += s;
         }
         if (rowCount == 1) return new() { items };
+        // Every card needs a row of its own: nothing to balance.
+        if (rowCount >= n) return items.Select(i => new List<int> { i }).ToList();
 
         var mean = spans.Sum() / (double)rowCount;
         var prefix = new int[n + 1];

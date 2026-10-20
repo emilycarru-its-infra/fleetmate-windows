@@ -600,6 +600,8 @@ public partial class BoardsPage : Page
         // the whole app down.
         if (!IsInitialized) return;
 
+        // A tile counts the signed-in user's items, so it filters Mine; leaving Mine drops it.
+        if (CurrentView != ProjectsView.Mine) ProjectsTileFilter.Shared.Clear();
         await ApplyViewAsync();
     }
 
