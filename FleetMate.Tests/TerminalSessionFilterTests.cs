@@ -37,6 +37,14 @@ public class TerminalSessionFilterTests
     }
 
     [Fact]
+    public void Search_IgnoresCaseAndAccents()
+    {
+        Assert.True(new TerminalSessionFilter(Query: "cafe").Matches(Traits(text: new[] { "Café menu" })));
+        Assert.True(new TerminalSessionFilter(Query: "CAFÉ").Matches(Traits(text: new[] { "cafe" })));
+        Assert.False(new TerminalSessionFilter(Query: "cafe").Matches(Traits(text: new[] { "caff" })));
+    }
+
+    [Fact]
     public void Search_CombinesWithToggles()
     {
         var filter = new TerminalSessionFilter(Running: true, Query: "codex");

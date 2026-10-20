@@ -63,8 +63,12 @@ public sealed record TerminalSessionFilter(bool Active = false, bool Running = f
         var words = TrimmedQuery.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         // Every word must appear somewhere, so "fleet main" finds a session
         // named fleet in a folder called main.
+        // Case and accents are ignored, so "cafe" finds "Café".
+        var compare = System.Globalization.CultureInfo.CurrentCulture.CompareInfo;
+        const System.Globalization.CompareOptions options =
+            System.Globalization.CompareOptions.IgnoreCase | System.Globalization.CompareOptions.IgnoreNonSpace;
         return words.All(word => traits.Searchable.Any(text =>
-            text?.Contains(word, StringComparison.CurrentCultureIgnoreCase) == true));
+            text != null && compare.IndexOf(text, word, options) >= 0));
     }
 
     /// <summary>
