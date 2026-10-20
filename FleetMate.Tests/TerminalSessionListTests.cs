@@ -104,6 +104,7 @@ public class TerminalSessionListTests
     [InlineData("KeyW", true, true, false, TerminalAction.CloseSession)]
     [InlineData("KeyD", false, true, true, TerminalAction.Split)]
     [InlineData("KeyK", true, true, false, TerminalAction.Clear)]
+    [InlineData("KeyS", true, true, false, TerminalAction.ToggleSessionList)]
     [InlineData("Tab", true, false, false, TerminalAction.Next)]
     [InlineData("Tab", true, true, false, TerminalAction.Previous)]
     [InlineData("Enter", true, true, false, TerminalAction.FullWindow)]
@@ -115,6 +116,7 @@ public class TerminalSessionListTests
     [InlineData("KeyW")]
     [InlineData("KeyK")]
     [InlineData("KeyC")]
+    [InlineData("KeyS")]
     [InlineData("Enter")]
     public void PlainCtrlChords_ReachTheShell(string code) =>
         Assert.Equal(TerminalAction.None, TerminalKeyBindings.Map(code, ctrl: true, shift: false, alt: false, out _));
@@ -138,6 +140,7 @@ public class TerminalSessionListTests
         Assert.Contains("011:KeyD", chords);
         Assert.Contains("100:Digit3", chords);
         Assert.Contains("110:Enter", chords);
+        Assert.Contains("110:KeyS", chords);
         Assert.DoesNotContain("100:KeyD", chords);
         Assert.DoesNotContain("100:KeyW", chords);
     }
