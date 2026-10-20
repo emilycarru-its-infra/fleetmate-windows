@@ -132,6 +132,10 @@ public sealed class TerminalView : UserControl, IDisposable
 
     public void Clear() => Post(new { type = "clear" });
 
+    public void ScrollToTop() { if (_ready) Post(new { type = "scroll", to = "top" }); }
+
+    public void ScrollToBottom() { if (_ready) Post(new { type = "scroll", to = "bottom" }); }
+
     /// <summary>Tell the page a row is being dragged, so it offers to take the drop.</summary>
     public void SetAgentDragActive(bool active)
     {
