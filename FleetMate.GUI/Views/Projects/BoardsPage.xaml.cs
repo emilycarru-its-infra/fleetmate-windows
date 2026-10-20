@@ -665,6 +665,8 @@ public partial class BoardsPage : Page
 
     private void RefreshQueriesDisplay()
     {
+        // Nothing to order until a query has run, as on Mac.
+        SortQueriesButton.IsEnabled = _queryRuns.Count > 0;
         QueriesList.ShowRuns(_queryRuns, _listSearchText, _showClosed);
     }
 
