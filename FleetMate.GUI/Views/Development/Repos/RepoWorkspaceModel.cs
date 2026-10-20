@@ -210,6 +210,25 @@ public sealed class RepoWorkspaceModel : RepoObservable
         Change("Could not ignore the repositories", () => Manager.Register(clones));
     }
 
+    private IReadOnlyList<string> _suggestedRoots = Array.Empty<string>();
+
+    /// <summary>Common code folders on this PC that hold clones, offered in the empty sidebar before any folder was chosen.</summary>
+    public IReadOnlyList<string> SuggestedRoots { get => _suggestedRoots; private set => Set(ref _suggestedRoots, value); }
+
+    public async Task LoadSuggestedRootsAsync()
+    {
+        RepoSettings settings;
+        try { settings = Manager.Settings(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { SuggestedRoots = Array.Empty<string>(); return; }
+        if (settings.RootsChosen) { SuggestedRoots = Array.Empty<string>(); return; }
+        SuggestedRoots = await Task.Run(() => RepoDiscovery.ExistingCommonLocations()
+            .Where(root => RepoDiscovery.FindCheckouts(new[] { root }, settings.ScanDepth, settings.SkipDirectories).Count > 0)
+            .ToList());
+    }
+
+    /// <summary>Find New Clones: look in the watched folders now, unless a scan is running.</summary>
+    public Task FindNewClonesAsync() => IsScanning ? Task.CompletedTask : LookForNewClonesAsync();
+
     /// <summary>Watches <paramref name="folders"/> and tracks every clone in them, with no further questions.</summary>
     public async Task<int> TrackFoldersAsync(IReadOnlyList<string> folders)
     {
@@ -220,7 +239,12 @@ public sealed class RepoWorkspaceModel : RepoObservable
             if (review.Count > 0) Offer(review);
             ReloadRecords();
             await RefreshStatusesAsync();
-            return results.Count(r => r.Action is DiscoveryAction.Linked or DiscoveryAction.AlreadyLinked);
+            var found = results.Count(r => r.Action is DiscoveryAction.Linked or DiscoveryAction.AlreadyLinked);
+            if (found == 0 && review.Count == 0)
+                Report("No clones found", $"There are no git clones in {string.Join(", ", folders.Select(RepoSettings.Abbreviate))}. Clone a repository there, or choose another folder.");
+            else if (found > 0)
+                Flash($"Tracking {found} {(found == 1 ? "repository" : "repositories")}");
+            return found;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or RepoException)
         {

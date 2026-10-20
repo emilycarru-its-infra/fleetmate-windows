@@ -290,6 +290,14 @@ public sealed class RepoDiscoveryScanTests : TempFolder
     public void ConfigCases_MatchTheMacTable() => Assert.Equal(51, ConfigCases.Count);
 
     [Fact]
+    public void UserKeys_AreOnlyNameEmailAndUseConfigOnly()
+    {
+        Assert.Empty(RepoDiscovery.CommandConfigKeys("[user]\n\tname = Dev\n\temail = dev@example.com\n\tuseConfigOnly = true\n"));
+        Assert.Equal(new[] { "user.signingkey" }, RepoDiscovery.CommandConfigKeys("[user]\n\tsigningkey = ABC123\n"));
+        Assert.Equal(new[] { "user.other" }, RepoDiscovery.CommandConfigKeys("[user]\n\tother = x\n"));
+    }
+
+    [Fact]
     public void InvalidUtf8_IsFlagged() =>
         Assert.NotEmpty(RepoDiscovery.ConfigReview(new byte[] { 0x5B, 0x63, 0x5D, 0x0A, 0xC3, 0x28 }));
 
@@ -297,7 +305,7 @@ public sealed class RepoDiscoveryScanTests : TempFolder
     public void EntryPattern_RejectsBackslash()
     {
         Assert.False(RepoDiscovery.EntryPattern.IsMatch("\turl = x \\"));
-        Assert.Equal(new[] { "(continuation line)" },
+        Assert.Equal(new[] { "(continuation line)", "user.pager" },
             RepoDiscovery.CommandConfigKeys("[remote \"origin\"]\n\turl = x \\\n[user]\n\tpager = less\n"));
     }
 
