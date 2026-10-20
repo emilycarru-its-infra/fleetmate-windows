@@ -148,6 +148,7 @@ public static class TicketWidgets
             FocusVisualStyle = (Style?)Application.Current.TryFindResource(SystemParameters.FocusVisualStyleKey),
         };
         AutomationPropertiesName(tile, $"{t.Title}: {t.Value}. {t.Help}");
+        if (t.IsOn) System.Windows.Automation.AutomationProperties.SetItemStatus(tile, "Selected");
         tile.MouseLeftButtonUp += (_, _) => t.Action();
         tile.KeyDown += (_, e) =>
         {

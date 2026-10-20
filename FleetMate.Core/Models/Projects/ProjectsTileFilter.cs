@@ -1,3 +1,5 @@
+using FleetMate.Core.Services.Projects;
+
 namespace FleetMate.Core.Models.Projects;
 
 /// <summary>The Projects strip's figures, each of which doubles as a filter on the page's lists.</summary>
@@ -35,6 +37,9 @@ public sealed class ProjectsTileFilter
 
     public void Clear() => Set(null);
 
+    /// <summary>Pick <paramref name="tile"/>, or nothing, as the Filters' "My items" menu does.</summary>
+    public void Select(ProjectsTile? tile) => Set(tile);
+
     private void Set(ProjectsTile? tile)
     {
         if (Selected == tile) return;
@@ -64,6 +69,34 @@ public sealed class ProjectsTileFilter
         tile == ProjectsTile.GitHubIssues
             ? new HashSet<int>()
             : mine.Where(w => WorkItemStats.Matches(w, tile, nowUtc)).Select(w => w.Id).ToHashSet();
+
+    /// <summary>
+    /// The GitHub Issues tile's rows in Mine: the strip's open issues, which
+    /// are not work items, narrowed by the search text, newest change first.
+    /// The id carries the repository (<c>owner/name#n</c>), since the list
+    /// mixes issues from many repositories.
+    /// </summary>
+    public static List<UnifiedTask> IssueRows(IEnumerable<GitHubIssueSummary> issues, string? search)
+    {
+        var q = search?.Trim() ?? "";
+        return issues
+            .Where(i => q.Length == 0 || i.Title.Contains(q, StringComparison.OrdinalIgnoreCase))
+            .Select(AsUnifiedTask)
+            .OrderByDescending(t => t.UpdatedAt)
+            .ToList();
+    }
+
+    public static UnifiedTask AsUnifiedTask(GitHubIssueSummary issue) => new()
+    {
+        Id = $"{issue.Repository}#{issue.Number}",
+        Provider = "github",
+        Title = issue.Title,
+        State = issue.State.Equals("closed", StringComparison.OrdinalIgnoreCase) ? TaskState.Closed : TaskState.Open,
+        CreatedAt = issue.UpdatedAt,
+        UpdatedAt = issue.UpdatedAt,
+        ExternalUrl = issue.WebUrl,
+        Metadata = new Dictionary<string, string> { ["repository"] = issue.Repository },
+    };
 
     /// <summary>
     /// Whether a list row belongs to the picked tile's set. With nothing

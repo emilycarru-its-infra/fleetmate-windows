@@ -116,4 +116,34 @@ public class ProjectsTileFilterTests
         Assert.True(ProjectsTileFilter.Passes(Task("azdevops", "999"), null, new HashSet<int>()));
         Assert.True(ProjectsTileFilter.Passes(Task("gitea", "x"), null, new HashSet<int>()));
     }
+
+    [Fact]
+    public void TheGitHubIssuesTile_ListsTheStripsIssues_NewestFirstAndSearched()
+    {
+        var issues = new[]
+        {
+            new FleetMate.Core.Services.Projects.GitHubIssueSummary { Number = 4, Title = "Fix login", Repository = "o/app", WebUrl = "https://example.invalid/o/app/issues/4", UpdatedAt = Now.AddDays(-2) },
+            new FleetMate.Core.Services.Projects.GitHubIssueSummary { Number = 9, Title = "Add export", Repository = "o/tool", UpdatedAt = Now },
+        };
+        var rows = ProjectsTileFilter.IssueRows(issues, null);
+        Assert.Equal(new[] { "o/tool#9", "o/app#4" }, rows.Select(r => r.Id));
+        Assert.All(rows, r => Assert.True(ProjectsTileFilter.Passes(r, ProjectsTile.GitHubIssues, new HashSet<int>())));
+        Assert.Equal("o/app", rows[1].Metadata["repository"]);
+        Assert.Equal("https://example.invalid/o/app/issues/4", rows[1].ExternalUrl);
+        Assert.Equal(new[] { "o/app#4" }, ProjectsTileFilter.IssueRows(issues, " LOGIN ").Select(r => r.Id));
+    }
+
+    [Fact]
+    public void TheMyItemsMenu_SelectsATileOrNone()
+    {
+        var filter = new ProjectsTileFilter();
+        var changes = 0;
+        filter.Changed += (_, _) => changes++;
+        filter.Select(ProjectsTile.Blocked);
+        filter.Select(ProjectsTile.Blocked);
+        Assert.Equal(ProjectsTile.Blocked, filter.Selected);
+        filter.Select(null);
+        Assert.False(filter.IsActive);
+        Assert.Equal(2, changes);
+    }
 }
