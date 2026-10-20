@@ -124,6 +124,27 @@ public static class ElevationStatusText
         return $"{name}: {Detail(state, expires, now)}";
     }
 
+    /// <summary>The toolbar shield's first tooltip line, and its whole tooltip when elevation is off.</summary>
+    public const string ShieldTooltipTitle = "Authentication status for every connected system";
+
+    /// <summary>
+    /// The toolbar shield's tooltip: what it is, one line on what an elevated
+    /// session is, then one line per domain with its state or time left.
+    /// </summary>
+    public static string ShieldTooltip(IEnumerable<(GraphDomain Domain, ElevationSessionState State, DateTimeOffset? Expires, string? Error)> domains,
+        int ttlHours, DateTimeOffset now)
+    {
+        var lines = new List<string> { ShieldTooltipTitle, Explainer(ttlHours), "" };
+        lines.AddRange(domains.Select(d => DomainLine(d.Domain, d.State, d.Expires, d.Error, now)));
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    /// <summary>The shield's accessible name, which carries the state its dot only shows.</summary>
+    public static string ShieldAccessibleName(ElevationSessionState overall) =>
+        overall == ElevationSessionState.Off
+            ? "Authentication"
+            : $"Authentication, elevated sessions {StateLabel(overall).ToLowerInvariant()}";
+
     private static string FormatRemaining(TimeSpan span)
     {
         if (span <= TimeSpan.Zero) return "0m";

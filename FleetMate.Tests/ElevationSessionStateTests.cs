@@ -121,6 +121,30 @@ public class ElevationSessionStateTests
     }
 
     [Fact]
+    public void ShieldTooltip_ExplainsThenListsEachDomain()
+    {
+        var tip = ElevationStatusText.ShieldTooltip(new (GraphDomain, ElevationSessionState, DateTimeOffset?, string?)[]
+        {
+            (GraphDomain.Devices, ElevationSessionState.Ready, Now.AddHours(3).AddMinutes(12), null),
+            (GraphDomain.Identity, ElevationSessionState.Expired, null, null),
+        }, 8, Now);
+        var lines = tip.Split(Environment.NewLine);
+        Assert.Equal(ElevationStatusText.ShieldTooltipTitle, lines[0]);
+        Assert.Equal(ElevationStatusText.Explainer(8), lines[1]);
+        Assert.Equal("", lines[2]);
+        Assert.Equal("Devices (Intune, Microsoft Graph): Ready, 3h 12m left", lines[3]);
+        Assert.Equal("Identity (Entra ID): Stopped, restarts on next use", lines[4]);
+    }
+
+    [Theory]
+    [InlineData(ElevationSessionState.Off, "Authentication")]
+    [InlineData(ElevationSessionState.Ready, "Authentication, elevated sessions ready")]
+    [InlineData(ElevationSessionState.Starting, "Authentication, elevated sessions starting…")]
+    [InlineData(ElevationSessionState.Expired, "Authentication, elevated sessions stopped")]
+    public void ShieldAccessibleName_CarriesTheState(ElevationSessionState state, string expected) =>
+        Assert.Equal(expected, ElevationStatusText.ShieldAccessibleName(state));
+
+    [Fact]
     public void StoppedSessionReadsAsRestartingNotAsAProblem()
     {
         Assert.Equal("Stopped", ElevationStatusText.StateLabel(ElevationSessionState.Expired));
