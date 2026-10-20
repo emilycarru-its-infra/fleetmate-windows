@@ -503,7 +503,7 @@ public sealed class TerminalPanel : UserControl
         if (shown.Count > 0) return;
 
         var empty = new StackPanel { Margin = new Thickness(8, 16, 8, 16), HorizontalAlignment = HorizontalAlignment.Center };
-        var text = new TextBlock { Text = "No matching sessions", FontSize = 12, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center };
+        var text = new TextBlock { Text = "No Matching Sessions", FontSize = 12, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center };
         text.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
         var clear = new Button { Content = "Clear Filters", Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Center };
         AutomationProperties.SetAutomationId(clear, "TerminalClearFilters");
