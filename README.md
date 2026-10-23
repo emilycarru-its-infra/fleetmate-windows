@@ -97,7 +97,8 @@ precedence over agent labels and program titles.
 
 ## Repository Insights
 
-Insights always reads `refs/remotes/origin/main`, independently of the checked-out branch
+Insights is the Repos sub-tab's Graphs strip, shown and hidden with the toolbar Graphs
+button like every other Development sub-tab's graphs. It always reads `refs/remotes/origin/main`, independently of the checked-out branch
 or local `main`. Fetch the repository to refresh that remote-tracking ref. A missing ref
 is reported as an error. The matching CLI command is `fleetmate repos stats --ref
 refs/remotes/origin/main`; CLI statistics otherwise retain their `HEAD` default.
