@@ -8,7 +8,7 @@
 
     <!-- Widgets sit above the page; the DockPanel keeps the page's own grid untouched. -->
     <DockPanel>
-    <widgets:WidgetsSection DockPanel.Dock="Top" Tab="Devices" Margin="16,14,16,0" />
+    <widgets:WidgetsSection DockPanel.Dock="Top" Tab="Devices" EqualHeights="True" Margin="16,14,16,0" />
     <Grid Margin="16,14,16,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -20,12 +20,11 @@
             <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
-        <!-- Header -->
-        <StackPanel Grid.Row="0" Grid.Column="0">
-            <TextBlock Text="Devices" Style="{StaticResource TitleTextStyle}" />
+        <!-- No page heading: the tab bar names the tab, as on Mac. The counts
+             and loading notes stay, beside the toolbar. -->
+        <StackPanel Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="Device Management Service" Style="{StaticResource SubtitleTextStyle}" />
-                <TextBlock x:Name="DeviceCountText" Margin="8,0,0,0" Style="{StaticResource SubtitleTextStyle}" />
+                <TextBlock x:Name="DeviceCountText" Style="{StaticResource SubtitleTextStyle}" />
                 <TextBlock x:Name="AutopilotLoadingText" Margin="8,0,0,0" Style="{StaticResource SubtitleTextStyle}"
                            Text="· reading Autopilot…" Visibility="Collapsed" />
                 <TextBlock x:Name="AppleLoadingText" Margin="8,0,0,0" Style="{StaticResource SubtitleTextStyle}"

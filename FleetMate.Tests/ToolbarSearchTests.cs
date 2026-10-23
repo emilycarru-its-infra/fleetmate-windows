@@ -35,6 +35,19 @@ public class ToolbarSearchTests
         Assert.Equal((compactRight, compactTabs, shift),
             FleetMate.GUI.Views.Shared.MainWindow.Fit(width, 800, 400, 560, 440, 16));
 
+    // The leading group (Back, Forward and folded sub-tabs) needs 300: the
+    // tab bar never slides left over it, and it alone can make the right
+    // group yield.
+    [Theory]
+    [InlineData(2000, 300, false, false, 0)]
+    [InlineData(1200, 300, true, true, 56)]    // 56 of shift wanted; 200 + 16 + 300 = 516 leaves 84
+    [InlineData(1200, 380, true, true, 4)]     // 200 + 16 + 380 = 596 leaves only 4
+    [InlineData(2000, 600, true, true, 0)]     // the right fits, but 400 + 16 + 600 > 1000
+    public void ToolbarKeepsRoomForTheLeadingGroup(
+        double width, double left, bool compactRight, bool compactTabs, double shift) =>
+        Assert.Equal((compactRight, compactTabs, shift),
+            FleetMate.GUI.Views.Shared.MainWindow.Fit(width, 800, 400, 560, 440, 16, left));
+
     [Fact]
     public void SearchFieldNarrowsInANarrowWindow() =>
         Assert.True(FleetMate.GUI.Views.Shared.MainWindow.SearchCompactWidth < FleetMate.GUI.Views.Shared.MainWindow.SearchFullWidth);

@@ -90,6 +90,39 @@
                 <Setter Property="Cursor" Value="Hand" />
             </Style>
 
+            <!-- Back and Forward in the title bar: flat like the tab bar, with the
+                 same hover fill, and dimmed rather than boxed when there is no
+                 history to move through. -->
+            <Style x:Key="ChromeHistoryButtonStyle" TargetType="Button">
+                <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Padding" Value="9,6" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Chrome" Background="{TemplateBinding Background}"
+                                    CornerRadius="7" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Chrome" Property="Background"
+                                            Value="{DynamicResource SubtleFillBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="Chrome" Property="Background" Value="Transparent" />
+                                    <Setter Property="Foreground"
+                                            Value="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" />
+                                    <Setter Property="Cursor" Value="Arrow" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <Style x:Key="FleetListViewItemStyle" TargetType="ListViewItem">
                 <!-- This style REPLACES the implicit themed ListViewItem style, so
                      without an explicit Foreground every row falls back to WPF's

@@ -6,6 +6,7 @@ using System.Windows.Data;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
 using FleetMate.GUI.Views.Shared;
+using FleetMate.GUI.Views.Shared.Widgets;
 using Serilog;
 
 namespace FleetMate.GUI.Views.Development;
@@ -20,6 +21,12 @@ namespace FleetMate.GUI.Views.Development;
 /// </summary>
 public partial class DevelopmentView : UserControl
 {
+    /// <summary>The sub-tabs, Inbox and Refresh, which the window shows in its title bar.</summary>
+    public FrameworkElement ChromeToolbar => ChromeToolbarPanel;
+
+    /// <summary>The toolbar's Refresh, which the page answers: it knows what Refresh means for Repos.</summary>
+    public event EventHandler? RefreshRequested;
+
     private DevelopmentSourceFilter _source = DevelopmentSourceFilter.All;
     private DevelopmentScope _scope = DevelopmentScope.Everything;
     private string? _repository = UserPreferences.PullsRepository;
@@ -32,6 +39,10 @@ public partial class DevelopmentView : UserControl
     public DevelopmentView()
     {
         InitializeComponent();
+        // Set here rather than bound by element name: the toolbar moves to the
+        // window's title bar, outside this view's name scope.
+        DevelopmentSegmentMenu.Segments = DevelopmentSegments;
+        InboxPopup.PlacementTarget = InboxButton;
         UpdatePullsSortTooltip();
         AgentContextMenu.Attach(PullRequestList);
         AgentContextMenu.Attach(CommitsList);
@@ -54,11 +65,6 @@ public partial class DevelopmentView : UserControl
             _inboxHooked = true;
             app.Inbox.Changed += (_, _) => Dispatcher.Invoke(RenderInbox);
         }
-
-        // The view is cached with the tab, so an Inbox read to zero on an earlier
-        // visit would still be the open segment. Coming back opens Pulls instead.
-        if (DevelopmentFilter.LeaveEmptyInbox(app.Inbox.UnreadCount, InboxSegment.IsChecked == true))
-            PullRequestsSegment.IsChecked = true;
 
         RenderInbox();
 
@@ -261,13 +267,32 @@ public partial class DevelopmentView : UserControl
         Rerender();
     }
 
-    /// <summary>Open the Inbox — the Unread in Inbox figure's click when anything is unread.</summary>
+    /// <summary>Open the Inbox popover — the Unread in Inbox figure's click when anything is unread.</summary>
     public void ShowInbox()
     {
-        InboxSegment.Visibility = Visibility.Visible;
-        InboxSegment.IsChecked = true;
+        InboxButton.Visibility = Visibility.Visible;
+        InboxPopup.IsOpen = true;
         RenderInbox();
     }
+
+    /// <summary>When the popover last closed: a click on its own button closes it first, and must not reopen it.</summary>
+    private DateTime _inboxClosedAt;
+
+    private void OnInboxButtonClicked(object sender, RoutedEventArgs e)
+    {
+        if (!InboxPopup.IsOpen && DateTime.UtcNow - _inboxClosedAt < TimeSpan.FromMilliseconds(300)) return;
+        InboxPopup.IsOpen = !InboxPopup.IsOpen;
+        RenderInbox();
+    }
+
+    /// <summary>Closed with nothing unread, the button goes until something arrives.</summary>
+    private void OnInboxPopupClosed(object? sender, EventArgs e)
+    {
+        _inboxClosedAt = DateTime.UtcNow;
+        RenderInbox();
+    }
+
+    private void OnRefreshButtonClicked(object sender, RoutedEventArgs e) => RefreshRequested?.Invoke(this, EventArgs.Empty);
 
     private void OnPullsRepoChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -355,12 +380,22 @@ public partial class DevelopmentView : UserControl
 
     // MARK: - Segments
 
+    /// <summary>Raised whenever another sub-tab opens, so the Graphs strip can follow it.</summary>
+    public event EventHandler? SegmentChanged;
+
+    /// <summary>The sub-tab the Graphs strip describes.</summary>
+    public DevelopmentSegment CurrentSegment =>
+        IsReposShown ? DevelopmentSegment.Repos
+        : CommitsSegment.IsChecked == true ? DevelopmentSegment.Commits
+        : PipelinesSegment.IsChecked == true ? DevelopmentSegment.Pipelines
+        : SkillsSegment.IsChecked == true ? DevelopmentSegment.Skills
+        : DevelopmentSegment.Pulls;
+
     private async void OnSegmentChanged(object sender, RoutedEventArgs e)
     {
         if (!IsInitialized) return;
 
         var pulls = PullRequestsSegment.IsChecked == true;
-        var inbox = InboxSegment.IsChecked == true;
         var commits = CommitsSegment.IsChecked == true;
         var pipelines = PipelinesSegment.IsChecked == true;
         var skills = SkillsSegment.IsChecked == true;
@@ -368,8 +403,6 @@ public partial class DevelopmentView : UserControl
         static Visibility Show(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
         PullRequestFilters.Visibility = Show(pulls);
         PullRequestList.Visibility = Show(pulls);
-        InboxHeader.Visibility = Show(inbox);
-        InboxList.Visibility = Show(inbox);
         CommitsFilters.Visibility = Show(commits);
         CommitsScroller.Visibility = Show(commits);
         PipelinesFilters.Visibility = Show(pipelines);
@@ -378,11 +411,11 @@ public partial class DevelopmentView : UserControl
         SkillsList.Visibility = Show(skills);
         EmptyText.Visibility = Visibility.Collapsed;
         SearchScopeChanged?.Invoke(this, EventArgs.Empty);
+        SegmentChanged?.Invoke(this, EventArgs.Empty);
         FleetMate.GUI.Views.Terminal.ContextPublisher.Segment("Development",
-            pulls ? "Pulls" : inbox ? "Inbox" : commits ? "Commits" : pipelines ? "Pipelines" : skills ? "Skills" : null);
+            pulls ? "Pulls" : commits ? "Commits" : pipelines ? "Pipelines" : skills ? "Skills" : null);
 
-        if (inbox) RenderInbox();
-        else if (pulls) Rerender();
+        if (pulls) Rerender();
         else if (commits)
         {
             if (AppInstance?.DevelopmentCommits is null) await LoadCommitsAsync();
@@ -405,7 +438,7 @@ public partial class DevelopmentView : UserControl
 
         var unread = inbox.UnreadCount;
 
-        InboxSegment.Visibility = DevelopmentFilter.ShowInboxSegment(unread, InboxSegment.IsChecked == true)
+        InboxButton.Visibility = DevelopmentFilter.ShowInboxButton(unread, InboxPopup.IsOpen)
             ? Visibility.Visible : Visibility.Collapsed;
         MarkAllReadButton.IsEnabled = unread > 0;
 
@@ -420,12 +453,9 @@ public partial class DevelopmentView : UserControl
             : (inbox.LastRefreshed is { } at ? $"Checked {at:HH:mm}" : "")
               + (inbox.LastError != null ? " · last refresh failed" : "");
 
-        if (InboxSegment.IsChecked == true)
-        {
-            EmptyText.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            EmptyText.Text = inbox.LastError != null ? "Could not reach GitHub notifications."
-                : _showReadNotifications ? "No notifications." : "Inbox zero.";
-        }
+        InboxEmptyText.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        InboxEmptyText.Text = inbox.LastError != null ? "Could not reach GitHub notifications."
+            : _showReadNotifications ? "No notifications." : "Inbox zero.";
     }
 
     private async void OnNotificationSelected(object sender, SelectionChangedEventArgs e)
@@ -434,6 +464,9 @@ public partial class DevelopmentView : UserControl
         var notification = row.Notification;
         if (notification.Id == _selectedNotification?.Id && DetailView.Visibility == Visibility.Visible) return;
         _selectedNotification = notification;
+        // The detail pane sits under the Repos workspace, so a thread opened
+        // from the popover is shown with Pulls.
+        if (IsReposShown) PullRequestsSegment.IsChecked = true;
 
         if (notification.IsPullRequest && notification.SubjectNumber is { } number)
         {

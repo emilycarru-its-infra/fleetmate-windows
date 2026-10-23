@@ -20,7 +20,7 @@ namespace FleetMate.GUI.Views.Shared.Widgets;
 /// from data the app already holds; only the Projects GitHub-issues list and
 /// the Devices ReportMate figures fetch anything of their own.
 /// </summary>
-public static class WidgetCatalog
+public static partial class WidgetCatalog
 {
     /// <summary>Filter categories a widget click hands to its tab, as the macOS module filters name them.</summary>
     public static class Category
@@ -40,6 +40,14 @@ public static class WidgetCatalog
         public const string Source = "Source";
         /// <summary>Development: open Pipelines filtered to a status (a <see cref="PipelineStatusFilter"/> name).</summary>
         public const string PipelineStatus = "PipelineStatus";
+        /// <summary>Development: open Commits filtered to a repository.</summary>
+        public const string CommitRepository = "CommitRepository";
+        /// <summary>Development: open Pipelines filtered to a repository.</summary>
+        public const string PipelineRepository = "PipelineRepository";
+        /// <summary>Development: type a value into the open sub-tab's search field (an author, a pipeline).</summary>
+        public const string Search = "Search";
+        /// <summary>Development: open one pull request in Pulls (its id).</summary>
+        public const string PullRequest = "PullRequest";
     }
 
     public const string InboxSegment = "Inbox";
@@ -55,13 +63,13 @@ public static class WidgetCatalog
         "Inventory" => cacheKey is "Assets",
         "Tickets" => cacheKey is "Tickets",
         "Projects" => cacheKey is "WorkItems" or "Sprints" or "Issues" or App.MyWorkItemsKey,
-        "Development" => cacheKey is "PullRequests" or "Runs" or "Inbox",
+        "Development" => cacheKey is "PullRequests" or "Commits" or "Runs",
         _ => false,
     };
 
     public static List<UIElement> Build(string tab, App app, Action<string, string> filter) => tab switch
     {
-        "Development" => Development(app, filter),
+        "Development" => Development(app, DevelopmentSegment.Pulls, filter),
         "Projects" => Projects(app),
         "Devices" => Devices(app, filter),
         "Inventory" => Inventory(app, filter),
@@ -105,74 +113,6 @@ public static class WidgetCatalog
         var want = Norm(incoming);
         var matches = available.Where(v => Norm(display?.Invoke(v) ?? v) == want).ToArray();
         return matches.Length > 0 ? matches : new[] { incoming };
-    }
-
-    // MARK: - Development
-
-    private static readonly Color[] RepositoryColors = { P.Blue, P.Purple, P.Orange, P.Teal, P.Green, P.Indigo, P.Brown, P.Pink };
-
-    /// <summary>The Unread in Inbox tile opens the Inbox when anything is unread, and Pull Requests otherwise.</summary>
-    internal static (string Category, string Value) UnreadTarget(int unread) =>
-        unread > 0 ? (Category.Segment, InboxSegment) : (Category.Source, nameof(DevelopmentSourceFilter.All));
-
-    /// <summary>Open pull requests per repository, most first, top eight.</summary>
-    internal static List<ChartSlice> RepositorySlices(IEnumerable<UnifiedPullRequest> prs) => prs
-        .GroupBy(DevelopmentFilter.RepositoryKey)
-        .Select(g => new ChartSlice(g.Key, g.Count()))
-        .OrderByDescending(s => s.Value)
-        .ThenBy(s => s.Label, StringComparer.Ordinal)
-        .Take(8)
-        .ToList();
-
-    private static List<UIElement> Development(App app, Action<string, string> filter)
-    {
-        var queue = app.DevelopmentPullRequests;
-        var prs = queue?.PullRequests ?? new List<UnifiedPullRequest>();
-        var runs = app.DevelopmentRuns ?? new List<PipelineRun>();
-        var prLoading = app.IsCacheLoading("PullRequests") && prs.Count == 0;
-        var runsLoading = app.IsCacheLoading("Runs") && runs.Count == 0;
-        var inboxLoading = app.Inbox.IsRefreshing && app.Inbox.Notifications.Count == 0;
-        var unread = app.Inbox.UnreadCount;
-
-        void Pulls(DevelopmentSourceFilter source) => filter(Category.Source, source.ToString());
-        void Pipelines(PipelineStatusFilter status) => filter(Category.PipelineStatus, status.ToString());
-
-        var cards = new List<UIElement>
-        {
-            WidgetCards.KpiStack(new[]
-            {
-                new KpiTile("Unread in Inbox", unread.ToString("N0"), "", P.Hex(P.Blue), inboxLoading,
-                    () => { var (c, v) = UnreadTarget(app.Inbox.UnreadCount); filter(c, v); }),
-                new KpiTile("Review Requested",
-                    CountOrUnknown(prs.Count(p => p.Relations.Contains(PullRequestRelation.AssignedToMe)), Failed(queue)),
-                    "", P.Hex(P.Purple), prLoading, () => Pulls(DevelopmentSourceFilter.All)),
-            }),
-            WidgetCards.KpiStack(new[]
-            {
-                new KpiTile($"{PullRequestSource.AzureDevOps.ShortName()} Pull Requests",
-                    CountOrUnknown(prs.Count(p => p.Source == PullRequestSource.AzureDevOps), Failed(queue, PullRequestSource.AzureDevOps)),
-                    "", P.Hex(P.Blue), prLoading, () => Pulls(DevelopmentSourceFilter.DevOps)),
-                new KpiTile($"{PullRequestSource.GitHub.ShortName()} Pull Requests",
-                    CountOrUnknown(prs.Count(p => p.Source == PullRequestSource.GitHub), Failed(queue, PullRequestSource.GitHub)),
-                    "", P.Hex(P.Indigo), prLoading, () => Pulls(DevelopmentSourceFilter.GitHub)),
-            }),
-            WidgetCards.KpiStack(new[]
-            {
-                new KpiTile("Failing Pipelines", CommitsAndPipelinesFilter.FailingCount(runs).ToString("N0"), "",
-                    P.Hex(P.Orange), runsLoading, () => Pipelines(PipelineStatusFilter.Failed)),
-                new KpiTile("Running Pipelines", runs.Count(r => r.Status.IsActive()).ToString("N0"), "",
-                    P.Hex(P.Teal), runsLoading, () => Pipelines(PipelineStatusFilter.Running)),
-            }),
-        };
-
-        var byRepo = RepositorySlices(prs);
-        cards.Add(WidgetCards.Card("Pull Requests by Repository",
-            WidgetCards.ChartOr(byRepo.Count > 0, app.IsCacheLoading("PullRequests"), "No open pull requests",
-                () => WidgetCards.HorizontalBars(byRepo, WidgetCards.ByIndex(byRepo, RepositoryColors),
-                    repo => filter(Category.Repository, repo))),
-            loading: app.IsCacheLoading("PullRequests")));
-
-        return cards;
     }
 
     // MARK: - Projects
@@ -238,25 +178,43 @@ public static class WidgetCatalog
         var mine = app.CachedMyWorkItems ?? new List<WorkItem>();
         var loading = app.IsCacheLoading(App.MyWorkItemsKey);
 
+        var stats = WorkItemStats.From(mine, DateTime.UtcNow);
+        var waiting = loading && mine.Count == 0;
+        void None() { }
         var cards = new List<UIElement>
         {
-            WidgetCards.KpiStack(new[]
+            TicketWidgets.KpiGrid(new TicketWidgets.Tile[]
             {
-                new KpiTile("Active Work Items", mine.Count.ToString("N0"), "", P.Hex(P.Indigo), loading && mine.Count == 0),
-            }),
+                new("Assigned to Me", stats.Open, "\uE8FD", P.Indigo, false, "Your open work items", None),
+                new("In Progress", stats.InProgress, "\uE768", P.Blue, false, "Open and past New", None),
+                new("New This Week", stats.NewThisWeek, "\uE734", P.Green, false, "Created in the last 7 days", None),
+                new("Updated This Week", stats.UpdatedThisWeek, "\uE81C", P.Teal, false, "Changed in the last 7 days", None),
+                new("Blocked", stats.Blocked, "\uE8F8", P.Orange, false, "Tagged Blocked, or on a Blocked column or state", None),
+                new("Overdue", stats.Overdue, "\uE787", P.Purple, false, "Past their due date", None),
+                new($"No Change in {WorkItemStats.StaleDays} Days", stats.Stale, "\uE916", P.Gray, false, $"Not changed in {WorkItemStats.StaleDays} days", None),
+                new("GitHub Issues", _issues?.Count ?? 0, "\uE946", P.Indigo, false, "Open GitHub issues in your list", None),
+            }, waiting, units: 2, maxColumns: 4),
         };
 
         var slices = WorkItemSlices(mine);
-        cards.Add(WidgetCards.Card("Work Items", WidgetCards.ChartOr(slices.Count > 0, loading, "No work item data", () =>
+        cards.Add(WidgetCards.Card("By State", WidgetCards.ChartOr(slices.Count > 0, loading, "No work item data", () =>
         {
             var body = new System.Windows.Controls.StackPanel
             {
-                Children = { WidgetCards.Donut(slices, colors: slices.Select((_, i) => P.Sk(WorkItemColors[i % WorkItemColors.Length])).ToList()) },
+                Children = { WidgetCards.Donut(slices, colors: slices.Select((_, i) => P.Sk(WorkItemColors[i % WorkItemColors.Length])).ToList(), adaptive: true) },
             };
             if (app.CachedSprints.FirstOrDefault(s => s.IsCurrent) is { } sprint)
                 body.Children.Add(WidgetCards.Caption(SprintCaption(string.IsNullOrEmpty(sprint.Name) ? "Current" : sprint.Name, mine)));
             return body;
         }), loading: loading));
+
+        var byType = WorkItemStats.Ranked(mine, w => w.WorkItemType).Take(8).Select(r => new ChartSlice(r.Label, r.Count)).ToList();
+        cards.Add(WidgetCards.Card("By Type", WidgetCards.ChartOr(byType.Count > 0, loading, "No work item data",
+            () => WidgetCards.HorizontalBars(byType, _ => P.Indigo)), loading: loading));
+
+        var byProject = WorkItemStats.Ranked(mine, w => w.Fields.TeamProject).Take(8).Select(r => new ChartSlice(r.Label, r.Count)).ToList();
+        cards.Add(WidgetCards.Card("By Project", WidgetCards.ChartOr(byProject.Count > 0, loading, "No work item data",
+            () => WidgetCards.HorizontalBars(byProject, _ => P.Teal)), loading: loading));
 
         var orgRoot = app.Config.AzureDevOps?.BaseUrl?.TrimEnd('/');
         var workRows = mine
@@ -321,6 +279,20 @@ public static class WidgetCatalog
         }.Where(x => x.Item1.Value > 0).ToList();
     }
 
+    /// <summary>Days without an Intune check-in after which a device counts as not synced, as on the Mac.</summary>
+    internal const int StaleDays = 30;
+
+    /// <summary>Devices whose last check-in is more than <see cref="StaleDays"/> days before <paramref name="now"/>; a device with no check-in is not counted.</summary>
+    internal static int StaleCount(IEnumerable<IntuneDevice> devices, DateTime now) =>
+        devices.Count(d => d.LastSyncDateTime is { } t && (now - t.ToUniversalTime()).TotalDays > StaleDays);
+
+    /// <summary>Cards in the Devices row share its height (see <see cref="WidgetFlowPanel.EqualHeights"/>).</summary>
+    private static System.Windows.Controls.Border Stretch(System.Windows.Controls.Border card)
+    {
+        card.VerticalAlignment = VerticalAlignment.Stretch;
+        return card;
+    }
+
     private static List<ErrorSummary>? _errors;
     private static int? _reportMateDevices;
     private static bool _loadingErrors;
@@ -341,27 +313,29 @@ public static class WidgetCatalog
 
         var cards = new List<UIElement>
         {
-            WidgetCards.KpiStack(new[]
+            WidgetCards.KpiColumn(new[]
             {
                 new KpiTile("Managed Devices", devices.Count.ToString("N0"), "", P.Hex(P.Blue), waiting),
                 new KpiTile("Non-Compliant", devices.Count(IsNonCompliant).ToString("N0"), "", P.Hex(P.Orange), waiting,
                     () => filter(Category.Compliance, "Non-Compliant")),
+                new KpiTile($"Not Synced in {StaleDays} Days", StaleCount(devices, DateTime.UtcNow).ToString("N0"), "\uE823",
+                    P.Hex(P.Gray), waiting),
             }),
         };
 
         var platforms = PlatformBreakdown(devices);
-        cards.Add(WidgetCards.Card("Platform Distribution",
+        cards.Add(Stretch(WidgetCards.Card("Platform Distribution",
             WidgetCards.ChartOr(platforms.Count > 0, loading, "No device data",
                 () => WidgetCards.Treemap(platforms.Select(p => p.Slice).ToList(), p => filter(Category.Platform, p),
                     platforms.Select(p => p.Color).ToList())),
-            loading: loading));
+            loading: loading)));
 
         var compliance = ComplianceBreakdown(devices);
-        cards.Add(WidgetCards.Card("Compliance",
+        cards.Add(Stretch(WidgetCards.Card("Compliance",
             WidgetCards.ChartOr(compliance.Count > 0, loading, "No device data",
                 () => WidgetCards.Donut(compliance.Select(c => c.Slice).ToList(), c => filter(Category.Compliance, c),
                     compliance.Select(c => P.Sk(c.Color)).ToList())),
-            loading: loading));
+            loading: loading)));
 
         // Errors by Category only when ReportMate is configured.
         if (app.ReportMateService is { } reportMate)
@@ -391,26 +365,36 @@ public static class WidgetCatalog
             var errors = _errors ?? new();
             var cats = ErrorCategorySlices(errors);
             var errorCount = errors.Count;
-            var stats = new System.Windows.Controls.StackPanel
+            UIElement body;
+            if (cats.Count > 0)
             {
-                Orientation = System.Windows.Controls.Orientation.Horizontal,
-                Margin = new Thickness(0, 0, 0, 6),
-                Children =
+                body = new System.Windows.Controls.StackPanel
                 {
-                    MiniStat("Managed", (_reportMateDevices ?? 0).ToString("N0"), P.Blue),
-                    MiniStat("Errors", errorCount.ToString("N0"), errorCount > 0 ? P.Orange : P.Green),
-                },
-            };
-            var body = new System.Windows.Controls.StackPanel
+                    Children =
+                    {
+                        new System.Windows.Controls.StackPanel
+                        {
+                            Orientation = System.Windows.Controls.Orientation.Horizontal,
+                            Margin = new Thickness(0, 0, 0, 6),
+                            Children =
+                            {
+                                MiniStat("Managed", (_reportMateDevices ?? 0).ToString("N0"), P.Blue),
+                                MiniStat("Errors", errorCount.ToString("N0"), P.Orange),
+                            },
+                        },
+                        WidgetCards.HorizontalBars(cats, _ => P.Orange),
+                    },
+                };
+            }
+            else
             {
-                Children =
-                {
-                    stats,
-                    WidgetCards.ChartOr(cats.Count > 0, _loadingErrors, "No errors found",
-                        () => WidgetCards.HorizontalBars(cats, _ => P.Orange)),
-                },
-            };
-            cards.Add(WidgetCards.Card("Errors by Category", body, loading: _loadingErrors));
+                // Nothing to chart: one centred line in the card's height
+                // instead of two zero figures over "No errors found".
+                body = _loadingErrors
+                    ? WidgetCards.Skeleton()
+                    : WidgetCards.AllClear("No errors reported", $"{_reportMateDevices ?? 0:N0} devices reporting");
+            }
+            cards.Add(Stretch(WidgetCards.Card("Errors by Category", body, loading: _loadingErrors)));
         }
 
         return cards;
@@ -428,7 +412,7 @@ public static class WidgetCatalog
             },
             new System.Windows.Controls.TextBlock
             {
-                Text = label, FontSize = 10,
+                Text = label, FontSize = WidgetCards.CaptionSize,
                 Foreground = (Brush)Application.Current.FindResource("SystemControlForegroundBaseMediumBrush"),
             },
         },
