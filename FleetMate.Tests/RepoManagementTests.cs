@@ -633,6 +633,12 @@ public sealed class ReposCommandTests : TempGitRepository
     [InlineData("repos grep a needle -i -F --limit 5")]
     [InlineData("repos settings --scan-root C:\\a --scan-root C:\\b --depth 3 --github-owner example-org --concurrency 4")]
     [InlineData("repos untrack a b")]
+    [InlineData("repos hide a b")]
+    [InlineData("repos unhide a")]
+    [InlineData("repos remove-clone a --force --json")]
+    [InlineData("repos remove-clone a --dry-run")]
+    [InlineData("repos discover --track-new")]
+    [InlineData("repos settings --auto-track off")]
     public void CommandLines_Parse(string line) => Assert.Empty(Cli().Parse(line).Errors);
 
     [Fact]
@@ -683,6 +689,9 @@ public sealed class ReposCommandTests : TempGitRepository
         {
             var wt = Path.Combine(Root, ".worktrees", "side");
             Assert.True((await Copy.GitAsync(new[] { "worktree", "add", "-q", "-b", "side", wt })).Succeeded);
+            // commit.gpgsign is not on the data-only list, so a clone carrying
+            // it would be held for review rather than tracked.
+            Assert.True((await Copy.GitAsync(new[] { "config", "--unset", "commit.gpgsign" })).Succeeded);
             var settings = RepoSettings.Default;
             settings.ScanRoots = new() { Parent };
             settings.ScanDepth = 1;

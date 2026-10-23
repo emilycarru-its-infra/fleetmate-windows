@@ -13,6 +13,8 @@ namespace FleetMate.GUI.Views.Development;
 public partial class DevelopmentView
 {
     private RepoWorkspaceModel? _repos;
+    /// <summary>Whether this launch has looked for new clones in the watched folders yet.</summary>
+    private bool _reposScanned;
 
     /// <summary>Raised when the Repos segment is shown or left, so the page can hide what does not apply.</summary>
     public event EventHandler? ReposShownChanged;
@@ -62,6 +64,13 @@ public partial class DevelopmentView
 
         // Selecting the first (or remembered) repository loads it; after that,
         // coming back only refreshes what changed while the segment was away.
+        // The first time this launch, look for clones that appeared in the
+        // watched folders; the sidebar offers to add them.
+        if (!_reposScanned)
+        {
+            _reposScanned = true;
+            _ = Repos.LookForNewClonesAsync();
+        }
         Repos.ReloadRecords();
         await Repos.RefreshStatusesAsync();
     }
@@ -69,6 +78,7 @@ public partial class DevelopmentView
     /// <summary>The page's Refresh while Repos shows: the registry, every status, and the selected checkout.</summary>
     public async Task RefreshReposAsync()
     {
+        _ = Repos.LookForNewClonesAsync();
         Repos.ReloadRecords();
         await Repos.RefreshStatusesAsync();
         await Repos.LoadSelectedAsync();

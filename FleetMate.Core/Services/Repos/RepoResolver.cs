@@ -10,6 +10,8 @@ public sealed record RepoRecord(RepoKey Key, CatalogRepo? Catalog, RepoRegistryE
     public string Id => Key.Id;
     public bool IsLocal => Local != null;
     public bool IsTracked => Local?.Tracked ?? false;
+    /// <summary>Tracked but left out of the Repos sidebar.</summary>
+    public bool IsHidden => Local?.Hidden ?? false;
     public string? DefaultBranch => Catalog?.DefaultBranch ?? Local?.DefaultBranch;
 
     /// <summary>
