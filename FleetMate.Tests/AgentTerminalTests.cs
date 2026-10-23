@@ -222,6 +222,63 @@ public class AgentTerminalTests
         Assert.Equal(@"C:\FleetMate\;C:\Windows", again["PATH"]);
     }
 
+    [Theory]
+    [InlineData(true, "15;0")]
+    [InlineData(false, "0;15")]
+    public void ColorFgBg_NamesTheBackgroundLast(bool dark, string expected)
+    {
+        // Readers take the last number as the background: 0-6 and 8 are dark.
+        Assert.Equal(expected, TerminalEnvironment.ColorFgBg(dark));
+    }
+
+    [Fact]
+    public void TerminalPage_AnswersColourSchemeQueriesAndFollowsTheTheme()
+    {
+        using var stream = typeof(FleetMate.GUI.Views.Terminal.TerminalView).Assembly
+            .GetManifestResourceStream("FleetMate.GUI.Terminal.terminal.html");
+        using var reader = new System.IO.StreamReader(stream!);
+        var page = reader.ReadToEnd();
+        Assert.Contains("hasMode(params, 2031)", page);
+        Assert.Contains("params[0] !== 996", page);
+        Assert.Contains("?997;", page);
+        Assert.Contains("m.type === 'theme'", page);
+        Assert.Contains("brightYellow", page);
+    }
+
+    [Theory]
+    [InlineData("dark", "#1e1e1e")]
+    [InlineData("light", "#ffffff")]
+    public void TerminalPage_AnsiColours_ReadOnTheirBackground(string scheme, string background)
+    {
+        using var stream = typeof(FleetMate.GUI.Views.Terminal.TerminalView).Assembly
+            .GetManifestResourceStream("FleetMate.GUI.Terminal.terminal.html");
+        using var reader = new System.IO.StreamReader(stream!);
+        var page = reader.ReadToEnd();
+        var block = System.Text.RegularExpressions.Regex.Match(page,
+            scheme + @":\s*\{\s*background:\s*'" + background + @"'.*?ansi\(\[(?<list>[^\]]*)\]", System.Text.RegularExpressions.RegexOptions.Singleline);
+        Assert.True(block.Success, $"no {scheme} palette in the page");
+        var colours = System.Text.RegularExpressions.Regex.Matches(block.Groups["list"].Value, "#[0-9a-fA-F]{6}").Select(m => m.Value).ToList();
+        Assert.Equal(16, colours.Count);
+
+        static double Luminance(string hex)
+        {
+            double Channel(int i)
+            {
+                var c = Convert.ToInt32(hex.Substring(1 + 2 * i, 2), 16) / 255.0;
+                return c <= 0.03928 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4);
+            }
+            return 0.2126 * Channel(0) + 0.7152 * Channel(1) + 0.0722 * Channel(2);
+        }
+        // Every coloured entry (not black, white or the greys) reads at 3:1 or better, as on the Mac.
+        var back = Luminance(background);
+        foreach (var index in new[] { 1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14 })
+        {
+            var fore = Luminance(colours[index]);
+            var ratio = (Math.Max(fore, back) + 0.05) / (Math.Min(fore, back) + 0.05);
+            Assert.True(ratio >= 3, $"{scheme} colour {index} ({colours[index]}) is {ratio:F2}:1 on {background}");
+        }
+    }
+
     [Fact]
     public void EnvironmentBlock_IsSortedAndDoubleNulTerminated() =>
         Assert.Equal("A=1\0b=2\0\0", TerminalEnvironment.ToEnvironmentBlock(new Dictionary<string, string> { ["b"] = "2", ["A"] = "1" }));
