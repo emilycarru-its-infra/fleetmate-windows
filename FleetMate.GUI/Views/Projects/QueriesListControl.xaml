@@ -20,16 +20,30 @@
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" Text="ID" FontSize="11" FontWeight="SemiBold"
                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-            <TextBlock Grid.Column="1" Text="Title" FontSize="11" FontWeight="SemiBold"
-                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            <Button Grid.Column="1" Click="OnTitleHeaderClick" HorizontalAlignment="Left"
+                    Padding="0" Background="Transparent" BorderThickness="0" Cursor="Hand"
+                    ToolTip="Sort queries by name"
+                    AutomationProperties.Name="Sort queries by name">
+                <TextBlock FontSize="11" FontWeight="SemiBold"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}">
+                    <Run Text="Title" /><Run x:Name="TitleSortGlyph" FontSize="8" />
+                </TextBlock>
+            </Button>
             <TextBlock Grid.Column="2" Text="State" FontSize="11" FontWeight="SemiBold"
                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
             <TextBlock Grid.Column="3" Text="Tags" FontSize="11" FontWeight="SemiBold"
                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
             <TextBlock Grid.Column="4" Text="Assigned To" FontSize="11" FontWeight="SemiBold"
                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-            <TextBlock Grid.Column="5" Text="Changed" FontSize="11" FontWeight="SemiBold"
-                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            <Button Grid.Column="5" Click="OnChangedHeaderClick" HorizontalAlignment="Left"
+                    Padding="0" Background="Transparent" BorderThickness="0" Cursor="Hand"
+                    ToolTip="Sort queries by last changed"
+                    AutomationProperties.Name="Sort queries by last changed">
+                <TextBlock FontSize="11" FontWeight="SemiBold"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}">
+                    <Run Text="Changed" /><Run x:Name="ChangedSortGlyph" FontSize="8" />
+                </TextBlock>
+            </Button>
         </Grid>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
