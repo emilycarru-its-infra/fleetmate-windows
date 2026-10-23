@@ -66,24 +66,9 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// What the right-hand group gives back when it yields: the narrower search
-    /// field and, while the elevation status shows, its label and the gap
-    /// after its dot.
+    /// What the right-hand group gives back when it yields: the narrower search field.
     /// </summary>
-    private double RightGroupSavings()
-    {
-        var savings = SearchFullWidth - SearchCompactWidth;
-        if (ElevationButton.Visibility != Visibility.Visible) return savings;
-
-        // Measure the label even while it is hidden, so the saving is known
-        // before the first time it shows.
-        var hidden = ElevationText.Visibility != Visibility.Visible;
-        if (hidden) ElevationText.Visibility = Visibility.Visible;
-        ElevationText.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var label = ElevationText.DesiredSize.Width + 6; // the dot's right margin
-        if (hidden) ElevationText.Visibility = Visibility.Collapsed;
-        return savings + label;
-    }
+    private double RightGroupSavings() => SearchFullWidth - SearchCompactWidth;
 
     private void FitToolbar()
     {
@@ -127,15 +112,13 @@ public partial class MainWindow
         return (true, true, Math.Max(0, Overflow(compactTabs, compactRight)));
     }
 
-    /// <summary>Narrow the search field and drop the elevation label, or put them back.</summary>
+    /// <summary>Narrow the search field, or put it back.</summary>
     private void ApplyRightGroup()
     {
         var width = _compactRight ? SearchCompactWidth : SearchFullWidth;
         SearchField.Width = width;
         // Keep the results' right edge where it was relative to the field.
         SearchPopup.HorizontalOffset = SearchPopupOffset - (SearchFullWidth - width);
-        ElevationText.Visibility = _compactRight ? Visibility.Collapsed : Visibility.Visible;
-        ElevationDot.Margin = _compactRight ? new Thickness(0) : new Thickness(0, 0, 6, 0);
     }
 
     private void ApplyTabLabels()

@@ -1,4 +1,5 @@
 using FleetMate.Core.Config;
+using FleetMate.Core.Models;
 using FleetMate.Core.Services;
 using Xunit;
 
@@ -105,7 +106,53 @@ public class ElevationSessionStateTests
     {
         var line = ElevationStatusText.DomainLine(GraphDomain.Devices, ElevationSessionState.Ready,
             Now.AddHours(5).AddMinutes(12), null, Now);
-        Assert.Equal("Devices: ready, expires in 5h 12m", line);
+        Assert.Equal("Devices (Intune, Microsoft Graph): Ready, 5h 12m left", line);
+    }
+
+    [Theory]
+    [InlineData(ElevationSessionState.Ready, ElevationDotTone.Green)]
+    [InlineData(ElevationSessionState.Starting, ElevationDotTone.Blue)]
+    [InlineData(ElevationSessionState.Expired, ElevationDotTone.Grey)]
+    [InlineData(ElevationSessionState.None, ElevationDotTone.Grey)]
+    [InlineData(ElevationSessionState.Unknown, ElevationDotTone.Grey)]
+    public void ShieldDotStaysGreyWhenStopped(ElevationSessionState state, ElevationDotTone expected)
+    {
+        Assert.Equal(expected, ElevationStatusText.DotTone(state));
+    }
+
+    [Fact]
+    public void ShieldTooltip_ExplainsThenListsEachDomain()
+    {
+        var tip = ElevationStatusText.ShieldTooltip(new (GraphDomain, ElevationSessionState, DateTimeOffset?, string?)[]
+        {
+            (GraphDomain.Devices, ElevationSessionState.Ready, Now.AddHours(3).AddMinutes(12), null),
+            (GraphDomain.Identity, ElevationSessionState.Expired, null, null),
+        }, 8, Now);
+        var lines = tip.Split(Environment.NewLine);
+        Assert.Equal(ElevationStatusText.ShieldTooltipTitle, lines[0]);
+        Assert.Equal(ElevationStatusText.Explainer(8), lines[1]);
+        Assert.Equal("", lines[2]);
+        Assert.Equal("Devices (Intune, Microsoft Graph): Ready, 3h 12m left", lines[3]);
+        Assert.Equal("Identity (Entra ID): Stopped, restarts on next use", lines[4]);
+    }
+
+    [Theory]
+    [InlineData(ElevationSessionState.Off, "Authentication")]
+    [InlineData(ElevationSessionState.Ready, "Authentication, elevated sessions ready")]
+    [InlineData(ElevationSessionState.Starting, "Authentication, elevated sessions starting…")]
+    [InlineData(ElevationSessionState.Expired, "Authentication, elevated sessions stopped")]
+    public void ShieldAccessibleName_CarriesTheState(ElevationSessionState state, string expected) =>
+        Assert.Equal(expected, ElevationStatusText.ShieldAccessibleName(state));
+
+    [Fact]
+    public void StoppedSessionReadsAsRestartingNotAsAProblem()
+    {
+        Assert.Equal("Stopped", ElevationStatusText.StateLabel(ElevationSessionState.Expired));
+        Assert.Equal("Stopped, restarts on next use",
+            ElevationStatusText.Detail(ElevationSessionState.None, null, Now));
+        Assert.Equal(AuthDisplayTone.Inactive, AuthDisplayStatus.Standby.Tone);
+        Assert.Equal(AuthDisplayTone.Positive, AuthDisplayStatus.Ready.Tone);
+        Assert.Equal("All valid", AuthDisplayStatus.Summary(new[] { AuthDisplayStatus.Ready, AuthDisplayStatus.Standby }).Label);
     }
 
     [Fact]
