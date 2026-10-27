@@ -79,19 +79,11 @@ public static class DevelopmentFilter
     public static List<GitHubNotification> Inbox(IEnumerable<GitHubNotification> notifications, bool showRead) =>
         notifications.Where(n => showRead || n.Unread).ToList();
 
-    /// <summary>
-    /// Whether the Inbox segment shows. It shows while something is unread, and
-    /// stays while it is the open segment so marking the last thread read does
-    /// not pull the page out from under the reader.
-    /// </summary>
-    public static bool ShowInboxSegment(int unread, bool inboxOpen) => unread > 0 || inboxOpen;
+    /// <summary>The Inbox remains discoverable when empty or unavailable.</summary>
+    public static bool ShowInboxSegment(int unread, bool inboxOpen) => true;
 
-    /// <summary>
-    /// Whether to leave an open Inbox for Pulls when the tab is shown again. The
-    /// view outlives the tab, so an Inbox read down to zero would otherwise stay
-    /// the open segment on every later visit, hidden from the bar but still open.
-    /// </summary>
-    public static bool LeaveEmptyInbox(int unread, bool inboxOpen) => inboxOpen && unread == 0;
+    /// <summary>Returning to Development preserves an explicitly selected empty Inbox.</summary>
+    public static bool LeaveEmptyInbox(int unread, bool inboxOpen) => false;
 
     /// <summary>"owner/repo" for GitHub, "Project/Repo" for DevOps — the group header and repo-chip key.</summary>
     public static string RepositoryKey(UnifiedPullRequest pr) => $"{pr.Container}/{pr.Repository}";
@@ -183,6 +175,16 @@ public sealed class DevelopmentActivityRowViewModel
 public sealed class DevelopmentNotificationRowViewModel
 {
     public required GitHubNotification Notification { get; init; }
+    public string? PullRequestAuthor { get; init; }
+    public string AuthorLabel => !string.IsNullOrWhiteSpace(PullRequestAuthor) ? $"PR author: {PullRequestAuthor}" : "PR author unavailable";
+
+    public static DevelopmentNotificationRowViewModel Create(GitHubNotification notification, IEnumerable<UnifiedPullRequest> requests) => new()
+    {
+        Notification = notification,
+        PullRequestAuthor = requests.FirstOrDefault(request => request.Source == PullRequestSource.GitHub
+            && request.Number == notification.SubjectNumber
+            && $"{request.Container}/{request.Repository}".Equals(notification.Repository, StringComparison.OrdinalIgnoreCase))?.AuthorName
+    };
 
     public string Title => Notification.SubjectTitle;
     public bool Unread => Notification.Unread;
@@ -191,7 +193,8 @@ public sealed class DevelopmentNotificationRowViewModel
     public Visibility MarkReadVisibility => Unread ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>"Review requested · owner/repo · 3h ago".</summary>
-    public string Byline => $"{ReasonLabel(Notification.Reason)} · {Notification.Repository} · {Age(Notification.UpdatedAt)}";
+    public string Byline => $"{ReasonLabel(Notification.Reason)} · {Notification.Repository} · {Age(Notification.UpdatedAt)}"
+        + (Notification.IsPullRequest ? $" · {AuthorLabel}" : "");
 
     public string TypeGlyph => Notification.SubjectType switch
     {

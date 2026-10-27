@@ -184,7 +184,7 @@
                              It never shows a count, and neither does the Development tab. -->
                         <RadioButton x:Name="InboxSegment" Content="Inbox" GroupName="DevelopmentSegment"
                                      Checked="OnSegmentChanged" Style="{StaticResource NavigationTabStyle}"
-                                     Visibility="Collapsed" />
+                                     Visibility="Visible" />
                         <RadioButton x:Name="PullRequestsSegment" Content="Pulls" GroupName="DevelopmentSegment"
                                      Checked="OnSegmentChanged"
                                      Style="{StaticResource NavigationTabStyle}" />
@@ -284,7 +284,7 @@
                 <ToggleButton x:Name="InboxAllChip" Content="All" Tag="All"
                               Padding="10,2" FontSize="11" Margin="0,0,8,0" Click="OnInboxFilterClicked" />
                 <TextBlock x:Name="InboxStatus" FontSize="11" Opacity="0.7" VerticalAlignment="Center"
-                           TextTrimming="CharacterEllipsis" />
+                           TextWrapping="Wrap" />
             </DockPanel>
 
             <Border Grid.Row="2" Style="{StaticResource CardStyle}" Padding="0">

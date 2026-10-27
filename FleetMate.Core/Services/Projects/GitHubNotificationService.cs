@@ -28,14 +28,24 @@ public sealed class GitHubNotificationService : IDisposable
     /// </summary>
     public async Task<List<GitHubNotification>> ListAsync(bool includeRead = true, CancellationToken ct = default)
     {
-        var path = $"/notifications?per_page=50&all={(includeRead ? "true" : "false")}";
-        var raw = await _client.ExecuteRestAsync(path, ct: ct);
-        using var doc = JsonDocument.Parse(raw);
-
-        var result = Parse(doc.RootElement);
+        var result = await ReadPagesAsync(async page =>
+            await _client.ExecuteRestAsync($"/notifications?per_page=50&page={page}&all={(includeRead ? "true" : "false")}", ct: ct));
         Log.Information("[github] inbox → {Count} notifications ({Unread} unread)",
             result.Count, result.Count(n => n.Unread));
         return result;
+    }
+
+    internal static async Task<List<GitHubNotification>> ReadPagesAsync(Func<int, Task<byte[]>> fetch)
+    {
+        var items = new Dictionary<string, GitHubNotification>();
+        for (var page = 1; page <= 4; page++)
+        {
+            using var document = JsonDocument.Parse(await fetch(page));
+            if (document.RootElement.ValueKind != JsonValueKind.Array) throw new JsonException("Expected notification array");
+            foreach (var item in Parse(document.RootElement)) items[item.Id] = item;
+            if (document.RootElement.GetArrayLength() < 50) break;
+        }
+        return Sort(items.Values);
     }
 
     /// <summary>PATCH /notifications/threads/{id} — GitHub answers 205 with no body.</summary>
