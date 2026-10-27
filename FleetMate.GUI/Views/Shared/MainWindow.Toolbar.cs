@@ -5,14 +5,8 @@ using System.Windows.Media;
 namespace FleetMate.GUI.Views.Shared;
 
 /// <summary>
-/// Fits the toolbar to the window, as the macOS toolbar does on a laptop
-/// screen. The tabs stay centered and are the last thing to give way. When
-/// the right-hand group would run into the tabs, it yields first: search
-/// narrows and the elevation status drops to its dot (its name stays in the
-/// tooltip). If that is not enough, inactive tabs drop to their icon (name in
-/// the tooltip; the selected tab keeps its name). If even that does not fit,
-/// the tab bar slides left off center just far enough to clear the right-hand
-/// group, so nothing overlaps.
+/// Reserves the full search field before arranging module navigation. Names
+/// compact first, then a module picker takes over; search never leaves the toolbar.
 /// </summary>
 public partial class MainWindow
 {
@@ -21,13 +15,12 @@ public partial class MainWindow
 
     /// <summary>The search field's width with room to spare, and in a narrow window.</summary>
     internal const double SearchFullWidth = 320;
-    internal const double SearchCompactWidth = 200;
+    internal const double SearchCompactWidth = SearchFullWidth;
 
     /// <summary>Where the results drop down, relative to the field's left edge, at full width.</summary>
     private const double SearchPopupOffset = -300;
 
     private bool _compactTabs;
-    private bool _compactRight;
     private readonly Dictionary<RadioButton, (double Full, double Label)> _tabWidths = new();
 
     private void InitToolbarFit()
@@ -52,37 +45,20 @@ public partial class MainWindow
     private static TextBlock? TabLabel(RadioButton tab) =>
         (tab.Content as Panel)?.Children.OfType<TextBlock>().FirstOrDefault();
 
-    /// <summary>Measure each tab once with its name showing, so compact widths need no relayout.</summary>
+    /// <summary>Measure names even while the navigation strip is folded into its picker.</summary>
     private void MeasureTabs()
     {
-        if (_tabWidths.Count > 0 || TabBar.ActualWidth == 0) return;
-        // A switched-off tab is collapsed and takes no room.
-        foreach (var tab in TabBar.Children.OfType<RadioButton>().Where(t => t.Visibility == Visibility.Visible))
+        if (_tabWidths.Count > 0) return;
+        foreach (var tab in TabBar.Children.OfType<RadioButton>().Where(tab => tab.Visibility == Visibility.Visible))
         {
             var label = TabLabel(tab);
-            var labelWidth = label == null ? 0 : label.ActualWidth + 7; // the icon's right margin
-            _tabWidths[tab] = (tab.ActualWidth, labelWidth);
+            var previous = label?.Visibility;
+            if (label != null) label.Visibility = Visibility.Visible;
+            tab.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            var labelWidth = label?.DesiredSize.Width ?? 0;
+            _tabWidths[tab] = (tab.DesiredSize.Width, labelWidth + (labelWidth > 0 ? 7 : 0));
+            if (label != null && previous != null) label.Visibility = previous.Value;
         }
-    }
-
-    /// <summary>
-    /// What the right-hand group gives back when it yields: the narrower search
-    /// field and, while the elevation status shows, its label and the gap
-    /// after its dot.
-    /// </summary>
-    private double RightGroupSavings()
-    {
-        var savings = SearchFullWidth - SearchCompactWidth;
-        if (ElevationButton.Visibility != Visibility.Visible) return savings;
-
-        // Measure the label even while it is hidden, so the saving is known
-        // before the first time it shows.
-        var hidden = ElevationText.Visibility != Visibility.Visible;
-        if (hidden) ElevationText.Visibility = Visibility.Visible;
-        ElevationText.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var label = ElevationText.DesiredSize.Width + 6; // the dot's right margin
-        if (hidden) ElevationText.Visibility = Visibility.Collapsed;
-        return savings + label;
     }
 
     private void FitToolbar()
@@ -90,52 +66,43 @@ public partial class MainWindow
         if (!IsLoaded) return;
         MeasureTabs();
         if (_tabWidths.Count == 0) return;
-
-        var chrome = TabBarBorder.ActualWidth - TabBar.ActualWidth;
-        var fullTabs = _tabWidths.Values.Sum(w => w.Full) + chrome;
-        var compactTabs = _tabWidths.Sum(kv => kv.Key.IsChecked == true ? kv.Value.Full : kv.Value.Full - kv.Value.Label) + chrome;
-        var savings = RightGroupSavings();
-        var rightNow = ToolbarRight.ActualWidth + ToolbarRight.Margin.Right;
-        var fullRight = _compactRight ? rightNow + savings : rightNow;
-
-        var fit = Fit(ActualWidth - 24, fullTabs, compactTabs, fullRight, fullRight - savings, ToolbarGap);
-        TabBarBorder.RenderTransform = fit.Shift > 0 ? new TranslateTransform(-fit.Shift, 0) : null;
-
-        if (fit.CompactRight != _compactRight)
+        // The Auto-sized right column reserves search before navigation is arranged.
+        SearchField.Width = SearchFullWidth;
+        SearchField.Visibility = Visibility.Visible;
+        SearchPopup.HorizontalOffset = SearchPopupOffset;
+        ElevationText.Visibility = Visibility.Collapsed;
+        var chrome = TabBarBorder.BorderThickness.Left + TabBarBorder.BorderThickness.Right
+            + TabBarBorder.Padding.Left + TabBarBorder.Padding.Right;
+        var full = _tabWidths.Values.Sum(value => value.Full) + chrome;
+        var compact = _tabWidths.Sum(pair => pair.Key.IsChecked == true
+            ? pair.Value.Full : pair.Value.Full - pair.Value.Label) + chrome;
+        var available = Math.Max(0, TabNavigationHost.ActualWidth - ToolbarGap);
+        var layout = NavigationFit(available, full, compact);
+        if (_compactTabs != layout.CompactTabs)
         {
-            _compactRight = fit.CompactRight;
-            ApplyRightGroup();
+            _compactTabs = layout.CompactTabs;
+            ApplyTabLabels();
         }
-        if (fit.CompactTabs == _compactTabs) return;
-        _compactTabs = fit.CompactTabs;
-        ApplyTabLabels();
+        TabBarBorder.RenderTransform = null;
+        TabBarBorder.Visibility = layout.Picker ? Visibility.Collapsed : Visibility.Visible;
+        TabPickerButton.Visibility = layout.Picker ? Visibility.Visible : Visibility.Collapsed;
+        TabPickerButton.MaxWidth = Math.Max(1, Math.Min(160, available));
+        TabPickerLabel.Text = (TabBar.Children.OfType<RadioButton>().FirstOrDefault(tab => tab.IsChecked == true)?.ToolTip?.ToString() ?? "Modules") + " ▾";
     }
 
-    /// <summary>
-    /// How the toolbar fits a width of <paramref name="width"/>. The tab bar is
-    /// centered, so the right group has half the width less half the tabs. The
-    /// right group yields first (<paramref name="right"/> down to
-    /// <paramref name="compactRight"/>); only then do inactive tab names
-    /// collapse, and last the tab bar moves left by <c>Shift</c>.
-    /// </summary>
-    internal static (bool CompactRight, bool CompactTabs, double Shift) Fit(
-        double width, double fullTabs, double compactTabs, double right, double compactRight, double gap)
-    {
-        double Overflow(double tabs, double group) => tabs / 2 + gap + group - width / 2;
-        if (Overflow(fullTabs, right) <= 0) return (false, false, 0);
-        if (Overflow(fullTabs, compactRight) <= 0) return (true, false, 0);
-        return (true, true, Math.Max(0, Overflow(compactTabs, compactRight)));
-    }
+    internal static (bool CompactTabs, bool Picker) NavigationFit(double available, double full, double compact) =>
+        available >= full ? (false, false) : available >= compact ? (true, false) : (true, true);
 
-    /// <summary>Narrow the search field and drop the elevation label, or put them back.</summary>
-    private void ApplyRightGroup()
+    private void OnTabPickerClicked(object sender, RoutedEventArgs e)
     {
-        var width = _compactRight ? SearchCompactWidth : SearchFullWidth;
-        SearchField.Width = width;
-        // Keep the results' right edge where it was relative to the field.
-        SearchPopup.HorizontalOffset = SearchPopupOffset - (SearchFullWidth - width);
-        ElevationText.Visibility = _compactRight ? Visibility.Collapsed : Visibility.Visible;
-        ElevationDot.Margin = _compactRight ? new Thickness(0) : new Thickness(0, 0, 6, 0);
+        var menu = new ContextMenu { PlacementTarget = TabPickerButton };
+        foreach (var tab in TabBar.Children.OfType<RadioButton>().Where(tab => tab.Visibility == Visibility.Visible))
+        {
+            var item = new MenuItem { Header = tab.ToolTip?.ToString() ?? tab.Tag?.ToString(), IsCheckable = true, IsChecked = tab.IsChecked == true };
+            item.Click += (_, _) => { tab.IsChecked = true; FitToolbar(); };
+            menu.Items.Add(item);
+        }
+        menu.IsOpen = true;
     }
 
     private void ApplyTabLabels()
