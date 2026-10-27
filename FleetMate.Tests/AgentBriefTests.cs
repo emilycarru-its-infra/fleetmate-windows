@@ -204,6 +204,14 @@ public class AgentBriefTests
     }
 
     [Fact]
+    public void LastExplicitSandboxChoiceWins()
+    {
+        var args = AgentBrief.LaunchArguments("codex", ["--sandbox", "workspace-write", "-s", "read-only"],
+            BriefPath, "guide", additionalDirectories: [@"C:\profile\.fleetmate"]);
+        Assert.DoesNotContain("--add-dir", args);
+    }
+
+    [Fact]
     public void CodexDoesNotDisableTheSharedDaemonButPreservesAnExplicitOptOut()
     {
         var automatic = AgentBrief.LaunchArguments("codex", [], BriefPath, "guide", codexNoDaemon: true);

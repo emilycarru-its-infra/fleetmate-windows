@@ -88,6 +88,7 @@ public static class AgentCommandPicker
         ("", "Shell"),
         ("claude", "Claude"),
         ("codex", "Codex"),
+        ("codex-workspace", "Codex (workspace)"),
         ("claude-remote", "Claude (remote)"),
         ("codex-remote", "Codex (remote)"),
         (Custom, "Custom…"),
