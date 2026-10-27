@@ -70,6 +70,11 @@ public partial class MainWindow
         SearchField.Width = SearchFullWidth;
         SearchField.Visibility = Visibility.Visible;
         SearchPopup.HorizontalOffset = SearchPopupOffset;
+        if (TicketsOnly)
+        {
+            TabBarBorder.Visibility = TabPickerButton.Visibility = Visibility.Collapsed;
+            return;
+        }
         ElevationText.Visibility = Visibility.Collapsed;
         var chrome = TabBarBorder.BorderThickness.Left + TabBarBorder.BorderThickness.Right
             + TabBarBorder.Padding.Left + TabBarBorder.Padding.Right;
