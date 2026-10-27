@@ -275,7 +275,7 @@ public static class AgentBrief
     internal static readonly HashSet<string> CodexNonSessionSubcommands = new(StringComparer.OrdinalIgnoreCase)
     {
         "login", "logout", "mcp", "mcp-server", "app-server", "completion", "doctor", "help", "features",
-        "agents", "remote-control", "sandbox", "debug", "apply", "cloud",
+        "agents", "queue", "remote-control", "sandbox", "debug", "apply", "cloud",
     };
 
     /// <summary>Longest developer_instructions value passed on a command line, which Windows caps at 32,767 characters.</summary>
@@ -315,6 +315,7 @@ public static class AgentBrief
         string briefPath, string codexInstructions, bool selfUpdate = true, bool codexNoDaemon = false, IReadOnlyList<string>? additionalDirectories = null)
     {
         if (arguments.Any(a => a.Equals("--remote", StringComparison.OrdinalIgnoreCase))) return arguments;
+        if (arguments.Any(argument => argument is "--help" or "-h" or "--version" or "-V")) return arguments;
         var first = arguments.FirstOrDefault();
         var directories = (additionalDirectories ?? []).Where(directory => !string.IsNullOrWhiteSpace(directory))
             .Distinct(StringComparer.OrdinalIgnoreCase).SelectMany(directory => new[] { "--add-dir", directory }).ToList();
@@ -333,10 +334,28 @@ public static class AgentBrief
                 // quotes, so cmd.exe reads the whole argument as one quoted run.
                 var value = codexInstructions == PointerInstructions ? "'" + PointerInstructions + "'" : TomlString(codexInstructions);
                 line.AddRange(new[] { "-c", "developer_instructions=" + value });
-                return line.Concat(directories).Concat(arguments).ToList();
+                // Read-only Codex sessions reject --add-dir. Unknown/default policy is
+                // deliberately left alone rather than widening the person's sandbox.
+                return line.Concat(ExplicitWorkspaceWrite(arguments) ? directories : []).Concat(arguments).ToList();
             default:
                 return arguments;
         }
+    }
+
+    private static bool ExplicitWorkspaceWrite(IReadOnlyList<string> arguments)
+    {
+        string? sandbox = null;
+        for (var index = 0; index < arguments.Count; index++)
+        {
+            if (arguments[index] == "--") break;
+            if (arguments[index] is "--sandbox" or "-s")
+            {
+                if (index + 1 < arguments.Count) sandbox = arguments[++index];
+            }
+            else if (arguments[index].StartsWith("--sandbox=", StringComparison.Ordinal))
+                sandbox = arguments[index]["--sandbox=".Length..];
+        }
+        return sandbox == "workspace-write";
     }
 
     /// <summary>
