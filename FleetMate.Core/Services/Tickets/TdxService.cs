@@ -794,7 +794,7 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
     /// <exception cref="TdxCommentException">The comment was not accepted.</exception>
     public async Task<TdxFeedEntry?> AddCommentAsync(
         int ticketId, string comment, bool isPrivate = false,
-        bool isRichHtml = false, List<Guid>? notify = null)
+        bool isRichHtml = false, List<string>? notify = null)
     {
         if (!await SetAuthorizationAsync())
         {

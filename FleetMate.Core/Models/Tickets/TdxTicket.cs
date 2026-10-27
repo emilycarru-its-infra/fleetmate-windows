@@ -618,6 +618,9 @@ public class TdxFeedEntry
     /// reports a real number here while always sending an empty
     /// <see cref="Replies"/>, so this is the only signal that a thread exists.
     /// </summary>
+    [JsonPropertyName("NotifiedList")]
+    public string? NotifiedList { get; set; }
+
     [JsonPropertyName("RepliesCount")]
     public int? RepliesCount { get; set; }
 
@@ -646,6 +649,7 @@ public class TdxFeedEntry
         CreatedUid = CreatedUid,
         CreatedFullName = CreatedFullName,
         IsPrivate = IsPrivate,
+        NotifiedList = NotifiedList,
         IsRichHtml = IsRichHtml,
         Uri = Uri,
         Replies = replies,
@@ -668,7 +672,7 @@ public class CreateFeedEntryRequest
     public bool IsRichHtml { get; set; }
 
     [JsonPropertyName("Notify")]
-    public List<Guid>? Notify { get; set; }
+    public List<string>? Notify { get; set; }
 }
 
 public static class ParentTicketRequest
