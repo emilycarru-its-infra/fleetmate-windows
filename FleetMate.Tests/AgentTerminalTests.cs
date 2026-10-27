@@ -30,6 +30,7 @@ public class AgentTerminalTests
     [Theory]
     [InlineData("claude", @"C:\bin\claude.exe")]
     [InlineData("codex", @"C:\bin\codex.exe")]
+    [InlineData("codex-workspace", @"C:\bin\codex.exe --sandbox workspace-write --ask-for-approval on-request")]
     [InlineData("claude-remote", @"C:\bin\claude.exe --remote")]
     [InlineData("codex-remote", @"C:\bin\codex.exe --remote")]
     public void Presets_MapToTheirCli(string setting, string expected) =>
@@ -123,7 +124,7 @@ public class AgentTerminalTests
     public void Picker_ListsInstalledPresets_AndShowsAMissingOneAsCustom()
     {
         Func<string, bool> installed = key => AgentCommands.IsInstalled(key, OnPath(@"C:\bin\codex.exe"));
-        Assert.Equal(new[] { "", "codex", "codex-remote", "custom" },
+        Assert.Equal(new[] { "", "codex", "codex-workspace", "codex-remote", "custom" },
             AgentCommandPicker.InstalledChoices(installed).Select(c => c.Key));
         Assert.Equal(("codex", ""), AgentCommandPicker.FromSetting("codex", installed));
         Assert.Equal(("custom", "claude-remote"), AgentCommandPicker.FromSetting("claude-remote", installed));
