@@ -344,13 +344,16 @@ public partial class App : Application
         AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Authenticating());
         Log.Information("[tdx-sso] Starting silent SSO for {BaseUrl}", Config.Tdx.BaseUrl);
 
-        var result = await TdxHeadlessSso.SignInAsync(Config.Tdx.BaseUrl);
+        var expected = await TdxSsoIdentity.ResolveWindowsUpnAsync();
+        var result = TdxSessionCache.Read(Config.Tdx.BaseUrl, expected)
+            ?? await TdxHeadlessSso.SignInAsync(Config.Tdx.BaseUrl);
         if (result is { Success: true, Token: not null })
         {
             HandleSilentSsoSuccess(result);
             return;
         }
 
+        if (result.IdentityRefused) TdxSessionCache.Clear(Config.Tdx.BaseUrl);
         Log.Warning("[tdx-sso] Silent SSO failed; no sign-in window is shown: {Reason}", result.Error);
         AuthManager.Update(AuthSystemId.Tdx,
             AuthTokenState.Failed(result.Error ?? "Silent Windows SSO unavailable"));
@@ -362,6 +365,7 @@ public partial class App : Application
     private void HandleSilentSsoSuccess(TdxSsoResult result)
     {
         TdxService?.SetSsoToken(result.Token!, result.Expiry, result.UserEmail, result.UserName);
+        if (Config.Tdx?.BaseUrl is { } baseUrl) TdxSessionCache.Store(baseUrl, result);
         _ticketsCacheTime = null;
         AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Valid(result.UserName, result.Expiry));
         Log.Information("[tdx-sso] ✓ Silent SSO successful — user={UserName}", result.UserName ?? "(unknown)");
