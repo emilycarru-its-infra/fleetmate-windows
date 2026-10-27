@@ -305,9 +305,8 @@ public static class AgentBrief
     /// (<paramref name="codexInstructions"/>). With <paramref name="selfUpdate"/>
     /// false, which FleetMate passes when it keeps the CLIs current itself,
     /// Codex also skips its own update check, so a session never opens on an
-    /// update prompt; and where this Codex has --no-daemon, the line says so,
-    /// since any -c override otherwise makes Codex warn about running without
-    /// its shared background server.
+    /// update prompt. FleetMate does not disable the shared background server;
+    /// cross-session discovery and messaging depend on it.
     ///
     /// The -remote presets (--remote) start the agent elsewhere, where a local
     /// path means nothing, so they get the environment variable only.
