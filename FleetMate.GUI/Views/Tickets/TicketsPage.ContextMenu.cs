@@ -243,8 +243,7 @@ public partial class TicketsPage
         ReplaceCachedTicket(fresh);
         if (_selectedTicket?.Id == ticketId)
         {
-            _ticketFeed = await _tdxService.GetTicketFeedAsync(ticketId);
-            UpdateFeedPanel();
+            await LoadTicketDetailAsync(ticketId);
         }
         ShowActionMessage($"Refreshed #{ticketId}");
     }

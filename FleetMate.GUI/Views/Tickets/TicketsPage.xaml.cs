@@ -36,7 +36,9 @@ public partial class TicketsPage : Page
     private readonly HashSet<int> _collapsedTickets = new();
 
     /// <summary>Unsent comments, keyed by ticket. A draft belongs to its ticket.</summary>
-    private readonly Dictionary<int, string> _commentDrafts = new();
+    private readonly Dictionary<int, TicketCommentDraft> _commentDrafts = new();
+    private readonly TicketDetailLoadState _detailLoads = new();
+    private bool _postingComment;
 
     /// <summary>
     /// The list's filter selections, any number of values per category. The
@@ -964,6 +966,9 @@ private bool _isInitialLoadDone;
     {
         StashCommentDraft();
         _selectedTicket = null;
+        _detailLoads.Invalidate();
+        _ticketFeed.Clear();
+        UpdateFeedPanel();
         TicketsListView.SelectedItem = null;
         WorkflowPanel.Clear();
         TasksPanel.Clear();
@@ -1014,17 +1019,25 @@ private bool _isInitialLoadDone;
     private void StashCommentDraft()
     {
         if (_selectedTicket is not { } previous) return;
-
-        var draft = CommentTextBox.Text?.Trim();
-
-        if (string.IsNullOrEmpty(draft)) _commentDrafts.Remove(previous.Id);
-        else _commentDrafts[previous.Id] = CommentTextBox.Text ?? "";
+        var draft = new TicketCommentDraft(CommentTextBox.Text ?? "", PrivateCheckBox.IsChecked == true,
+            SelectedNotificationEmails());
+        if (draft.IsEmpty) _commentDrafts.Remove(previous.Id);
+        else _commentDrafts[previous.Id] = draft;
     }
 
     private void RestoreCommentDraft(int ticketId)
     {
-        CommentTextBox.Text = _commentDrafts.GetValueOrDefault(ticketId) ?? "";
+        var draft = _commentDrafts.GetValueOrDefault(ticketId) ?? TicketCommentDraft.Empty;
+        CommentTextBox.Text = draft.Text;
+        PrivateCheckBox.IsChecked = draft.IsPrivate;
+        _notifyOptionsTicketId = null;
+        NotifyCheckboxesPanel.Children.Clear();
+        PostCommentButton.IsEnabled = !_postingComment;
     }
+
+    private string[] SelectedNotificationEmails() => NotifyCheckboxesPanel.Children.OfType<CheckBox>()
+        .Where(box => box.IsChecked == true).Select(box => box.Tag as string)
+        .OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
     /// <summary>
     /// Seed the comment box with the selected entry, quoted.
@@ -1047,6 +1060,7 @@ private bool _isInitialLoadDone;
             ? quoted
             : existing.TrimEnd() + "\n\n" + quoted;
 
+        PrivateCheckBox.IsChecked = PrivateCheckBox.IsChecked == true || entry.IsPrivate;
         CommentTextBox.Focus();
         CommentTextBox.CaretIndex = CommentTextBox.Text.Length;
     }
@@ -1071,6 +1085,10 @@ private bool _isInitialLoadDone;
         DetailContent.Visibility = Visibility.Visible;
         
         DetailTicketIdText.Text = $"#{ticketId}";
+        var load = _detailLoads.Begin(ticketId);
+        _ticketFeed.Clear();
+        UpdateFeedPanel();
+        FeedHeaderText.Text = "Loading activity…";
 
         // The workflow loads beside the ticket and feed; the panel drops its
         // own answer if another ticket is opened first.
@@ -1083,7 +1101,7 @@ private bool _isInitialLoadDone;
             var ticket = await _tdxService.GetTicketAsync(ticketId);
             // The operator may have moved on while this was in flight; a slow
             // answer for the previous ticket must not paint over the next.
-            if (_selectedTicket?.Id != ticketId) return;
+            if (!_detailLoads.IsCurrent(load) || _selectedTicket?.Id != ticketId) return;
             if (ticket != null)
             {
                 _selectedTicket = ticket;
@@ -1092,13 +1110,17 @@ private bool _isInitialLoadDone;
             
             // Get feed/comments
             var feed = await _tdxService.GetTicketFeedAsync(ticketId);
-            if (_selectedTicket?.Id != ticketId) return;
+            if (!_detailLoads.IsCurrent(load) || _selectedTicket?.Id != ticketId) return;
             _ticketFeed = feed;
             UpdateFeedPanel();
         }
         catch (Exception ex)
         {
-            ShowActionMessage($"Error loading details: {ex.Message}", isError: true);
+            if (_detailLoads.IsCurrent(load) && _selectedTicket?.Id == ticketId)
+            {
+                FeedHeaderText.Text = "Activity unavailable — refresh to retry";
+                ShowActionMessage($"Error loading details: {ex.Message}", isError: true);
+            }
         }
         finally
         {
@@ -1476,7 +1498,9 @@ private bool _isInitialLoadDone;
                 CreatedFullName = f.CreatedFullName ?? "Unknown",
                 FormattedDate = FormatDate(f.CreatedDate),
                 StrippedBody = DecodeHtml(f.Body ?? ""),
-                IsPrivate = f.IsPrivate
+                IsPrivate = f.IsPrivate,
+                NotificationRecipients = string.IsNullOrWhiteSpace(f.NotifiedList)
+                    ? "Notification recipients unavailable" : $"Notified: {DecodeHtml(f.NotifiedList)}"
             }).ToList();
             
             FeedItemsControl.ItemsSource = displayFeed;
@@ -1497,33 +1521,21 @@ private bool _isInitialLoadDone;
         var ticked = _notifyOptionsTicketId == ticket.Id
             ? NotifyCheckboxesPanel.Children.OfType<CheckBox>().Where(c => c.IsChecked == true).Select(c => c.Tag as string).ToHashSet()
             : new HashSet<string?>();
-        _notifyOptionsTicketId = ticket.Id;
         NotifyCheckboxesPanel.Children.Clear();
         
         // Build notify options from ticket properties
         var options = new List<(string id, string label)>();
         
-        // Responsible Group
-        if (!string.IsNullOrEmpty(ticket.ResponsibleGroupName) && ticket.ResponsibleGroupId > 0)
-        {
-            options.Add(($"group:{ticket.ResponsibleGroupId}", $"Group: {ticket.ResponsibleGroupName}"));
-        }
-        
-        // Requestor
-        if (!string.IsNullOrEmpty(ticket.RequestorName) && ticket.RequestorUid != null && ticket.RequestorUid != Guid.Empty)
-        {
-            options.Add(($"user:{ticket.RequestorUid}", $"Requestor: {ticket.RequestorName}"));
-        }
-        
-        // Responsible person (if different from requestor)
-        if (!string.IsNullOrEmpty(ticket.ResponsibleFullName) && ticket.ResponsibleUid != null && ticket.ResponsibleUid != Guid.Empty)
-        {
-            if (ticket.ResponsibleUid != ticket.RequestorUid)
-            {
-                options.Add(($"user:{ticket.ResponsibleUid}", $"Responsible: {ticket.ResponsibleFullName}"));
-            }
-        }
-        
+        var restored = _commentDrafts.GetValueOrDefault(ticket.Id)?.NotifyEmails ?? [];
+        if (_notifyOptionsTicketId != ticket.Id) ticked = restored.Cast<string?>().ToHashSet();
+        // The API accepts email addresses, not person or group IDs.
+        if (TicketCommentDraft.NotificationEmail(ticket.RequestorEmail) is { } requestor)
+            options.Add((requestor, $"Requestor: {ticket.RequestorName ?? requestor}"));
+        if (TicketCommentDraft.NotificationEmail(ticket.ResponsibleEmail) is { } responsible
+            && !options.Any(option => option.id.Equals(responsible, StringComparison.OrdinalIgnoreCase)))
+            options.Add((responsible, $"Responsible: {ticket.ResponsibleFullName ?? responsible}"));
+
+        _notifyOptionsTicketId = ticket.Id;
         // Create checkboxes
         foreach (var (id, label) in options)
         {
@@ -1686,44 +1698,44 @@ private bool _isInitialLoadDone;
 
     private async void OnPostCommentClicked(object sender, RoutedEventArgs e)
     {
-        if (_selectedTicket == null || _tdxService == null) return;
-        
-        var comment = CommentTextBox.Text?.Trim();
-        if (string.IsNullOrEmpty(comment)) return;
+        if (_selectedTicket == null || _tdxService == null || _postingComment) return;
+        var ticketId = _selectedTicket.Id;
+        var draft = new TicketCommentDraft(CommentTextBox.Text ?? "", PrivateCheckBox.IsChecked == true,
+            SelectedNotificationEmails());
+        if (string.IsNullOrWhiteSpace(draft.Text)) return;
 
-        ShowActionMessage("Adding comment...", isLoading: true);
+        ShowActionMessage($"Adding comment to #{ticketId}…", isLoading: true);
+        _postingComment = true;
         PostCommentButton.IsEnabled = false;
-
         try
         {
-            await _tdxService.AddCommentAsync(
-                _selectedTicket.Id,
-                comment,
-                PrivateCheckBox.IsChecked == true);
-
-            ShowActionMessage("Comment added successfully");
-            CommentTextBox.Text = "";
-
-            // Drop the stashed copy too, or navigating away and back would
-            // resurrect a comment that was already posted.
-            _commentDrafts.Remove(_selectedTicket.Id);
-
-            // Refresh feed
-            _ticketFeed = await _tdxService.GetTicketFeedAsync(_selectedTicket.Id);
-            UpdateFeedPanel();
-        }
-        catch (TdxCommentException ex)
-        {
-            // Only clear the box on success — the comment is the operator's
-            // work, and losing it to a rejected post is worse than the failure.
-            ShowActionMessage(ex.Message, isError: true);
+            await _tdxService.AddCommentAsync(ticketId, draft.Text.Trim(), draft.IsPrivate,
+                notify: draft.NotifyEmails.Length == 0 ? null : draft.NotifyEmails.ToList());
+            ShowActionMessage($"Comment added to #{ticketId}");
+            // Only remove the draft that was sent. Edits made while posting belong to the person.
+            if (_selectedTicket?.Id == ticketId)
+            {
+                var current = new TicketCommentDraft(CommentTextBox.Text ?? "", PrivateCheckBox.IsChecked == true,
+                    SelectedNotificationEmails());
+                if (draft.Matches(current))
+                {
+                    CommentTextBox.Text = "";
+                    PrivateCheckBox.IsChecked = false;
+                    foreach (var box in NotifyCheckboxesPanel.Children.OfType<CheckBox>()) box.IsChecked = false;
+                    _commentDrafts.Remove(ticketId);
+                }
+                await LoadTicketDetailAsync(ticketId);
+            }
+            else if (_commentDrafts.GetValueOrDefault(ticketId) is { } saved && draft.Matches(saved))
+                _commentDrafts.Remove(ticketId);
         }
         catch (Exception ex)
         {
-            ShowActionMessage($"Error: {ex.Message}", isError: true);
+            ShowActionMessage($"Ticket #{ticketId}: {ex.Message}", isError: true);
         }
         finally
         {
+            _postingComment = false;
             PostCommentButton.IsEnabled = true;
         }
     }
@@ -1800,6 +1812,7 @@ public class FeedDisplayItem
     public string FormattedDate { get; set; } = "";
     public string StrippedBody { get; set; } = "";
     public bool IsPrivate { get; set; }
+    public string NotificationRecipients { get; set; } = "Notification recipients unavailable";
 }
 
 /// <summary>A date-range choice for the Tickets toolbar.</summary>
