@@ -181,7 +181,7 @@ public class AgentBriefTests
     public void AppOwnedDirectoriesAreScopedToDirectAgentSessions()
     {
         string[] roots = [@"C:\profile\.fleetmate", @"C:\profile\AppData\Local\FleetMate\Agent"];
-        var args = AgentBrief.LaunchArguments("codex", [], BriefPath, "guide", additionalDirectories: roots);
+        var args = AgentBrief.LaunchArguments("codex", ["--sandbox", "workspace-write"], BriefPath, "guide", additionalDirectories: roots);
         Assert.Contains(roots[0], args);
         Assert.Contains(roots[1], args);
         Assert.Equal(2, args.Count(argument => argument == "--add-dir"));
@@ -190,6 +190,17 @@ public class AgentBriefTests
         Assert.Equal(new[] { "--remote" }, remote);
         var command = AgentBrief.LaunchArguments("codex", ["--version"], BriefPath, "guide", additionalDirectories: roots);
         Assert.Equal(new[] { "--version" }, command);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("read-only")]
+    [InlineData("danger-full-access")]
+    public void CodexDoesNotAddWritableRootsToReadOnlyOrUnknownPolicy(string? sandbox)
+    {
+        var args = AgentBrief.LaunchArguments("codex", sandbox == null ? [] : ["--sandbox", sandbox], BriefPath,
+            "guide", additionalDirectories: [@"C:\profile\.fleetmate"]);
+        Assert.DoesNotContain("--add-dir", args);
     }
 
     [Fact]
