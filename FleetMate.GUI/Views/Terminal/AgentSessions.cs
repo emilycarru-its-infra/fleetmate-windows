@@ -19,7 +19,6 @@ public sealed class AgentSessions
 {
     private readonly App _app;
     private bool _started;
-    private volatile bool _codexNoDaemon;
 
     public AgentSessions(App app)
     {
@@ -51,7 +50,6 @@ public sealed class AgentSessions
             {
                 Brief.ClearSessions();
                 Brief.Refresh(CliPath());
-                _codexNoDaemon = CodexHasNoDaemon();
             }
             catch (Exception ex) { Log.Warning(ex, "Agent brief: could not prepare"); }
         });
@@ -63,18 +61,6 @@ public sealed class AgentSessions
     /// <summary>The installed fleetmate.exe, or one built beside the app.</summary>
     private static string? CliPath() =>
         TerminalEnvironment.FindCliDirectory(AppContext.BaseDirectory) is { } dir ? Path.Combine(dir, "fleetmate.exe") : null;
-
-    /// <summary>
-    /// Whether this Codex has --no-daemon. Any -c override makes Codex warn
-    /// at start about running without its background server; saying
-    /// --no-daemon outright avoids that, where the flag exists.
-    /// </summary>
-    private static bool CodexHasNoDaemon()
-    {
-        if (AgentCommands.FindInstalled("codex") is not { } codex) return false;
-        var output = AgentCliUpdater.DefaultRunner(new AgentCliCommand(codex, new[] { "--help" })).GetAwaiter().GetResult();
-        return output.Succeeded && output.Stdout.Contains("--no-daemon", StringComparison.Ordinal);
-    }
 
     // ── Where a session opens ────────────────────────────────────────────
 
@@ -132,8 +118,9 @@ public sealed class AgentSessions
         var brief = Brief.WriteSessionBrief(sessionId, place with { WorkingDirectory = workingDirectory });
         var managed = Settings.KeepClisCurrent;
         if (managed && AgentBrief.AgentOf(command.FileName) != null) Updater.UpdateIfStale();
-        var prepared = AgentSessionLaunch.Prepare(command, brief, managed, _codexNoDaemon, AgentCommands.FindOnPath);
         var workspace = WorkspaceDirectory();
+        var prepared = AgentSessionLaunch.Prepare(command, brief, managed, false, AgentCommands.FindOnPath,
+            new[] { workspace, Brief.Directory });
         var instructions = AgentWorkspace.Prepare(workspace, Brief.BriefPath, _app.Context.Path);
         PrivateFile.EnsureDirectory(AgentSessionMetadata.Directory);
         var metadata = AgentSessionMetadata.FilePath(sessionId);
