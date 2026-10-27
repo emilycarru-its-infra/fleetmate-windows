@@ -313,25 +313,28 @@ public static class AgentBrief
     /// path means nothing, so they get the environment variable only.
     /// </summary>
     public static IReadOnlyList<string> LaunchArguments(string program, IReadOnlyList<string> arguments,
-        string briefPath, string codexInstructions, bool selfUpdate = true, bool codexNoDaemon = false)
+        string briefPath, string codexInstructions, bool selfUpdate = true, bool codexNoDaemon = false, IReadOnlyList<string>? additionalDirectories = null)
     {
         if (arguments.Any(a => a.Equals("--remote", StringComparison.OrdinalIgnoreCase))) return arguments;
         var first = arguments.FirstOrDefault();
+        var directories = (additionalDirectories ?? []).Where(directory => !string.IsNullOrWhiteSpace(directory))
+            .Distinct(StringComparer.OrdinalIgnoreCase).SelectMany(directory => new[] { "--add-dir", directory }).ToList();
         switch (AgentOf(program))
         {
             case "claude":
                 if (first != null && ClaudeNonSessionSubcommands.Contains(first)) return arguments;
-                return new[] { "--append-system-prompt-file", briefPath }.Concat(arguments).ToList();
+                return new[] { "--append-system-prompt-file", briefPath }.Concat(directories).Concat(arguments).ToList();
             case "codex":
                 if (first != null && CodexNonSessionSubcommands.Contains(first)) return arguments;
                 var line = new List<string>();
-                if (codexNoDaemon) line.Add("--no-daemon");
+                // Keep the shared daemon available for cross-session discovery and messaging.
+                // An explicit --no-daemon in the person's command remains untouched.
                 if (!selfUpdate) line.AddRange(new[] { "-c", "check_for_update_on_startup=false" });
                 // The fixed pointer goes as a TOML literal string: no double
                 // quotes, so cmd.exe reads the whole argument as one quoted run.
                 var value = codexInstructions == PointerInstructions ? "'" + PointerInstructions + "'" : TomlString(codexInstructions);
                 line.AddRange(new[] { "-c", "developer_instructions=" + value });
-                return line.Concat(arguments).ToList();
+                return line.Concat(directories).Concat(arguments).ToList();
             default:
                 return arguments;
         }
