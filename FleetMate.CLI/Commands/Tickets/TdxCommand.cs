@@ -659,9 +659,8 @@ public static class TdxCommand
         AnsiConsole.MarkupLine("  [cyan]TDX_BASE_URL[/]         - Your TDX Web API URL");
         AnsiConsole.MarkupLine("  [cyan]TDX_APP_ID[/]           - Your TDX application ID");
         AnsiConsole.MarkupLine("");
-        AnsiConsole.MarkupLine("Authentication (choose one):");
-        AnsiConsole.MarkupLine("  Admin: [cyan]TDX_BEID[/] + [cyan]TDX_WEB_SERVICES_KEY[/]");
-        AnsiConsole.MarkupLine("  User:  [cyan]TDX_USERNAME[/] + [cyan]TDX_PASSWORD[/]");
+        AnsiConsole.MarkupLine("Authentication uses your own silent Windows SSO session.");
+        AnsiConsole.MarkupLine("Open FleetMate once to establish a protected session shared with the CLI.");
         return false;
     }
 

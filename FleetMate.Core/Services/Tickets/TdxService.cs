@@ -130,6 +130,13 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
             return _ssoToken;
         }
 
+        var expected = await TdxSsoIdentity.ResolveWindowsUpnAsync();
+        if (TdxSessionCache.Read(_config.BaseUrl, expected) is { } cached)
+        {
+            SetSsoToken(cached.Token!, cached.Expiry, cached.UserEmail, cached.UserName);
+            return _ssoToken;
+        }
+
         // Try the silent SSO chain — Negotiate/Kerberos into loginsso — before
         // giving up. On a domain-joined machine this needs no interaction.
         if (!string.IsNullOrEmpty(_config.BaseUrl))
