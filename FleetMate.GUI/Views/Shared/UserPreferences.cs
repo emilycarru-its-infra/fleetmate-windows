@@ -74,6 +74,11 @@ public static class UserPreferences
 
     public static void SetPullsRepository(string? repository) => Write("development.pulls.repository", repository);
 
+    /// <summary>Repository groups Pulls shows collapsed, one key per line; null when none.</summary>
+    public static string? PullsCollapsedGroups => Read("development.pulls.collapsedGroups");
+
+    public static void SetPullsCollapsedGroups(string? keys) => Write("development.pulls.collapsedGroups", keys);
+
     private static string? Read(string name)
     {
         try

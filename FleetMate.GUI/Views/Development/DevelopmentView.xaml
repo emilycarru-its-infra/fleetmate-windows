@@ -8,6 +8,9 @@
              xmlns:repos="clr-namespace:FleetMate.GUI.Views.Development.Repos">
 
     <UserControl.Resources>
+        <local:PullGroupChevronConverter x:Key="PullGroupChevron" />
+        <local:PullGroupRowsVisibilityConverter x:Key="PullGroupRowsVisibility" />
+        <local:PullGroupTextConverter x:Key="PullGroupText" />
         <DataTemplate x:Key="PullRequestRowTemplate">
             <StackPanel Margin="2,4" Background="Transparent">
                 <StackPanel.ContextMenu>
@@ -296,18 +299,50 @@
                               VirtualizingPanel.IsVirtualizingWhenGrouping="True"
                               SelectionChanged="OnPullRequestSelected">
                         <ListView.GroupStyle>
+                            <!-- A repository group: click the header to collapse or
+                                 expand it, Ctrl-click for every group (Option-click
+                                 on the Mac). Collapsed groups are remembered. -->
                             <GroupStyle>
-                                <GroupStyle.HeaderTemplate>
-                                    <DataTemplate>
-                                        <Border Background="{DynamicResource SubtleFillBrush}" Padding="8,4">
-                                            <TextBlock FontSize="11" FontWeight="SemiBold">
-                                                <Run Text="{Binding Name, Mode=OneWay}" />
-                                                <Run Text="  " />
-                                                <Run Text="{Binding ItemCount, Mode=OneWay}" />
-                                            </TextBlock>
-                                        </Border>
-                                    </DataTemplate>
-                                </GroupStyle.HeaderTemplate>
+                                <GroupStyle.ContainerStyle>
+                                    <Style TargetType="GroupItem">
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="GroupItem">
+                                                    <StackPanel>
+                                                        <Button Tag="{Binding Name, Mode=OneWay}" Click="OnPullGroupHeaderClick"
+                                                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                                                Padding="8,4" BorderThickness="0" Cursor="Hand"
+                                                                Background="{DynamicResource SubtleFillBrush}"
+                                                                ToolTip="{Binding Name, Mode=OneWay, Converter={StaticResource PullGroupText}, ConverterParameter=tip}"
+                                                                AutomationProperties.Name="{Binding Name, Mode=OneWay}"
+                                                                AutomationProperties.ItemStatus="{Binding Name, Mode=OneWay, Converter={StaticResource PullGroupText}, ConverterParameter=status}">
+                                                            <Button.ContextMenu>
+                                                                <ContextMenu>
+                                                                    <MenuItem Header="{Binding Name, Mode=OneWay, Converter={StaticResource PullGroupText}, ConverterParameter=toggle}"
+                                                                              Click="OnPullGroupToggle" />
+                                                                    <Separator />
+                                                                    <MenuItem Header="Expand All Groups" Click="OnPullGroupsExpandAll" />
+                                                                    <MenuItem Header="Collapse All Groups" Click="OnPullGroupsCollapseAll" />
+                                                                </ContextMenu>
+                                                            </Button.ContextMenu>
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock FontFamily="Segoe Fluent Icons" FontSize="9" Width="14"
+                                                                           VerticalAlignment="Center"
+                                                                           Text="{Binding Name, Mode=OneWay, Converter={StaticResource PullGroupChevron}}" />
+                                                                <TextBlock FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center">
+                                                                    <Run Text="{Binding Name, Mode=OneWay}" />
+                                                                    <Run Text="  " />
+                                                                    <Run Text="{Binding ItemCount, Mode=OneWay}" />
+                                                                </TextBlock>
+                                                            </StackPanel>
+                                                        </Button>
+                                                        <ItemsPresenter Visibility="{Binding Name, Mode=OneWay, Converter={StaticResource PullGroupRowsVisibility}}" />
+                                                    </StackPanel>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </GroupStyle.ContainerStyle>
                             </GroupStyle>
                         </ListView.GroupStyle>
                     </ListView>
