@@ -56,6 +56,9 @@ public sealed class RepoWorkspaceModel : RepoObservable
     public RepoInsightsModel Insights { get; } = new();
 
     private IReadOnlyList<RepoRecord> _tracked = Array.Empty<RepoRecord>();
+    private IReadOnlyList<RepoRecord> _allTracked = Array.Empty<RepoRecord>();
+    private bool _isEditing;
+    private bool _isScanning;
     private IReadOnlyDictionary<string, RepoStatus> _statuses = new Dictionary<string, RepoStatus>();
     private bool _isRefreshing;
     private IReadOnlySet<string> _fetching = new HashSet<string>();
@@ -88,7 +91,14 @@ public sealed class RepoWorkspaceModel : RepoObservable
 
     // ── Repository list ─────────────────────────────────────────────────
 
+    /// <summary>Tracked repositories the sidebar shows: every tracked one except those hidden.</summary>
     public IReadOnlyList<RepoRecord> Tracked { get => _tracked; private set => Set(ref _tracked, value); }
+    /// <summary>Every tracked repository, hidden ones included, for the sidebar's edit mode.</summary>
+    public IReadOnlyList<RepoRecord> AllTracked { get => _allTracked; private set => Set(ref _allTracked, value); }
+    /// <summary>The sidebar's edit mode: hidden repositories listed, with show/hide and delete on each row.</summary>
+    public bool IsEditing { get => _isEditing; set => Set(ref _isEditing, value); }
+    /// <summary>A Choose Folder scan is running.</summary>
+    public bool IsScanning { get => _isScanning; private set => Set(ref _isScanning, value); }
     public IReadOnlyDictionary<string, RepoStatus> Statuses { get => _statuses; private set => Set(ref _statuses, value); }
     public bool IsRefreshing { get => _isRefreshing; private set => Set(ref _isRefreshing, value); }
     public IReadOnlySet<string> Fetching { get => _fetching; private set => Set(ref _fetching, value); }
@@ -109,7 +119,7 @@ public sealed class RepoWorkspaceModel : RepoObservable
         }
     }
 
-    public RepoRecord? Selected => _tracked.FirstOrDefault(r => r.Id == _selectedId);
+    public RepoRecord? Selected => _allTracked.FirstOrDefault(r => r.Id == _selectedId);
     public string? SelectedPath => Selected?.Local?.Path;
     public RepoStatus? SelectedStatus => _selectedId != null ? _statuses.GetValueOrDefault(_selectedId) : null;
 
@@ -120,20 +130,169 @@ public sealed class RepoWorkspaceModel : RepoObservable
     {
         try
         {
-            Tracked = Manager.Records().Where(r => r.IsTracked)
+            AllTracked = Manager.Records().Where(r => r.IsTracked)
                 .OrderBy(r => r.Key.DisplayName, NaturalComparer.Instance).ToList();
+            Tracked = _allTracked.Where(r => !r.IsHidden).ToList();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         {
             Report("Could not read the repository registry", ex.Message);
         }
-        if (_selectedId != null && _tracked.All(r => r.Id != _selectedId)) SelectedId = null;
+        var listed = _isEditing ? _allTracked : _tracked;
+        if (_selectedId != null && listed.All(r => r.Id != _selectedId)) SelectedId = null;
         if (_selectedId == null && _tracked.Count > 0)
         {
             var remembered = RepoWorkspacePreferences.Read("selected");
             SelectedId = _tracked.FirstOrDefault(r => r.Id == remembered)?.Id ?? _tracked[0].Id;
         }
         Raise(nameof(Selected));
+    }
+
+    // ── Tracking, hiding, deleting ──────────────────────────────────────
+
+    private IReadOnlyList<DiscoveredCheckout> _newClones = Array.Empty<DiscoveredCheckout>();
+
+    /// <summary>Clones offered for adding: new in the watched folders, or held back by Choose Folder for review.</summary>
+    public IReadOnlyList<DiscoveredCheckout> NewClones { get => _newClones; private set => Set(ref _newClones, value); }
+
+    /// <summary>Paths of offered clones ticked in the review list. Ones whose config can run commands start unticked.</summary>
+    public HashSet<string> NewClonesSelected { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Looks for clones that appeared in the watched folders, when the person
+    /// left that on. Clones held back for review stay offered. Quiet: a failure
+    /// only leaves the list as it was.
+    /// </summary>
+    public async Task LookForNewClonesAsync()
+    {
+        try
+        {
+            var found = await Manager.NewClonesAsync() ?? new List<DiscoveredCheckout>();
+            var foundPaths = found.Select(c => c.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var held = _newClones.Where(c => c.RunsCommands && !foundPaths.Contains(c.Path));
+            Offer(found.Concat(held).ToList(), replacing: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or RepoException) { }
+    }
+
+    private void Offer(IReadOnlyList<DiscoveredCheckout> clones, bool replacing = false)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var merged = (replacing ? clones : _newClones.Concat(clones)).Where(c => seen.Add(c.Path)).ToList();
+        var before = _newClones.Select(c => c.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var clone in merged.Where(c => !before.Contains(c.Path) && !c.RunsCommands))
+            NewClonesSelected.Add(clone.Path);
+        NewClonesSelected.IntersectWith(merged.Select(c => c.Path));
+        NewClones = merged;
+    }
+
+    /// <summary>
+    /// Tracks the ticked clones; the person ticked any flagged one knowing its
+    /// settings can run commands. The rest stay offered.
+    /// </summary>
+    public async Task AddSelectedNewClonesAsync()
+    {
+        var chosen = _newClones.Where(c => NewClonesSelected.Contains(c.Path)).ToList();
+        if (chosen.Count == 0) return;
+        NewClonesSelected.ExceptWith(chosen.Select(c => c.Path));
+        NewClones = _newClones.Except(chosen).ToList();
+        Change("Could not add the repositories", () => Manager.Register(chosen, track: true, trustCommandConfig: true));
+        await RefreshStatusesAsync();
+        NotifyRegistryChanged();
+    }
+
+    /// <summary>Records every offered clone as untracked, so FleetMate does not ask about them again.</summary>
+    public void IgnoreNewClones()
+    {
+        var clones = _newClones;
+        NewClones = Array.Empty<DiscoveredCheckout>();
+        NewClonesSelected.Clear();
+        Change("Could not ignore the repositories", () => Manager.Register(clones));
+    }
+
+    private IReadOnlyList<string> _suggestedRoots = Array.Empty<string>();
+
+    /// <summary>Common code folders on this PC that hold clones, offered in the empty sidebar before any folder was chosen.</summary>
+    public IReadOnlyList<string> SuggestedRoots { get => _suggestedRoots; private set => Set(ref _suggestedRoots, value); }
+
+    public async Task LoadSuggestedRootsAsync()
+    {
+        RepoSettings settings;
+        try { settings = Manager.Settings(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { SuggestedRoots = Array.Empty<string>(); return; }
+        if (settings.RootsChosen) { SuggestedRoots = Array.Empty<string>(); return; }
+        SuggestedRoots = await Task.Run(() => RepoDiscovery.ExistingCommonLocations()
+            .Where(root => RepoDiscovery.FindCheckouts(new[] { root }, settings.ScanDepth, settings.SkipDirectories).Count > 0)
+            .ToList());
+    }
+
+    /// <summary>Find New Clones: look in the watched folders now, unless a scan is running.</summary>
+    public Task FindNewClonesAsync() => IsScanning ? Task.CompletedTask : LookForNewClonesAsync();
+
+    /// <summary>Watches <paramref name="folders"/> and tracks every clone in them, with no further questions.</summary>
+    public async Task<int> TrackFoldersAsync(IReadOnlyList<string> folders)
+    {
+        IsScanning = true;
+        try
+        {
+            var (results, review) = await Manager.TrackFoldersAsync(folders);
+            if (review.Count > 0) Offer(review);
+            ReloadRecords();
+            await RefreshStatusesAsync();
+            var found = results.Count(r => r.Action is DiscoveryAction.Linked or DiscoveryAction.AlreadyLinked);
+            if (found == 0 && review.Count == 0)
+                Report("No clones found", $"There are no git clones in {string.Join(", ", folders.Select(RepoSettings.Abbreviate))}. Clone a repository there, or choose another folder.");
+            else if (found > 0)
+                Flash($"Tracking {found} {(found == 1 ? "repository" : "repositories")}");
+            return found;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or RepoException)
+        {
+            Report("Could not scan the folder", ex.Message);
+            return 0;
+        }
+        finally
+        {
+            IsScanning = false;
+        }
+    }
+
+    public void SetHidden(string id, bool hidden) => Change("Could not change the repository", () => Manager.SetHidden(id, hidden));
+
+    /// <summary>Stops tracking a repository; the clone stays on disk and linked.</summary>
+    public void StopTracking(string id) => Change("Could not stop tracking", () => Manager.SetTracked(id, false));
+
+    public Task<CloneRemovalCheck> RemovalCheckAsync(string id) => Manager.RemovalCheckAsync(id);
+
+    /// <summary>Moves the clone to the Recycle Bin and forgets it, after the view has confirmed.</summary>
+    public async Task<bool> RemoveCloneAsync(string id)
+    {
+        try
+        {
+            await Manager.RemoveCloneAsync(id, force: true);
+            if (_selectedId == id) SelectedId = null;
+            ReloadRecords();
+            NotifyRegistryChanged();
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or RepoException)
+        {
+            Report("Could not delete the local clone", ex.Message);
+            return false;
+        }
+    }
+
+    private void Change(string title, Action change)
+    {
+        try
+        {
+            change();
+            ReloadRecords();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException or RepoException)
+        {
+            Report(title, ex.Message);
+        }
     }
 
     /// <summary>Local status of every tracked repository: no network.</summary>
@@ -143,7 +302,7 @@ public sealed class RepoWorkspaceModel : RepoObservable
         IsRefreshing = true;
         try
         {
-            var results = await Manager.StatusAsync(_tracked);
+            var results = await Manager.StatusAsync(_allTracked);
             Statuses = results.GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.First());
             Raise(nameof(SelectedStatus));
         }
@@ -155,7 +314,7 @@ public sealed class RepoWorkspaceModel : RepoObservable
 
     public async Task FetchAsync(IReadOnlyList<string> ids)
     {
-        var records = _tracked.Where(r => ids.Contains(r.Id)).ToList();
+        var records = _allTracked.Where(r => ids.Contains(r.Id)).ToList();
         if (records.Count == 0) return;
         Fetching = _fetching.Union(ids).ToHashSet();
         var results = await Manager.RunAsync(RepoBatchOperation.Fetch, records);
