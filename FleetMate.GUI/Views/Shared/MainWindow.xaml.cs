@@ -100,39 +100,48 @@ public partial class MainWindow : Window
 
     private void OnElevationChanged() => Dispatcher.BeginInvoke(UpdateElevationStatus);
 
+    /// <summary>A small blue spinner in the dot's place while a session starts, the slow first action of the day.</summary>
+    private ModernWpf.Controls.ProgressRing? _elevationSpinner;
+
+    private ModernWpf.Controls.ProgressRing ElevationSpinner()
+    {
+        if (_elevationSpinner != null) return _elevationSpinner;
+        _elevationSpinner = new ModernWpf.Controls.ProgressRing
+        {
+            Width = 9, Height = 9, IsActive = false, Visibility = Visibility.Collapsed,
+            Foreground = new SolidColorBrush(Colors.DodgerBlue),
+            HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, -3, -4, 0), IsHitTestVisible = false,
+        };
+        ((Panel)ElevationDot.Parent).Children.Add(_elevationSpinner);
+        return _elevationSpinner;
+    }
+
     private void UpdateElevationStatus()
     {
         var monitor = _elevationMonitor;
         if (monitor is not { Enabled: true })
         {
-            ElevationButton.Visibility = Visibility.Collapsed;
+            ElevationDot.Visibility = Visibility.Collapsed;
+            if (_elevationSpinner != null) { _elevationSpinner.IsActive = false; _elevationSpinner.Visibility = Visibility.Collapsed; }
+            AuthButton.ToolTip = ElevationStatusText.ShieldTooltipTitle;
+            System.Windows.Automation.AutomationProperties.SetName(AuthButton, ElevationStatusText.ShieldAccessibleName(ElevationSessionState.Off));
             return;
         }
 
         var overall = monitor.Overall();
-        ElevationButton.Visibility = Visibility.Visible;
-        ElevationText.Text = ElevationStatusText.Label(overall);
-        ElevationDot.Fill = new SolidColorBrush(overall switch
-        {
-            ElevationSessionState.Ready => Colors.Green,
-            ElevationSessionState.Starting => Colors.DodgerBlue,
-            ElevationSessionState.Expired => Colors.Orange,
-            ElevationSessionState.None => Colors.Gray,
-            _ => Colors.Goldenrod,
-        });
-        ElevationButton.ToolTip = string.Join(Environment.NewLine, ElevationMonitor.DesktopDomains.Select(d =>
-                ElevationStatusText.DomainLine(d, monitor.StateOf(d), monitor.ExpiresOf(d), monitor.ErrorOf(d), DateTimeOffset.Now)))
-            + Environment.NewLine + Environment.NewLine
-            + "Click to re-check and start any session that is not running.";
-    }
-
-    private async void OnElevationClicked(object sender, RoutedEventArgs e)
-    {
-        if (_elevationMonitor is not { Enabled: true } monitor) return;
-        ElevationText.Text = "Checking…";
-        try { await monitor.PrewarmAsync(); }
-        catch (Exception ex) { Serilog.Log.Warning(ex, "Elevation check failed"); }
-        UpdateElevationStatus();
+        var tone = ElevationStatusText.DotTone(overall);
+        var spinner = ElevationSpinner();
+        spinner.IsActive = tone == ElevationDotTone.Blue;
+        spinner.Visibility = tone == ElevationDotTone.Blue ? Visibility.Visible : Visibility.Collapsed;
+        ElevationDot.Visibility = tone == ElevationDotTone.Blue ? Visibility.Collapsed : Visibility.Visible;
+        ElevationDot.Fill = new SolidColorBrush(tone == ElevationDotTone.Green ? Colors.Green : Colors.Gray);
+        var now = DateTimeOffset.Now;
+        AuthButton.ToolTip = ElevationStatusText.ShieldTooltip(
+            ElevationMonitor.DesktopDomains.Select(d => (d, monitor.StateOf(d), monitor.ExpiresOf(d), monitor.ErrorOf(d))),
+            monitor.TtlHours, now);
+        System.Windows.Automation.AutomationProperties.SetName(AuthButton, ElevationStatusText.ShieldAccessibleName(overall));
+        if (AuthPopup.IsOpen) PopulateAuthPopup();
     }
 
     // ── Edition ──────────────────────────────────────────────────────────
@@ -457,6 +466,8 @@ public partial class MainWindow : Window
     {
         if (Application.Current is not App app) return;
         AuthSystemsPanel.Children.Clear();
+        if (_elevationMonitor is { Enabled: true } monitor)
+            AuthSystemsPanel.Children.Add(BuildElevatedSessionsSection(monitor));
 
         foreach (var category in Enum.GetValues<AuthCategory>())
         {
@@ -479,6 +490,61 @@ public partial class MainWindow : Window
             PopulateAuthPopup();
         };
         AuthSystemsPanel.Children.Add(refreshBtn);
+    }
+
+    /// <summary>
+    /// The Azure CLI section: the elevated sessions its sign-in starts, one line
+    /// per domain, and a Check again action that starts what is not running.
+    /// The only place their state is spelled out.
+    /// </summary>
+    private FrameworkElement BuildElevatedSessionsSection(ElevationMonitor monitor)
+    {
+        var section = new StackPanel();
+        System.Windows.Automation.AutomationProperties.SetAutomationId(section, "AuthPopupElevatedSessions");
+        var header = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
+        header.Children.Add(new ModernWpf.Controls.FontIcon { Glyph = "\uE756", FontSize = 14, Margin = new Thickness(0, 0, 6, 0) });
+        header.Children.Add(new TextBlock { Text = "Azure CLI", FontWeight = FontWeights.SemiBold, FontSize = 14 });
+        section.Children.Add(header);
+
+        var card = new Border
+        {
+            Background = (Brush)FindResource("SubtleFillBrush"),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(12),
+            Margin = new Thickness(0, 4, 0, 4),
+        };
+        var body = new DockPanel();
+        var check = new Button
+        {
+            Content = "Check again", FontSize = 11, Padding = new Thickness(8, 4, 8, 4), VerticalAlignment = VerticalAlignment.Top,
+            ToolTip = "Check again and start any session that is not running",
+        };
+        check.Click += async (_, _) =>
+        {
+            check.IsEnabled = false;
+            try { await monitor.PrewarmAsync(); }
+            catch (Exception ex) { Serilog.Log.Warning(ex, "Elevation check failed"); }
+            UpdateElevationStatus();
+            PopulateAuthPopup();
+        };
+        DockPanel.SetDock(check, Dock.Right);
+        body.Children.Add(check);
+
+        var lines = new StackPanel();
+        lines.Children.Add(new TextBlock { Text = ElevationStatusText.Title, FontWeight = FontWeights.SemiBold, FontSize = 13, Margin = new Thickness(0, 0, 0, 2) });
+        var explainer = new TextBlock { Text = ElevationStatusText.Explainer(monitor.TtlHours), FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) };
+        explainer.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
+        lines.Children.Add(explainer);
+        foreach (var domain in ElevationMonitor.DesktopDomains)
+            lines.Children.Add(new TextBlock
+            {
+                Text = ElevationStatusText.DomainLine(domain, monitor.StateOf(domain), monitor.ExpiresOf(domain), monitor.ErrorOf(domain), DateTimeOffset.Now),
+                FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 1, 0, 1),
+            });
+        body.Children.Add(lines);
+        card.Child = body;
+        section.Children.Add(card);
+        return section;
     }
 
     private Border BuildAuthSystemCard(App app, AuthSystemStatus system)
