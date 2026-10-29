@@ -38,6 +38,7 @@ public static class WidgetPalette
     public static readonly Color Indigo = Color.FromRgb(63, 81, 181);
     public static readonly Color Pink = Color.FromRgb(236, 64, 122);
     public static readonly Color Gray = Color.FromRgb(158, 158, 158);
+    public static readonly Color Yellow = Color.FromRgb(255, 193, 7);
 
     public static SKColor Sk(Color c) => new(c.R, c.G, c.B, c.A);
 
@@ -51,7 +52,14 @@ public static class WidgetPalette
 /// </summary>
 public static class WidgetCards
 {
-    public const double CardMaxHeight = 240;
+    public const double CardMaxHeight = 320;
+
+    /// <summary>
+    /// The smallest text a widget, chart, legend or axis uses: Windows'
+    /// caption size. The app's text-size setting scales it with the rest of
+    /// the page; nothing in a card shrinks to fit.
+    /// </summary>
+    public const double CaptionSize = 12;
     private const double DonutSize = 130;
     private const double TreemapHeight = 120;
 
@@ -81,7 +89,7 @@ public static class WidgetCards
         {
             header.Children.Add(new TextBlock
             {
-                Text = "", FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 10,
+                Text = "", FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = CaptionSize,
                 Foreground = Medium, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0),
             });
             header.Cursor = Cursors.Hand;
@@ -101,7 +109,7 @@ public static class WidgetCards
         {
             Style = (Style)Application.Current.FindResource("CardStyle"),
             MaxHeight = CardMaxHeight,
-            VerticalAlignment = VerticalAlignment.Top,
+            VerticalAlignment = VerticalAlignment.Stretch,
             Child = new DockPanel { Children = { header, content } },
         };
         DockPanel.SetDock(header, Dock.Top);
@@ -116,54 +124,91 @@ public static class WidgetCards
     public static UIElement ChartOr(bool hasData, bool loading, string emptyMessage, Func<UIElement> chart) =>
         hasData ? chart() : loading ? Skeleton() : Empty(emptyMessage);
 
-    /// <summary>KPI tiles stacked in one cell, each its own tile; a tile with an action is a button.</summary>
-    public static StackPanel KpiStack(IEnumerable<KpiTile> tiles)
+    /// <summary>KPI tiles stacked in one cell, sharing its height; a tile with an action is a button.</summary>
+    public static Grid KpiStack(IEnumerable<KpiTile> tiles) => KpiColumn(tiles);
+
+    /// <summary>
+    /// KPI tiles that share the cell's height: in an equal-height row
+    /// (<see cref="WidgetFlowPanel.EqualHeights"/>) the column ends level
+    /// with the chart cards beside it instead of leaving a gap below.
+    /// </summary>
+    public static Grid KpiColumn(IEnumerable<KpiTile> tiles)
     {
-        var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
-        foreach (var tile in tiles)
+        var grid = new Grid { VerticalAlignment = VerticalAlignment.Stretch };
+        var list = tiles.ToList();
+        for (var i = 0; i < list.Count; i++)
         {
-            var color = (Color)ColorConverter.ConvertFromString(tile.ColorHex);
-            var row = new DockPanel();
-            var glyph = new TextBlock
-            {
-                Text = tile.Glyph, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 20,
-                Foreground = new SolidColorBrush(color), VerticalAlignment = VerticalAlignment.Center,
-                Width = 28, Margin = new Thickness(0, 0, 10, 0),
-            };
-            DockPanel.SetDock(glyph, Dock.Left);
-            row.Children.Add(glyph);
-
-            UIElement value = tile.Loading
-                ? SkeletonBlock(60, 22, new Thickness(0, 2, 0, 3))
-                : new TextBlock { Text = tile.Value, FontSize = 22, FontWeight = FontWeights.Bold };
-            row.Children.Add(new StackPanel
-            {
-                VerticalAlignment = VerticalAlignment.Center,
-                Children = { value, new TextBlock { Text = tile.Title, FontSize = 11, Foreground = Medium } },
-            });
-
-            var card = new Border
-            {
-                Style = (Style)Application.Current.FindResource("CardStyle"),
-                Padding = new Thickness(12, 10, 12, 10),
-                Margin = new Thickness(0, 0, 0, 8),
-                Child = row,
-            };
-            System.Windows.Automation.AutomationProperties.SetName(card, $"{tile.Title}: {tile.Value}");
-            if (tile.Open is { } open)
-            {
-                card.Cursor = Cursors.Hand;
-                card.MouseEnter += (_, _) => card.Opacity = 0.85;
-                card.MouseLeave += (_, _) => card.Opacity = 1;
-                card.MouseLeftButtonUp += (_, _) => open();
-            }
-            stack.Children.Add(card);
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            var card = KpiCard(list[i], new Thickness(0, 0, 0, i == list.Count - 1 ? 0 : 8));
+            card.VerticalAlignment = VerticalAlignment.Stretch;
+            Grid.SetRow(card, i);
+            grid.Children.Add(card);
         }
-
-        if (stack.Children.Count > 0 && stack.Children[^1] is Border last) last.Margin = new Thickness(0);
-        WidgetFlowPanel.SetUnits(stack, 1);
-        return stack;
+        WidgetFlowPanel.SetUnits(grid, 1);
+        return grid;
     }
+
+    private static Border KpiCard(KpiTile tile, Thickness margin)
+    {
+        var color = (Color)ColorConverter.ConvertFromString(tile.ColorHex);
+        var row = new DockPanel { VerticalAlignment = VerticalAlignment.Center };
+        var glyph = new TextBlock
+        {
+            Text = tile.Glyph, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 20,
+            Foreground = new SolidColorBrush(color), VerticalAlignment = VerticalAlignment.Center,
+            Width = 28, Margin = new Thickness(0, 0, 10, 0),
+        };
+        DockPanel.SetDock(glyph, Dock.Left);
+        row.Children.Add(glyph);
+
+        UIElement value = tile.Loading
+            ? SkeletonBlock(60, 22, new Thickness(0, 2, 0, 3))
+            : new TextBlock { Text = tile.Value, FontSize = 22, FontWeight = FontWeights.Bold };
+        row.Children.Add(new StackPanel
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { value, new TextBlock { Text = tile.Title, FontSize = CaptionSize, Foreground = Medium } },
+        });
+
+        var card = new Border
+        {
+            Style = (Style)Application.Current.FindResource("CardStyle"),
+            Padding = new Thickness(12, 10, 12, 10),
+            Margin = margin,
+            Child = row,
+        };
+        System.Windows.Automation.AutomationProperties.SetName(card, $"{tile.Title}: {tile.Value}");
+        if (tile.Open is { } open)
+        {
+            card.Cursor = Cursors.Hand;
+            card.MouseEnter += (_, _) => card.Opacity = 0.85;
+            card.MouseLeave += (_, _) => card.Opacity = 1;
+            card.MouseLeftButtonUp += (_, _) => open();
+        }
+        return card;
+    }
+
+    /// <summary>
+    /// A card with nothing to chart: one centred line in the card's own
+    /// height, rather than zero figures over a lone "none" message.
+    /// </summary>
+    public static UIElement AllClear(string title, string detail) => new StackPanel
+    {
+        VerticalAlignment = VerticalAlignment.Center,
+        HorizontalAlignment = HorizontalAlignment.Center,
+        Margin = new Thickness(0, 8, 0, 8),
+        Children =
+        {
+            new TextBlock
+            {
+                Text = "", FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 20,
+                Foreground = new SolidColorBrush(WidgetPalette.Green), HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 0, 0, 4),
+            },
+            new TextBlock { Text = title, FontSize = 13, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center },
+            new TextBlock { Text = detail, FontSize = CaptionSize, Foreground = Medium, HorizontalAlignment = HorizontalAlignment.Center },
+        },
+    };
 
     // MARK: - Donut
 
@@ -270,7 +315,7 @@ public static class WidgetCards
             };
             var label = new TextBlock
             {
-                Text = DisplayLabel(slice), FontSize = 11,
+                Text = DisplayLabel(slice), FontSize = CaptionSize,
                 TextWrapping = singleLine ? TextWrapping.NoWrap : TextWrapping.Wrap,
                 MaxHeight = 30, TextTrimming = TextTrimming.CharacterEllipsis,
             };
@@ -282,7 +327,7 @@ public static class WidgetCards
             }
             var count = new TextBlock
             {
-                Text = slice.Value.ToString("N0"), FontSize = 11, FontWeight = FontWeights.Medium,
+                Text = slice.Value.ToString("N0"), FontSize = CaptionSize, FontWeight = FontWeights.Medium,
                 Foreground = Medium, Margin = new Thickness(6, 0, 0, 0),
             };
             Grid.SetColumn(label, 1);
@@ -347,7 +392,7 @@ public static class WidgetCards
 
             var label = new TextBlock
             {
-                Text = slice.Label, FontSize = 11, Foreground = Medium, TextTrimming = TextTrimming.CharacterEllipsis,
+                Text = slice.Label, FontSize = CaptionSize, Foreground = Medium, TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 3, narrow ? 5 : 8, 3), Opacity = opacity,
             };
             var value = Math.Max(slice.Value, 0);
@@ -358,7 +403,7 @@ public static class WidgetCards
             track.Children.Add(bar);
             var count = new TextBlock
             {
-                Text = slice.Value.ToString("N0"), FontSize = 11, FontWeight = FontWeights.Medium, Foreground = Medium,
+                Text = slice.Value.ToString("N0"), FontSize = CaptionSize, FontWeight = FontWeights.Medium, Foreground = Medium,
                 VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right,
                 Margin = new Thickness(0, 3, 0, 3), Opacity = opacity,
             };
@@ -439,12 +484,12 @@ public static class WidgetCards
                         {
                             new TextBlock
                             {
-                                Text = slice.Label, Foreground = Brushes.White, FontSize = 11, FontWeight = FontWeights.Bold,
+                                Text = slice.Label, Foreground = Brushes.White, FontSize = CaptionSize, FontWeight = FontWeights.Bold,
                                 TextTrimming = TextTrimming.CharacterEllipsis, HorizontalAlignment = HorizontalAlignment.Center,
                             },
                             new TextBlock
                             {
-                                Text = slice.Value.ToString("N0"), Foreground = Brushes.White, FontSize = 11,
+                                Text = slice.Value.ToString("N0"), Foreground = Brushes.White, FontSize = CaptionSize,
                                 HorizontalAlignment = HorizontalAlignment.Center,
                             },
                         },
@@ -476,8 +521,8 @@ public static class WidgetCards
                 Width = 7, Height = 7, Fill = new SolidColorBrush(ColorAt(i)),
                 VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0),
             });
-            entry.Children.Add(new TextBlock { Text = slice.Label, FontSize = 11, Foreground = Medium, Margin = new Thickness(0, 0, 4, 0) });
-            entry.Children.Add(new TextBlock { Text = slice.Value.ToString("N0"), FontSize = 11, FontWeight = FontWeights.Medium });
+            entry.Children.Add(new TextBlock { Text = slice.Label, FontSize = CaptionSize, Foreground = Medium, Margin = new Thickness(0, 0, 4, 0) });
+            entry.Children.Add(new TextBlock { Text = slice.Value.ToString("N0"), FontSize = CaptionSize, FontWeight = FontWeights.Medium });
             if (onClick != null)
             {
                 entry.Cursor = Cursors.Hand;
@@ -633,7 +678,7 @@ public static class WidgetCards
         var stack = new StackPanel();
         if (rows.Count == 0)
         {
-            stack.Children.Add(new TextBlock { Text = "Nothing here.", FontSize = 11, Foreground = Medium });
+            stack.Children.Add(new TextBlock { Text = "Nothing here.", FontSize = CaptionSize, Foreground = Medium });
             return stack;
         }
 
@@ -643,7 +688,7 @@ public static class WidgetCards
         {
             var more = new Button
             {
-                Content = $"Show all {rows.Count}", FontSize = 11, Padding = new Thickness(8, 2, 8, 2),
+                Content = $"Show all {rows.Count}", FontSize = CaptionSize, Padding = new Thickness(8, 2, 8, 2),
                 Margin = new Thickness(0, 4, 0, 0), HorizontalAlignment = HorizontalAlignment.Left,
             };
             more.Click += (_, _) => WidgetListWindow.Show(title, rows);
@@ -658,7 +703,7 @@ public static class WidgetCards
         var panel = new StackPanel { Margin = new Thickness(0, 2, 0, 2), Background = Brushes.Transparent };
         panel.Children.Add(new TextBlock { Text = row.Title, FontSize = 12, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = row.Title });
         if (!string.IsNullOrEmpty(row.Detail))
-            panel.Children.Add(new TextBlock { Text = row.Detail, FontSize = 10, Foreground = Medium, TextTrimming = TextTrimming.CharacterEllipsis });
+            panel.Children.Add(new TextBlock { Text = row.Detail, FontSize = CaptionSize, Foreground = Medium, TextTrimming = TextTrimming.CharacterEllipsis });
         if (row.Open != null)
         {
             panel.Cursor = Cursors.Hand;
@@ -668,7 +713,7 @@ public static class WidgetCards
     }
 
     public static TextBlock Caption(string text) =>
-        new() { Text = text, FontSize = 10, Margin = new Thickness(0, 4, 0, 0), Foreground = Medium };
+        new() { Text = text, FontSize = CaptionSize, Margin = new Thickness(0, 4, 0, 0), Foreground = Medium };
 }
 
 /// <summary>The full list behind a list card's "Show all N".</summary>

@@ -78,15 +78,8 @@ public class DevelopmentSectionTests
     [InlineData(3, false, true)]
     [InlineData(0, false, false)]
     [InlineData(0, true, true)]
-    public void Inbox_SegmentShowsWhileUnreadOrOpen(int unread, bool open, bool expected) =>
-        Assert.Equal(expected, DevelopmentFilter.ShowInboxSegment(unread, open));
-
-    [Theory]
-    [InlineData(0, true, true)]
-    [InlineData(2, true, false)]
-    [InlineData(0, false, false)]
-    public void Inbox_ReturningToAnEmptyOpenInboxOpensPulls(int unread, bool open, bool expected) =>
-        Assert.Equal(expected, DevelopmentFilter.LeaveEmptyInbox(unread, open));
+    public void Inbox_ButtonShowsWhileUnreadOrOpen(int unread, bool open, bool expected) =>
+        Assert.Equal(expected, DevelopmentFilter.ShowInboxButton(unread, open));
 
     [Fact]
     public void Inbox_UnreadOnlyUnlessAll()

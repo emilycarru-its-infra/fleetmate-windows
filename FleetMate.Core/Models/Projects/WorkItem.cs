@@ -80,6 +80,12 @@ public class WorkItemFields
     [JsonPropertyName("System.TeamProject")]
     public string? TeamProject { get; set; }
 
+    [JsonPropertyName("System.BoardColumn")]
+    public string? BoardColumn { get; set; }
+
+    [JsonPropertyName("Microsoft.VSTS.Scheduling.DueDate")]
+    public DateTime? DueDate { get; set; }
+
     [JsonPropertyName("System.Reason")]
     public string? Reason { get; set; }
 

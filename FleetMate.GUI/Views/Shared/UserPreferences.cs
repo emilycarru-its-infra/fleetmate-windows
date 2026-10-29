@@ -51,6 +51,39 @@ public static class UserPreferences
     public static void SetTerminalFontOffset(double offset) =>
         Write("agentTerminalFontOffset", offset == 0 ? null : offset.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
+    /// <summary>The terminal was last open filling the window rather than split (the macOS app's key).</summary>
+    /// Full window until the person has used it split.
+    public static bool TerminalLastFullWindow => Read("agentTerminalLastFullWindow") != "0";
+
+    public static void SetTerminalLastFullWindow(bool on) => Write("agentTerminalLastFullWindow", on ? "1" : "0");
+
+    /// <summary>The terminal session list's width, dragged at its divider (the macOS app's key).</summary>
+    public static double? TerminalListWidth =>
+        double.TryParse(Read("agentTerminalListWidth"), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var value) && double.IsFinite(value) ? value : null;
+
+    public static void SetTerminalListWidth(double width) =>
+        Write("agentTerminalListWidth", width.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    /// <summary>The session list's status filters and sort, with the macOS app's keys.</summary>
+    public static bool TerminalFilterActive => Read("agentTerminalFilterActive") == "1";
+    public static bool TerminalFilterRunning => Read("agentTerminalFilterRunning") == "1";
+    public static bool TerminalFilterPaused => Read("agentTerminalFilterPaused") == "1";
+
+    public static void SetTerminalFilters(bool active, bool running, bool paused)
+    {
+        Write("agentTerminalFilterActive", active ? "1" : null);
+        Write("agentTerminalFilterRunning", running ? "1" : null);
+        Write("agentTerminalFilterPaused", paused ? "1" : null);
+    }
+
+    public static FleetMate.Core.Services.Terminal.TerminalSessionSort TerminalSort =>
+        FleetMate.Core.Services.Terminal.TerminalSessionSortNames.Parse(Read("agentTerminalSortMode"));
+
+    public static void SetTerminalSort(FleetMate.Core.Services.Terminal.TerminalSessionSort sort) =>
+        Write("agentTerminalSortMode", sort == FleetMate.Core.Services.Terminal.TerminalSessionSort.Manual
+            ? null : FleetMate.Core.Services.Terminal.TerminalSessionSortNames.Key(sort));
+
     public static bool SetupCompleted => Read("SetupCompleted") == "1";
 
     public static void MarkSetupCompleted() => Write("SetupCompleted", "1");

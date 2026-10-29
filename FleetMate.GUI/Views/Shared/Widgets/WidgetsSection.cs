@@ -16,8 +16,11 @@ public interface IWidgetFilterHost
 
 /// <summary>
 /// Whether each tab's widgets are shown — the toolbar Graphs button's state.
-/// Kept per tab in HKCU\SOFTWARE\FleetMate under <c>widgets.collapsed.&lt;Tab&gt;</c>;
-/// shown by default.
+/// Kept per tab in HKCU\SOFTWARE\FleetMate under <c>widgets.collapsed.&lt;Tab&gt;</c>.
+/// Development opens on the work itself — changes, diffs, commits — so its
+/// graphs start hidden; every other tab starts with them shown. Development
+/// and Projects changed default, so their keys carry <c>.v2</c>: a choice
+/// stored before the change does not override the new default.
 /// </summary>
 public static class WidgetVisibility
 {
@@ -26,18 +29,22 @@ public static class WidgetVisibility
     /// <summary>Raised with the tab whose widgets were shown or hidden.</summary>
     public static event Action<string>? Changed;
 
-    public static string PersistenceKey(string tab) => $"widgets.collapsed.{tab}";
+    public static string PersistenceKey(string tab) =>
+        tab is "Development" or "Projects" ? $"widgets.collapsed.{tab}.v2" : $"widgets.collapsed.{tab}";
+
+    /// <summary>Whether <paramref name="tab"/>'s graphs show before anyone has chosen.</summary>
+    public static bool ShownByDefault(string tab) => tab != "Development";
 
     public static bool IsShown(string tab)
     {
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(RegistryPath);
-            return key?.GetValue(PersistenceKey(tab)) is not int value || value == 0;
+            return key?.GetValue(PersistenceKey(tab)) is int value ? value == 0 : ShownByDefault(tab);
         }
         catch
         {
-            return true;
+            return ShownByDefault(tab);
         }
     }
 
@@ -69,6 +76,22 @@ public sealed class WidgetsSection : StackPanel
     private static readonly Duration RevealDuration = new(TimeSpan.FromMilliseconds(220));
 
     private readonly WidgetFlowPanel _flow = new() { Margin = new Thickness(0, 0, 0, 4) };
+    private readonly ScrollViewer _scroll = new()
+    {
+        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        Focusable = false,
+    };
+
+    /// <summary>
+    /// The most of the page the strip may take; past it the strip scrolls
+    /// inside itself, so the page's own content keeps the screen.
+    /// </summary>
+    public double MaxStripHeight
+    {
+        get => _scroll.MaxHeight;
+        set => _scroll.MaxHeight = value;
+    }
     private readonly TranslateTransform _slide = new();
     private bool _dirty = true;
 
@@ -119,7 +142,8 @@ public sealed class WidgetsSection : StackPanel
     {
         Margin = new Thickness(0, 0, 0, 8);
         RenderTransform = _slide;
-        Children.Add(_flow);
+        _scroll.Content = _flow;
+        Children.Add(_scroll);
 
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;

@@ -59,6 +59,37 @@ public class AppShortcutsTests
         Assert.False(history.CanGoForward);
     }
 
+    // Sub-tabs are places in history too: Back from Commits returns to Pulls
+    // in the same tab before it leaves the tab.
+    [Fact]
+    public void BackRetracesSubTabsWithinATab()
+    {
+        var history = new TabHistory();
+        var repos = new NavigationLocation("Development", "Repos");
+        var pulls = new NavigationLocation("Development", "Pulls");
+        var commits = new NavigationLocation("Development", "Commits");
+        var tickets = new NavigationLocation("Tickets", "Board");
+        history.Visit(repos, pulls);
+        history.Visit(pulls, commits);
+        history.Visit(commits, tickets);
+
+        Assert.Equal(commits, history.Back(tickets));
+        Assert.Equal(pulls, history.Back(commits));
+        Assert.Equal(repos, history.Back(pulls));
+        Assert.False(history.CanGoBack);
+        Assert.Equal(pulls, history.Forward(repos));
+    }
+
+    [Fact]
+    public void ReturningToTheSamePlaceRecordsNothing()
+    {
+        var history = new TabHistory();
+        var place = new NavigationLocation("Projects", "Queries");
+        history.Visit(place, place);
+
+        Assert.False(history.CanGoBack);
+    }
+
     [Fact]
     public void ZoomStaysInTheMacRange()
     {

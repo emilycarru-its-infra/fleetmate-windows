@@ -91,9 +91,9 @@ public static class TicketWidgets
     /// of three where there is not (<see cref="KpiTilePanel"/>). Each is a
     /// button.
     /// </summary>
-    private static Border KpiGrid(IReadOnlyList<Tile> tiles, bool waiting)
+    internal static Border KpiGrid(IReadOnlyList<Tile> tiles, bool waiting, int units = 1, int maxColumns = 3)
     {
-        var grid = new KpiTilePanel();
+        var grid = new KpiTilePanel { MaxColumns = maxColumns };
         foreach (var t in tiles) grid.Children.Add(TileView(t, waiting));
 
         var card = new Border
@@ -103,7 +103,7 @@ public static class TicketWidgets
             VerticalAlignment = VerticalAlignment.Stretch,
             Child = grid,
         };
-        WidgetFlowPanel.SetUnits(card, 1);
+        WidgetFlowPanel.SetUnits(card, units);
         return card;
     }
 
@@ -132,7 +132,7 @@ public static class TicketWidgets
                 Children =
                 {
                     top,
-                    new TextBlock { Text = t.Title, FontSize = 11, Foreground = medium, TextTrimming = TextTrimming.CharacterEllipsis },
+                    new TextBlock { Text = t.Title, FontSize = WidgetCards.CaptionSize, Foreground = medium, TextTrimming = TextTrimming.CharacterEllipsis },
                 },
             },
             Padding = new Thickness(7, 4, 7, 4),

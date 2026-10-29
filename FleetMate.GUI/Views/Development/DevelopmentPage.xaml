@@ -9,32 +9,13 @@
     <Grid Margin="16,14,16,16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+        <!-- No page heading: the tab bar names the tab, and the sub-tabs,
+             Inbox and Refresh sit in the window's title bar, as on Mac. -->
+        <widgets:WidgetsSection x:Name="Widgets" Grid.Row="0" Tab="Development" Margin="0,0,0,0" />
 
-            <StackPanel Grid.Column="0">
-                <TextBlock Text="Development" Style="{StaticResource TitleTextStyle}" />
-                <TextBlock Text="Every open pull request across Azure DevOps and GitHub, and your GitHub inbox"
-                           Style="{StaticResource SubtitleTextStyle}" />
-            </StackPanel>
-
-            <!-- Activity moved to the toolbar Recent Activity popover. -->
-            <ui:SimpleStackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                <Button Click="OnRefreshClicked" ToolTip="Refresh pull requests, inbox, commits and pipelines">
-                    <ui:SymbolIcon Symbol="Refresh" />
-                </Button>
-            </ui:SimpleStackPanel>
-        </Grid>
-
-        <widgets:WidgetsSection x:Name="Widgets" Grid.Row="1" Tab="Development" Margin="0,14,0,0" />
-
-        <local:DevelopmentView x:Name="View" Grid.Row="2" Margin="0,8,0,0" />
+        <local:DevelopmentView x:Name="View" Grid.Row="1" Margin="0,8,0,0" />
     </Grid>
 </Page>

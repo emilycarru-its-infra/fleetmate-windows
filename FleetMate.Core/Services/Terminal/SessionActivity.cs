@@ -17,10 +17,18 @@ public sealed class SessionActivity
     private bool _attention;
     private bool _exited;
 
-    public void Output(DateTime now) => _lastOutput = now;
+    /// <summary>When the session last printed or rang its bell; null until it has.</summary>
+    public DateTime? LastActivity { get; private set; }
+
+    public void Output(DateTime now)
+    {
+        _lastOutput = now;
+        LastActivity = now;
+    }
 
     public void Bell(bool visible)
     {
+        LastActivity = DateTime.UtcNow;
         if (!visible && !_exited) _attention = true;
     }
 
@@ -208,6 +216,17 @@ public sealed class TerminalLayoutState
         _dragHeight = null;
         Height = Clamp(available / 2, available);
         RestoreHeight = Height;
+    }
+
+    /// <summary>
+    /// Open in the mode the terminal was last used in, from a saved
+    /// preference; the height to restore is the current one.
+    /// </summary>
+    public void RestoreMode(bool fullWindow)
+    {
+        if (fullWindow && !FullWindow) RestoreHeight = Height;
+        FullWindow = fullWindow;
+        _dragHeight = null;
     }
 
     public void Toggle(double available)

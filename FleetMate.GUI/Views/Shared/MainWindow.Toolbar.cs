@@ -12,7 +12,10 @@ namespace FleetMate.GUI.Views.Shared;
 /// tooltip). If that is not enough, inactive tabs drop to their icon (name in
 /// the tooltip; the selected tab keeps its name). If even that does not fit,
 /// the tab bar slides left off center just far enough to clear the right-hand
-/// group, so nothing overlaps.
+/// group, so nothing overlaps. The leading group (Back, Forward and the tab's
+/// sub-tabs) takes the room left of the tab bar; when that is too little, the
+/// sub-tabs fold into one pill naming the open one, as the macOS toolbar folds
+/// its segments in a narrow window.
 /// </summary>
 public partial class MainWindow
 {
@@ -46,6 +49,9 @@ public partial class MainWindow
         SizeChanged += (_, _) => FitToolbar();
         // The elevation label and Graphs button come and go; refit when they do.
         ToolbarRight.SizeChanged += (_, e) => { if (e.WidthChanged) FitToolbar(); };
+        // So does a tab's Inbox button, and the tab bar's names.
+        ToolbarLeft.SizeChanged += (_, e) => { if (e.WidthChanged) FitToolbar(); };
+        TabBarBorder.SizeChanged += (_, e) => { if (e.WidthChanged) FitToolbar(); };
         FitToolbar();
     }
 
@@ -98,8 +104,10 @@ public partial class MainWindow
         var rightNow = ToolbarRight.ActualWidth + ToolbarRight.Margin.Right;
         var fullRight = _compactRight ? rightNow + savings : rightNow;
 
-        var fit = Fit(ActualWidth - 24, fullTabs, compactTabs, fullRight, fullRight - savings, ToolbarGap);
+        var leftMin = LeadingMinimum();
+        var fit = Fit(ActualWidth - 24, fullTabs, compactTabs, fullRight, fullRight - savings, ToolbarGap, leftMin);
         TabBarBorder.RenderTransform = fit.Shift > 0 ? new TranslateTransform(-fit.Shift, 0) : null;
+        FitPageSegments(fit.Shift);
 
         if (fit.CompactRight != _compactRight)
         {
@@ -118,13 +126,79 @@ public partial class MainWindow
     /// <paramref name="compactRight"/>); only then do inactive tab names
     /// collapse, and last the tab bar moves left by <c>Shift</c>.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="left"/> is the least the leading group can shrink to,
+    /// Back and Forward with the sub-tabs folded: the right group yields for it
+    /// too, and the tab bar never slides over it.
+    /// </remarks>
     internal static (bool CompactRight, bool CompactTabs, double Shift) Fit(
-        double width, double fullTabs, double compactTabs, double right, double compactRight, double gap)
+        double width, double fullTabs, double compactTabs, double right, double compactRight, double gap,
+        double left = 0)
     {
         double Overflow(double tabs, double group) => tabs / 2 + gap + group - width / 2;
-        if (Overflow(fullTabs, right) <= 0) return (false, false, 0);
-        if (Overflow(fullTabs, compactRight) <= 0) return (true, false, 0);
-        return (true, true, Math.Max(0, Overflow(compactTabs, compactRight)));
+        bool Fits(double tabs, double group) => Overflow(tabs, group) <= 0 && Overflow(tabs, left) <= 0;
+        if (Fits(fullTabs, right)) return (false, false, 0);
+        if (Fits(fullTabs, compactRight)) return (true, false, 0);
+        var room = left > 0 ? Math.Max(0, -Overflow(compactTabs, left)) : double.MaxValue;
+        return (true, true, Math.Min(room, Math.Max(0, Overflow(compactTabs, compactRight))));
+    }
+
+    /// <summary>A folded sub-tab pill's width, near enough, for keeping room for it.</summary>
+    private const double FoldedSegmentsWidth = 96;
+
+    /// <summary>Agent and Back and Forward: the leading buttons that never fold.</summary>
+    private double LeadingButtonsWidth =>
+        TerminalToggleButton.ActualWidth + TerminalToggleButton.Margin.Left + TerminalToggleButton.Margin.Right
+        + HistoryButtons.ActualWidth;
+
+    /// <summary>Agent, Back and Forward, plus the showing tab's toolbar with its sub-tabs folded.</summary>
+    private double LeadingMinimum()
+    {
+        var history = LeadingButtonsWidth;
+        if (PageToolbarHost.Child is not FrameworkElement toolbar || PageToolbarHost.Visibility != Visibility.Visible)
+            return history;
+        var (_, others) = SegmentsOf(toolbar);
+        return history + PageToolbarHost.Margin.Left + others + FoldedSegmentsWidth;
+    }
+
+    /// <summary>
+    /// The showing tab's segment pill, if it has one, and the width of the rest
+    /// of its toolbar (its Inbox, Refresh and the like), which never folds.
+    /// </summary>
+    private static (SegmentMenuButton? Pill, double Others) SegmentsOf(FrameworkElement toolbar)
+    {
+        var pill = FindPill(toolbar);
+        if (pill?.Parent is not FrameworkElement segmentHost || toolbar is not Panel panel || ReferenceEquals(segmentHost, toolbar))
+            return (pill, 0);
+        var others = panel.Children.OfType<FrameworkElement>()
+            .Where(c => !ReferenceEquals(c, segmentHost) && c.Visibility == Visibility.Visible)
+            .Sum(c => c.ActualWidth + c.Margin.Left + c.Margin.Right);
+        return (pill, others);
+    }
+
+    private static SegmentMenuButton? FindPill(DependencyObject root)
+    {
+        foreach (var child in LogicalTreeHelper.GetChildren(root).OfType<DependencyObject>())
+        {
+            if (child is SegmentMenuButton pill) return pill;
+            if (FindPill(child) is { } nested) return nested;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Give the showing tab's sub-tabs the room between Back and Forward and the
+    /// tab bar's left edge, so they fold into their pill only when they would
+    /// run into the tabs.
+    /// </summary>
+    private void FitPageSegments(double shift)
+    {
+        if (PageToolbarHost.Child is not FrameworkElement toolbar) return;
+        var (pill, others) = SegmentsOf(toolbar);
+        if (pill == null) return;
+        var tabsLeft = (ToolbarGrid.ActualWidth - TabBarBorder.ActualWidth) / 2 - shift;
+        var room = tabsLeft - ToolbarGap - LeadingButtonsWidth - PageToolbarHost.Margin.Left - others;
+        pill.AvailableWidth = Math.Max(1, room);
     }
 
     /// <summary>Narrow the search field and drop the elevation label, or put them back.</summary>

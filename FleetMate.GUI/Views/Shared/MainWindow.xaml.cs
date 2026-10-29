@@ -26,6 +26,7 @@ public partial class MainWindow : Window
         // Development is the launch tab; there is no Dashboard. TicketsMate
         // opens on Tickets, the only tab it has.
         ContentFrame.Navigate(GetOrCreatePage(LaunchTab));
+        HostPageToolbar(GetOrCreatePage(LaunchTab));
         (TicketsOnly ? TabTickets : TabDevelopment).IsChecked = true;
         if (TicketsOnly) ApplyTicketsOnlyChrome();
         UpdateGraphsButton();
@@ -52,6 +53,8 @@ public partial class MainWindow : Window
         // The bar below the panel stays on the window edge and holds show,
         // hide and full window.
         TerminalStrip.Panel = Terminal;
+        // The terminal opens in the mode it was last used in, split or full window.
+        _terminalLayout.RestoreMode(UserPreferences.TerminalLastFullWindow);
         TerminalStrip.ShowRequested += (_, _) => SetTerminalVisible(true);
         TerminalStrip.HideRequested += (_, _) => SetTerminalVisible(false);
         TerminalStrip.SplitViewRequested += (_, _) => {
@@ -77,12 +80,35 @@ public partial class MainWindow : Window
         }
         // An agent session started at launch must not take the keyboard.
         // TicketsMate has no terminal.
-        if (!TicketsOnly && Application.Current is App { Config.Terminal.AgentAutoStart: true })
-            Loaded += (_, _) =>
-            {
-                SetTerminalVisible(true, takeFocus: false);
-                Terminal.OpenDefaultSession(takeFocus: false);
-            };
+        // A saved workspace named to open at launch takes the place of the
+        // single session that otherwise starts.
+        Terminal.IsFullWindow = () => _terminalLayout.FullWindow && Terminal.Visibility == Visibility.Visible;
+        Terminal.WorkspaceShowRequested += fullWindow =>
+        {
+            SetTerminalVisible(true, takeFocus: false);
+            _terminalLayout.RestoreMode(fullWindow);
+            ApplyTerminalLayout();
+        };
+        Terminal.ReposRequested += (_, _) => { SetTerminalVisible(false); NavigateToTab("Development"); };
+        if (!TicketsOnly) TerminalPanel.SeedBaselineWorkspaceIfNeeded();
+        var launchWorkspace = TicketsOnly ? null : LaunchWorkspace();
+        if (launchWorkspace != null)
+            Loaded += (_, _) => Terminal.OpenWorkspace(launchWorkspace);
+        else if (!TicketsOnly && Application.Current is App { Config.Terminal.AgentAutoStart: true })
+            // Ready behind the Agent button rather than taking the window:
+            // the terminal opens full window by default.
+            Loaded += (_, _) => Terminal.OpenDefaultSession(takeFocus: false);
+    }
+
+    /// <summary>The workspace terminal-workspaces.json names to open at launch, or null.</summary>
+    private static FleetMate.Core.Services.Terminal.TerminalWorkspace? LaunchWorkspace()
+    {
+        try { return FleetMate.Core.Services.Terminal.TerminalWorkspaceStore.Load().LaunchWorkspace; }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Terminal workspaces: could not read {Path}", FleetMate.Core.Services.Terminal.TerminalWorkspaceStore.DefaultPath);
+            return null;
+        }
     }
 
     // ── Elevation status ──────────────────────────────────────────
@@ -159,7 +185,7 @@ public partial class MainWindow : Window
     {
         const System.Windows.Input.ModifierKeys Ctrl = System.Windows.Input.ModifierKeys.Control;
         const System.Windows.Input.ModifierKeys Shift = System.Windows.Input.ModifierKeys.Shift;
-        return (key == System.Windows.Input.Key.Oem3 && mods == Ctrl)
+        return ((key == System.Windows.Input.Key.Oem3 || key == System.Windows.Input.Key.J) && mods == Ctrl)
             || (key == System.Windows.Input.Key.T && (mods == Ctrl || mods == (Ctrl | Shift)))
             || (key == System.Windows.Input.Key.Enter && mods == (Ctrl | Shift));
     }
@@ -181,8 +207,10 @@ public partial class MainWindow : Window
         {
             // TicketsMate has no terminal; its keys do nothing.
         }
-        else if (key == System.Windows.Input.Key.Oem3 && mods == Ctrl)
+        else if ((key == System.Windows.Input.Key.Oem3 || key == System.Windows.Input.Key.J) && mods == Ctrl)
         {
+            // Ctrl+J or Ctrl+`: Agent mode on and off. Inside a terminal Ctrl+J
+            // stays the shell's newline; Ctrl+` works there too.
             ToggleTerminal();
             e.Handled = true;
         }
@@ -266,6 +294,8 @@ public partial class MainWindow : Window
     {
         var visible = Terminal.Visibility == Visibility.Visible;
         var full = visible && _terminalLayout.FullWindow;
+        if (visible && _terminalLayout.FullWindow != UserPreferences.TerminalLastFullWindow)
+            UserPreferences.SetTerminalLastFullWindow(_terminalLayout.FullWindow);
         TerminalDivider.Visibility = visible && !full ? Visibility.Visible : Visibility.Collapsed;
         TerminalStrip.SetState(visible, full);
         ContentFrame.Visibility = full ? Visibility.Hidden : Visibility.Visible;
@@ -316,9 +346,9 @@ public partial class MainWindow : Window
 
         Terminal.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         TerminalToggleButton.IsChecked = visible;
-        var label = visible ? "Hide Agent Terminal" : "Show Agent Terminal";
-        TerminalToggleButton.ToolTip = $"{label} (Ctrl+`)";
-        System.Windows.Automation.AutomationProperties.SetName(TerminalToggleButton, label);
+        var label = visible ? "Hide Agent" : "Show Agent";
+        TerminalToggleButton.ToolTip = $"{label} (Ctrl+J or Ctrl+`)";
+        System.Windows.Automation.AutomationProperties.SetName(TerminalToggleButton, "Agent");
         ApplyTerminalLayout();
         Terminal.OnVisibilityChanged();
         if (!visible)
@@ -362,7 +392,7 @@ public partial class MainWindow : Window
         if (ContentFrame == null) return; // Not yet initialized
         if (sender is RadioButton radio && radio.Tag is string tag)
         {
-            RecordTabVisit(tag);
+            RecordVisit(new NavigationLocation(tag, ChromeSections.Current(ToolbarOf(GetOrCreatePage(tag)))));
             NavigateToPage(tag);
             UpdateGraphsButton();
         }
@@ -435,12 +465,53 @@ public partial class MainWindow : Window
         FleetMate.GUI.Views.Terminal.ContextPublisher.Tab(tag);
         var page = GetOrCreatePage(tag);
         ContentFrame.Navigate(page);
+        HostPageToolbar(page);
         AttachSearchScope(page, tag);
     }
 
     public void ResetPageCache()
     {
         _pageCache.Clear();
+        // The page showing keeps its toolbar until the next tab change brings a new page.
+        _pageToolbars.Clear();
+    }
+
+    // ── Page toolbar in the title bar ─────────────────────────────
+
+    /// <summary>Each page's title-bar toolbar, lifted out of its markup the first time it is asked for.</summary>
+    private readonly Dictionary<Page, FrameworkElement?> _pageToolbars = new();
+
+    /// <summary>
+    /// The sub-tabs <paramref name="page"/> puts in the title bar, or null.
+    /// The element is taken out of the page's own tree once and kept with the
+    /// page, so the page's handlers and names keep working, and it reads the
+    /// page's data context wherever it is shown.
+    /// </summary>
+    private FrameworkElement? ToolbarOf(Page page)
+    {
+        if (_pageToolbars.TryGetValue(page, out var known)) return known;
+        var toolbar = (page as IChromeToolbar)?.ChromeToolbar;
+        if (toolbar != null)
+        {
+            switch (toolbar.Parent)
+            {
+                case Panel panel: panel.Children.Remove(toolbar); break;
+                case Decorator decorator: decorator.Child = null; break;
+                case ContentControl content: content.Content = null; break;
+            }
+            toolbar.SetBinding(DataContextProperty, new System.Windows.Data.Binding(nameof(DataContext)) { Source = page });
+        }
+        _pageToolbars[page] = toolbar;
+        return toolbar;
+    }
+
+    private void HostPageToolbar(Page page)
+    {
+        var toolbar = ToolbarOf(page);
+        if (ReferenceEquals(PageToolbarHost.Child, toolbar)) return;
+        PageToolbarHost.Child = toolbar;
+        PageToolbarHost.Visibility = toolbar == null ? Visibility.Collapsed : Visibility.Visible;
+        FitToolbar();
     }
 
     // ── Authentication popover ────────────────────────────────────
