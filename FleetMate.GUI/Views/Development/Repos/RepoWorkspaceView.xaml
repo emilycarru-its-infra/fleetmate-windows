@@ -168,8 +168,6 @@
             </DockPanel>
 
             <Grid>
-                <local:RepoInsightsView x:Name="Insights" Visibility="Collapsed" />
-
                 <Grid x:Name="PanelGrid">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="0.42*" MinWidth="300" />
