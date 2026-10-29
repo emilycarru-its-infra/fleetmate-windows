@@ -136,6 +136,11 @@ public class TdxConfig
         return string.IsNullOrEmpty(path) ? $"{baseUrl}/api/people" : $"{baseUrl}/api/people/{path}";
     }
 
+    /// <summary>Explicit web navigation bypasses the managed ticket-link handoff.
+    /// Copied and shared ticket links remain unmarked.</summary>
+    public string? GetTicketBrowserUrl(int ticketId) =>
+        GetTicketWebUrl(ticketId) is { } url ? $"{url}&ticketsmate=browser" : null;
+
     /// <summary>
     /// The TDNext page for a ticket — what "Open in TDX" and "Copy link" hand
     /// out. Built from the configured base URL with the Web API suffix removed,
