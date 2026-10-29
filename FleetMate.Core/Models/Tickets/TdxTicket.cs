@@ -621,6 +621,9 @@ public class TdxFeedEntry
     [JsonPropertyName("RepliesCount")]
     public int? RepliesCount { get; set; }
 
+    [JsonPropertyName("NotifiedList")]
+    public string? NotifiedList { get; set; }
+
     [JsonPropertyName("Replies")]
     public List<TdxFeedEntry>? Replies { get; set; }
 
@@ -646,6 +649,7 @@ public class TdxFeedEntry
         CreatedUid = CreatedUid,
         CreatedFullName = CreatedFullName,
         IsPrivate = IsPrivate,
+        NotifiedList = NotifiedList,
         IsRichHtml = IsRichHtml,
         Uri = Uri,
         Replies = replies,

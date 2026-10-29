@@ -769,6 +769,8 @@
                                                     </DockPanel>
                                                     <!-- Uncapped: a clipped comment reads as a rendering fault,
                                                          and the detail you need is often at the bottom. -->
+                                                    <TextBlock Text="{Binding NotificationRecipients}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+                                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                                     <TextBlock Text="{Binding StrippedBody}" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
                                                 </StackPanel>
                                             </Border>

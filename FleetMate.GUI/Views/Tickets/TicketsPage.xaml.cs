@@ -1476,7 +1476,12 @@ private bool _isInitialLoadDone;
                 CreatedFullName = f.CreatedFullName ?? "Unknown",
                 FormattedDate = FormatDate(f.CreatedDate),
                 StrippedBody = DecodeHtml(f.Body ?? ""),
-                IsPrivate = f.IsPrivate
+                IsPrivate = f.IsPrivate,
+                NotificationRecipients = f.NotifiedList is null
+                    ? "Notification recipients unavailable"
+                    : string.IsNullOrWhiteSpace(f.NotifiedList)
+                        ? "Notified: nobody"
+                        : $"Notified: {DecodeHtml(f.NotifiedList)}"
             }).ToList();
             
             FeedItemsControl.ItemsSource = displayFeed;
@@ -1800,6 +1805,7 @@ public class FeedDisplayItem
     public string FormattedDate { get; set; } = "";
     public string StrippedBody { get; set; } = "";
     public bool IsPrivate { get; set; }
+    public string NotificationRecipients { get; set; } = "Notification recipients unavailable";
 }
 
 /// <summary>A date-range choice for the Tickets toolbar.</summary>
