@@ -10,9 +10,9 @@ namespace FleetMate.GUI.Views.Devices;
 
 /// <summary>
 /// The device detail sidebar — the macOS DeviceDetailView, ported. Sections in
-/// the Mac's order: Summary, Group Membership, Enrollment &amp; Identity,
-/// Hardware, Compliance &amp; Conditional Access (with per-policy states), and
-/// Detected Apps. The async sections render into placeholders reserved at
+/// the Mac's order: Summary, Enrollment &amp; Identity, Recovery Secrets,
+/// Hardware, Group Membership, Compliance &amp; Conditional Access (with
+/// per-policy states), and Detected Apps. The async sections render into placeholders reserved at
 /// build time so they land in order, not at the bottom as they arrive.
 /// </summary>
 /// <summary>
@@ -58,8 +58,9 @@ public partial class DeviceDetailPanel : UserControl
         // here: the device management service.
         RenderEnrollment(device);
         RenderRecovery(device);
-        var groupsHost = Section("Group Membership", "");
         RenderHardware(device);
+        // Groups sit beside the compliance they usually explain.
+        var groupsHost = Section("Group Membership", "");
         var complianceHost = RenderCompliance(device);
         var appsHost = Section("Detected Apps", "");
 
