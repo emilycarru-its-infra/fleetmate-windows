@@ -866,8 +866,12 @@ private bool _isInitialLoadDone;
 
     private void OpenTicketInWeb(int ticketId)
     {
-        var url = TicketUrl(ticketId);
-        if (string.IsNullOrEmpty(url)) return;
+        var url = _app?.Config?.Tdx?.GetTicketBrowserUrl(ticketId);
+        if (string.IsNullOrEmpty(url))
+        {
+            ShowActionMessage("No TeamDynamix URL is configured.", isError: true);
+            return;
+        }
 
         try
         {

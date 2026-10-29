@@ -207,6 +207,16 @@ public class TicketWebUrlTests
     }
 
     [Fact]
+    public void ExplicitBrowserLinkBypassesHandoffWhileSharedLinkStaysUnmarked()
+    {
+        var config = new TdxConfig { BaseUrl = "https://tdx.example.edu/TDWebApi", AppId = 31, TicketingAppId = 44 };
+        var shared = "https://tdx.example.edu/TDNext/Apps/44/Tickets/TicketDet?TicketID=12345";
+        Assert.Equal(shared, config.GetTicketWebUrl(12345));
+        Assert.Equal(shared + "&ticketsmate=browser", config.GetTicketBrowserUrl(12345));
+        Assert.Null(new TdxConfig { AppId = 31 }.GetTicketBrowserUrl(1));
+    }
+
+    [Fact]
     public void NoBaseUrlMeansNoLink()
     {
         Assert.Null(new TdxConfig { AppId = 31 }.GetTicketWebUrl(1));
