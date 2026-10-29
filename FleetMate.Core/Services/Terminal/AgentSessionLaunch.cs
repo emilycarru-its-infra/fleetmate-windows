@@ -13,7 +13,7 @@ public static class AgentSessionLaunch
     /// </summary>
     public static (TerminalCommand Command, Dictionary<string, string> Environment) Prepare(
         TerminalCommand command, AgentSessionBrief brief, bool cliUpdatesManaged, bool codexNoDaemon,
-        Func<string, string?> findOnPath)
+        Func<string, string?> findOnPath, IReadOnlyList<string>? additionalDirectories = null)
     {
         var environment = new Dictionary<string, string>
         {
@@ -36,7 +36,7 @@ public static class AgentSessionLaunch
         var instructions = throughCmd ? AgentBrief.PointerInstructions : brief.CodexInstructions;
 
         var arguments = AgentBrief.LaunchArguments(command.FileName, command.Arguments, brief.BriefPath, instructions,
-            selfUpdate: !cliUpdatesManaged, codexNoDaemon: codexNoDaemon);
+            selfUpdate: !cliUpdatesManaged, codexNoDaemon: codexNoDaemon, additionalDirectories: additionalDirectories);
         var result = unwrapped != null
             ? new TerminalCommand(unwrapped.FileName, unwrapped.Arguments.Take(1).Concat(arguments).ToList())
             : new TerminalCommand(command.FileName, arguments);
