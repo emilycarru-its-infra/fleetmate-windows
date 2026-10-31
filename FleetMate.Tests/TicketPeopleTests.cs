@@ -39,7 +39,7 @@ public class TicketPeopleTests
         return service;
     }
 
-    private static readonly Guid PersonUid = Guid.Parse("e2f76b3b-0be3-ec11-997e-2818787b977c");
+    private static readonly Guid PersonUid = Guid.Parse("00000000-0000-4000-8000-000000000001");
 
     [Fact]
     public void PersonAttributesKeepOnlyUidValues()
@@ -47,8 +47,8 @@ public class TicketPeopleTests
         var ticket = JsonSerializer.Deserialize<TdxTicket>($$"""
             {"ID": 1, "Attributes": [
               {"ID": 10, "Name": "Primary Contact", "Value": "{{PersonUid}}", "ValueText": "A Person"},
-              {"ID": 11, "Name": "Intent", "Value": 28409, "ValueText": "Request"},
-              {"ID": 12, "Name": "Workflow Code", "Value": "Order in Progress"}
+              {"ID": 11, "Name": "Sample Choice", "Value": 1001, "ValueText": "Choice A"},
+              {"ID": 12, "Name": "Sample Text", "Value": "Some free text"}
             ]}
             """)!;
 
