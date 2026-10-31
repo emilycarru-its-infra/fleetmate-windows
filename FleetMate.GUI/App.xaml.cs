@@ -321,13 +321,20 @@ public partial class App : Application
     /// interactive fallback: when it cannot finish silently, TeamDynamix is
     /// marked failed with the reason. Concurrent callers share one attempt.
     /// </summary>
-    public Task AttemptSilentTdxSsoAsync()
+    public Task AttemptSilentTdxSsoAsync() => AttemptSilentTdxSsoAsync(renew: false);
+
+    /// <param name="renew">
+    /// Sign in again even while signed in, without reusing the saved session.
+    /// The inbox helper renews this way twice a day so the saved session stays
+    /// fresh for the window's next launch.
+    /// </param>
+    internal Task AttemptSilentTdxSsoAsync(bool renew)
     {
         if (_tdxSsoInFlight is { IsCompleted: false } running) return running;
-        return _tdxSsoInFlight = RunSilentTdxSsoAsync();
+        return _tdxSsoInFlight = RunSilentTdxSsoAsync(renew);
     }
 
-    private async Task RunSilentTdxSsoAsync()
+    private async Task RunSilentTdxSsoAsync(bool renew)
     {
         if (Config.Tdx == null || string.IsNullOrEmpty(Config.Tdx.BaseUrl) || !Config.Tdx.SsoEnabled)
         {
@@ -335,13 +342,15 @@ public partial class App : Application
             return;
         }
 
-        if (IsTdxSsoAuthenticated)
+        if (IsTdxSsoAuthenticated && !renew)
         {
             Log.Debug("[tdx-sso] Already authenticated, skipping silent SSO");
             return;
         }
 
-        AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Authenticating());
+        if (!renew && await TryRestoreTdxSessionAsync()) return;
+
+        if (!renew) AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Authenticating());
         Log.Information("[tdx-sso] Starting silent SSO for {BaseUrl}", Config.Tdx.BaseUrl);
 
         var result = await TdxHeadlessSso.SignInAsync(Config.Tdx.BaseUrl);
@@ -351,9 +360,70 @@ public partial class App : Application
             return;
         }
 
+        if (result.IdentityRefused) TdxSessionStore.Clear();
+
+        // A renewal that fails leaves the current, still-valid sign-in in place.
+        if (renew && IsTdxSsoAuthenticated)
+        {
+            Log.Warning("[tdx-sso] Renewal failed; keeping the current sign-in: {Reason}", result.Error);
+            return;
+        }
+
         Log.Warning("[tdx-sso] Silent SSO failed; no sign-in window is shown: {Reason}", result.Error);
         AuthManager.Update(AuthSystemId.Tdx,
             AuthTokenState.Failed(result.Error ?? "Silent Windows SSO unavailable"));
+    }
+
+    /// <summary>The saved TeamDynamix session, encrypted for this Windows user.</summary>
+    internal TdxSessionCache TdxSessionStore { get; } = new();
+
+    /// <summary>
+    /// Reuse the saved sign-in when it has more than an hour left, skipping the
+    /// SSO chain, then check it once by finding the signed-in person. A session
+    /// TeamDynamix refuses is cleared, and the caller signs in normally.
+    /// </summary>
+    private async Task<bool> TryRestoreTdxSessionAsync()
+    {
+        if (TdxService == null || TdxSessionStore.Load() is not { } session || !session.IsFresh(DateTime.UtcNow))
+            return false;
+
+        // The same identity check a live sign-in makes: the saved session must
+        // be this Windows account's, for this tenant, and its token must still
+        // carry that address. Anything else is discarded, never reused.
+        var expected = await TdxSsoIdentity.ResolveWindowsUpnAsync();
+        var verified = TdxSsoIdentity.Verify(session.Token, expected);
+        if (!session.BelongsTo(expected, Config.Tdx?.BaseUrl) || !verified.Success)
+        {
+            Log.Information("[tdx-sso] Saved session is not this account's or tenant's; discarding it");
+            TdxSessionStore.Clear();
+            return false;
+        }
+
+        TdxService.SetSsoToken(session.Token, session.ExpiryUtc, verified.UserEmail, session.UserName ?? verified.UserName);
+        if (session.VerifiedMe is { } cachedMe) TdxService.RememberMe(cachedMe);
+        try
+        {
+            if (await TdxService.ProbeMeAsync() is { } me) TdxSessionStore.SaveMe(session.Token, me);
+        }
+        catch (TdxRequestException ex) when (ex.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+        {
+            Log.Information("[tdx-sso] Saved session refused by TeamDynamix; signing in again");
+            TdxSessionStore.Clear();
+            TdxService.SetSsoToken("", DateTime.MinValue);
+            return false;
+        }
+        catch (TdxRequestException ex)
+        {
+            // Not a refusal: TeamDynamix did not answer. The token is unexpired,
+            // and a full sign-in would hit the same outage.
+            Log.Warning("[tdx-sso] Could not check the saved session; using it: {Reason}", ex.Message);
+        }
+
+        _ticketsCacheTime = null;
+        AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Valid(session.UserName, session.ExpiryUtc));
+        Log.Information("[tdx-sso] Reused the saved session for {UserName}", session.UserName ?? "(unknown)");
+        NotifyTdxSignInChanged();
+        return true;
     }
 
     /// <summary>
@@ -362,10 +432,35 @@ public partial class App : Application
     private void HandleSilentSsoSuccess(TdxSsoResult result)
     {
         TdxService?.SetSsoToken(result.Token!, result.Expiry, result.UserEmail, result.UserName);
+        TdxSessionStore.Save(new TdxSession
+        {
+            Token = result.Token!,
+            ExpiryUtc = result.Expiry.ToUniversalTime(),
+            UserEmail = result.UserEmail,
+            UserName = result.UserName,
+            // Every successful result has passed the identity check, which
+            // reports the verified address here.
+            VerifiedAddress = TdxSession.NormalizeAddress(result.UserEmail),
+            BaseUrl = TdxSession.NormalizeBaseUrl(Config.Tdx?.BaseUrl),
+        });
+        _ = SaveTdxMeAsync(result.Token!);
         _ticketsCacheTime = null;
         AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Valid(result.UserName, result.Expiry));
         Log.Information("[tdx-sso] ✓ Silent SSO successful — user={UserName}", result.UserName ?? "(unknown)");
         NotifyTdxSignInChanged();
+    }
+
+    /// <summary>Find the signed-in person and keep them with the saved session.</summary>
+    private async Task SaveTdxMeAsync(string token)
+    {
+        try
+        {
+            if (TdxService != null && await TdxService.GetMeAsync() is { } me) TdxSessionStore.SaveMe(token, me);
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[tdx-sso] Signed-in person not saved with the session");
+        }
     }
 
     /// <summary>
@@ -549,7 +644,10 @@ public partial class App : Application
         // from a browser or chat) hands its link to the first and exits.
         var startupLink = Links.LinkHost.LinkFromArgs(e.Args);
         var headless = e.Args.Contains("--headless-tdx-sso", StringComparer.OrdinalIgnoreCase);
-        if (!headless && !Links.LinkHost.TryBecomePrimary(startupLink))
+        // The inbox helper never takes the single-instance lock, so opening the
+        // app while it runs still opens a normal window.
+        var inboxAgent = InboxAgent.IsRequested(e.Args);
+        if (!headless && !inboxAgent && !Links.LinkHost.TryBecomePrimary(startupLink))
         {
             Shutdown();
             return;
@@ -581,6 +679,14 @@ public partial class App : Application
 
         // Initialize services
         InitializeServices();
+
+        if (inboxAgent)
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            _ = Dispatcher.InvokeAsync(() => new InboxAgent(this).RunAsync());
+            return;
+        }
+
         StartHandbook();
 
         if (e.Args.Contains("--headless-tdx-sso", StringComparer.OrdinalIgnoreCase))

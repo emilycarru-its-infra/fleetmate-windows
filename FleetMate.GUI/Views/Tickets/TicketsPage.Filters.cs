@@ -137,6 +137,7 @@ public partial class TicketsPage
 
         UpdateAssignedToMeToggle();
         if (_assignedToMe) ApplyFiltersAndSort();
+        OnInboxPersonChanged();
     }
 
     private void UpdateAssignedToMeToggle()

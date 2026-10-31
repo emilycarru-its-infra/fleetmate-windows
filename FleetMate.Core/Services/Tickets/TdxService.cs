@@ -15,7 +15,7 @@ namespace FleetMate.Core.Services.Tickets;
 /// TeamDynamix (TDX) service for ticket management
 /// Uses JWT authentication via SSO, username/password, or BEID
 /// </summary>
-public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssignmentApi
+public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssignmentApi, ITicketInboxApi
 {
     private readonly HttpClient _client;
     private readonly TdxConfig _config;
@@ -794,7 +794,7 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
     /// <exception cref="TdxCommentException">The comment was not accepted.</exception>
     public async Task<TdxFeedEntry?> AddCommentAsync(
         int ticketId, string comment, bool isPrivate = false,
-        bool isRichHtml = false, List<Guid>? notify = null)
+        bool isRichHtml = false, IReadOnlyCollection<string>? notify = null)
     {
         if (!await SetAuthorizationAsync())
         {
@@ -806,7 +806,7 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
             Comments = comment,
             IsPrivate = isPrivate,
             IsRichHtml = isRichHtml,
-            Notify = notify,
+            Notify = notify is { Count: > 0 } ? notify.ToList() : null,
         };
 
         var url = _config.GetTicketsUrl($"{ticketId}/feed");
@@ -834,6 +834,106 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
 
         Log.Debug("Added comment to ticket {Id}", ticketId);
         return await response.Content.ReadFromJsonAsync<TdxFeedEntry>(_jsonOptions);
+    }
+
+    #endregion
+
+    #region Ticket people
+
+    /// <summary>The people listed as contacts on a ticket (the web UI's People tab).</summary>
+    /// <exception cref="TdxRequestException">TeamDynamix did not answer with the list.</exception>
+    public Task<List<TdxPerson>> GetTicketContactsAsync(int ticketId, CancellationToken ct = default) =>
+        GetJsonOrThrowAsync<List<TdxPerson>>(_config.GetTicketsUrl($"{ticketId}/contacts"), "read ticket contacts", ct);
+
+    /// <summary>Add a person to a ticket's contacts.</summary>
+    /// <exception cref="TdxRequestException">The contact was not added.</exception>
+    public Task AddTicketContactAsync(int ticketId, Guid uid, CancellationToken ct = default) =>
+        SendOrThrowAsync(HttpMethod.Post, _config.GetTicketsUrl($"{ticketId}/contacts/{uid}"), "add a contact", ct);
+
+    /// <summary>Remove a person from a ticket's contacts.</summary>
+    /// <exception cref="TdxRequestException">The contact was not removed.</exception>
+    public Task RemoveTicketContactAsync(int ticketId, Guid uid, CancellationToken ct = default) =>
+        SendOrThrowAsync(HttpMethod.Delete, _config.GetTicketsUrl($"{ticketId}/contacts/{uid}"), "remove a contact", ct);
+
+    /// <summary>The members of a group, each carrying whether group notifications reach them.</summary>
+    /// <exception cref="TdxRequestException">TeamDynamix did not answer with the members.</exception>
+    public Task<List<TdxPerson>> GetGroupMembersAsync(int groupId, CancellationToken ct = default) =>
+        GetJsonOrThrowAsync<List<TdxPerson>>(_config.GetApiUrl($"groups/{groupId}/members"), "read group members", ct);
+
+    /// <summary>One person by UID.</summary>
+    /// <exception cref="TdxRequestException">TeamDynamix did not answer with the person.</exception>
+    public Task<TdxPerson> GetPersonAsync(Guid uid, CancellationToken ct = default) =>
+        GetJsonOrThrowAsync<TdxPerson>(_config.GetPeopleUrl(uid.ToString()), "read a person", ct);
+
+    /// <summary>
+    /// Search tickets, throwing on failure. <see cref="SearchTicketsAsync"/>
+    /// reports a failure as no tickets, which a caller that records how far it
+    /// got would read as "nothing changed".
+    /// </summary>
+    /// <exception cref="TdxRequestException">The search failed.</exception>
+    public Task<List<TdxTicket>> SearchTicketsOrThrowAsync(TicketSearchRequest search, CancellationToken ct = default) =>
+        SendJsonOrThrowAsync<List<TdxTicket>>(HttpMethod.Post, _config.GetTicketsUrl("search"), search, "search tickets", ct);
+
+    /// <summary>A ticket's feed without reply hydration, throwing on failure.</summary>
+    /// <exception cref="TdxRequestException">The feed was not read.</exception>
+    public Task<List<TdxFeedEntry>> GetTicketFeedOrThrowAsync(int ticketId, CancellationToken ct = default) =>
+        GetJsonOrThrowAsync<List<TdxFeedEntry>>(_config.GetTicketsUrl($"{ticketId}/feed"), "read the ticket feed", ct);
+
+    private Task<T> GetJsonOrThrowAsync<T>(string url, string what, CancellationToken ct) =>
+        SendJsonOrThrowAsync<T>(HttpMethod.Get, url, null, what, ct);
+
+    private async Task<T> SendJsonOrThrowAsync<T>(HttpMethod method, string url, object? body, string what, CancellationToken ct)
+    {
+        using var response = await SendCheckedAsync(method, url, body, what, ct);
+        try
+        {
+            return await response.Content.ReadFromJsonAsync<T>(_jsonOptions, ct)
+                   ?? throw new TdxRequestException(what, "TeamDynamix sent an empty answer");
+        }
+        catch (JsonException ex)
+        {
+            throw new TdxRequestException(what, "TeamDynamix sent an answer that could not be read", ex);
+        }
+    }
+
+    private async Task SendOrThrowAsync(HttpMethod method, string url, string what, CancellationToken ct)
+    {
+        using var _ = await SendCheckedAsync(method, url, null, what, ct);
+    }
+
+    private async Task<HttpResponseMessage> SendCheckedAsync(
+        HttpMethod method, string url, object? body, string what, CancellationToken ct)
+    {
+        if (!await SetAuthorizationAsync())
+            throw new TdxRequestException(what, "not signed in to TeamDynamix");
+
+        using var request = new HttpRequestMessage(method, url);
+        if (body != null)
+            request.Content = new StringContent(JsonSerializer.Serialize(body, _jsonOptions), Encoding.UTF8, "application/json");
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _client.SendAsync(request, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "TDX could not {What}", what);
+            throw new TdxRequestException(what, ex.Message, ex);
+        }
+
+        if (response.IsSuccessStatusCode) return response;
+
+        var error = (await response.Content.ReadAsStringAsync(ct)).Trim();
+        if (error.Length > 300) error = error[..300] + "…";
+        Log.Warning("TDX could not {What}: {Status}", what, (int)response.StatusCode);
+        var status = response.StatusCode;
+        response.Dispose();
+        throw new TdxRequestException(what, $"{(int)status} {error}".Trim(), statusCode: status);
     }
 
     #endregion
@@ -1096,6 +1196,42 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
     }
 
     private TdxPerson? _me;
+
+    /// <summary>
+    /// Seed the signed-in person from a restored session. Ignored unless the
+    /// person's email is the signed-in address.
+    /// </summary>
+    public void RememberMe(TdxPerson person)
+    {
+        if (!string.IsNullOrWhiteSpace(_ssoUserId)
+            && string.Equals(person.PrimaryEmail?.Trim(), _ssoUserId.Trim(), StringComparison.OrdinalIgnoreCase))
+            _me = person;
+    }
+
+    /// <summary>The signed-in operator's token, while it is unexpired; for saving the session.</summary>
+    public string? CurrentSsoToken => IsSsoAuthenticated ? _ssoToken : null;
+
+    /// <summary>The signed-in operator's token expiry (UTC).</summary>
+    public DateTime CurrentSsoExpiry => _ssoTokenExpiry;
+
+    /// <summary>
+    /// Find the signed-in person by their SSO email, throwing when TDX does not
+    /// answer. Used to check that a restored session is still accepted, where
+    /// <see cref="GetMeAsync"/> would read a refusal as "no match".
+    /// </summary>
+    /// <exception cref="TdxRequestException">TDX refused the token or did not answer.</exception>
+    public async Task<TdxPerson?> ProbeMeAsync(CancellationToken ct = default)
+    {
+        var email = _ssoUserId;
+        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@')) return null;
+
+        var matches = await GetJsonOrThrowAsync<List<TdxPerson>>(
+            _config.GetPeopleUrl($"lookup?searchText={Uri.EscapeDataString(email.Trim())}&maxResults=5"),
+            "look up the signed-in person", ct);
+        _me = matches.FirstOrDefault(p => string.Equals(p.PrimaryEmail, email, StringComparison.OrdinalIgnoreCase))
+              ?? (matches.Count == 1 ? matches[0] : null);
+        return _me;
+    }
 
     /// <summary>
     /// The signed-in operator as a TDX person, resolved once per sign-in from
