@@ -393,8 +393,7 @@ public partial class CompliancePolicyLightbox : Window
     private void OnOpenInIntune(object sender, RoutedEventArgs e)
     {
         var url = $"https://intune.microsoft.com/#view/Microsoft_Intune_Devices/DeviceSettingsMenuBlade/~/compliance/mdmDeviceId/{_device.Id}";
-        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch (Exception ex) { Log.Warning(ex, "Failed to open Intune"); }
+        FleetMate.GUI.Links.ExternalBrowser.Open(url);
     }
 
     private async void OnSyncDevice(object sender, RoutedEventArgs e)

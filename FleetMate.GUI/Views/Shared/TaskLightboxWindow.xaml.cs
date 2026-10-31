@@ -196,8 +196,7 @@ public partial class TaskLightboxWindow : Window
     private void OnOpenInBrowser(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrEmpty(_task.ExternalUrl)) return;
-        try { Process.Start(new ProcessStartInfo(_task.ExternalUrl) { UseShellExecute = true }); }
-        catch (Exception ex) { Log.Warning(ex, "Failed to open URL"); }
+        FleetMate.GUI.Links.ExternalBrowser.Open(_task.ExternalUrl);
     }
 
     private void OnCloseClicked(object sender, RoutedEventArgs e) => Close();

@@ -469,8 +469,7 @@ public partial class DevelopmentView : UserControl
     {
         if (_selectedNotification is not { } notification) return;
 
-        try { Process.Start(new ProcessStartInfo(notification.WebUrl) { UseShellExecute = true }); }
-        catch (Exception ex) { Log.Warning(ex, "[development] Could not open {Url}", notification.WebUrl); }
+        FleetMate.GUI.Links.ExternalBrowser.Open(notification.WebUrl);
 
         if (notification.Unread && AppInstance is { } app) await app.Inbox.MarkReadAsync(notification);
     }

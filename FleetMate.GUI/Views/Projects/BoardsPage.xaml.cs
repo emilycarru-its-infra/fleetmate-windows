@@ -83,8 +83,7 @@ public partial class BoardsPage : Page
         QueriesList.OpenQueryRequested += (_, query) =>
         {
             if (_devOpsService == null) return;
-            try { Process.Start(new ProcessStartInfo { FileName = _devOpsService.StoredQueryWebUrl(query.Id), UseShellExecute = true }); }
-            catch { }
+            FleetMate.GUI.Links.ExternalBrowser.Open(_devOpsService.StoredQueryWebUrl(query.Id));
         };
     }
 
@@ -567,7 +566,7 @@ public partial class BoardsPage : Page
     private void OnTaskOpenInBrowser(object sender, RoutedEventArgs e)
     {
         if (VmFromMenuItem(sender)?.Task.ExternalUrl is not { Length: > 0 } url) return;
-        try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); } catch { }
+        FleetMate.GUI.Links.ExternalBrowser.Open(url);
     }
 
     private void OnTaskCopyLink(object sender, RoutedEventArgs e)
@@ -998,8 +997,7 @@ public partial class BoardsPage : Page
             }
             if (!string.IsNullOrEmpty(url))
             {
-                try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); }
-                catch { }
+                FleetMate.GUI.Links.ExternalBrowser.Open(url);
             }
         };
 

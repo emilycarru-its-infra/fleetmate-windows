@@ -16,8 +16,7 @@ public partial class DevelopmentView
     private static void OpenUrl(string? url)
     {
         if (string.IsNullOrWhiteSpace(url)) return;
-        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch (Exception ex) { Log.Warning(ex, "[development] Could not open {Url}", url); }
+        FleetMate.GUI.Links.ExternalBrowser.Open(url);
     }
 
     private static void Copy(string? text)

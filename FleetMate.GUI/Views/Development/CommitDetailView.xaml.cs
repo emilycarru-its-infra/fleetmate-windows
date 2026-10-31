@@ -96,8 +96,7 @@ public partial class CommitDetailView : UserControl
     private void OnOpenInBrowserClicked(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrWhiteSpace(_commit?.Url)) return;
-        try { Process.Start(new ProcessStartInfo(_commit.Url) { UseShellExecute = true }); }
-        catch (Exception ex) { Log.Warning(ex, "[commits] Could not open {Url}", _commit.Url); }
+        FleetMate.GUI.Links.ExternalBrowser.Open(_commit.Url);
     }
 
     private void OnCopyShaClicked(object sender, RoutedEventArgs e)
