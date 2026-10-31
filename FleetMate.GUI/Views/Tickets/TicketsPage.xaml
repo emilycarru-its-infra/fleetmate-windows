@@ -107,7 +107,17 @@
                 <ToggleButton x:Name="AssignedToMeToggle" Margin="0,0,8,0" IsEnabled="False"
                               ToolTip="Waiting to identify you in TeamDynamix"
                               Checked="OnAssignedToMeChanged" Unchecked="OnAssignedToMeChanged">
+                    <!-- On: icon and text in the accent colour, not only a faint pressed fill. -->
                     <StackPanel Orientation="Horizontal">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsChecked, ElementName=AssignedToMeToggle}" Value="True">
+                                        <Setter Property="TextElement.Foreground" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
                         <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE77B;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
                         <TextBlock Text="Assigned to Me" VerticalAlignment="Center" />
                     </StackPanel>
