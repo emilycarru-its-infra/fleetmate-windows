@@ -91,7 +91,6 @@ public partial class TicketsPage
 
     private void UpdatePeopleSection(TdxTicket ticket)
     {
-        PeopleCountText.Text = _ticketContacts.Count.ToString();
         ContactsList.ItemsSource = _ticketContacts.ToList();
         NoContactsText.Visibility = _ticketContacts.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 

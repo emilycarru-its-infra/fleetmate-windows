@@ -111,6 +111,7 @@ private bool _isInitialLoadDone;
             // can fill the cache after the page drew it empty; follow both.
             app.CacheChanged += OnAppCacheChanged;
             app.TdxSignInChanged += OnTdxSignInChanged;
+            app.TdxLaunchStepChanged += UpdateLoadingPanel;
             // A reload rebuilds the page, so this one stops listening.
             app.ServicesReloaded += DetachFromApp;
         }
@@ -238,6 +239,7 @@ private bool _isInitialLoadDone;
         if (_app == null) return;
         _app.CacheChanged -= OnAppCacheChanged;
         _app.TdxSignInChanged -= OnTdxSignInChanged;
+        _app.TdxLaunchStepChanged -= UpdateLoadingPanel;
         _app.ServicesReloaded -= DetachFromApp;
         StopInbox();
     }
@@ -269,9 +271,16 @@ private bool _isInitialLoadDone;
             return;
         }
 
-        LoadingPanel.Visibility = Visibility.Visible;
+        // Last session's tickets, if any, show while the fresh load runs.
+        if (_app.CachedTickets.Count > 0)
+        {
+            UpdateFilterOptions();
+            ApplyFiltersAndSort();
+        }
+
         NotConfiguredText.Visibility = Visibility.Collapsed;
         _isLoading = true;
+        UpdateLoadingPanel();
         TicketWidgetsSection.Invalidate();
 
         try
@@ -286,13 +295,32 @@ private bool _isInitialLoadDone;
         catch (Exception ex)
         {
             ShowActionMessage($"Error: {ex.Message}", isError: true);
+            _app.SetTdxLaunchStep(null);
         }
         finally
         {
-            LoadingPanel.Visibility = Visibility.Collapsed;
             _isLoading = false;
+            UpdateLoadingPanel();
             TicketWidgetsSection.Invalidate();
         }
+    }
+
+    /// <summary>
+    /// The centred progress shows only while nothing is listed: during the
+    /// launch sign-in it says so, rather than reading as an empty list.
+    /// </summary>
+    private void UpdateLoadingPanel()
+    {
+        var step = _app?.TdxLaunchStep;
+        LoadingPanel.Visibility = TicketsPageSync.ShowLoading(_isLoading, step, _allTickets.Count)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        SignInProgressBar.Visibility = step == null ? Visibility.Collapsed : Visibility.Visible;
+        LoadingRing.Visibility = step == null ? Visibility.Visible : Visibility.Collapsed;
+        LoadingRing.IsActive = step == null && LoadingPanel.Visibility == Visibility.Visible;
+        if (step is { } current) SignInProgressBar.Value = current.Fraction();
+        LoadingText.Text = step?.Label() ?? "Loading tickets...";
     }
 
     /// <summary>
@@ -1038,6 +1066,63 @@ private bool _isInitialLoadDone;
     private void RestoreCommentDraft(int ticketId)
     {
         CommentTextBox.Text = _commentDrafts.GetValueOrDefault(ticketId) ?? "";
+        SetComposeOpen(false);
+    }
+
+    // ── Compose space ─────────────────────────────────────────────
+    // Opened by Add Comment in the Activity bar, under the bar and above the
+    // feed. Cancel closes it and keeps the draft.
+
+    private bool _composeOpen;
+
+    private void SetComposeOpen(bool open, bool focus = false)
+    {
+        _composeOpen = open;
+        ComposePanel.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        UpdateAddCommentButton();
+        if (!open) return;
+        if (focus)
+        {
+            CommentTextBox.Focus();
+            CommentTextBox.CaretIndex = CommentTextBox.Text.Length;
+        }
+        ComposePanel.BringIntoView();
+    }
+
+    private bool _postingComment;
+
+    /// <summary>
+    /// Post Comment is the accent button only with text to post; empty, it is
+    /// a plain disabled button rather than a greyed-out accent one.
+    /// </summary>
+    private void UpdatePostCommentButton()
+    {
+        var canPost = !_postingComment && !string.IsNullOrWhiteSpace(CommentTextBox.Text);
+        PostCommentButton.IsEnabled = canPost;
+        if (canPost) PostCommentButton.SetResourceReference(StyleProperty, "AccentButtonStyle");
+        else PostCommentButton.ClearValue(StyleProperty);
+    }
+
+    private void UpdateAddCommentButton()
+    {
+        UpdatePostCommentButton();
+        AddCommentButtonText.Text = TicketsPageSync.AddCommentLabel(_composeOpen, CommentTextBox.Text);
+        AddCommentButton.ToolTip = _composeOpen ? "Close the comment editor" : "Write a comment";
+    }
+
+    private void OnAddCommentToggleClicked(object sender, RoutedEventArgs e) => SetComposeOpen(!_composeOpen, focus: true);
+
+    private void OnCancelCommentClicked(object sender, RoutedEventArgs e) => SetComposeOpen(false);
+
+    private void OnCommentTextChanged(object sender, TextChangedEventArgs e) => UpdateAddCommentButton();
+
+    private void OnCommentKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        {
+            e.Handled = true;
+            if (PostCommentButton.IsEnabled) OnPostCommentClicked(PostCommentButton, new RoutedEventArgs());
+        }
     }
 
     /// <summary>
@@ -1061,8 +1146,7 @@ private bool _isInitialLoadDone;
             ? quoted
             : existing.TrimEnd() + "\n\n" + quoted;
 
-        CommentTextBox.Focus();
-        CommentTextBox.CaretIndex = CommentTextBox.Text.Length;
+        SetComposeOpen(true, focus: true);
     }
 
     internal static string BuildQuote(FeedDisplayItem entry)
@@ -1707,7 +1791,8 @@ private bool _isInitialLoadDone;
         if (string.IsNullOrEmpty(comment)) return;
 
         ShowActionMessage("Adding comment...", isLoading: true);
-        PostCommentButton.IsEnabled = false;
+        _postingComment = true;
+        UpdatePostCommentButton();
 
         try
         {
@@ -1723,6 +1808,7 @@ private bool _isInitialLoadDone;
                 : $"Comment added; notified {notify.Count} {(notify.Count == 1 ? "person" : "people")}");
             CommentTextBox.Text = "";
             foreach (var box in NotifyCheckboxesPanel.Children.OfType<CheckBox>()) box.IsChecked = false;
+            SetComposeOpen(false);
 
             // Drop the stashed copy too, or navigating away and back would
             // resurrect a comment that was already posted.
@@ -1744,7 +1830,8 @@ private bool _isInitialLoadDone;
         }
         finally
         {
-            PostCommentButton.IsEnabled = true;
+            _postingComment = false;
+            UpdatePostCommentButton();
         }
     }
 

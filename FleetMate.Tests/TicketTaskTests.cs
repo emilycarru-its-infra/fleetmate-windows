@@ -1240,7 +1240,7 @@ public class TicketTaskTests
         Pump(panel.LoadAsync(42));
 
         Assert.Equal(System.Windows.Visibility.Visible, panel.Visibility);
-        Assert.Equal("Tasks · 2 · 1 of 2 complete", panel.TasksHeaderText.Text);
+        Assert.Equal("Tasks · 1 of 2 complete", panel.TasksHeaderText.Text);
         var rows = Assert.IsAssignableFrom<IEnumerable<TicketTaskRow>>(panel.TasksList.ItemsSource).ToList();
         Assert.Equal(new[] { 11, 12 }, rows.Select(r => r.Id));
         Assert.Equal(System.Windows.Visibility.Visible, rows[1].TypeBadgeVisibility);

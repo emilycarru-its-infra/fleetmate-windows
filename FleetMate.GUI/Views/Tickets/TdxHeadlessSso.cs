@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Text.Json;
+using FleetMate.Core.Models.Tickets;
 using FleetMate.Core.Services;
 using FleetMate.Core.Services.Tickets;
 using FleetMate.GUI.Views.Shared;
@@ -42,8 +43,11 @@ internal static class TdxHeadlessSso
     };
 
     /// <summary>Run both phases. Call on the UI thread.</summary>
-    public static async Task<TdxSsoResult> SignInAsync(string baseUrl, CancellationToken ct = default)
+    /// <param name="step">Told as each step starts, for the launch progress bar.</param>
+    public static async Task<TdxSsoResult> SignInAsync(string baseUrl, CancellationToken ct = default,
+        Action<TdxSignInStep>? step = null)
     {
+        step?.Invoke(TdxSignInStep.FindingAccount);
         var upn = await TdxSsoIdentity.ResolveWindowsUpnAsync(ct);
         if (upn == null)
         {
@@ -53,10 +57,12 @@ internal static class TdxHeadlessSso
         Log.Information("[tdx-sso] Signing in as the Windows account {Upn}", upn);
 
         Log.Information("[tdx-sso] Phase 1: silent HTTP SSO (Negotiate/Kerberos)");
+        step?.Invoke(TdxSignInStep.ConnectingToMicrosoft);
         var http = await Task.Run(() => new TdxSsoService(baseUrl).TrySilentSsoAsync(ct, upn), ct);
         if (http is { Success: true, Token: not null } or { IdentityRefused: true }) return http;
 
         Log.Information("[tdx-sso] Phase 2: hidden WebView2 SSO");
+        step?.Invoke(TdxSignInStep.FinishingSignIn);
         return await HiddenBrowserAsync(baseUrl, upn, ct);
     }
 

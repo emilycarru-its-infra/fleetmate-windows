@@ -152,7 +152,7 @@ public partial class TicketTasksPanel : UserControl
         }
 
         var tasks = snapshot.Tasks;
-        TasksHeaderText.Text = tasks.Count == 0 ? "Tasks · none" : $"Tasks · {tasks.Count} · {TicketTaskFormat.Summary(tasks)}";
+        TasksHeaderText.Text = tasks.Count == 0 ? "Tasks · none" : $"Tasks · {TicketTaskFormat.Summary(tasks)}";
         var rows = tasks.Select(t => new TicketTaskRow(t)).ToList();
         TasksList.ItemsSource = rows;
 

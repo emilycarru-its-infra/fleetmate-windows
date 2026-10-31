@@ -272,7 +272,16 @@ public partial class App : Application
         CachedTickets = tickets;
         _ticketsCacheTime = DateTime.Now;
         NotifyCacheChanged("Tickets");
+        SetTdxLaunchStep(null);
+        // Kept for the next launch to show before sign-in. Never from the
+        // inbox helper, which has no ticket list of its own.
+        if (!_isInboxAgent) _ = TicketSnapshot.SaveInBackground(tickets);
     }
+
+    /// <summary>The last loaded ticket list, shown at the next launch before sign-in.</summary>
+    internal TicketSnapshot TicketSnapshot { get; } = new();
+
+    private bool _isInboxAgent;
     
     /// <summary>Update users cache</summary>
     public void UpdateUsersCache(List<EntraUser> users)
@@ -334,7 +343,46 @@ public partial class App : Application
         return _tdxSsoInFlight = RunSilentTdxSsoAsync(renew);
     }
 
+    /// <summary>
+    /// Where the launch (or retry) sign-in has got to, for the progress over an
+    /// empty ticket list: set when sign-in starts, moved on by each step, held
+    /// at <see cref="TdxSignInStep.LoadingTickets"/> until the first list
+    /// arrives, and cleared on failure or refusal. Null when nothing is pending.
+    /// </summary>
+    public TdxSignInStep? TdxLaunchStep { get; private set; }
+
+    /// <summary>Raised on the UI thread when <see cref="TdxLaunchStep"/> changes.</summary>
+    public event Action? TdxLaunchStepChanged;
+
+    internal void SetTdxLaunchStep(TdxSignInStep? step)
+    {
+        void Apply()
+        {
+            if (TdxLaunchStep == step) return;
+            TdxLaunchStep = step;
+            TdxLaunchStepChanged?.Invoke();
+        }
+        if (Dispatcher.CheckAccess()) Apply();
+        else Dispatcher.BeginInvoke(Apply);
+    }
+
     private async Task RunSilentTdxSsoAsync(bool renew)
+    {
+        var report = !renew && !IsTdxSsoAuthenticated && Config.Tdx?.SsoEnabled == true;
+        Action<TdxSignInStep>? step = report ? s => SetTdxLaunchStep(s) : null;
+        step?.Invoke(TdxSignInStep.FindingAccount);
+        try
+        {
+            await RunSilentTdxSsoCoreAsync(renew, step);
+        }
+        finally
+        {
+            if (report)
+                SetTdxLaunchStep(IsTdxSsoAuthenticated && !IsTicketsCacheValid ? TdxSignInStep.LoadingTickets : null);
+        }
+    }
+
+    private async Task RunSilentTdxSsoCoreAsync(bool renew, Action<TdxSignInStep>? step)
     {
         if (Config.Tdx == null || string.IsNullOrEmpty(Config.Tdx.BaseUrl) || !Config.Tdx.SsoEnabled)
         {
@@ -348,12 +396,12 @@ public partial class App : Application
             return;
         }
 
-        if (!renew && await TryRestoreTdxSessionAsync()) return;
+        if (!renew && await TryRestoreTdxSessionAsync(step)) return;
 
         if (!renew) AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Authenticating());
         Log.Information("[tdx-sso] Starting silent SSO for {BaseUrl}", Config.Tdx.BaseUrl);
 
-        var result = await TdxHeadlessSso.SignInAsync(Config.Tdx.BaseUrl);
+        var result = await TdxHeadlessSso.SignInAsync(Config.Tdx.BaseUrl, step: step);
         if (result is { Success: true, Token: not null })
         {
             HandleSilentSsoSuccess(result);
@@ -382,7 +430,7 @@ public partial class App : Application
     /// SSO chain, then check it once by finding the signed-in person. A session
     /// TeamDynamix refuses is cleared, and the caller signs in normally.
     /// </summary>
-    private async Task<bool> TryRestoreTdxSessionAsync()
+    private async Task<bool> TryRestoreTdxSessionAsync(Action<TdxSignInStep>? step)
     {
         if (TdxService == null || TdxSessionStore.Load() is not { } session || !session.IsFresh(DateTime.UtcNow))
             return false;
@@ -399,6 +447,7 @@ public partial class App : Application
             return false;
         }
 
+        step?.Invoke(TdxSignInStep.SigningInToTeamDynamix);
         TdxService.SetSsoToken(session.Token, session.ExpiryUtc, verified.UserEmail, session.UserName ?? verified.UserName);
         if (session.VerifiedMe is { } cachedMe) TdxService.RememberMe(cachedMe);
         try
@@ -646,7 +695,7 @@ public partial class App : Application
         var headless = e.Args.Contains("--headless-tdx-sso", StringComparer.OrdinalIgnoreCase);
         // The inbox helper never takes the single-instance lock, so opening the
         // app while it runs still opens a normal window.
-        var inboxAgent = InboxAgent.IsRequested(e.Args);
+        var inboxAgent = _isInboxAgent = InboxAgent.IsRequested(e.Args);
         if (!headless && !inboxAgent && !Links.LinkHost.TryBecomePrimary(startupLink))
         {
             Shutdown();
@@ -694,6 +743,15 @@ public partial class App : Application
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
             _ = Dispatcher.InvokeAsync(RunHeadlessTdxSmokeAsync);
             return;
+        }
+
+        // Show the last session's tickets straight away. The cache time stays
+        // unset, so the fresh load still runs and replaces them.
+        if (TdxService != null)
+        {
+            CachedTickets = TicketSnapshot.Load();
+            if (CachedTickets.Count > 0)
+                Log.Information("Showing {Count} tickets from the last session", CachedTickets.Count);
         }
 
         // Before the window, whose launch session reads the brief.
@@ -818,7 +876,11 @@ public partial class App : Application
                     Dispatcher.Invoke(() => UpdateTicketsCache(tickets));
                     Log.Information("Preloaded {Count} tickets", tickets.Count);
                 }
-                catch (Exception ex) { Log.Warning(ex, "Failed to preload tickets"); }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Failed to preload tickets");
+                    SetTdxLaunchStep(null);
+                }
             }));
         }
 
