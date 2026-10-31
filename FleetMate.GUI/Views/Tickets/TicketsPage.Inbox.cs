@@ -13,11 +13,16 @@ namespace FleetMate.GUI.Views.Tickets;
 public partial class TicketsPage
 {
     private static readonly TimeSpan InboxRefreshInterval = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan InboxReloadInterval = TimeSpan.FromMinutes(1);
 
     private readonly TicketInboxStore _inboxStore = new();
     private TicketInboxPerson? _inboxPerson;
     private TicketInboxState? _inboxState;
     private DispatcherTimer? _inboxTimer;
+    /// <summary>Reads the saved inbox every minute, so the background helper's finds show up.</summary>
+    private DispatcherTimer? _inboxReloadTimer;
+    /// <summary>The last pass found the background helper scanning, so it reloaded instead.</summary>
+    private bool _inboxScannedElsewhere;
     private CancellationTokenSource? _inboxPassCts;
     private Task? _inboxPass;
     private DateTime _inboxLastPassUtc = DateTime.MinValue;
@@ -37,9 +42,26 @@ public partial class TicketsPage
         _inboxState = person == null ? null : _inboxStore.Load(person.Uid);
         _inboxLastPassUtc = DateTime.MinValue;
         _inboxError = null;
+        _inboxScannedElsewhere = false;
         RenderInbox();
+
+        if (_inboxReloadTimer == null)
+        {
+            _inboxReloadTimer = new DispatcherTimer { Interval = InboxReloadInterval };
+            _inboxReloadTimer.Tick += (_, _) => ReloadInboxFromDisk();
+        }
+        if (person == null) _inboxReloadTimer.Stop(); else _inboxReloadTimer.Start();
+
         // Scan silently from launch, whichever view is showing.
         StartInboxPass();
+    }
+
+    /// <summary>Re-read the saved inbox, unless this window is mid-pass and holds the newest copy.</summary>
+    private void ReloadInboxFromDisk()
+    {
+        if (_inboxPass is { IsCompleted: false } || _inboxPerson is not { } person) return;
+        _inboxState = _inboxStore.Load(person.Uid);
+        RenderInbox();
     }
 
     /// <summary>Inbox shown: refresh now if due, and every five minutes while it stays open.</summary>
@@ -64,6 +86,7 @@ public partial class TicketsPage
     private void StopInbox()
     {
         _inboxTimer?.Stop();
+        _inboxReloadTimer?.Stop();
         CancelInboxPass();
     }
 
@@ -77,12 +100,14 @@ public partial class TicketsPage
     private void StartInboxPass()
     {
         if (_inboxPass is { IsCompleted: false }) return;
-        if (_tdxService == null || _inboxPerson is not { } person || _inboxState is not { } state)
+        if (_tdxService == null || _inboxPerson is not { } person)
         {
             RenderInbox();
             return;
         }
 
+        // Start from what is on disk: the background helper may have scanned last.
+        var state = _inboxState = _inboxStore.Load(person.Uid);
         var cts = _inboxPassCts = new CancellationTokenSource();
         _inboxPass = RunInboxPassAsync(person, state, cts);
     }
@@ -105,10 +130,11 @@ public partial class TicketsPage
         InboxStatusText.Text = "Checking for new comments…";
         try
         {
-            await scanner.RunPassAsync(person, state, progress, () =>
+            var ran = await scanner.TryRunPassAsync(person, state, progress, () =>
             {
                 if (!cts.IsCancellationRequested && ReferenceEquals(state, _inboxState)) RenderInboxItems();
             }, cts.Token);
+            _inboxScannedElsewhere = !ran;
             _inboxLastPassUtc = DateTime.UtcNow;
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
@@ -145,6 +171,8 @@ public partial class TicketsPage
                 ? "Sign in to TeamDynamix to build your inbox. It needs your TeamDynamix person, found from your sign-in email."
                 : _inboxError != null
                     ? $"Last check failed: {_inboxError}"
+                    : _inboxScannedElsewhere && _inboxState?.ScannedThrough is { } helperThrough
+                        ? $"Kept current by the background helper. Checked {helperThrough.ToLocalTime():MMM d 'at' h:mm tt}."
                     : _inboxState?.ScannedThrough is { } through
                         ? $"Checked {through.ToLocalTime():MMM d 'at' h:mm tt}. Refreshes every 5 minutes."
                         : "Not checked yet.";
@@ -185,7 +213,7 @@ public partial class TicketsPage
     {
         if (_inboxState is not { } state || _inboxPerson is not { } person) return;
         state.MarkAllRead();
-        SaveInbox(person, state);
+        SaveReadMarks(person, state);
         RenderInboxItems();
     }
 
@@ -195,7 +223,7 @@ public partial class TicketsPage
         if (_inboxState is { } state && _inboxPerson is { } person && !state.IsRead(row.Item.FeedId))
         {
             state.MarkRead(row.Item.FeedId);
-            SaveInbox(person, state);
+            SaveReadMarks(person, state);
             RenderInboxItems();
         }
 
@@ -209,9 +237,10 @@ public partial class TicketsPage
         await OpenTicketInDetailAsync(ticket);
     }
 
-    private void SaveInbox(TicketInboxPerson person, TicketInboxState state)
+    /// <summary>Read marks go to their own file, which only the window writes.</summary>
+    private void SaveReadMarks(TicketInboxPerson person, TicketInboxState state)
     {
-        try { _inboxStore.Save(person.Uid, state); }
+        try { _inboxStore.SaveRead(person.Uid, state); }
         catch (Exception ex) { Log.Warning(ex, "Ticket inbox read state could not be saved"); }
     }
 }

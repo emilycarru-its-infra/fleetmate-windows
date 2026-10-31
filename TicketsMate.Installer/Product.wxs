@@ -74,10 +74,19 @@
       <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\ticketsmate\shell\open\command" Value="&quot;[#TicketsMateExe]&quot; &quot;%1&quot;" Type="string" />
     </Component>
 
+    <!-- The inbox helper: the same exe with the inbox-agent switch, started at every
+         user's sign-in. No window or tray icon; it keeps the ticket Inbox
+         current and exits at once for anyone without TeamDynamix set up. -->
+    <Component Id="TicketsMateInboxAgent" Directory="INSTALLDIR" Guid="{5EF6CBCB-2D33-4777-BC13-B895AAAF5E82}">
+      <RegistryValue Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run" Name="TicketsMate Inbox"
+                     Value="&quot;[#TicketsMateExe]&quot; --inbox-agent" Type="string" KeyPath="yes" />
+    </Component>
+
     <Feature Id="DefaultFeature" Level="1">
       <ComponentRef Id="TicketsMateProtocol" />
       <ComponentRef Id="TicketsMateExecutable" />
       <ComponentRef Id="RegistryEntries" />
+      <ComponentRef Id="TicketsMateInboxAgent" />
     </Feature>
 
   </Package>

@@ -1198,6 +1198,42 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
     private TdxPerson? _me;
 
     /// <summary>
+    /// Seed the signed-in person from a restored session. Ignored unless the
+    /// person's email is the signed-in address.
+    /// </summary>
+    public void RememberMe(TdxPerson person)
+    {
+        if (!string.IsNullOrWhiteSpace(_ssoUserId)
+            && string.Equals(person.PrimaryEmail?.Trim(), _ssoUserId.Trim(), StringComparison.OrdinalIgnoreCase))
+            _me = person;
+    }
+
+    /// <summary>The signed-in operator's token, while it is unexpired; for saving the session.</summary>
+    public string? CurrentSsoToken => IsSsoAuthenticated ? _ssoToken : null;
+
+    /// <summary>The signed-in operator's token expiry (UTC).</summary>
+    public DateTime CurrentSsoExpiry => _ssoTokenExpiry;
+
+    /// <summary>
+    /// Find the signed-in person by their SSO email, throwing when TDX does not
+    /// answer. Used to check that a restored session is still accepted, where
+    /// <see cref="GetMeAsync"/> would read a refusal as "no match".
+    /// </summary>
+    /// <exception cref="TdxRequestException">TDX refused the token or did not answer.</exception>
+    public async Task<TdxPerson?> ProbeMeAsync(CancellationToken ct = default)
+    {
+        var email = _ssoUserId;
+        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@')) return null;
+
+        var matches = await GetJsonOrThrowAsync<List<TdxPerson>>(
+            _config.GetPeopleUrl($"lookup?searchText={Uri.EscapeDataString(email.Trim())}&maxResults=5"),
+            "look up the signed-in person", ct);
+        _me = matches.FirstOrDefault(p => string.Equals(p.PrimaryEmail, email, StringComparison.OrdinalIgnoreCase))
+              ?? (matches.Count == 1 ? matches[0] : null);
+        return _me;
+    }
+
+    /// <summary>
     /// The signed-in operator as a TDX person, resolved once per sign-in from
     /// the SSO email the way the macOS app does it. Null when nobody is signed
     /// in or the lookup finds no exact email match.

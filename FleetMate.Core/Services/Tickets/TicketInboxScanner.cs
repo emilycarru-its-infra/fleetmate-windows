@@ -13,8 +13,11 @@ public interface ITicketInboxApi
 }
 
 /// <summary>
-/// Saves one person's inbox as <c>Inbox\&lt;uid&gt;.json</c> under the app's
-/// local data folder (%LOCALAPPDATA%\FleetMate or %LOCALAPPDATA%\TicketsMate).
+/// Saves one person's inbox under the app's local data folder
+/// (%LOCALAPPDATA%\FleetMate or %LOCALAPPDATA%\TicketsMate), in <c>Inbox</c>:
+/// <c>&lt;uid&gt;.json</c> for the items and scan point, written by whichever
+/// process scans; <c>&lt;uid&gt;.read.json</c> for read marks, written only by
+/// the app window; and <c>&lt;uid&gt;.lock</c>, held while a pass runs.
 /// </summary>
 public sealed class TicketInboxStore
 {
@@ -27,30 +30,67 @@ public sealed class TicketInboxStore
     }
 
     public string PathFor(Guid uid) => Path.Combine(_directory, $"{uid}.json");
+    public string ReadPathFor(Guid uid) => Path.Combine(_directory, $"{uid}.read.json");
+    public string LockPathFor(Guid uid) => Path.Combine(_directory, $"{uid}.lock");
 
-    /// <summary>The saved inbox, or an empty one when none is saved or it cannot be read.</summary>
+    /// <summary>The saved inbox with its read marks, or an empty one when none is saved or it cannot be read.</summary>
     public TicketInboxState Load(Guid uid)
     {
-        var path = PathFor(uid);
+        var state = Read<TicketInboxState>(PathFor(uid)) ?? new TicketInboxState();
+        state.ReadIds = Read<HashSet<int>>(ReadPathFor(uid)) ?? new HashSet<int>();
+        return state;
+    }
+
+    /// <summary>Save the items and scan point. Read marks are left alone.</summary>
+    public void Save(Guid uid, TicketInboxState state) => Write(PathFor(uid), state);
+
+    /// <summary>Save the read marks. Only the app window calls this.</summary>
+    public void SaveRead(Guid uid, TicketInboxState state) => Write(ReadPathFor(uid), state.ReadIds);
+
+    /// <summary>
+    /// Take the exclusive scan lock for one person, without waiting. Null when
+    /// another process holds it. Disposing the result releases it.
+    /// </summary>
+    public IDisposable? TryLock(Guid uid)
+    {
+        Directory.CreateDirectory(_directory);
         try
         {
-            if (!File.Exists(path)) return new TicketInboxState();
-            return JsonSerializer.Deserialize<TicketInboxState>(File.ReadAllText(path), Options) ?? new TicketInboxState();
+            return new FileStream(LockPathFor(uid), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None,
+                bufferSize: 1, FileOptions.DeleteOnClose);
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // A lock file being deleted by its holder's close reads as access denied.
+            return null;
+        }
+    }
+
+    private static T? Read<T>(string path) where T : class
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            return JsonSerializer.Deserialize<T>(stream, Options);
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Ticket inbox could not be read; starting a fresh one");
-            return new TicketInboxState();
+            Log.Warning(ex, "Ticket inbox file could not be read; starting fresh");
+            return null;
         }
     }
 
     /// <summary>Write through a temp file, so a quit mid-write leaves the last good copy.</summary>
-    public void Save(Guid uid, TicketInboxState state)
+    private void Write<T>(string path, T value)
     {
         Directory.CreateDirectory(_directory);
-        var path = PathFor(uid);
-        var temp = path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(state, Options));
+        var temp = path + "." + Environment.ProcessId + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(value, Options));
         File.Move(temp, path, overwrite: true);
     }
 }
@@ -90,6 +130,24 @@ public sealed class TicketInboxScanner
         _store = store;
         _utcNow = utcNow ?? (() => DateTime.UtcNow);
         _delay = delay ?? Task.Delay;
+    }
+
+    /// <summary>
+    /// Run one pass if no other process is scanning this person's inbox.
+    /// False when the lock was held elsewhere: the caller reloads the saved
+    /// inbox instead, which the other process keeps current.
+    /// </summary>
+    public async Task<bool> TryRunPassAsync(
+        TicketInboxPerson person,
+        TicketInboxState state,
+        IProgress<TicketInboxProgress>? progress = null,
+        Action? changed = null,
+        CancellationToken ct = default)
+    {
+        using var held = _store.TryLock(person.Uid);
+        if (held == null) return false;
+        await RunPassAsync(person, state, progress, changed, ct);
+        return true;
     }
 
     /// <summary>

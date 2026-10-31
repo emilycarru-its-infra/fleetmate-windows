@@ -75,6 +75,7 @@ public sealed class TicketInboxTests : IDisposable
         state.TicketModified[42] = Now;
         state.ScannedThrough = Now;
         store.Save(Me, state);
+        store.SaveRead(Me, state);
 
         var loaded = store.Load(Me);
         Assert.True(loaded.IsRead(1));
@@ -186,6 +187,46 @@ public sealed class TicketInboxTests : IDisposable
 
         Assert.Null(state.ScannedThrough);
         Assert.False(state.TicketModified.ContainsKey(1));
+    }
+
+    [Fact]
+    public void ReadMarksLiveInTheirOwnFileThatAScannerSaveNeverTouches()
+    {
+        var store = new TicketInboxStore(_dir);
+        var window = new TicketInboxState();
+        window.ReplaceTicket(42, new[] { new TicketInboxItem { FeedId = 1, TicketId = 42, Created = Now } });
+        window.MarkRead(1);
+        store.SaveRead(Me, window);
+
+        // The helper saves its own copy, which knows nothing of the window's marks.
+        var helper = new TicketInboxState();
+        helper.ReplaceTicket(42, new[] { new TicketInboxItem { FeedId = 1, TicketId = 42, Created = Now } });
+        store.Save(Me, helper);
+
+        Assert.True(store.Load(Me).IsRead(1));
+        Assert.DoesNotContain("readIds", File.ReadAllText(store.PathFor(Me)));
+    }
+
+    [Fact]
+    public async Task OnlyOneProcessScansAPersonAtATime()
+    {
+        var api = new FakeApi { Tickets = { Ticket(1, Now.AddHours(-1)) } };
+        api.Feeds[1] = new() { Entry(10, "Pat Example") };
+        var store = new TicketInboxStore(_dir);
+        var scanner = new TicketInboxScanner(api, store, () => Now, (_, _) => Task.CompletedTask);
+
+        using (var held = store.TryLock(Me))
+        {
+            Assert.NotNull(held);
+            Assert.Null(store.TryLock(Me));
+            Assert.False(await scanner.TryRunPassAsync(Person, new TicketInboxState()));
+            Assert.Empty(api.Searches);
+        }
+
+        Assert.True(await scanner.TryRunPassAsync(Person, new TicketInboxState()));
+        Assert.Single(api.Searches);
+        using var again = store.TryLock(Me);
+        Assert.NotNull(again);
     }
 
     private sealed class SyncProgress(Action<TicketInboxProgress> report) : IProgress<TicketInboxProgress>

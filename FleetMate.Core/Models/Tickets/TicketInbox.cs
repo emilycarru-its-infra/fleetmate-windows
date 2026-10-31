@@ -23,7 +23,11 @@ public sealed class TicketInboxItem
 public sealed class TicketInboxState
 {
     [JsonPropertyName("items")] public List<TicketInboxItem> Items { get; set; } = new();
-    [JsonPropertyName("readIds")] public HashSet<int> ReadIds { get; set; } = new();
+    /// <summary>
+    /// Read marks. Saved in their own file, written only by the app window,
+    /// so the background helper's saves never overwrite them.
+    /// </summary>
+    [JsonIgnore] public HashSet<int> ReadIds { get; set; } = new();
 
     /// <summary>Start of the last full pass. The next pass searches from ten minutes before it.</summary>
     [JsonPropertyName("scannedThrough")] public DateTime? ScannedThrough { get; set; }

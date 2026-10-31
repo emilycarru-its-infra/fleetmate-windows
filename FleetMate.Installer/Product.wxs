@@ -88,10 +88,19 @@
       <Environment Id="UpdatePath" Name="PATH" Value="[INSTALLDIR]" Permanent="no" Part="last" Action="set" Separator=";" System="yes" />
     </Component>
 
+    <!-- The inbox helper: the same exe with the inbox-agent switch, started at every
+         user's sign-in. No window or tray icon; it keeps the ticket Inbox
+         current and exits at once for anyone without TeamDynamix set up. -->
+    <Component Id="FleetMateInboxAgent" Directory="INSTALLDIR" Guid="{6D403898-2258-4904-B533-5CD7B82BBFB8}">
+      <RegistryValue Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run" Name="FleetMate Inbox"
+                     Value="&quot;[#FleetMateGuiExe]&quot; --inbox-agent" Type="string" KeyPath="yes" />
+    </Component>
+
     <Feature Id="DefaultFeature" Level="1">
       <ComponentRef Id="FleetMateExecutable" />
       <ComponentRef Id="FleetMateGuiExecutable" />
       <ComponentRef Id="RegistryEntries" />
+      <ComponentRef Id="FleetMateInboxAgent" />
       <ComponentRef Id="SetPathComponent" />
     </Feature>
 
