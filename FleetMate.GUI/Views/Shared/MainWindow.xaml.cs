@@ -26,6 +26,7 @@ public partial class MainWindow : Window
         // Development is the launch tab; there is no Dashboard. TicketsMate
         // opens on Tickets, the only tab it has.
         ContentFrame.Navigate(GetOrCreatePage(LaunchTab));
+        WarmTicketsPage();
         (TicketsOnly ? TabTickets : TabDevelopment).IsChecked = true;
         if (TicketsOnly) ApplyTicketsOnlyChrome();
         UpdateGraphsButton();
@@ -441,6 +442,17 @@ public partial class MainWindow : Window
     public void ResetPageCache()
     {
         _pageCache.Clear();
+        WarmTicketsPage();
+    }
+
+    /// <summary>
+    /// Build the Tickets page at launch when TeamDynamix is configured, so its
+    /// Inbox scan starts as soon as the signed-in person is known rather than
+    /// when the tab is first opened.
+    /// </summary>
+    private void WarmTicketsPage()
+    {
+        if (Application.Current is App { TdxService: not null }) GetOrCreatePage("Tickets");
     }
 
     // ── Authentication popover ────────────────────────────────────

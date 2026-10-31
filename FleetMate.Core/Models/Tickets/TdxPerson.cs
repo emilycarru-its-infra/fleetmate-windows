@@ -22,6 +22,18 @@ public class TdxPerson
     [JsonPropertyName("PrimaryEmail")]
     public string? PrimaryEmail { get; set; }
 
+    /// <summary>The person's department, as TDX names their default account.</summary>
+    [JsonPropertyName("DefaultAccountName")]
+    public string? DefaultAccountName { get; set; }
+
+    /// <summary>Only on group members: whether the group's notifications reach them.</summary>
+    [JsonPropertyName("IsGroupNotified")]
+    public bool? IsGroupNotified { get; set; }
+
+    /// <summary>Email and department on one line, for a contact row.</summary>
+    public string Subtitle => string.Join(" · ",
+        new[] { PrimaryEmail, DefaultAccountName }.Where(s => !string.IsNullOrWhiteSpace(s)));
+
     /// <summary>Name for display, falling back to the email.</summary>
     public string DisplayName =>
         !string.IsNullOrWhiteSpace(FullName) ? FullName!

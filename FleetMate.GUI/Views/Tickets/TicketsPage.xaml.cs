@@ -58,6 +58,7 @@ public partial class TicketsPage : Page
     private bool _detailPanelVisible = false;
     private bool _showClosed = false;  // Default to hiding closed tickets (Show Closed unchecked)
     private bool _isBoardView = true;   // List vs Board view mode (Board is the default, macOS parity)
+    private bool _isInboxView;          // Inbox: comments that notified the signed-in person
     private string _boardGroupBy = "Responsible"; // Status | Responsible | Priority | Group
     private string _feedFilter = "Comments";  // Comments (default), Activity, All
 private bool _isInitialLoadDone;
@@ -113,6 +114,10 @@ private bool _isInitialLoadDone;
             // A reload rebuilds the page, so this one stops listening.
             app.ServicesReloaded += DetachFromApp;
         }
+
+        // The page is built at launch so the Inbox scan starts without waiting
+        // for the tab; if sign-in already finished, find the person now.
+        if (_tdxService?.IsSsoAuthenticated == true) _ = ResolveMeAsync();
 
         TicketsListView.ItemsSource = _ticketRows;
 
@@ -205,6 +210,7 @@ private bool _isInitialLoadDone;
         UpdateSsoState();
         _me = null;
         UpdateAssignedToMeToggle();
+        OnInboxPersonChanged();
 
         if (_tdxService?.IsSsoAuthenticated != true || _app == null)
         {
@@ -233,6 +239,7 @@ private bool _isInitialLoadDone;
         _app.CacheChanged -= OnAppCacheChanged;
         _app.TdxSignInChanged -= OnTdxSignInChanged;
         _app.ServicesReloaded -= DetachFromApp;
+        StopInbox();
     }
     
     private async Task LoadTicketsAsync()
@@ -508,9 +515,12 @@ private bool _isInitialLoadDone;
         if (!IsInitialized) return;
 
         _isBoardView = BoardViewRadio.IsChecked == true;
+        _isInboxView = InboxViewRadio.IsChecked == true;
 
-        ListViewPanel.Visibility = _isBoardView ? Visibility.Collapsed : Visibility.Visible;
+        ListViewPanel.Visibility = !_isBoardView && !_isInboxView ? Visibility.Visible : Visibility.Collapsed;
         BoardViewPanel.Visibility = _isBoardView ? Visibility.Visible : Visibility.Collapsed;
+        InboxViewPanel.Visibility = _isInboxView ? Visibility.Visible : Visibility.Collapsed;
+        OnInboxVisibilityChanged();
         // The column picker only means something on the board, as on Mac.
         BoardGroupComboBox.Visibility = _isBoardView ? Visibility.Visible : Visibility.Collapsed;
 
@@ -1092,6 +1102,7 @@ private bool _isInitialLoadDone;
             {
                 _selectedTicket = ticket;
                 UpdateDetailPanel(ticket);
+                _ = LoadTicketPeopleAsync(ticket);
             }
             
             // Get feed/comments
@@ -1481,11 +1492,9 @@ private bool _isInitialLoadDone;
                 FormattedDate = FormatDate(f.CreatedDate),
                 StrippedBody = DecodeHtml(f.Body ?? ""),
                 IsPrivate = f.IsPrivate,
-                NotificationRecipients = f.NotifiedList is null
-                    ? "Notification recipients unavailable"
-                    : string.IsNullOrWhiteSpace(f.NotifiedList)
-                        ? "Notified: nobody"
-                        : $"Notified: {DecodeHtml(f.NotifiedList)}"
+                // Only when TDX says who was notified. Replies and most system
+                // entries carry no list, and an empty one says nothing.
+                NotificationRecipients = FeedDisplayItem.NotifiedLine(f.NotifiedList)
             }).ToList();
             
             FeedItemsControl.ItemsSource = displayFeed;
@@ -1499,53 +1508,50 @@ private bool _isInitialLoadDone;
         }
     }
 
+    /// <summary>
+    /// Draw a box for everyone the comment can notify: the responsible group,
+    /// requestor, responsible, contacts and people held in custom attributes.
+    /// A redraw of the same ticket keeps the boxes already ticked.
+    /// </summary>
     private void UpdateNotifyOptions(TdxTicket ticket)
     {
-        // A redraw of the same ticket (a menu action, a refresh) keeps the
-        // boxes already ticked for the comment being written.
         var ticked = _notifyOptionsTicketId == ticket.Id
-            ? NotifyCheckboxesPanel.Children.OfType<CheckBox>().Where(c => c.IsChecked == true).Select(c => c.Tag as string).ToHashSet()
-            : new HashSet<string?>();
+            ? NotifyCheckboxesPanel.Children.OfType<CheckBox>().Where(c => c.IsChecked == true).Select(c => c.Tag as string).OfType<string>().ToHashSet()
+            : new HashSet<string>();
         _notifyOptionsTicketId = ticket.Id;
         NotifyCheckboxesPanel.Children.Clear();
-        
-        // Build notify options from ticket properties
-        var options = new List<(string id, string label)>();
-        
-        // Responsible Group
-        if (!string.IsNullOrEmpty(ticket.ResponsibleGroupName) && ticket.ResponsibleGroupId > 0)
+
+        var peopleLoaded = _ticketPeopleTicketId == ticket.Id;
+        _notifyRecipients = TicketNotifyRecipients.Build(
+            ticket,
+            peopleLoaded ? _groupMembers : null,
+            peopleLoaded ? _ticketContacts : null,
+            peopleLoaded ? _attributePeople : null);
+
+        foreach (var recipient in _notifyRecipients)
         {
-            options.Add(($"group:{ticket.ResponsibleGroupId}", $"Group: {ticket.ResponsibleGroupName}"));
-        }
-        
-        // Requestor
-        if (!string.IsNullOrEmpty(ticket.RequestorName) && ticket.RequestorUid != null && ticket.RequestorUid != Guid.Empty)
-        {
-            options.Add(($"user:{ticket.RequestorUid}", $"Requestor: {ticket.RequestorName}"));
-        }
-        
-        // Responsible person (if different from requestor)
-        if (!string.IsNullOrEmpty(ticket.ResponsibleFullName) && ticket.ResponsibleUid != null && ticket.ResponsibleUid != Guid.Empty)
-        {
-            if (ticket.ResponsibleUid != ticket.RequestorUid)
+            NotifyCheckboxesPanel.Children.Add(new CheckBox
             {
-                options.Add(($"user:{ticket.ResponsibleUid}", $"Responsible: {ticket.ResponsibleFullName}"));
-            }
-        }
-        
-        // Create checkboxes
-        foreach (var (id, label) in options)
-        {
-            var checkbox = new CheckBox
-            {
-                Content = label,
-                Tag = id,
-                IsChecked = ticked.Contains(id),
+                Content = recipient.Label,
+                Tag = recipient.Id,
+                IsChecked = ticked.Contains(recipient.Id),
+                ToolTip = string.Join(", ", recipient.Emails),
                 Margin = new Thickness(0, 0, 8, 0),
                 FontSize = 12
-            };
-            NotifyCheckboxesPanel.Children.Add(checkbox);
+            });
         }
+        NotifyOptionsPanel.Visibility = _notifyRecipients.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>Everyone the notify boxes were last drawn for.</summary>
+    private List<NotifyRecipient> _notifyRecipients = new();
+
+    /// <summary>The emails of the ticked notify boxes, each address once.</summary>
+    private List<string> SelectedNotifyEmails()
+    {
+        var ticked = NotifyCheckboxesPanel.Children.OfType<CheckBox>()
+            .Where(c => c.IsChecked == true).Select(c => c.Tag as string).OfType<string>().ToHashSet();
+        return TicketNotifyRecipients.SelectedEmails(_notifyRecipients, ticked);
     }
 
     // ── Responsible actions ───────────────────────────────────────
@@ -1705,13 +1711,18 @@ private bool _isInitialLoadDone;
 
         try
         {
+            var notify = SelectedNotifyEmails();
             await _tdxService.AddCommentAsync(
                 _selectedTicket.Id,
                 comment,
-                PrivateCheckBox.IsChecked == true);
+                PrivateCheckBox.IsChecked == true,
+                notify: notify);
 
-            ShowActionMessage("Comment added successfully");
+            ShowActionMessage(notify.Count == 0
+                ? "Comment added successfully"
+                : $"Comment added; notified {notify.Count} {(notify.Count == 1 ? "person" : "people")}");
             CommentTextBox.Text = "";
+            foreach (var box in NotifyCheckboxesPanel.Children.OfType<CheckBox>()) box.IsChecked = false;
 
             // Drop the stashed copy too, or navigating away and back would
             // resurrect a comment that was already posted.
@@ -1809,7 +1820,13 @@ public class FeedDisplayItem
     public string FormattedDate { get; set; } = "";
     public string StrippedBody { get; set; } = "";
     public bool IsPrivate { get; set; }
-    public string NotificationRecipients { get; set; } = "Notification recipients unavailable";
+    public string NotificationRecipients { get; set; } = "";
+    /// <summary>"Notified: …", or nothing when TDX sent no names.</summary>
+    public static string NotifiedLine(string? notifiedList) =>
+        string.IsNullOrWhiteSpace(notifiedList) ? "" : $"Notified: {System.Net.WebUtility.HtmlDecode(notifiedList.Trim())}";
+
+    public Visibility NotificationVisibility =>
+        string.IsNullOrEmpty(NotificationRecipients) ? Visibility.Collapsed : Visibility.Visible;
 }
 
 /// <summary>A date-range choice for the Tickets toolbar.</summary>

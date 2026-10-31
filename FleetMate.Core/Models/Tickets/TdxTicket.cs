@@ -336,6 +336,28 @@ public class TdxAttribute
     [JsonPropertyName("ValueText")]
     public string? ValueText { get; set; }
 
+    /// <summary>
+    /// The raw value as text. TDX sends it as a string or a number, and it
+    /// lands here as a <see cref="System.Text.Json.JsonElement"/>.
+    /// </summary>
+    [JsonIgnore]
+    public string? ValueString => Value switch
+    {
+        null => null,
+        System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.String } e => e.GetString(),
+        System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Null or System.Text.Json.JsonValueKind.Undefined } => null,
+        System.Text.Json.JsonElement e => e.GetRawText(),
+        var other => other.ToString(),
+    };
+
+    /// <summary>
+    /// The person a person-valued attribute holds, such as a form's
+    /// "Primary Contact". TDX stores those as the person's UID, so a value that
+    /// parses as a GUID is how they are told apart.
+    /// </summary>
+    [JsonIgnore]
+    public Guid? PersonUid => Guid.TryParse(ValueString?.Trim(), out var uid) && uid != Guid.Empty ? uid : null;
+
     [JsonPropertyName("ChoicesText")]
     public string? ChoicesText { get; set; }
 }
@@ -671,8 +693,9 @@ public class CreateFeedEntryRequest
     [JsonPropertyName("IsRichHtml")]
     public bool IsRichHtml { get; set; }
 
+    /// <summary>The email addresses to notify.</summary>
     [JsonPropertyName("Notify")]
-    public List<Guid>? Notify { get; set; }
+    public List<string>? Notify { get; set; }
 }
 
 public static class ParentTicketRequest
