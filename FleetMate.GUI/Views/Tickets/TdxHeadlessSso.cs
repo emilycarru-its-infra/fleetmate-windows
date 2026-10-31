@@ -55,9 +55,12 @@ internal static class TdxHeadlessSso
             return TdxSsoResult.Refused(TdxSsoResult.UnknownExpectedAddressReason);
         }
         Log.Information("[tdx-sso] Signing in as the Windows account {Upn}", upn);
+        // The account came from the logon or the Microsoft sign-in broker;
+        // the next step reaches Microsoft sign-in for the TeamDynamix session.
+        step?.Invoke(TdxSignInStep.ConnectingToMicrosoft);
 
         Log.Information("[tdx-sso] Phase 1: silent HTTP SSO (Negotiate/Kerberos)");
-        step?.Invoke(TdxSignInStep.ConnectingToMicrosoft);
+        step?.Invoke(TdxSignInStep.SigningInToTeamDynamix);
         var http = await Task.Run(() => new TdxSsoService(baseUrl).TrySilentSsoAsync(ct, upn), ct);
         if (http is { Success: true, Token: not null } or { IdentityRefused: true }) return http;
 
