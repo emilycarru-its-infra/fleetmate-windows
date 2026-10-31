@@ -121,8 +121,7 @@ public partial class PipelineRunView : UserControl
     private void OnOpenInBrowserClicked(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrWhiteSpace(_run?.WebUrl)) return;
-        try { Process.Start(new ProcessStartInfo(_run.WebUrl) { UseShellExecute = true }); }
-        catch (Exception ex) { Log.Warning(ex, "[pipelines] Could not open {Url}", _run.WebUrl); }
+        FleetMate.GUI.Links.ExternalBrowser.Open(_run.WebUrl);
     }
 
     private async void OnRerunClicked(object sender, RoutedEventArgs e)

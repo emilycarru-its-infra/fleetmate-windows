@@ -117,6 +117,26 @@ public class FleetMateLinkTests
     }
 
     [Theory]
+    [InlineData("https://dev.example.com/org/My%20Project/_git/My.Repo-2/pullrequest/9", "fleetmate://pull/My%20Project/My.Repo-2/9")]
+    [InlineData("https://dev.example.com/org/Proj/_git/Repo/commit/abc1234?refName=refs/heads/main", "fleetmate://commit/Proj/Repo/abc1234")]
+    [InlineData("https://dev.example.com/org/Proj/_build/results?buildId=4242&view=results", "fleetmate://pipeline/Proj/4242")]
+    [InlineData("https://dev.example.com/org/Proj/_build?definitionId=12&_a=summary", "fleetmate://pipeline/Proj/definition/12")]
+    [InlineData("https://dev.example.com/org/Proj/_workitems/edit/1234", "fleetmate://workitem/1234")]
+    public void OpenRoutesEveryPageTheLinkExtensionHandsOver(string web, string expected) =>
+        Assert.Equal(expected, L.Parse("fleetmate://open?url=" + Uri.EscapeDataString(web)).ToLink());
+
+    [Theory]
+    [InlineData("https://dev.example.com/org/Proj/_git/..%2F..%2Fx/pullrequest/9")]
+    [InlineData("https://dev.example.com/org/Pr%3Boj/_git/Repo/pullrequest/9")]
+    [InlineData("https://dev.example.com/org/%2E%2E/_build/results?buildId=1")]
+    [InlineData("https://github.com/octo/a%26b/pull/1")]
+    public void OpenRefusesNamesThatAreNotNames(string web)
+    {
+        var error = Assert.Throws<FleetMateLinkException>(() => L.ParseWeb(new Uri(web)));
+        Assert.Equal(FleetMateLinkError.UnsupportedWebUrl, error.Kind);
+    }
+
+    [Theory]
     [InlineData("fleetmate://pull/Proj/Repo", FleetMateLinkError.Malformed)]
     [InlineData("fleetmate://pull/Proj/Repo/abc", FleetMateLinkError.Malformed)]
     [InlineData("fleetmate://workitem/", FleetMateLinkError.Malformed)]

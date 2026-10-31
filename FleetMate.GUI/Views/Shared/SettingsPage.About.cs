@@ -132,8 +132,7 @@ public partial class SettingsPage
         var link = new Hyperlink(new Run(text)) { NavigateUri = new Uri(url) };
         link.RequestNavigate += (_, e) =>
         {
-            try { Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true }); }
-            catch (Exception ex) { Serilog.Log.Debug(ex, "[settings] Could not open {Url}", e.Uri); }
+            FleetMate.GUI.Links.ExternalBrowser.Open(e.Uri.AbsoluteUri);
             e.Handled = true;
         };
         return new TextBlock(link) { FontSize = 12, Margin = new Thickness(0, 2, 0, 0) };

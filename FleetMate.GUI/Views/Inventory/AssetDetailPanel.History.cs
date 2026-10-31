@@ -174,8 +174,7 @@ public partial class AssetDetailPanel
             var link = new Hyperlink(new Run(file.Name)) { NavigateUri = uri, ToolTip = uri.ToString() };
             link.RequestNavigate += (_, e) =>
             {
-                try { Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true }); }
-                catch { }
+                FleetMate.GUI.Links.ExternalBrowser.Open(e.Uri.AbsoluteUri);
                 e.Handled = true;
             };
             line.Inlines.Add(link);

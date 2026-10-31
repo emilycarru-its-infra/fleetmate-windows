@@ -134,14 +134,14 @@ public static class LinkHost
             }
 
             var command = $"\"{exe}\" \"%1\"";
-            // An MSI owns the machine registration and removes it on uninstall.
-            // Do not leave a per-user override behind for an installed TicketsMate.
-            if (FleetMate.Core.Config.AppEdition.Current.IsTicketsOnly)
+            // Each edition's MSI owns the machine registration and removes it on
+            // uninstall. Do not leave a per-user override behind for an installed app.
+            var scheme = FleetMate.Core.Config.AppEdition.Current.LinkScheme;
+            using (var machine = Registry.LocalMachine.OpenSubKey($@"Software\Classes\{scheme}\shell\open\command"))
             {
-                using var machine = Registry.LocalMachine.OpenSubKey(@"Software\Classes\ticketsmate\shell\open\command");
                 if (string.Equals(machine?.GetValue(null) as string, command, StringComparison.OrdinalIgnoreCase)) return;
             }
-            using var root = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{FleetMate.Core.Config.AppEdition.Current.LinkScheme}");
+            using var root = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{scheme}");
             using var open = root.CreateSubKey(@"shell\open\command");
             if (string.Equals(open.GetValue(null) as string, command, StringComparison.OrdinalIgnoreCase)) return;
 

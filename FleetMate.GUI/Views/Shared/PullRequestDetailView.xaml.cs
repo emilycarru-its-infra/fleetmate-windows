@@ -253,8 +253,7 @@ public partial class PullRequestDetailView : UserControl
     private static void OpenUrl(string? url)
     {
         if (string.IsNullOrWhiteSpace(url)) return;
-        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch (Exception ex) { Log.Warning(ex, "[pr-viewer] Could not open {Url}", url); }
+        FleetMate.GUI.Links.ExternalBrowser.Open(url);
     }
 
     // MARK: - Review actions

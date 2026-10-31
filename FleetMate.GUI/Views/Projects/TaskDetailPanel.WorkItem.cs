@@ -821,7 +821,6 @@ public partial class TaskDetailPanel
 
     private static void OpenUrl(string url)
     {
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch (Exception ex) { Log.Warning(ex, "Failed to open URL"); }
+        FleetMate.GUI.Links.ExternalBrowser.Open(url);
     }
 }

@@ -82,6 +82,15 @@
       <RegistryValue Root="HKLM" Key="SOFTWARE\FleetMate" Name="LastRunVersion" Value="$(var.CalendarVersion)" Type="string" />
     </Component>
 
+    <!-- fleetmate: links, for every user from install on, so a link opens
+         FleetMate before it has ever been started. The app no longer writes a
+         per-user copy over this one. -->
+    <Component Id="FleetMateProtocol" Directory="INSTALLDIR" Guid="{0A9FF98F-8F3F-4F60-ADE9-BD548ACF892A}">
+      <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\fleetmate" Value="URL:FleetMate" Type="string" KeyPath="yes" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\fleetmate" Name="URL Protocol" Value="" Type="string" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\fleetmate\shell\open\command" Value="&quot;[#FleetMateGuiExe]&quot; &quot;%1&quot;" Type="string" />
+    </Component>
+
     <!-- Put fleetmate.exe on the system PATH so operators can run `fleetmate`
          from any shell. -->
     <Component Id="SetPathComponent" Directory="INSTALLDIR" Guid="{5ED9326E-87CB-485F-A239-0F1D9720F7D6}">
@@ -101,6 +110,7 @@
       <ComponentRef Id="FleetMateGuiExecutable" />
       <ComponentRef Id="RegistryEntries" />
       <ComponentRef Id="FleetMateInboxAgent" />
+      <ComponentRef Id="FleetMateProtocol" />
       <ComponentRef Id="SetPathComponent" />
     </Feature>
 

@@ -185,9 +185,41 @@ public abstract record FleetMateLink
     /// <summary>
     /// A web URL from Azure DevOps or GitHub. Azure DevOps is recognised by its
     /// path shape (/_git/, /_build, /_workitems/), never its host, so any
-    /// server or organization works.
+    /// server or organization works. A browser extension can hand over any
+    /// page, so project, repository and owner names must look like names.
     /// </summary>
     public static FleetMateLink ParseWeb(Uri url)
+    {
+        var link = ParseWebUnchecked(url);
+        if (!Names(link).All(IsSafeName))
+            throw new FleetMateLinkException(FleetMateLinkError.UnsupportedWebUrl, url.ToString());
+        return link;
+    }
+
+    private static IEnumerable<string> Names(FleetMateLink link) => link switch
+    {
+        PullRequest p => SourceNames(p.Source),
+        Commit c => SourceNames(c.Source),
+        AzureDevOpsRun r => new[] { r.Project },
+        AzureDevOpsPipeline d => new[] { d.Project },
+        GitHubRun r => new[] { r.Owner, r.Repo },
+        GitHubIssue i => new[] { i.Owner, i.Repo },
+        _ => Array.Empty<string>(),
+    };
+
+    private static string[] SourceNames(LinkSource source) => source switch
+    {
+        AzureDevOps a => new[] { a.Project, a.Repo },
+        GitHub g => new[] { g.Owner, g.Repo },
+        _ => Array.Empty<string>(),
+    };
+
+    /// <summary>Letters, digits, space and <c>-_.</c>, at most 100 long, never <c>.</c> or <c>..</c>.</summary>
+    public static bool IsSafeName(string name) =>
+        name.Length is > 0 and <= 100 && name != "." && name != ".."
+        && name.All(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.' or ' ');
+
+    private static FleetMateLink ParseWebUnchecked(Uri url)
     {
         var parts = url.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(Uri.UnescapeDataString).ToArray();
         var query = url.Query.TrimStart('?');

@@ -354,14 +354,7 @@ public partial class TaskDetailPanel : UserControl
         var btn = new Button { Content = "Open in Browser", MinWidth = 120, Margin = new Thickness(0, 0, 0, 8) };
         btn.Click += (_, _) =>
         {
-            try
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "Failed to open URL");
-            }
+            FleetMate.GUI.Links.ExternalBrowser.Open(url);
         };
         ContentPanel.Children.Add(btn);
     }
