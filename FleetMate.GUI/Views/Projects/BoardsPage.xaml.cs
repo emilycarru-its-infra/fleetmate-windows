@@ -58,6 +58,8 @@ public partial class BoardsPage : Page
         _app = Application.Current as App;
         _config = _app?.Config ?? FleetMateConfig.Load();
 
+        HookTileFilter();
+
         DetailPanel.CloseRequested += (_, _) =>
         {
             DetailPanel.Visibility = Visibility.Collapsed;
@@ -267,6 +269,9 @@ public partial class BoardsPage : Page
                 t.Title.ToLowerInvariant().Contains(search) ||
                 (t.Description?.ToLowerInvariant().Contains(search) ?? false));
         }
+
+        // A strip tile narrows the lists to the set it counts.
+        filtered = filtered.Where(TilePasses);
 
         // Apply bucket filter
         if (!string.IsNullOrEmpty(_filterBucket) && _filterBucket != "(All Buckets)")
@@ -594,6 +599,8 @@ public partial class BoardsPage : Page
         // the whole app down.
         if (!IsInitialized) return;
 
+        // A tile counts the signed-in user's items, so it filters Mine; leaving Mine drops it.
+        if (CurrentView != ProjectsView.Mine) ProjectsTileFilter.Shared.Clear();
         await ApplyViewAsync();
     }
 
@@ -661,7 +668,8 @@ public partial class BoardsPage : Page
 
     private void RefreshQueriesDisplay()
     {
-        QueriesList.ShowRuns(_queryRuns, _listSearchText, _showClosed);
+        QueriesList.ShowRuns(_queryRuns, _listSearchText, _showClosed,
+            ProjectsTileFilter.Shared.IsActive ? TilePasses : null);
     }
 
     // MARK: - List Mode (AzDO Work Items)
@@ -708,6 +716,12 @@ public partial class BoardsPage : Page
         if (!string.IsNullOrEmpty(_listStateFilter))
         {
             filtered = filtered.Where(w => w.State.Equals(_listStateFilter, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (ProjectsTileFilter.Shared.Selected is { } tile)
+        {
+            var ids = _tileIds;
+            filtered = tile == ProjectsTile.GitHubIssues ? Enumerable.Empty<WorkItem>() : filtered.Where(w => ids.Contains(w.Id));
         }
 
         var items = filtered.ToList();

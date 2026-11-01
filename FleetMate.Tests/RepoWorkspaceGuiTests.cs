@@ -221,19 +221,19 @@ public class RepoWorkspaceGuiTests
             Layout(view);
 
             Pump(copy.GitAsync(new[] { "update-ref", RepoInsightsModel.HistoryReference, "HEAD" }));
-            // Insights for this repository and for every tracked one.
-            model.Git.Panel = RepoPanel.Insights;
-            Layout(view, 4000);
+            // Insights, which the Graphs strip hosts, for this repository and for every tracked one.
+            var insights = new RepoInsightsView();
+            insights.Attach(model);
             model.Insights.Scope = RepoInsightsModel.InsightsScope.Repository;
             Pump(model.Insights.LoadAsync(manager, model.Selected, model.Tracked));
             Assert.Equal(2, model.Insights.Report?.Total.Commits);
-            view.Insights.Render();
-            Draw(view.Insights, 4000);
+            insights.Render();
+            Draw(insights, 4000);
             model.Insights.Scope = RepoInsightsModel.InsightsScope.All;
             Pump(model.Insights.LoadAsync(manager, model.Selected, model.Tracked));
             Assert.Equal(2, model.Insights.Summary?.Combined.Total.Commits);
-            view.Insights.Render();
-            Draw(view.Insights, 4000);
+            insights.Render();
+            Draw(insights, 4000);
 
             // The protected branch is refused, with the refusal reported.
             Pump(model.Git.SwitchBranchAsync("main"));

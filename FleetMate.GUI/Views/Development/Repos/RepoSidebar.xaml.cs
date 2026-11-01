@@ -54,8 +54,8 @@ public sealed record SidebarRepoRow(RepoRecord Record, RepoStatus? Status, bool 
 }
 
 /// <summary>
-/// The Repos sidebar: the workspace's mode (Changes, History, Files,
-/// Insights) on top, then tracked repositories grouped the way checkouts sit
+/// The Repos sidebar: the workspace's mode (Changes, History, Files) on
+/// top, then tracked repositories grouped the way checkouts sit
 /// on disk — host, then project or owner — with a filter and sort below.
 /// Status refreshes when shown and every 30 seconds while shown; fetch is on
 /// demand. Sort, grouping, filter and collapsed groups persist.
@@ -126,7 +126,6 @@ public partial class RepoSidebar : UserControl
         {
             RepoPanel.History => PanelHistory,
             RepoPanel.Files => PanelFiles,
-            RepoPanel.Insights => PanelInsights,
             _ => PanelChanges,
         };
         if (target.IsChecked != true) target.IsChecked = true;

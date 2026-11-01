@@ -52,6 +52,7 @@ public partial class BoardsPage
         static Visibility Show(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
         BoardFilters.Visibility = Show(flat || (board && !githubBoard));
         GroupByCombo.Visibility = Show(board);
+        MyItemsCombo.Visibility = Show(view == ProjectsView.Mine && useQueries);
         BoardSourceCombo.Visibility = Show(board);
         ListFilters.Visibility = Show(queries);
         ProjectsFilters.Visibility = Show(githubBoard);
@@ -148,7 +149,14 @@ public partial class BoardsPage
         var filteredSet = filtered.Select(t => (t.Provider, t.Id)).ToHashSet();
         List<UnifiedTask> rows;
 
-        if (view == ProjectsView.Mine)
+        var tile = ProjectsTileFilter.Shared.Selected;
+        if (view == ProjectsView.Mine && tile == ProjectsTile.GitHubIssues)
+        {
+            // The GitHub Issues tile counts the strip's open issues, which are not work items: list those.
+            rows = ProjectsTileFilter.IssueRows(FleetMate.GUI.Views.Shared.Widgets.WidgetCatalog.ProjectsIssues
+                ?? Array.Empty<FleetMate.Core.Services.Projects.GitHubIssueSummary>(), _searchText);
+        }
+        else if (view == ProjectsView.Mine)
         {
             // Mine's extra items were not in the board list, so they pass the
             // same filters here rather than through `filtered`.
@@ -162,7 +170,9 @@ public partial class BoardsPage
 
         FlatTaskList.ItemsSource = rows.Select(t => new TaskCardVm { Task = t }).ToList();
         FlatTasksEmpty.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        FlatTasksEmpty.Text = view == ProjectsView.Mine
+        FlatTasksEmpty.Text = view == ProjectsView.Mine && tile is { } t
+            ? $"Nothing in {ProjectsTileFilter.Title(t)}. None of your items match this tile; clear the filter to see them all."
+            : view == ProjectsView.Mine
             ? (_myIds == null ? "Loading…" : "Nothing assigned to you")
             : "Nothing loaded yet";
         TaskCountLabel.Text = $"{rows.Count} items";

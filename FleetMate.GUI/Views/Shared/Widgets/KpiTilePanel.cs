@@ -14,9 +14,17 @@ public sealed class KpiTilePanel : Panel
     /// <summary>The narrowest a tile in the three-column layout may be.</summary>
     public const double MinTileWidth = 76;
 
-    internal static int ColumnsFor(double width) => width >= 3 * MinTileWidth ? 3 : 2;
+    /// <summary>The most columns the tiles may take where there is room (three for Tickets, four for Projects).</summary>
+    public int MaxColumns { get; set; } = 3;
 
-    private int Columns(double width) => double.IsInfinity(width) ? 3 : ColumnsFor(width);
+    internal static int ColumnsFor(double width, int maxColumns = 3)
+    {
+        for (var c = maxColumns; c > 2; c--)
+            if (width >= c * MinTileWidth) return c;
+        return 2;
+    }
+
+    private int Columns(double width) => double.IsInfinity(width) ? MaxColumns : ColumnsFor(width, MaxColumns);
 
     private int RowCount(int columns) => (VisibleChildren().Count() + columns - 1) / columns;
 
