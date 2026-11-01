@@ -110,7 +110,8 @@
             </StackPanel>
         </DockPanel>
 
-        <!-- Source chips. Real filters, not decoration. -->
+        <!-- Source chips. Real filters, not decoration. Each keeps its one-line
+             size; the repository dropdown below is what gives way. -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,6">
             <ToggleButton x:Name="AllChip" Content="All" Padding="10,2" FontSize="11"
                           Margin="0,0,4,0" Click="OnSourceChipClicked" Tag="all" />
@@ -122,7 +123,7 @@
 
         <!-- Secondary filter: one repository dropdown in the current source
              scope, busiest first. Only shown when there's a real choice. -->
-        <ComboBox Grid.Row="2" x:Name="RepoCombo" Margin="0,0,0,6" MinWidth="200" MaxWidth="360"
+        <ComboBox Grid.Row="2" x:Name="RepoCombo" Margin="0,0,0,6" MinWidth="80" MaxWidth="360"
                   HorizontalAlignment="Left" SelectionChanged="OnRepoChanged"
                   ToolTip="Filter by repository" Visibility="Collapsed" />
 
