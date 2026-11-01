@@ -34,6 +34,15 @@ public static class TerminalEnvironment
     }
 
     /// <summary>
+    /// COLORFGBG for a session started in a dark or light terminal: foreground
+    /// and background as ANSI colour numbers, as rxvt sets it. Programs that
+    /// choose light or dark colours at start read the last number as the
+    /// background, 0-6 and 8 meaning dark; later switches reach them through
+    /// OSC 11 and the mode 2031 colour-scheme reports instead.
+    /// </summary>
+    public static string ColorFgBg(bool dark) => dark ? "15;0" : "0;15";
+
+    /// <summary>
     /// The folder holding the fleetmate CLI: the installed one when present,
     /// else a CLI built beside this app, else null.
     /// </summary>

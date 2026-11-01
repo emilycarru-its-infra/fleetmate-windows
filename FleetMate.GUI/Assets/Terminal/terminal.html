@@ -16,11 +16,27 @@
 <script src="xterm.js"></script>
 <script src="addon-fit.js"></script>
 <script>
-  // The host passes the theme in the query string: ?theme=dark|light
-  const dark = new URLSearchParams(location.search).get('theme') !== 'light';
-  const theme = dark
-    ? { background: '#1e1e1e', foreground: '#d4d4d4', cursor: '#d4d4d4', selectionBackground: '#264f78' }
-    : { background: '#ffffff', foreground: '#1e1e1e', cursor: '#1e1e1e', selectionBackground: '#add6ff' };
+  // The host passes the starting theme in the query string (?theme=dark|light)
+  // and sends a "theme" message whenever the app switches. xterm.js answers a
+  // program's OSC 10, 11 and 4 colour queries from the theme in force, so a
+  // program that asks after a switch hears the new colours.
+  // The 16 ANSI colours are picked to read on each background; the 256-colour
+  // cube and grey ramp stay xterm's, which is what programs expect of them.
+  const ansi = (c) => ({
+    black: c[0], red: c[1], green: c[2], yellow: c[3], blue: c[4], magenta: c[5], cyan: c[6], white: c[7],
+    brightBlack: c[8], brightRed: c[9], brightGreen: c[10], brightYellow: c[11],
+    brightBlue: c[12], brightMagenta: c[13], brightCyan: c[14], brightWhite: c[15]
+  });
+  const themes = {
+    dark: { background: '#1e1e1e', foreground: '#d4d4d4', cursor: '#d4d4d4', selectionBackground: '#264f78',
+      ...ansi(['#000000', '#d64c3e', '#40be40', '#c4ba3c', '#5c80ff', '#cd5acd', '#40bccc', '#cccccc',
+               '#808080', '#ff665c', '#60e260', '#f0e65a', '#82a0ff', '#f078f0', '#64e6f0', '#f0f0f0']) },
+    light: { background: '#ffffff', foreground: '#1e1e1e', cursor: '#1e1e1e', selectionBackground: '#add6ff',
+      ...ansi(['#000000', '#ba281e', '#188018', '#966e00', '#2440d2', '#a028a0', '#00788c', '#8c8c8c',
+               '#606060', '#d6382c', '#249624', '#b08400', '#3c5cf0', '#be3cbe', '#008ea4', '#b8b8b8']) }
+  };
+  let dark = new URLSearchParams(location.search).get('theme') !== 'light';
+  const theme = themes[dark ? 'dark' : 'light'];
   document.documentElement.style.setProperty('--bg', theme.background);
 
   const term = new Terminal({
@@ -36,6 +52,29 @@
   term.open(document.getElementById('term'));
 
   const post = (m) => window.chrome.webview.postMessage(m);
+
+  // Colour-scheme reports: CSI ? 996 n asks once, and a program that sets
+  // DEC private mode 2031 is told CSI ? 997 ; 1 n (dark) or ; 2 n (light)
+  // whenever the scheme changes. xterm.js knows neither, so they are handled
+  // here and every other mode in the same sequence goes on to xterm.js.
+  let reportScheme = false;
+  const schemeReport = () => `\x1b[?997;${dark ? 1 : 2}n`;
+  const hasMode = (params, mode) => params.some(p => p === mode || (Array.isArray(p) && p.includes(mode)));
+  term.parser.registerCsiHandler({ prefix: '?', final: 'h' }, params => { if (hasMode(params, 2031)) reportScheme = true; return false; });
+  term.parser.registerCsiHandler({ prefix: '?', final: 'l' }, params => { if (hasMode(params, 2031)) reportScheme = false; return false; });
+  term.parser.registerCsiHandler({ prefix: '?', final: 'n' }, params => {
+    if (params.length !== 1 || params[0] !== 996) return false;
+    post({ type: 'input', data: schemeReport() });
+    return true;
+  });
+  const setTheme = isDark => {
+    if (isDark === dark) return;
+    dark = isDark;
+    const next = themes[dark ? 'dark' : 'light'];
+    term.options.theme = next;
+    document.documentElement.style.setProperty('--bg', next.background);
+    if (reportScheme) post({ type: 'input', data: schemeReport() });
+  };
   const sendSize = () => {
     try { fit.fit(); } catch (e) { }
     post({ type: 'resize', cols: term.cols, rows: term.rows });
@@ -121,6 +160,7 @@
     if (m.type === 'output') term.write(m.data, reportModes);
     else if (m.type === 'config') { chords = new Set(m.chords); setFont(m.fontSize); }
     else if (m.type === 'font') setFont(m.size);
+    else if (m.type === 'theme') setTheme(!!m.dark);
     else if (m.type === 'clear') term.clear();
     else if (m.type === 'focus') term.focus();
     else if (m.type === 'agentDrag') agentDrag = !!m.active;
