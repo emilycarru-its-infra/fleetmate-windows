@@ -211,7 +211,18 @@ public partial class SettingsPage
         var status = AuthDisplayStatus.From(system.State, system.LastChecked);
         var domain = AuthProviderGrouping.ElevationDomain(id, GraphElevated);
         if (status.IsChecking && domain is { } d && IsStartingElevation(app, d))
-            status = AuthDisplayStatus.Checking("Starting elevation session…");
+            status = AuthDisplayStatus.Checking("Starting elevated session…");
+        // A verified system that runs through an elevated session reads as that
+        // session: Ready while it runs, a grey Stopped when it has stopped. A
+        // stopped container is not a credential problem.
+        else if (status.Kind == AuthDisplayKind.Valid && domain is { } vd && app.ElevationMonitor is { Enabled: true } m)
+            status = m.StateOf(vd) switch
+            {
+                ElevationSessionState.Ready => AuthDisplayStatus.Ready,
+                ElevationSessionState.Expired or ElevationSessionState.None => AuthDisplayStatus.Standby,
+                ElevationSessionState.Starting => AuthDisplayStatus.Checking("Starting…"),
+                _ => status,
+            };
 
         var details = new List<(string, string?)>();
         switch (id)
@@ -220,9 +231,9 @@ public partial class SettingsPage
                 details.Add(("Tenant ID", ShortId(config.Graph?.TenantId)));
                 if (domain is { } elevationDomain)
                 {
-                    if (config.Elevation is { IsConfigured: true } elevation)
-                        details.Add(("Runs as", $"{elevation.IdentityPrefix}{elevationDomain.DomainName()} (managed identity)"));
-                    details.Add(("Elevation session", ElevationSessionLine(app, elevationDomain)));
+                    // The session's own state, identity and Start action are in
+                    // the Elevated sessions block on the Azure CLI card.
+                    details.Add(("Runs through", $"{elevationDomain.DomainName()} elevated session"));
                 }
                 else
                 {
@@ -269,24 +280,6 @@ public partial class SettingsPage
         lock (_startingElevation)
             if (_startingElevation.Contains(domain)) return true;
         return app.ElevationMonitor?.StateOf(domain) == ElevationSessionState.Starting;
-    }
-
-    /// <summary>The elevation session behind a row: idle, starting, ready (with its expiry), stopped.</summary>
-    private string ElevationSessionLine(App app, GraphDomain domain)
-    {
-        if (IsStartingElevation(app, domain)) return "Starting (a cold start takes about a minute)";
-        if (app.ElevationMonitor is not { } monitor) return "Unknown";
-        return monitor.StateOf(domain) switch
-        {
-            ElevationSessionState.Ready when monitor.ExpiresOf(domain) is { } expires =>
-                $"Ready until {expires.ToLocalTime():t}",
-            ElevationSessionState.Ready => "Ready",
-            ElevationSessionState.Starting => "Starting (a cold start takes about a minute)",
-            ElevationSessionState.None => "Idle. Starts on first use.",
-            ElevationSessionState.Expired => "Stopped. Restarts on next use.",
-            ElevationSessionState.Off => app.Config.Elevation is { IsConfigured: false } ? "Not set up" : "Off",
-            _ => monitor.ErrorOf(domain) is { } error ? $"Unknown: {error}" : "Unknown",
-        };
     }
 
     /// <summary>The CLI account's own status, for the providers that have one.</summary>
@@ -349,6 +342,8 @@ public partial class SettingsPage
             AddDetail(body, label, value);
         if (_cliSignInResults.TryGetValue(provider, out var outcome))
             AddDetail(body, outcome.Succeeded ? "Sign-in" : "Sign-in error", outcome.Message);
+        if (provider == CredentialProvider.AzureCli && app.ElevationMonitor is { Enabled: true } elevationMonitor)
+            body.Children.Add(ElevatedSessionsBlock(app, elevationMonitor));
         header.Children.Add(body);
         stack.Children.Add(header);
 
@@ -441,6 +436,123 @@ public partial class SettingsPage
 
         grid.Children.Add(body);
         return grid;
+    }
+
+    // ── Elevated sessions ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// One row per domain container the app rides on: its state, the managed
+    /// identity it runs as, and a Start or Check again action. Lives in the
+    /// Azure CLI card because that sign-in is what authorizes starting them.
+    /// </summary>
+    private FrameworkElement ElevatedSessionsBlock(App app, ElevationMonitor monitor)
+    {
+        var explainer = ElevationStatusText.Explainer(monitor.TtlHours);
+        var block = new StackPanel { Margin = new Thickness(0, 10, 0, 0), ToolTip = explainer };
+        System.Windows.Automation.AutomationProperties.SetAutomationId(block, "ElevatedSessions");
+        block.Children.Add(new TextBlock { Text = ElevationStatusText.Title, FontWeight = FontWeights.SemiBold, FontSize = 12 });
+        block.Children.Add(Caption(explainer, top: 2));
+
+        var list = new StackPanel();
+        var domains = ElevationMonitor.DesktopDomains;
+        for (var i = 0; i < domains.Length; i++)
+        {
+            if (i > 0) list.Children.Add(new Separator());
+            list.Children.Add(ElevatedSessionRow(app, monitor, domains[i]));
+        }
+        var frame = new Border { CornerRadius = new CornerRadius(6), Margin = new Thickness(0, 6, 0, 0), Child = list };
+        frame.SetResourceReference(Border.BackgroundProperty, "SystemControlBackgroundBaseLowBrush");
+        block.Children.Add(frame);
+        return block;
+    }
+
+    private FrameworkElement ElevatedSessionRow(App app, ElevationMonitor monitor, GraphDomain domain)
+    {
+        var state = IsStartingElevation(app, domain) ? ElevationSessionState.Starting : monitor.StateOf(domain);
+        var row = new DockPanel { Margin = new Thickness(10, 8, 10, 8) };
+        System.Windows.Automation.AutomationProperties.SetAutomationId(row, $"ElevatedSession{domain.DomainName()}");
+
+        var action = SessionAction(monitor, domain, state);
+        if (action != null)
+        {
+            DockPanel.SetDock(action, Dock.Right);
+            row.Children.Add(action);
+        }
+
+        var body = new StackPanel();
+        var head = new WrapPanel();
+        head.Children.Add(new TextBlock { Text = ElevationStatusText.DomainTitle(domain), FontWeight = FontWeights.Medium, FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
+        head.Children.Add(SessionPill(state));
+        body.Children.Add(head);
+        var detail = state == ElevationSessionState.Unknown && monitor.ErrorOf(domain) is { } error
+            ? $"Not checked: {error}"
+            : ElevationStatusText.Detail(state, monitor.ExpiresOf(domain), DateTimeOffset.UtcNow);
+        body.Children.Add(Caption(detail, top: 2));
+        if (app.Config.Elevation is { IsConfigured: true } elevation)
+        {
+            var identity = Caption($"Runs as {elevation.IdentityPrefix}{domain.DomainName()} (managed identity)", top: 1);
+            identity.FontFamily = new FontFamily("Consolas");
+            identity.TextWrapping = TextWrapping.NoWrap;
+            identity.TextTrimming = TextTrimming.CharacterEllipsis;
+            body.Children.Add(identity);
+        }
+        row.Children.Add(body);
+        return row;
+    }
+
+    /// <summary>Green while running, blue while starting, grey when stopped. Never red.</summary>
+    private FrameworkElement SessionPill(ElevationSessionState state)
+    {
+        var color = state switch
+        {
+            ElevationSessionState.Ready => Color.FromRgb(0x27, 0xae, 0x60),
+            ElevationSessionState.Starting => Color.FromRgb(0x1e, 0x90, 0xff),
+            _ => Color.FromRgb(0x88, 0x88, 0x88),
+        };
+        var brush = new SolidColorBrush(color);
+        var label = ElevationStatusText.StateLabel(state);
+        var content = new StackPanel { Orientation = Orientation.Horizontal };
+        if (state == ElevationSessionState.Starting)
+            content.Children.Add(new ModernWpf.Controls.ProgressRing { IsActive = true, Width = 10, Height = 10, Foreground = brush, Margin = new Thickness(0, 0, 5, 0) });
+        else
+            content.Children.Add(new Ellipse { Width = 7, Height = 7, Fill = brush, Margin = new Thickness(0, 0, 5, 0), VerticalAlignment = VerticalAlignment.Center });
+        content.Children.Add(new TextBlock { Text = label, FontSize = 11, Foreground = brush, VerticalAlignment = VerticalAlignment.Center });
+        var pill = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(0x1c, color.R, color.G, color.B)),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(6, 2, 6, 2),
+            Margin = new Thickness(8, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = content,
+        };
+        System.Windows.Automation.AutomationProperties.SetName(pill, label);
+        return pill;
+    }
+
+    private FrameworkElement? SessionAction(ElevationMonitor monitor, GraphDomain domain, ElevationSessionState state)
+    {
+        if (state == ElevationSessionState.Starting) return null;
+        var ready = state == ElevationSessionState.Ready;
+        var button = new Button
+        {
+            Content = ready ? "Check again" : "Start",
+            FontSize = 11,
+            Padding = new Thickness(10, 3, 10, 3),
+            VerticalAlignment = VerticalAlignment.Top,
+            ToolTip = ready
+                ? "Check this session again"
+                : $"Start the {domain.DomainName()} session now, so the next action does not wait for it",
+        };
+        System.Windows.Automation.AutomationProperties.SetAutomationId(button, $"ElevatedSession{domain.DomainName()}Action");
+        button.Click += async (_, _) =>
+        {
+            button.IsEnabled = false;
+            if (ready) await monitor.RefreshAsync();
+            else await monitor.StartAsync(domain);
+            QueueAuthRebuild();
+        };
+        return button;
     }
 
     // ── Pieces ──────────────────────────────────────────────────────────────

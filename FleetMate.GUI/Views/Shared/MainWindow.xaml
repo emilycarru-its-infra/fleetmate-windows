@@ -116,21 +116,6 @@
                      just before Minimize. -->
                 <StackPanel x:Name="ToolbarRight" Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right"
                             Margin="0,0,132,0">
-                    <!-- Elevation session status. The per-user session container
-                         takes a while to boot and lives for its TTL, so the chrome
-                         says whether the next elevated action will wait on it.
-                         Click to re-check; it starts sessions that are not running. -->
-                    <Button x:Name="ElevationButton" Click="OnElevationClicked" Visibility="Collapsed"
-                            AutomationProperties.AutomationId="ElevationButton" AutomationProperties.Name="Elevation"
-                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                            Style="{StaticResource ChromeIconButtonStyle}" Margin="0,0,4,0">
-                        <StackPanel Orientation="Horizontal">
-                            <Ellipse x:Name="ElevationDot" Width="8" Height="8" Fill="Gray"
-                                     VerticalAlignment="Center" Margin="0,0,6,0" />
-                            <TextBlock x:Name="ElevationText" Text="Elevation" FontSize="12"
-                                       VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
                     <ToggleButton x:Name="TerminalToggleButton" ToolTip="Show Agent Terminal (Ctrl+`)" Click="OnTerminalToggleClicked"
                                   AutomationProperties.AutomationId="TerminalToggleButton"
                                   AutomationProperties.Name="Show Agent Terminal"
@@ -164,7 +149,14 @@
                             AutomationProperties.AutomationId="AuthButton" AutomationProperties.Name="Authentication"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
                             Style="{StaticResource ChromeIconButtonStyle}">
-                        <ui:FontIcon Glyph="&#xE72E;" FontFamily="Segoe Fluent Icons" FontSize="14" />
+                        <!-- The shield carries the elevated sessions' dot: grey when
+                             stopped, blue while one starts, green while one runs. The
+                             state is spelled out in the popover, never in the toolbar. -->
+                        <Grid>
+                            <ui:FontIcon Glyph="&#xE72E;" FontFamily="Segoe Fluent Icons" FontSize="14" />
+                            <Ellipse x:Name="ElevationDot" Width="7" Height="7" Fill="Gray" Visibility="Collapsed"
+                                     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-3,0" />
+                        </Grid>
                     </Button>
                     <!-- Settings opens its own window, like the Mac app's, so the
                          tab underneath stays put and Close or Esc returns to it. -->
