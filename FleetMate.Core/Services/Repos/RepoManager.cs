@@ -13,7 +13,12 @@ public enum DiscoveryAction
     [JsonStringEnumMemberName("duplicate")] Duplicate,
     /// <summary>No origin remote, or one that could not be parsed.</summary>
     [JsonStringEnumMemberName("noRemote")] NoRemote,
+    /// <summary>Its config can run commands, so it was linked without being tracked; tracking it is the person's call.</summary>
+    [JsonStringEnumMemberName("needsReview")] NeedsReview,
 }
+
+/// <summary>What Choose Folder did: what it registered, and the clones it held back for review.</summary>
+public sealed record TrackFoldersResult(List<DiscoveryResult> Results, List<DiscoveredCheckout> Review);
 
 /// <summary>
 /// What <c>discover</c> did with one checkout it found. For a duplicate,
@@ -42,9 +47,13 @@ public sealed class RepoManager
 {
     public RepoRegistryStore Store { get; }
 
-    public RepoManager(RepoRegistryStore? store = null)
+    /// <summary>Moves a folder somewhere it can be restored from; the Recycle Bin unless a test supplies another.</summary>
+    private readonly Action<string> _recycle;
+
+    public RepoManager(RepoRegistryStore? store = null, Action<string>? recycle = null)
     {
         Store = store ?? new RepoRegistryStore();
+        _recycle = recycle ?? RecycleBin.MoveToRecycleBin;
     }
 
     // ── Settings and registry ───────────────────────────────────────────
@@ -175,15 +184,54 @@ public sealed class RepoManager
         return Resolve(record.Id);
     }
 
+    public RepoRecord SetHidden(string argument, bool hidden)
+    {
+        var record = Resolve(argument);
+        if (!record.IsLocal) throw RepoException.NotLocal(record.Key.DisplayName);
+        Store.Update(doc =>
+        {
+            if (doc.Repos.TryGetValue(record.Id, out var entry)) doc.Repos[record.Id] = entry with { Hidden = hidden };
+        });
+        return Resolve(record.Id);
+    }
+
     /// <summary>
     /// Scans the configured roots and registers every checkout whose origin
     /// names a repository. Existing links are kept; a second copy of an
     /// already-linked repository is reported as a duplicate, not re-linked.
+    /// <paramref name="track"/> marks every checkout found as tracked, linked
+    /// before or not; <paramref name="trackNew"/> tracks only checkouts this
+    /// scan registers, leaving the person's earlier choice for the rest alone.
     /// </summary>
-    public async Task<List<DiscoveryResult>> DiscoverAsync(bool track = false, RepoSettings? settings = null)
+    public async Task<List<DiscoveryResult>> DiscoverAsync(bool track = false, RepoSettings? settings = null, bool trackNew = false)
     {
         settings ??= Settings();
         var found = await RepoDiscovery.DiscoverAsync(settings);
+        return Register(found, track, trackNew);
+    }
+
+    /// <summary>
+    /// Checkouts under <paramref name="roots"/> without registering anything, for
+    /// a preview the person picks from (setup). Checkouts only a VS Code
+    /// workspace file names are included, marked <see cref="DiscoveredCheckout.FromWorkspace"/>.
+    /// </summary>
+    public Task<List<DiscoveredCheckout>> PreviewAsync(IEnumerable<string> roots)
+    {
+        var settings = SettingsOrDefault();
+        settings.ScanRoots = roots.ToList();
+        return RepoDiscovery.DiscoverAsync(settings, includeWorkspaceFolders: true);
+    }
+
+    /// <summary>
+    /// Registers checkouts found by <see cref="PreviewAsync"/> or <see cref="RepoDiscovery"/>,
+    /// under the same rules as discover. A clone whose config can run commands
+    /// is never tracked here unless <paramref name="trustCommandConfig"/> says
+    /// the person ticked it knowing that; it is linked untracked and reported
+    /// as <see cref="DiscoveryAction.NeedsReview"/>.
+    /// </summary>
+    public List<DiscoveryResult> Register(IEnumerable<DiscoveredCheckout> found, bool track = false, bool trackNew = false,
+        bool trustCommandConfig = false)
+    {
         var catalog = (CachedCatalog()?.Repos ?? new()).GroupBy(r => r.Id).ToDictionary(g => g.Key, g => g.First());
 
         return Store.Update(doc =>
@@ -199,11 +247,12 @@ public sealed class RepoManager
                 catalog.TryGetValue(key.Id, out var catalogEntry);
                 var canonical = catalogEntry?.Key ?? key;
                 var inCatalog = catalogEntry != null;
+                var held = checkout.RunsCommands && !trustCommandConfig;
                 if (doc.Repos.TryGetValue(key.Id, out var existing))
                 {
                     if (string.Equals(existing.Path, checkout.Path, StringComparison.OrdinalIgnoreCase))
                     {
-                        if (track) doc.Repos[key.Id] = existing with { Tracked = true };
+                        if (track && !held) doc.Repos[key.Id] = existing with { Tracked = true };
                         results.Add(new DiscoveryResult(checkout.Path, key.Id, canonical.DisplayName, inCatalog, DiscoveryAction.AlreadyLinked, null));
                         continue;
                     }
@@ -213,18 +262,129 @@ public sealed class RepoManager
                         continue;
                     }
                 }
+                var wantsTracking = track || (existing?.Tracked ?? trackNew);
                 doc.Repos[key.Id] = new RepoRegistryEntry
                 {
                     Key = canonical,
                     Path = checkout.Path,
-                    Tracked = track || (existing?.Tracked ?? false),
+                    Tracked = wantsTracking && !held,
                     RemoteUrl = checkout.RemoteUrl,
                     DefaultBranch = catalogEntry?.DefaultBranch,
+                    Hidden = existing?.Hidden ?? false,
                 };
-                results.Add(new DiscoveryResult(checkout.Path, key.Id, canonical.DisplayName, inCatalog, DiscoveryAction.Linked, null));
+                results.Add(new DiscoveryResult(checkout.Path, key.Id, canonical.DisplayName, inCatalog,
+                    wantsTracking && held ? DiscoveryAction.NeedsReview : DiscoveryAction.Linked, null));
             }
             return results;
         });
+    }
+
+    /// <summary>
+    /// Adds <paramref name="folders"/> to the scan roots, marks the roots as
+    /// chosen, and tracks every clone found in them. What the Repos sidebar's
+    /// Choose Folder does, with no further questions; clones whose config can
+    /// run commands are left unregistered and returned for review instead.
+    /// </summary>
+    public async Task<TrackFoldersResult> TrackFoldersAsync(IEnumerable<string> folders)
+    {
+        var roots = folders.Select(RepoSettings.Abbreviate).ToList();
+        AddScanRoots(roots);
+        var settings = Settings();
+        settings.ScanRoots = roots;
+        var found = await RepoDiscovery.DiscoverAsync(settings);
+        // Clones whose config can run commands are not registered: they come
+        // back to be ticked one by one, unless already tracked.
+        var known = Store.Load().Repos;
+        var review = found.Where(c => c.RunsCommands && c.Key is { } key
+            && !(known.TryGetValue(key.Id, out var entry) && entry.Tracked)).ToList();
+        var reviewPaths = review.Select(c => c.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return new TrackFoldersResult(Register(found.Where(c => !reviewPaths.Contains(c.Path)), track: true), review);
+    }
+
+    /// <summary>
+    /// Adds roots (deduplicated, stored as <c>~\…</c>) and marks them as chosen.
+    /// Until roots have been chosen the list holds only the default guess, which
+    /// the first folders picked replace rather than join.
+    /// </summary>
+    public void AddScanRoots(IEnumerable<string> folders) => UpdateSettings(settings =>
+    {
+        if (!settings.RootsChosen) settings.ScanRoots = new();
+        foreach (var root in folders.Select(RepoSettings.Abbreviate))
+        {
+            if (!settings.ScanRoots.Any(r => string.Equals(RepoSettings.Abbreviate(r), root, StringComparison.OrdinalIgnoreCase)))
+                settings.ScanRoots.Add(root);
+        }
+        settings.RootsChosen = true;
+    });
+
+    /// <summary>
+    /// Clones in the watched folders the registry does not know yet, when the
+    /// person has chosen the folders and left "look for new clones" on. Nothing
+    /// is registered: the Repos sidebar asks, and Add or Ignore registers them
+    /// tracked or untracked. Null when looking is off.
+    /// </summary>
+    public async Task<List<DiscoveredCheckout>?> NewClonesAsync()
+    {
+        var settings = Settings();
+        if (!settings.TracksNewClones || settings.ScanRoots.Count == 0) return null;
+        var found = await RepoDiscovery.DiscoverAsync(settings);
+        var known = Store.Load().Repos;
+        return found
+            .Where(c => c.Key is { } key && !known.ContainsKey(key.Id))
+            .GroupBy(c => c.Key!.Id, StringComparer.Ordinal)
+            .Select(g => g.First())
+            .ToList();
+    }
+
+    // ── Removing a clone ────────────────────────────────────────────────
+
+    /// <summary>What deleting the checkout of <paramref name="argument"/> would lose.</summary>
+    public Task<CloneRemovalCheck> RemovalCheckAsync(string argument)
+    {
+        var record = Resolve(argument);
+        if (record.Local is not { } local) throw RepoException.NotLocal(record.Key.DisplayName);
+        return CloneRemovalCheck.InspectAsync(local.Path);
+    }
+
+    /// <summary>
+    /// Moves the checkout of <paramref name="argument"/> to the Recycle Bin and
+    /// forgets it. Refuses when anything would be lost unless
+    /// <paramref name="force"/> is set; the error lists exactly what. A checkout
+    /// already gone from disk is simply forgotten.
+    /// </summary>
+    public async Task<CloneRemovalCheck> RemoveCloneAsync(string argument, bool force = false)
+    {
+        var record = Resolve(argument);
+        if (record.Local is not { } local) throw RepoException.NotLocal(record.Key.DisplayName);
+        var path = local.Path;
+        if (!Directory.Exists(path))
+        {
+            Store.Update(doc => doc.Repos.Remove(record.Id));
+            return new CloneRemovalCheck { Path = path };
+        }
+        RefuseUnsafeTarget(path, Settings());
+        var check = await CloneRemovalCheck.InspectAsync(path);
+        if (!check.IsSafe && !force) throw RepoException.WouldLoseWork(record.Key.DisplayName, check.LossDescription);
+        _recycle(path);
+        Store.Update(doc => doc.Repos.Remove(record.Id));
+        return check;
+    }
+
+    /// <summary>Never delete the profile folder, a drive root, a scan root or the clone root, whatever the registry says.</summary>
+    internal static void RefuseUnsafeTarget(string path, RepoSettings settings)
+    {
+        static string N(string p)
+        {
+            try { return RepoSettings.Normalize(p); }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException) { return p; }
+        }
+        var full = N(path);
+        var home = N(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        var root = Path.GetPathRoot(full) ?? "";
+        var protectedPaths = settings.ScanRoots.Select(N).Append(N(settings.CloneRoot)).Append(home);
+        if (full.Length <= root.Length || protectedPaths.Any(p => string.Equals(p, full, StringComparison.OrdinalIgnoreCase)))
+            throw RepoException.InvalidArgument($"Refusing to delete {path}: it is not a single clone.");
+        if (!RepoDiscovery.IsCheckout(full)) throw RepoException.NotAGitRepository(path);
     }
 
     // ── Cloning ─────────────────────────────────────────────────────────
