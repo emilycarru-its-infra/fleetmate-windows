@@ -3,6 +3,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using FleetMate.Core.Config;
 using FleetMate.Core.Services.Agent;
+using FleetMate.GUI.Views.Shared;
 using Microsoft.Win32;
 
 namespace FleetMate.GUI.Views.Terminal;
@@ -124,6 +125,29 @@ public sealed class AgentCliUpdatesPanel : UserControl
             var detail = new TextBlock { Text = string.Join(" · ", parts), FontSize = 11, TextWrapping = TextWrapping.Wrap };
             detail.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
             row.Children.Add(detail);
+        }
+        if (status is { Installed: false } && cli == AgentCli.Codex)
+        {
+            var help = new TextBlock
+            {
+                Text = "Install Codex in a normal PowerShell window, then open a new agent session. Node.js/npm is required for this command.",
+                TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new Thickness(0, 4, 0, 4)
+            };
+            row.Children.Add(help);
+            var actions = new StackPanel { Orientation = Orientation.Horizontal };
+            var copy = new Button { Content = "Copy Install Command", Margin = new Thickness(0, 0, 6, 0) };
+            AutomationProperties.SetAutomationId(copy, "CodexCopyInstallCommandButton");
+            copy.Click += (_, _) =>
+            {
+                if (AgentContextClipboard.SetText("npm install -g @openai/codex@latest")) copy.Content = "Copied";
+            };
+            var guide = new Button { Content = "Installation Guide" };
+            AutomationProperties.SetAutomationId(guide, "CodexInstallationGuideButton");
+            guide.Click += (_, _) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                "https://learn.chatgpt.com/docs/codex/cli") { UseShellExecute = true });
+            actions.Children.Add(copy);
+            actions.Children.Add(guide);
+            row.Children.Add(actions);
         }
         return row;
     }

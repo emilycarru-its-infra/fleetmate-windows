@@ -41,6 +41,7 @@ public static class AgentCommands
         {
             ["claude"] = new[] { "claude" },
             ["codex"] = new[] { "codex" },
+            ["codex-workspace"] = new[] { "codex", "--sandbox", "workspace-write", "--ask-for-approval", "on-request" },
             ["claude-remote"] = new[] { "claude", "--remote" },
             ["codex-remote"] = new[] { "codex", "--remote" },
         };
