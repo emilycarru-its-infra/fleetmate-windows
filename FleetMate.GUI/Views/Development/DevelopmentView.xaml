@@ -217,15 +217,18 @@
                     <ToggleButton x:Name="SourceGitHub" Content="GitHub" Tag="GitHub"
                                   Padding="10,2" FontSize="11" Margin="0,0,4,4" Click="OnSourceClicked" />
                 </WrapPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
-                    <ComboBox x:Name="PullsRepoCombo" Margin="0,0,6,0" MinWidth="200" MaxWidth="360"
-                              SelectionChanged="OnPullsRepoChanged" ToolTip="Filter by repository" Visibility="Collapsed" />
-                    <Button x:Name="PullsSortButton" Padding="6,4" Click="OnPullsSortClicked"
+                <!-- The chips above keep their one-line size; the repository
+                     dropdown is what gives way in a narrow pane. -->
+                <DockPanel Margin="0,2,0,0" HorizontalAlignment="Left">
+                    <Button x:Name="PullsSortButton" DockPanel.Dock="Right" Padding="6,4" Click="OnPullsSortClicked"
                             AutomationProperties.Name="Sort and group pull requests">
                         <ui:FontIcon Glyph="&#xE8CB;" FontSize="13" />
                     </Button>
-                </StackPanel>
-                <TextBlock x:Name="PullRequestCount" FontSize="11" Margin="0,4,0,0" Opacity="0.7" />
+                    <ComboBox x:Name="PullsRepoCombo" Margin="0,0,6,0" MinWidth="80" MaxWidth="360"
+                              SelectionChanged="OnPullsRepoChanged" ToolTip="Filter by repository" Visibility="Collapsed" />
+                </DockPanel>
+                <TextBlock x:Name="PullRequestCount" FontSize="11" Margin="0,4,0,0" Opacity="0.7"
+                           TextWrapping="NoWrap" />
             </StackPanel>
 
             <!-- Commits filters -->

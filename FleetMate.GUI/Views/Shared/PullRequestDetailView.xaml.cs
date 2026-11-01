@@ -225,6 +225,41 @@ public partial class PullRequestDetailView : UserControl
         // A capped file list is stated, not hidden.
         TruncationNotice.Visibility = PullRequestCheckViewModel.Show(detail.Truncated);
         TruncationNotice.Text = "⚠ file list truncated";
+
+        ApplyLayout();
+    }
+
+    // MARK: - Layout
+
+    private void OnContentSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.WidthChanged && PullRequestDetailLayout.IsWide(e.PreviousSize.Width) != PullRequestDetailLayout.IsWide(e.NewSize.Width))
+            ApplyLayout();
+    }
+
+    /// <summary>Place each section for the pane's width and which sections have content.</summary>
+    private void ApplyLayout()
+    {
+        var wide = PullRequestDetailLayout.IsWide(ContentScroller.ActualWidth);
+        var layout = PullRequestDetailLayout.For(
+            wide,
+            hasOverview: DescriptionSection.Visibility == Visibility.Visible,
+            hasHandbook: HandbookHost.Visibility == Visibility.Visible,
+            hasComments: ConversationSection.Visibility == Visibility.Visible);
+
+        ColumnGap.Width = new GridLength(wide ? 16 : 0);
+        Place(DescriptionSection, layout.Overview);
+        Place(HandbookHost, layout.Handbook);
+        Place(ConversationSection, layout.Comments);
+        Place(SidePanel, layout.Side);
+        Place(ChangesSection, layout.Changes);
+    }
+
+    private static void Place(UIElement section, GridPlacement placement)
+    {
+        Grid.SetRow(section, placement.Row);
+        Grid.SetColumn(section, placement.Column);
+        Grid.SetColumnSpan(section, placement.ColumnSpan);
     }
 
     // MARK: - Browse

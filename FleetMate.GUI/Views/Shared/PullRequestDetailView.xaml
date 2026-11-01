@@ -85,19 +85,6 @@
                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
             </StackPanel>
 
-            <!-- Checks: GitHub status rollup or Azure DevOps policy evaluations. -->
-            <StackPanel x:Name="ChecksSection" Margin="0,10,0,0">
-                <TextBlock x:Name="ChecksSummary" FontSize="11" Margin="0,0,0,4"
-                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                <ItemsControl x:Name="ChecksList" ItemTemplate="{StaticResource CheckChipTemplate}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <WrapPanel />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                </ItemsControl>
-            </StackPanel>
-
             <!-- Review composer + action bar. The one text box feeds Comment,
                  Request changes and Approve, the way a GitHub review box does,
                  so no action needs a dialog to collect its text. -->
@@ -133,8 +120,10 @@
             </Border>
         </StackPanel>
 
-        <!-- One scroll: description and conversation, then commits, then diffs.
-             Tabs made you hunt for which one held the thing you wanted. -->
+        <!-- One scroll, never tabs. Wide panes read in two columns:
+             Overview | Handbook, Conversation | Checks and Commits, then Changes
+             across the full width; narrow panes keep one column in that order.
+             PullRequestDetailLayout places each section. -->
         <Grid Grid.Row="1">
             <StackPanel x:Name="LoadingPanel" HorizontalAlignment="Center" VerticalAlignment="Center">
                 <ui:ProgressRing IsActive="True" Width="32" Height="32" />
@@ -147,8 +136,21 @@
                        TextAlignment="Center"
                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
 
-            <ScrollViewer x:Name="ContentScroller" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
-                <StackPanel>
+            <ScrollViewer x:Name="ContentScroller" VerticalScrollBarVisibility="Auto" Visibility="Collapsed"
+                          SizeChanged="OnContentSizeChanged">
+                <Grid x:Name="SectionsGrid">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition x:Name="ColumnGap" Width="0" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
 
                     <!-- Description -->
                     <StackPanel x:Name="DescriptionSection" Margin="0,0,0,16">
@@ -160,7 +162,7 @@
                         </Border>
                     </StackPanel>
 
-                    <!-- Conversation -->
+                    <!-- Conversation and status updates -->
                     <StackPanel x:Name="ConversationSection" Margin="0,0,0,16">
                         <TextBlock x:Name="ConversationHeader" FontWeight="SemiBold" FontSize="12"
                                    Margin="0,0,0,4"
@@ -173,13 +175,30 @@
                     <!-- The Handbook pages about this repository, beside the change to it. -->
                     <ContentControl x:Name="HandbookHost" Margin="0,0,0,16" Visibility="Collapsed" />
 
-                    <!-- Commits -->
-                    <StackPanel x:Name="CommitsSection" Margin="0,0,0,16">
-                        <TextBlock x:Name="CommitsHeader" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,4"
-                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                        <Border Style="{StaticResource CardStyle}">
-                            <ItemsControl x:Name="CommitsList" ItemTemplate="{StaticResource CommitTemplate}" />
-                        </Border>
+                    <!-- Checks, then Commits: the right column when wide. -->
+                    <StackPanel x:Name="SidePanel">
+                        <!-- Checks: GitHub status rollup or Azure DevOps policy evaluations. -->
+                        <StackPanel x:Name="ChecksSection" Margin="0,0,0,16">
+                            <TextBlock Text="Checks" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,4"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            <TextBlock x:Name="ChecksSummary" FontSize="11" Margin="0,0,0,4"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            <ItemsControl x:Name="ChecksList" ItemTemplate="{StaticResource CheckChipTemplate}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                        </StackPanel>
+                        <!-- Commits -->
+                        <StackPanel x:Name="CommitsSection" Margin="0,0,0,16">
+                            <TextBlock x:Name="CommitsHeader" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,4"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            <Border Style="{StaticResource CardStyle}">
+                                <ItemsControl x:Name="CommitsList" ItemTemplate="{StaticResource CommitTemplate}" />
+                            </Border>
+                        </StackPanel>
                     </StackPanel>
 
                     <!-- Changes -->
@@ -193,7 +212,7 @@
                         </DockPanel>
                         <ItemsControl x:Name="FilesList" ItemTemplate="{StaticResource DiffFileTemplate}" />
                     </StackPanel>
-                </StackPanel>
+                </Grid>
             </ScrollViewer>
         </Grid>
     </Grid>
