@@ -411,14 +411,14 @@ public partial class DevelopmentView : UserControl
 
         var selectedId = _selectedNotification?.Id;
         var rows = DevelopmentFilter.Inbox(inbox.Notifications, _showReadNotifications)
-            .Select(n => new DevelopmentNotificationRowViewModel { Notification = n }).ToList();
+            .Select(n => DevelopmentNotificationRowViewModel.Create(n, app.DevelopmentPullRequests?.PullRequests ?? [])).ToList();
         InboxList.ItemsSource = rows;
         if (selectedId != null) InboxList.SelectedItem = rows.FirstOrDefault(r => r.Notification.Id == selectedId);
 
         InboxStatus.Text = inbox.LastError is { } error && inbox.Notifications.Count == 0
             ? $"GitHub inbox unavailable — {error}"
             : (inbox.LastRefreshed is { } at ? $"Checked {at:HH:mm}" : "")
-              + (inbox.LastError != null ? " · last refresh failed" : "");
+              + (inbox.LastError != null ? $" · Showing saved notifications — refresh failed: {inbox.LastError}" : "");
 
         if (InboxSegment.IsChecked == true)
         {
@@ -426,6 +426,13 @@ public partial class DevelopmentView : UserControl
             EmptyText.Text = inbox.LastError != null ? "Could not reach GitHub notifications."
                 : _showReadNotifications ? "No notifications." : "Inbox zero.";
         }
+    }
+
+    public void OpenInboxNotification(GitHubNotification notification)
+    {
+        ShowInbox();
+        InboxList.SelectedItem = (InboxList.ItemsSource as IEnumerable<DevelopmentNotificationRowViewModel>)?
+            .FirstOrDefault(row => row.Notification.Id == notification.Id);
     }
 
     private async void OnNotificationSelected(object sender, SelectionChangedEventArgs e)

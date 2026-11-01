@@ -149,6 +149,12 @@
                     </Button>
                     <!-- Recent Activity: what changed on this tab, from any tab. The
                          orange dot marks an app-level error, shown at the popover's top. -->
+                    <Button x:Name="GitHubInboxButton" ToolTip="GitHub Inbox" Click="OnGitHubInboxClicked" Loaded="OnGitHubInboxLoaded"
+                            AutomationProperties.AutomationId="GitHubInboxButton" AutomationProperties.Name="GitHub Inbox"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            Style="{StaticResource ChromeIconButtonStyle}" Margin="0,0,4,0">
+                        <ui:FontIcon x:Name="GitHubInboxIcon" Glyph="&#xE715;" FontFamily="Segoe Fluent Icons" FontSize="14" />
+                    </Button>
                     <Button x:Name="RecentActivityButton" ToolTip="Recent activity" Click="OnRecentActivityClicked"
                             AutomationProperties.AutomationId="RecentActivityButton"
                             AutomationProperties.Name="Recent Activity"
