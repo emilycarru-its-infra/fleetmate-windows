@@ -8,22 +8,29 @@ namespace FleetMate.GUI;
 
 /// <summary>
 /// Keeps the ticket inbox current while the app is closed. The same exe,
-/// started at sign-in with <c>--inbox-agent</c> by the installer's Run entry.
+/// started with <c>--inbox-agent-worker</c> by <see cref="InboxAgentSupervisor"/>,
+/// which the installer's Run entry starts at sign-in and which starts this
+/// again whenever it exits.
 ///
 /// It has no window or tray icon and never takes the single-instance lock, so
 /// opening the app while it runs opens a normal window. It signs in the way
 /// the app does, silently and never with a sign-in window, finds the signed-in
 /// person, and runs the inbox scan on the app's schedule. It renews the
 /// sign-in every 12 hours, which keeps the saved session fresh for the
-/// window's next launch, and exits at once when TeamDynamix is not configured.
+/// window's next launch. With TeamDynamix not configured it waits an hour and
+/// exits, so the next start reads the configuration again.
 /// </summary>
 internal sealed class InboxAgent
 {
-    public const string Argument = "--inbox-agent";
+    public const string Argument = "--inbox-agent-worker";
+
+    /// <summary>The exit code when another helper already runs; the supervisor waits longer after it.</summary>
+    public const int AnotherRunningExitCode = 3;
 
     private static readonly TimeSpan PassInterval = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan RenewInterval = TimeSpan.FromHours(12);
     private static readonly TimeSpan SignInRetry = TimeSpan.FromHours(1);
+    private static readonly TimeSpan NotConfiguredWait = TimeSpan.FromHours(1);
 
     private readonly App _app;
     private readonly TicketInboxStore _store = new();
@@ -37,7 +44,10 @@ internal sealed class InboxAgent
     {
         if (_app.TdxService is not { } tdx || string.IsNullOrWhiteSpace(_app.Config?.Tdx?.BaseUrl))
         {
-            Log.Information("[inbox-agent] Exiting: TeamDynamix is not configured");
+            // Exiting at once would only be restarted a minute later; wait,
+            // then let the next start read the configuration again.
+            Log.Information("[inbox-agent] TeamDynamix is not configured; checking again in an hour");
+            await Task.Delay(NotConfiguredWait);
             _app.Shutdown(0);
             return;
         }
@@ -48,7 +58,7 @@ internal sealed class InboxAgent
         if (!first)
         {
             Log.Information("[inbox-agent] Exiting: another helper is already running");
-            _app.Shutdown(0);
+            _app.Shutdown(AnotherRunningExitCode);
             return;
         }
 

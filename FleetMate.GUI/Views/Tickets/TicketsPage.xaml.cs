@@ -220,10 +220,14 @@ private bool _isInitialLoadDone;
         }
 
         await ResolveMeAsync();
+        // A load already running may have started before this sign-in; it is
+        // loaded again if it comes back empty or failed.
+        if (_isLoading) _reloadAfterLoad = true;
         if (TicketsPageSync.ShouldReloadAfterSignIn(_isInitialLoadDone, _isLoading, _app.IsTicketsCacheValid, _app.CachedTickets.Count))
             await LoadTicketsAsync();
         else
             ApplyFiltersAndSort();
+        await ResumeAfterSignInAsync();
     }
 
     /// <summary>The shared ticket cache changed (the preload, or another view): redraw from it.</summary>
@@ -258,6 +262,7 @@ private bool _isInitialLoadDone;
         {
             NotConfiguredText.Visibility = Visibility.Visible;
             TicketsListView.Visibility = Visibility.Collapsed;
+            UpdateEmptyState();
             return;
         }
 
@@ -288,12 +293,15 @@ private bool _isInitialLoadDone;
             // Same set as macOS: created-date window, 5000 cap, the configured
             // group if any, plus the operator's own groupless tickets.
             var tickets = await _app.LoadBoardTicketsAsync();
+            _ticketsLoadError = null;
             _app.UpdateTicketsCache(tickets);
             UpdateFilterOptions();
             ApplyFiltersAndSort();
         }
         catch (Exception ex)
         {
+            Serilog.Log.Warning(ex, "[tickets] Tickets load failed");
+            _ticketsLoadError = ex.Message;
             ShowActionMessage($"Error: {ex.Message}", isError: true);
             _app.SetTdxLaunchStep(null);
         }
@@ -302,6 +310,15 @@ private bool _isInitialLoadDone;
             _isLoading = false;
             UpdateLoadingPanel();
             TicketWidgetsSection.Invalidate();
+        }
+
+        // Sign-in finished while this load ran; if it came back with nothing,
+        // it ran without the session, so load once more with it.
+        if (_reloadAfterLoad)
+        {
+            _reloadAfterLoad = false;
+            if (_tdxService.IsSsoAuthenticated && (_ticketsLoadError != null || _app.CachedTickets.Count == 0))
+                await LoadTicketsAsync();
         }
     }
 
@@ -321,6 +338,7 @@ private bool _isInitialLoadDone;
         LoadingRing.IsActive = step == null && LoadingPanel.Visibility == Visibility.Visible;
         if (step is { } current) SignInProgressBar.Value = current.Fraction();
         LoadingText.Text = step?.Label() ?? "Loading tickets...";
+        UpdateEmptyState();
     }
 
     /// <summary>
@@ -419,6 +437,7 @@ private bool _isInitialLoadDone;
         }
 
         TicketWidgetsSection?.Invalidate();
+        UpdateEmptyState();
     }
     
     /// <summary>
@@ -459,16 +478,19 @@ private bool _isInitialLoadDone;
             return;
         }
         if (_tdxService == null) return;
+        _ticketAwaitingSignIn = null;
         try
         {
+            // A ticket outside the loaded or filtered list is fetched, and
+            // ShowTicket opens it in the detail pane without a list row.
             var ticket = _allTickets.FirstOrDefault(t => t.Id == ticketId)
                 ?? await _tdxService.GetTicketAsync(ticketId);
             if (ticket != null) ShowTicket(ticket);
-            else ShowActionMessage($"Ticket #{ticketId} could not be opened.", isError: true);
+            else if (!HoldLinkedTicket(ticketId)) ShowActionMessage($"Ticket #{ticketId} could not be opened.", isError: true);
         }
         catch (Exception ex)
         {
-            ShowActionMessage($"Error opening ticket #{ticketId}: {ex.Message}", isError: true);
+            if (!HoldLinkedTicket(ticketId)) ShowActionMessage($"Error opening ticket #{ticketId}: {ex.Message}", isError: true);
         }
     }
 
@@ -549,6 +571,7 @@ private bool _isInitialLoadDone;
         BoardViewPanel.Visibility = _isBoardView ? Visibility.Visible : Visibility.Collapsed;
         InboxViewPanel.Visibility = _isInboxView ? Visibility.Visible : Visibility.Collapsed;
         OnInboxVisibilityChanged();
+        UpdateEmptyState();
         // The column picker only means something on the board, as on Mac.
         BoardGroupComboBox.Visibility = _isBoardView ? Visibility.Visible : Visibility.Collapsed;
 

@@ -104,8 +104,9 @@ public sealed class TdxSessionCacheTests : IDisposable
     }
 
     [Theory]
-    [InlineData(new[] { "--inbox-agent" }, true)]
-    [InlineData(new[] { "--INBOX-AGENT" }, true)]
+    [InlineData(new[] { "--inbox-agent-worker" }, true)]
+    [InlineData(new[] { "--INBOX-AGENT-WORKER" }, true)]
+    [InlineData(new[] { "--inbox-agent" }, false)]
     [InlineData(new[] { "ticketsmate://ticket/1" }, false)]
     [InlineData(new string[0], false)]
     public void TheHelperRunsOnlyWithItsArgument(string[] args, bool expected)
