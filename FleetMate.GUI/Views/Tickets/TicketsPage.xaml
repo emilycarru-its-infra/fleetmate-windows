@@ -448,6 +448,29 @@
                 </ItemsControl>
             </ScrollViewer>
 
+            <!-- Why the list or board is empty: not signed in, a failed load,
+                 the search, Assigned to Me or the filters. Each offers the way
+                 back, rather than a bare empty list. -->
+            <Border x:Name="EmptyStatePanel" Grid.Column="0" Style="{StaticResource CardStyle}" Visibility="Collapsed">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420">
+                    <ui:FontIcon x:Name="EmptyStateIcon" FontFamily="Segoe Fluent Icons" Glyph="&#xE721;" FontSize="32"
+                                 Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    <TextBlock x:Name="EmptyStateTitle" FontSize="18" FontWeight="SemiBold" Margin="0,12,0,0"
+                               HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+                    <TextBlock x:Name="EmptyStateDescription" Margin="0,6,0,0" HorizontalAlignment="Center"
+                               TextAlignment="Center" TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,16,0,0">
+                        <Button x:Name="EmptyStateSignInButton" Content="Sign In" Margin="4,0" Click="OnSsoLoginClicked"
+                                Style="{DynamicResource AccentButtonStyle}" />
+                        <Button x:Name="EmptyStateRetryButton" Content="Try Again" Margin="4,0" Click="OnEmptyStateRetryClicked" />
+                        <Button x:Name="EmptyStateShowAllButton" Content="Show All Tickets" Margin="4,0" Click="OnEmptyStateShowAllClicked" />
+                        <Button x:Name="EmptyStateClearFiltersButton" Content="Clear Filters" Margin="4,0" Click="OnEmptyStateClearFiltersClicked" />
+                        <Button x:Name="EmptyStateShowClosedButton" Content="Show Closed" Margin="4,0" Click="OnEmptyStateShowClosedClicked" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
             <!-- Detail Panel -->
             <Border x:Name="DetailPanel" Grid.Column="2" Style="{StaticResource CardStyle}" Margin="0" Visibility="Collapsed">
                 <Grid>

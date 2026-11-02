@@ -81,6 +81,12 @@ public partial class App : Application
     /// </summary>
     public event Action? TdxSignInChanged;
 
+    /// <summary>
+    /// Raised on the UI thread when the silent Azure DevOps sign-in succeeds.
+    /// Development opens a link held from before sign-in from it.
+    /// </summary>
+    public event Action? DevOpsSignedIn;
+
     private void NotifyTdxSignInChanged()
     {
         if (Dispatcher.CheckAccess()) TdxSignInChanged?.Invoke();
@@ -611,6 +617,7 @@ public partial class App : Application
     {
         DevOpsService?.SetSsoToken(result.Token!, result.Expiry, result.UserName);
         AuthManager.Update(AuthSystemId.DevOps, AuthTokenState.Valid(result.UserName, result.Expiry));
+        Dispatcher.BeginInvoke(() => DevOpsSignedIn?.Invoke());
 
         // The Projects widgets count the signed-in user's items, which need the token.
         Dispatcher.BeginInvoke(() => _ = LoadMyWorkItemsAsync(force: true));
@@ -696,9 +703,20 @@ public partial class App : Application
         // The inbox helper never takes the single-instance lock, so opening the
         // app while it runs still opens a normal window.
         var inboxAgent = _isInboxAgent = InboxAgent.IsRequested(e.Args);
-        if (!headless && !inboxAgent && !Links.LinkHost.TryBecomePrimary(startupLink))
+        var inboxSupervisor = InboxAgentSupervisor.IsRequested(e.Args);
+        if (!headless && !inboxAgent && !inboxSupervisor && !Links.LinkHost.TryBecomePrimary(startupLink))
         {
             Shutdown();
+            return;
+        }
+
+        // The Run entry's start: no configuration or services, only the loop
+        // that keeps the helper running.
+        if (inboxSupervisor)
+        {
+            _isInboxAgent = true;
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            _ = Dispatcher.InvokeAsync(() => InboxAgentSupervisor.RunForAppAsync(this));
             return;
         }
 

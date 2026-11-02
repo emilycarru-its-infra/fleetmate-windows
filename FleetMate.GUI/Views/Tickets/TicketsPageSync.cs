@@ -1,5 +1,24 @@
 namespace FleetMate.GUI.Views.Tickets;
 
+/// <summary>Why the ticket list shows nothing, so it can say so instead of a bare empty list.</summary>
+internal enum TicketsEmptyReason
+{
+    /// <summary>Something is listed, or the loading progress covers the list.</summary>
+    None,
+    /// <summary>Nothing loaded and TeamDynamix is not signed in.</summary>
+    NotSignedIn,
+    /// <summary>Signed in, but the last load failed.</summary>
+    LoadFailed,
+    /// <summary>Signed in and loaded, and the range holds no tickets.</summary>
+    NoTickets,
+    /// <summary>Tickets are loaded; the search matches none of them.</summary>
+    Search,
+    /// <summary>Tickets are loaded; none are assigned to the signed-in person.</summary>
+    AssignedToMe,
+    /// <summary>Tickets are loaded; the filters, date range or hidden closed tickets leave none.</summary>
+    Filters,
+}
+
 /// <summary>
 /// When the Tickets page redraws or reloads in response to app events. Kept
 /// apart from the page so the rules are testable without a window.
@@ -32,4 +51,30 @@ internal static class TicketsPageSync
     /// <summary>The Activity bar's button: "(Draft)" when closed over unsent text.</summary>
     public static string AddCommentLabel(bool composeOpen, string? draft) =>
         !composeOpen && !string.IsNullOrWhiteSpace(draft) ? "Add Comment (Draft)" : "Add Comment";
+
+    /// <summary>
+    /// Why the list is empty. A link opened from a cold launch lands before
+    /// sign-in finishes, and the list used to read as an empty search result;
+    /// this tells not signed in, a failed load and the filters apart.
+    /// </summary>
+    public static TicketsEmptyReason EmptyReason(
+        bool loadingShown, int ticketCount, int listedCount,
+        bool ssoEnabled, bool signedIn, string? loadError,
+        bool searching, bool assignedToMe)
+    {
+        if (loadingShown || listedCount > 0) return TicketsEmptyReason.None;
+        if (ticketCount == 0)
+        {
+            if (ssoEnabled && !signedIn) return TicketsEmptyReason.NotSignedIn;
+            return loadError != null ? TicketsEmptyReason.LoadFailed : TicketsEmptyReason.NoTickets;
+        }
+        if (searching) return TicketsEmptyReason.Search;
+        return assignedToMe ? TicketsEmptyReason.AssignedToMe : TicketsEmptyReason.Filters;
+    }
+
+    /// <summary>
+    /// A linked ticket that could not be fetched waits for sign-in when
+    /// TeamDynamix is not signed in yet; once it is, the failure is real.
+    /// </summary>
+    public static bool HoldLinkForSignIn(bool ssoEnabled, bool signedIn) => ssoEnabled && !signedIn;
 }
