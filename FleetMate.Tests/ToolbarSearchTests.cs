@@ -22,22 +22,17 @@ public class ToolbarSearchTests
         Assert.Equal(new[] { "a", "c" }, groups[0].Hits.Select(h => h.Title));
     }
 
-    // Tabs 800 wide (400 with inactive names hidden), 560 of right-hand
-    // group including search (440 once it yields), gap 16. The right group
-    // gets half the width less half the tab bar.
-    [Theory]
-    [InlineData(2000, false, false, 0)]
-    [InlineData(1900, true, false, 0)]   // 400 + 16 + 560 = 976 > 950; with 440, 856 fits
-    [InlineData(1600, true, true, 0)]    // 400 + 16 + 440 = 856 > 800; tab names go
-    [InlineData(1200, true, true, 56)]   // 200 + 16 + 440 = 656, half is 600
-    public void ToolbarYieldsTheRightGroupBeforeTabNamesThenShiftsTheTabs(
-        double width, bool compactRight, bool compactTabs, double shift) =>
-        Assert.Equal((compactRight, compactTabs, shift),
-            FleetMate.GUI.Views.Shared.MainWindow.Fit(width, 800, 400, 560, 440, 16));
-
     [Fact]
-    public void SearchFieldNarrowsInANarrowWindow() =>
-        Assert.True(FleetMate.GUI.Views.Shared.MainWindow.SearchCompactWidth < FleetMate.GUI.Views.Shared.MainWindow.SearchFullWidth);
+    public void SearchFieldKeepsItsFullWidthInANarrowWindow() =>
+        Assert.Equal(MainWindow.SearchFullWidth, MainWindow.SearchCompactWidth);
+
+    [Theory]
+    [InlineData(700, false, false)]
+    [InlineData(400, true, false)]
+    [InlineData(140, true, true)]
+    [InlineData(0, true, true)]
+    public void NavigationYieldsBeforeTheSearchField(double available, bool compact, bool picker) =>
+        Assert.Equal((compact, picker), MainWindow.NavigationFit(available, 600, 300));
 
     [Theory]
     [InlineData(true, true, "Searching…")]

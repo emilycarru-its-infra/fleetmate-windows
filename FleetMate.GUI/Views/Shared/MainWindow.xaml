@@ -37,14 +37,15 @@
              centered even when window actions are added on the right. -->
         <Border Grid.Row="0" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
                 BorderThickness="0,0,0,1" Padding="12,7">
-            <Grid>
+            <Grid x:Name="ToolbarGrid">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <Border x:Name="TabBarBorder" Grid.Column="1" CornerRadius="9"
+                <Grid x:Name="TabNavigationHost" Grid.Column="1" ClipToBounds="True">
+                <Border x:Name="TabBarBorder" HorizontalAlignment="Center" CornerRadius="9"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True"
                         BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
                         BorderThickness="1" Padding="2">
@@ -108,6 +109,13 @@
                         </RadioButton>
                     </StackPanel>
                 </Border>
+                    <Button x:Name="TabPickerButton" Visibility="Collapsed" HorizontalAlignment="Center"
+                            VerticalAlignment="Center" Click="OnTabPickerClicked" Padding="8,4" MaxWidth="160"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            AutomationProperties.Name="Choose module" AutomationProperties.AutomationId="ToolbarModulePicker">
+                        <TextBlock x:Name="TabPickerLabel" Text="Modules ▾" TextTrimming="CharacterEllipsis" />
+                    </Button>
+                </Grid>
 
                 <!-- Auth status + settings live in the chrome so they are reachable
                      from any tab, matching the macOS toolbar. -->
