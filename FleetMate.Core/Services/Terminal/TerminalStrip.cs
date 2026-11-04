@@ -48,9 +48,9 @@ public static class TerminalStripStatus
 }
 
 /// <summary>
-/// The two controls on the bar at the window's bottom edge, which stays there
-/// whether the terminal is open or not: full window, and show or hide. The
-/// shortcuts are in the tooltips rather than as hint text on the bar.
+/// The icon controls at the left of the bar on the window's bottom edge, which
+/// stays there whether the terminal is open or not: split view, full window,
+/// and show or hide. The shortcuts are in the tooltips.
 /// </summary>
 public sealed record TerminalBarControls(
     bool FullWindow, string FullWindowName, string FullWindowTip,
@@ -66,6 +66,6 @@ public sealed record TerminalBarControls(
             full ? "Restore the terminal to its height (Ctrl+Shift+Enter)" : "Fill the window with the terminal (Ctrl+Shift+Enter)",
             showing,
             showing ? "Hide Agent Terminal" : "Show Agent Terminal",
-            showing ? "Hide the Agent Terminal (Ctrl+`)" : "Show the Agent Terminal (Ctrl+`)");
+            showing ? "Hide the Agent Terminal (Ctrl+`)" : "Show the Agent Terminal in its last mode (Ctrl+`)");
     }
 }
