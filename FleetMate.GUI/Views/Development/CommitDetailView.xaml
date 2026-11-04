@@ -40,9 +40,14 @@
                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
             </StackPanel>
 
-            <TextBlock x:Name="ErrorText" Visibility="Collapsed" TextWrapping="Wrap" MaxWidth="460"
-                       HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"
-                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            <StackPanel x:Name="ErrorPanel" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock x:Name="ErrorText" TextWrapping="Wrap" MaxWidth="460" TextAlignment="Center"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <Button x:Name="RetryButton" Content="Retry" HorizontalAlignment="Center" Margin="0,12,0,0"
+                        Padding="12,4" Click="OnRetryClicked" />
+            </StackPanel>
+
+            <ContentControl x:Name="WaitHost" Visibility="Collapsed" />
 
             <ScrollViewer x:Name="ContentScroller" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
                 <StackPanel>

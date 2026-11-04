@@ -87,6 +87,58 @@ public partial class App : Application
     /// </summary>
     public event Action? DevOpsSignedIn;
 
+    /// <summary>
+    /// Raised on the UI thread whenever <see cref="DevOpsSignInStatus"/> may have
+    /// changed: an attempt started, failed or succeeded. A view holding a request
+    /// for sign-in redraws its waiting state from it.
+    /// </summary>
+    public event Action? DevOpsSignInStatusChanged;
+
+    /// <summary>Where Azure DevOps sign-in stands, for views that hold a request until it finishes.</summary>
+    public FleetMate.Core.Links.SignInStatus DevOpsSignInStatus =>
+        DevOpsService == null || DevOpsSsoService == null ? FleetMate.Core.Links.SignInStatus.NotConfigured
+        : IsDevOpsSsoAuthenticated ? FleetMate.Core.Links.SignInStatus.SignedIn
+        // Not signed in with no attempt running — the last one failed, or the
+        // token has since expired — is Failed, so a waiting view offers Sign
+        // In Again rather than spinning on an attempt that isn't happening.
+        : _devOpsSsoInFlight is { IsCompleted: true } ? FleetMate.Core.Links.SignInStatus.Failed
+        : FleetMate.Core.Links.SignInStatus.SigningIn;
+
+    /// <summary>
+    /// What to do with an Azure DevOps request that failed, given whether
+    /// Azure DevOps was signed in when it started.
+    /// </summary>
+    public FleetMate.Core.Links.SignInRetry DevOpsRetry(bool startedSignedIn) =>
+        FleetMate.Core.Links.SignInDecisions.AfterFailure(startedSignedIn, DevOpsSignInStatus);
+
+    /// <summary>
+    /// Act on a Retry for an Azure DevOps request. Reloads at once when sign-in
+    /// isn't the problem and returns true. Otherwise starts the silent sign-in
+    /// (broker, az CLI, then the hidden browser — never a window) if none is
+    /// running and returns false, leaving the caller to hold the request and
+    /// reload from <see cref="DevOpsSignedIn"/>.
+    /// </summary>
+    public async Task<bool> RetryDevOpsRequestAsync(Func<Task> reload)
+    {
+        switch (FleetMate.Core.Links.SignInDecisions.OnRetry(DevOpsSignInStatus))
+        {
+            case FleetMate.Core.Links.SignInRetryTap.Reload:
+                await reload();
+                return true;
+            default:
+                // Waiting also covers launch before the first attempt starts;
+                // asking again while one runs joins it.
+                _ = AttemptSilentDevOpsSsoAsync();
+                return false;
+        }
+    }
+
+    private void NotifyDevOpsSignInStatusChanged()
+    {
+        if (Dispatcher.CheckAccess()) DevOpsSignInStatusChanged?.Invoke();
+        else Dispatcher.BeginInvoke(() => DevOpsSignInStatusChanged?.Invoke());
+    }
+
     private void NotifyTdxSignInChanged()
     {
         if (Dispatcher.CheckAccess()) TdxSignInChanged?.Invoke();
@@ -542,7 +594,22 @@ public partial class App : Application
     public Task AttemptSilentDevOpsSsoAsync()
     {
         if (_devOpsSsoInFlight is { IsCompleted: false } running) return running;
-        return _devOpsSsoInFlight = RunSilentDevOpsSsoAsync();
+        return _devOpsSsoInFlight = TrackSilentDevOpsSsoAsync();
+    }
+
+    /// <summary>Run one attempt and tell waiting views when it starts and ends.</summary>
+    private async Task TrackSilentDevOpsSsoAsync()
+    {
+        NotifyDevOpsSignInStatusChanged();
+        try
+        {
+            await RunSilentDevOpsSsoAsync();
+        }
+        finally
+        {
+            // Raised after the task completes, so the status reads Failed or SignedIn.
+            _ = Dispatcher.BeginInvoke(() => DevOpsSignInStatusChanged?.Invoke());
+        }
     }
 
     private async Task RunSilentDevOpsSsoAsync()

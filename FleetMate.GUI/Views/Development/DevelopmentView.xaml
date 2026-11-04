@@ -440,6 +440,8 @@
             <TextBlock x:Name="DetailPlaceholder" Text="Select a pull request, notification, commit, run or skill."
                        HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.6" />
 
+            <ContentControl x:Name="DevOpsWaitHost" Visibility="Collapsed" />
+
             <StackPanel x:Name="NonPullRequestPanel" Visibility="Collapsed"
                         HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440">
                 <TextBlock x:Name="NonPullRequestTitle" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"

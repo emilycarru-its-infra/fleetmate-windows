@@ -16,16 +16,30 @@ namespace FleetMate.GUI.Views.Development;
 public partial class CommitDetailView : UserControl
 {
     private PullRequestCommit? _commit;
+    private RepositoryCommits? _repository;
     private int _generation;
+
+    /// <summary>
+    /// The load failed before Azure DevOps sign-in finished; it runs again once
+    /// sign-in completes.
+    /// </summary>
+    private bool _awaitingSignIn;
 
     public CommitDetailView()
     {
         InitializeComponent();
+        if (Application.Current is App app)
+            app.DevOpsSignedIn += async () =>
+            {
+                if (_awaitingSignIn && _repository is { } r && _commit is { } c) await ShowAsync(r, c);
+            };
     }
 
     public async Task ShowAsync(RepositoryCommits repository, PullRequestCommit commit)
     {
         _commit = commit;
+        _repository = repository;
+        _awaitingSignIn = false;
         var generation = ++_generation;
         AgentButton.Context = AgentContexts.Commit(commit, repository);
 
@@ -34,9 +48,13 @@ public partial class CommitDetailView : UserControl
                           $"{commit.Date?.ToLocalTime():d MMM yyyy, HH:mm} · {repository.DisplayName}";
 
         LoadingPanel.Visibility = Visibility.Visible;
-        ErrorText.Visibility = Visibility.Collapsed;
+        ErrorPanel.Visibility = Visibility.Collapsed;
+        WaitHost.Visibility = Visibility.Collapsed;
         ContentScroller.Visibility = Visibility.Collapsed;
 
+        var app = Application.Current as App;
+        var isDevOps = repository.Source == PullRequestSource.AzureDevOps;
+        var startedSignedIn = app?.IsDevOpsSsoAuthenticated ?? false;
         try
         {
             var detail = await FetchAsync(repository, commit);
@@ -48,9 +66,48 @@ public partial class CommitDetailView : UserControl
             if (generation != _generation) return;
             Log.Error(ex, "[commits] Failed to load {Sha}", commit.ShortSha);
             LoadingPanel.Visibility = Visibility.Collapsed;
-            ErrorText.Visibility = Visibility.Visible;
-            ErrorText.Text = $"Could not load this commit.\n\n{ex.Message}";
+
+            // Opened from a cold launch, an Azure DevOps commit races sign-in
+            // and loses. Hold it rather than report the failure. GitHub never waits.
+            var retry = isDevOps && app != null ? app.DevOpsRetry(startedSignedIn) : FleetMate.Core.Links.SignInRetry.ShowError;
+            switch (retry)
+            {
+                case FleetMate.Core.Links.SignInRetry.RetryNow:
+                    await ShowAsync(repository, commit);
+                    break;
+                case FleetMate.Core.Links.SignInRetry.WaitForSignIn:
+                    ShowWaiting(ex.Message);
+                    break;
+                default:
+                    ErrorPanel.Visibility = Visibility.Visible;
+                    ErrorText.Text = $"Could not load this commit.\n\n{ex.Message}";
+                    break;
+            }
         }
+    }
+
+    private void ShowWaiting(string? error)
+    {
+        _awaitingSignIn = true;
+        ErrorPanel.Visibility = Visibility.Collapsed;
+        WaitHost.Content = new DevOpsSignInWaitPanel($"commit {_commit?.ShortSha}", error);
+        WaitHost.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>
+    /// Retry signs in first when sign-in is the problem, since a plain reload
+    /// while signed out fails the same way. The sign-in is silent only.
+    /// </summary>
+    private async void OnRetryClicked(object sender, RoutedEventArgs e)
+    {
+        if (_repository is not { } repository || _commit is not { } commit) return;
+        if (repository.Source != PullRequestSource.AzureDevOps || Application.Current is not App app)
+        {
+            await ShowAsync(repository, commit);
+            return;
+        }
+        if (!await app.RetryDevOpsRequestAsync(() => ShowAsync(repository, commit)))
+            ShowWaiting(null);
     }
 
     private static async Task<CommitDetail> FetchAsync(RepositoryCommits repository, PullRequestCommit commit)
@@ -59,6 +116,11 @@ public partial class CommitDetailView : UserControl
 
         if (repository.Source == PullRequestSource.AzureDevOps)
         {
+            // The app's service carries the sign-in token; a fresh one could only
+            // use the broker, which misses a sign-in made through az CLI or the
+            // hidden browser.
+            if (app.DevOpsService is { } shared)
+                return await shared.GetCommitDetailAsync(repository.RepositoryId ?? repository.Repository, commit.Id, repository.Container);
             if (app.Config.AzureDevOps is not { } ado) throw new InvalidOperationException("Azure DevOps is not configured");
             using var devops = new AzureDevOpsService(ado);
             return await devops.GetCommitDetailAsync(repository.RepositoryId ?? repository.Repository, commit.Id, repository.Container);

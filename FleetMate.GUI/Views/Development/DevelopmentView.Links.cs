@@ -2,6 +2,7 @@ using System.Windows;
 using FleetMate.Core.Links;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
+using FleetMate.GUI.Views.Shared;
 using Serilog;
 
 namespace FleetMate.GUI.Views.Development;
@@ -51,13 +52,22 @@ public partial class DevelopmentView
         }
     }
 
-    /// <summary>Signed in to Azure DevOps: reload the pull requests and open a held link.</summary>
+    /// <summary>
+    /// Signed in to Azure DevOps: reload the lists already loaded, since a load
+    /// that ran before sign-in left Azure DevOps out, then open a held link.
+    /// </summary>
     private async Task OnDevOpsSignedInAsync()
     {
+        if (AppInstance is not { } app) return;
+        var reloads = new List<Task>();
+        if (app.DevelopmentPullRequests != null) reloads.Add(LoadPullRequestsAsync());
+        if (app.DevelopmentCommits != null) reloads.Add(LoadCommitsAsync());
+        if (app.DevelopmentRuns != null) reloads.Add(LoadRunsAsync());
+        await Task.WhenAll(reloads);
+
         if (_linkAwaitingSignIn is not { } link) return;
         _linkAwaitingSignIn = null;
         Log.Information("[development] Signed in to Azure DevOps; opening {Link}", link.ToLink());
-        if (AppInstance is { } app) app.DevelopmentPullRequests = null;
         try
         {
             await OpenLinkAsync(link);
@@ -69,25 +79,41 @@ public partial class DevelopmentView
     }
 
     /// <summary>
-    /// Hold <paramref name="link"/> for sign-in when it is an Azure DevOps
-    /// link and Azure DevOps is configured but not signed in yet.
+    /// A link that could not be found: hold it for Azure DevOps sign-in, open it
+    /// again at once when sign-in landed while it was being fetched, or report it.
+    /// GitHub links never wait.
     /// </summary>
-    private bool HoldForSignIn(App app, FleetMateLink link)
+    private async Task LinkFailedAsync(App app, FleetMateLink link, bool startedSignedIn)
     {
-        if (!DevelopmentLinkHold.ShouldHold(link, app.DevOpsService != null, app.IsDevOpsSsoAuthenticated)) return false;
-        _linkAwaitingSignIn = link;
-        Log.Information("[development] {Link} opens once Azure DevOps sign-in finishes", link.ToLink());
-        return true;
+        var retry = link.NeedsAzureDevOps() ? app.DevOpsRetry(startedSignedIn) : SignInRetry.ShowError;
+        switch (retry)
+        {
+            case SignInRetry.RetryNow:
+                await OpenLinkAsync(link);
+                break;
+            case SignInRetry.WaitForSignIn:
+                _linkAwaitingSignIn = link;
+                Log.Information("[development] {Link} opens once Azure DevOps sign-in finishes", link.ToLink());
+                DevOpsWaitHost.Content = new DevOpsSignInWaitPanel(
+                    link is FleetMateLink.PullRequest ? "the linked pull request" : "the linked run");
+                ShowDetail(DevOpsWaitHost);
+                break;
+            default:
+                ShowLinkNotFound(link);
+                break;
+        }
     }
 
     private async Task OpenLinkAsync(FleetMateLink link)
     {
+        _linkAwaitingSignIn = null;
         ClearLinkFilters();
+        var startedSignedIn = AppInstance?.IsDevOpsSsoAuthenticated ?? false;
         switch (link)
         {
             case FleetMateLink.PullRequest pr:
                 PullRequestsSegment.IsChecked = true;
-                await OpenPullRequestLinkAsync(pr);
+                await OpenPullRequestLinkAsync(pr, startedSignedIn);
                 break;
             case FleetMateLink.Commit commit:
                 CommitsSegment.IsChecked = true;
@@ -95,7 +121,7 @@ public partial class DevelopmentView
                 break;
             case FleetMateLink.AzureDevOpsRun or FleetMateLink.AzureDevOpsPipeline or FleetMateLink.GitHubRun:
                 PipelinesSegment.IsChecked = true;
-                await OpenRunLinkAsync(link);
+                await OpenRunLinkAsync(link, startedSignedIn);
                 break;
         }
     }
@@ -132,7 +158,7 @@ public partial class DevelopmentView
 
     // ── Pull requests ────────────────────────────────────────────────────
 
-    private async Task OpenPullRequestLinkAsync(FleetMateLink.PullRequest link)
+    private async Task OpenPullRequestLinkAsync(FleetMateLink.PullRequest link, bool startedSignedIn)
     {
         if (AppInstance is not { } app) return;
         if (app.DevelopmentPullRequests is null) await LoadPullRequestsAsync();
@@ -148,9 +174,9 @@ public partial class DevelopmentView
             return;
         }
 
-        var pr = await FetchPullRequestAsync(app, link);
+        var pr = await FetchOrNullAsync(() => FetchPullRequestAsync(app, link), link);
         if (pr != null) await ShowPullRequestAsync(pr);
-        else if (!HoldForSignIn(app, link)) ShowLinkNotFound(link);
+        else await LinkFailedAsync(app, link, startedSignedIn);
     }
 
     private static bool MatchesPullRequest(UnifiedPullRequest pr, FleetMateLink.PullRequest link) => link.Source switch
@@ -181,9 +207,8 @@ public partial class DevelopmentView
     private async Task OpenCommitLinkAsync(FleetMateLink.Commit link)
     {
         if (AppInstance is not { } app) return;
-        // The commit view reports its own failure, so an Azure DevOps commit
-        // waits for sign-in up front rather than failing first.
-        if (HoldForSignIn(app, link)) return;
+        // The commit view holds an Azure DevOps commit for sign-in itself, the
+        // same way for a link and for a row picked before sign-in finished.
         if (app.DevelopmentCommits is null) await LoadCommitsAsync();
         else RenderCommits();
 
@@ -209,7 +234,7 @@ public partial class DevelopmentView
 
     // ── Pipelines ────────────────────────────────────────────────────────
 
-    private async Task OpenRunLinkAsync(FleetMateLink link)
+    private async Task OpenRunLinkAsync(FleetMateLink link, bool startedSignedIn)
     {
         if (AppInstance is not { } app) return;
         if (app.DevelopmentRuns is null) await LoadRunsAsync();
@@ -237,10 +262,12 @@ public partial class DevelopmentView
             return;
         }
 
-        run ??= await FetchRunAsync(app, link);
+        // A pipeline definition the loaded runs don't cover opens on its
+        // latest run, fetched from Azure DevOps.
+        run ??= await FetchOrNullAsync(() => FetchRunAsync(app, link), link);
         if (run == null)
         {
-            if (!HoldForSignIn(app, link)) ShowLinkNotFound(link);
+            await LinkFailedAsync(app, link, startedSignedIn);
             return;
         }
         ShowDetail(RunView);
@@ -263,6 +290,17 @@ public partial class DevelopmentView
         }
     }
 
+    /// <summary>A fetch that threw counts as not found; the caller decides whether sign-in explains it.</summary>
+    private static async Task<T?> FetchOrNullAsync<T>(Func<Task<T?>> fetch, FleetMateLink link) where T : class
+    {
+        try { return await fetch(); }
+        catch (Exception ex)
+        {
+            Log.Information(ex, "[development] Fetching {Link} failed", link.ToLink());
+            return null;
+        }
+    }
+
     private void ShowLinkNotFound(FleetMateLink link)
     {
         if (Window.GetWindow(this) is Shared.MainWindow window)
@@ -270,24 +308,4 @@ public partial class DevelopmentView
     }
 
     private static bool Same(string? a, string? b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
-}
-
-/// <summary>Which Development links wait for Azure DevOps sign-in. Kept apart so it is testable without a window.</summary>
-internal static class DevelopmentLinkHold
-{
-    /// <summary>
-    /// An Azure DevOps link waits when Azure DevOps is configured and not yet
-    /// signed in; GitHub links and a signed-in session never wait, and with
-    /// Azure DevOps not configured nothing would ever release the link.
-    /// </summary>
-    public static bool ShouldHold(FleetMateLink link, bool devOpsConfigured, bool devOpsSignedIn) =>
-        devOpsConfigured && !devOpsSignedIn && IsAzureDevOps(link);
-
-    public static bool IsAzureDevOps(FleetMateLink link) => link switch
-    {
-        FleetMateLink.PullRequest { Source: FleetMateLink.AzureDevOps } => true,
-        FleetMateLink.Commit { Source: FleetMateLink.AzureDevOps } => true,
-        FleetMateLink.AzureDevOpsRun or FleetMateLink.AzureDevOpsPipeline => true,
-        _ => false,
-    };
 }
