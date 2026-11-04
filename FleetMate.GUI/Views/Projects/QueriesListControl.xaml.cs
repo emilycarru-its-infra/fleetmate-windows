@@ -41,6 +41,34 @@ public partial class QueriesListControl : UserControl
     {
         InitializeComponent();
         AgentContextMenu.Attach(SectionsPanel, o => o is QueryRunDisplay run ? QueryContext(run.Query, run.Rows.Count) : null);
+        UpdateHeaderGlyphs();
+    }
+
+    // ── Column headers ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Title and Changed order the queries, so the headers do something
+    /// visible while every query is collapsed. A second click flips the
+    /// direction, as in any Windows list.
+    /// </summary>
+    private void OnTitleHeaderClick(object sender, RoutedEventArgs e) => ToggleHeader(QueryListOrder.Name);
+
+    private void OnChangedHeaderClick(object sender, RoutedEventArgs e) => ToggleHeader(QueryListOrder.LastChanged);
+
+    private void ToggleHeader(QueryListOrder order)
+    {
+        var ascending = UserPreferences.QueriesOrder == order
+            ? !UserPreferences.QueriesOrderAscending
+            : order.DefaultAscending();
+        SetOrder(order, ascending);
+    }
+
+    private void UpdateHeaderGlyphs()
+    {
+        var order = UserPreferences.QueriesOrder;
+        var glyph = UserPreferences.QueriesOrderAscending ? " \u25B2" : " \u25BC";
+        TitleSortGlyph.Text = order == QueryListOrder.Name ? glyph : "";
+        ChangedSortGlyph.Text = order == QueryListOrder.LastChanged ? glyph : "";
     }
 
     /// <summary>
@@ -74,18 +102,47 @@ public partial class QueriesListControl : UserControl
 
     /// <summary>
     /// Areas and the queries inside each, most recently active first — the
-    /// macOS order. Ties fall back to name. Column sorting inside a query is
-    /// unchanged.
+    /// default order. Ties fall back to name.
     /// </summary>
     internal static List<(string Key, List<QueryRunDisplay> Runs)> RecentFirst(IEnumerable<QueryRunDisplay> runs) =>
-        runs.GroupBy(r => r.AreaBucket)
-            .Select(g => (g.Key, Runs: g
-                .OrderByDescending(LatestChange)
-                .ThenBy(r => r.Query.Name, StringComparer.OrdinalIgnoreCase)
-                .ToList()))
-            .OrderByDescending(s => s.Runs.Max(LatestChange))
-            .ThenBy(s => s.Key, StringComparer.OrdinalIgnoreCase)
+        Ordered(runs, QueryListOrders.Default, QueryListOrders.Default.DefaultAscending(), r => r.Rows.Count);
+
+    /// <summary>
+    /// Areas and the queries inside each, in the chosen Sort Queries By order.
+    /// <paramref name="runs"/> arrive in Azure DevOps order, which is what
+    /// Query Order shows; <paramref name="resultCount"/> counts the rows a
+    /// query shows after search and the Closed toggle.
+    /// </summary>
+    internal static List<(string Key, List<QueryRunDisplay> Runs)> Ordered(
+        IEnumerable<QueryRunDisplay> runs, QueryListOrder order, bool ascending, Func<QueryRunDisplay, int> resultCount)
+    {
+        var list = runs.ToList();
+        var positions = new Dictionary<QueryRunDisplay, int>(ReferenceEqualityComparer.Instance);
+        for (var i = 0; i < list.Count; i++) positions.TryAdd(list[i], i);
+
+        QueryOrderKey RunKey(QueryRunDisplay r) => new(r.Query.Name, resultCount(r), LatestChange(r), positions[r]);
+
+        var sections = list.GroupBy(r => r.AreaBucket)
+            .Select(g => (g.Key, Runs: order.Sort(g, ascending, RunKey)))
             .ToList();
+        var ordered = order.Sort(sections, ascending, s => new QueryOrderKey(
+            s.Key,
+            s.Runs.Sum(resultCount),
+            s.Runs.Max(LatestChange),
+            s.Runs.Min(r => positions[r])));
+        // "General" holds whatever fits no project; by name it reads best last.
+        if (order == QueryListOrder.Name)
+            ordered = ordered.Where(s => s.Key != "General").Concat(ordered.Where(s => s.Key == "General")).ToList();
+        return ordered;
+    }
+
+    /// <summary>The current Sort Queries By order; saved, and the list redrawn.</summary>
+    public void SetOrder(QueryListOrder order, bool ascending)
+    {
+        UserPreferences.SetQueriesOrder(order, ascending);
+        UpdateHeaderGlyphs();
+        Rebuild();
+    }
 
     public void ShowRuns(List<QueryRunDisplay> runs, string search, bool showClosed)
     {
@@ -115,7 +172,8 @@ public partial class QueriesListControl : UserControl
         SectionsPanel.Children.Clear();
 
         var any = false;
-        foreach (var section in RecentFirst(_runs))
+        foreach (var section in Ordered(_runs, UserPreferences.QueriesOrder, UserPreferences.QueriesOrderAscending,
+                     r => r.Rows.Count(RowVisible)))
         {
             var header = new TextBlock
             {

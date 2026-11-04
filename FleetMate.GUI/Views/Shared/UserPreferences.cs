@@ -1,5 +1,6 @@
 using Microsoft.Win32;
 using FleetMate.Core.Config;
+using FleetMate.Core.Models.Projects;
 using Serilog;
 
 namespace FleetMate.GUI.Views.Shared;
@@ -11,7 +12,8 @@ namespace FleetMate.GUI.Views.Shared;
 /// whether the setup wizard has run (<c>SetupCompleted</c>)
 /// whether Tickets shows only the operator's own (<c>tickets.assignedToMe</c>,
 /// the macOS app's key), and how Development's Pulls list is sorted and filtered
-/// (<c>development.pulls.*</c>, the macOS app's keys).
+/// (<c>development.pulls.*</c>, the macOS app's keys), and how the Projects
+/// queries list orders its queries (<c>queriesList.order*</c>, likewise).
 /// None of these is managed by policy.
 /// </summary>
 public static class UserPreferences
@@ -73,6 +75,23 @@ public static class UserPreferences
     public static string? PullsRepository => Read("development.pulls.repository") is { Length: > 0 } repo ? repo : null;
 
     public static void SetPullsRepository(string? repository) => Write("development.pulls.repository", repository);
+
+    /// <summary>How the Projects queries list orders its queries.</summary>
+    public static QueryListOrder QueriesOrder => QueryListOrders.Parse(Read("queriesList.order"));
+
+    /// <summary>The direction of <see cref="QueriesOrder"/>; unset means that order's natural direction.</summary>
+    public static bool QueriesOrderAscending => Read("queriesList.orderAscending") switch
+    {
+        "1" => true,
+        "0" => false,
+        _ => QueriesOrder.DefaultAscending()
+    };
+
+    public static void SetQueriesOrder(QueryListOrder order, bool ascending)
+    {
+        Write("queriesList.order", order == QueryListOrders.Default ? null : order.StorageValue());
+        Write("queriesList.orderAscending", ascending == order.DefaultAscending() ? null : ascending ? "1" : "0");
+    }
 
     private static string? Read(string name)
     {

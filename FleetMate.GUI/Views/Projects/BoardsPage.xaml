@@ -85,6 +85,19 @@
                     <ComboBoxItem Content="Gitea" Tag="gitea" />
                 </ComboBox>
 
+                <!-- macOS Projects toolbar Sort Queries menu: orders the queries
+                     themselves, so it works while every query is collapsed. -->
+                <Button x:Name="SortQueriesButton" Click="OnSortQueriesClick" ToolTip="Sort queries"
+                        Visibility="Collapsed" AutomationProperties.Name="Sort queries">
+                    <ui:SimpleStackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="&#xE8CB;" FontFamily="Segoe Fluent Icons" VerticalAlignment="Center" />
+                        <TextBlock Text="Sort" VerticalAlignment="Center" />
+                    </ui:SimpleStackPanel>
+                    <Button.ContextMenu>
+                        <ContextMenu x:Name="SortQueriesMenu" />
+                    </Button.ContextMenu>
+                </Button>
+
                 <!-- macOS Projects toolbar "New" menu: the item types this setup can create. -->
                 <Button x:Name="NewButton" Click="OnNewButtonClick" ToolTip="New item">
                     <ui:SimpleStackPanel Orientation="Horizontal" Spacing="6">
