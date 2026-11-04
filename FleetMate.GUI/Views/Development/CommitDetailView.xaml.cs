@@ -68,6 +68,20 @@ public partial class CommitDetailView : UserControl
         return await github.GetCommitDetailAsync(repository.Container, repository.Repository, commit.Id);
     }
 
+    /// <summary>The diff on screen, kept so a layout change can redraw it.</summary>
+    private IReadOnlyList<DiffFile> _files = Array.Empty<DiffFile>();
+
+    private void ShowFiles()
+    {
+        var layout = UserPreferences.DiffLayout;
+        DiffLayoutPicker.Show(layout);
+        FilesList.ItemsSource = _files.Count > 0
+            ? _files.Select(f => new DiffFileViewModel { File = f, Layout = layout }).ToList()
+            : null;
+    }
+
+    private void OnDiffLayoutChanged(DiffLayout layout) => ShowFiles();
+
     private void Render(CommitDetail detail)
     {
         LoadingPanel.Visibility = Visibility.Collapsed;
@@ -81,7 +95,9 @@ public partial class CommitDetailView : UserControl
         BodyText.Text = body;
 
         var hasDiffs = detail.Files.Count > 0;
-        FilesList.ItemsSource = hasDiffs ? detail.Files.Select(f => new DiffFileViewModel { File = f }).ToList() : null;
+        _files = hasDiffs ? detail.Files : Array.Empty<DiffFile>();
+        DiffLayoutPicker.Visibility = hasDiffs ? Visibility.Visible : Visibility.Collapsed;
+        ShowFiles();
         ChangesCard.Visibility = hasDiffs || detail.Changes.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         ChangesList.ItemsSource = hasDiffs ? null : detail.Changes;
 

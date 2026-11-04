@@ -1,6 +1,7 @@
 using Microsoft.Win32;
 using FleetMate.Core.Config;
 using FleetMate.Core.Models.Projects;
+using FleetMate.Core.Shared;
 using Serilog;
 
 namespace FleetMate.GUI.Views.Shared;
@@ -12,8 +13,9 @@ namespace FleetMate.GUI.Views.Shared;
 /// whether the setup wizard has run (<c>SetupCompleted</c>)
 /// whether Tickets shows only the operator's own (<c>tickets.assignedToMe</c>,
 /// the macOS app's key), and how Development's Pulls list is sorted and filtered
-/// (<c>development.pulls.*</c>, the macOS app's keys), and how the Projects
-/// queries list orders its queries (<c>queriesList.order*</c>, likewise).
+/// (<c>development.pulls.*</c>, the macOS app's keys), how the Projects
+/// queries list orders its queries (<c>queriesList.order*</c>, likewise), and
+/// whether pull request and commit changes show side by side or inline (<c>diffLayout</c>).
 /// None of these is managed by policy.
 /// </summary>
 public static class UserPreferences
@@ -135,6 +137,12 @@ public static class UserPreferences
     public static string? PullsCollapsedGroups => Read("development.pulls.collapsedGroups");
 
     public static void SetPullsCollapsedGroups(string? keys) => Write("development.pulls.collapsedGroups", keys);
+
+    /// <summary>Pull request and commit changes side by side (the default) or inline.</summary>
+    public static DiffLayout DiffLayout => DiffLayouts.Parse(Read("diffLayout"));
+
+    public static void SetDiffLayout(DiffLayout layout) =>
+        Write("diffLayout", layout == DiffLayouts.Default ? null : DiffLayouts.Format(layout));
 
     private static string? Read(string name)
     {

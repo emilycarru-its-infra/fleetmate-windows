@@ -572,3 +572,85 @@ public static class DiffBuilder
         return hunks;
     }
 }
+
+/// <summary>How a diff is drawn: old and new side by side, or one column of removed and added lines.</summary>
+public enum DiffLayout
+{
+    Split,
+    Inline,
+}
+
+/// <summary>The stored form of <see cref="DiffLayout"/>, the macOS app's <c>diffLayout</c> values.</summary>
+public static class DiffLayouts
+{
+    public const DiffLayout Default = DiffLayout.Split;
+
+    /// <summary>Anything other than <c>inline</c> is the default, side by side.</summary>
+    public static DiffLayout Parse(string? value) =>
+        string.Equals(value, "inline", StringComparison.OrdinalIgnoreCase) ? DiffLayout.Inline : Default;
+
+    public static string Format(DiffLayout layout) => layout == DiffLayout.Inline ? "inline" : "split";
+
+    public static string Title(DiffLayout layout) => layout == DiffLayout.Inline ? "Inline" : "Side by Side";
+}
+
+/// <summary>
+/// One row of a side-by-side diff: the old line on the left, the new line on
+/// the right. A removed line with no matching addition leaves the right empty,
+/// and the reverse.
+/// </summary>
+public sealed record DiffSplitRow(DiffLine? Left, DiffLine? Right);
+
+public static class DiffSplit
+{
+    /// <summary>
+    /// The hunk as side-by-side rows. Context lines show on both sides. Each run
+    /// of removed lines is paired, line by line, with the run of added lines that
+    /// follows it, so a changed line sits opposite its new version. A "no newline"
+    /// marker stays on the side it belongs to.
+    /// </summary>
+    public static List<DiffSplitRow> Rows(DiffHunk hunk)
+    {
+        var lines = hunk.Lines;
+        var rows = new List<DiffSplitRow>();
+        var i = 0;
+        while (i < lines.Count)
+        {
+            var line = lines[i];
+            switch (line.Kind)
+            {
+                case DiffLineKind.Context:
+                    rows.Add(new DiffSplitRow(line, line));
+                    i++;
+                    break;
+
+                case DiffLineKind.NoNewline:
+                    // Follows the line it describes; put it on that line's side.
+                    var previous = i > 0 ? lines[i - 1].Kind : DiffLineKind.Context;
+                    rows.Add(previous switch
+                    {
+                        DiffLineKind.Deletion => new DiffSplitRow(line, null),
+                        DiffLineKind.Addition => new DiffSplitRow(null, line),
+                        _ => new DiffSplitRow(line, line),
+                    });
+                    i++;
+                    break;
+
+                default:
+                    var left = new List<DiffLine>();
+                    while (i < lines.Count && lines[i].Kind == DiffLineKind.Deletion) left.Add(lines[i++]);
+                    if (left.Count > 0 && i < lines.Count && lines[i].Kind == DiffLineKind.NoNewline) left.Add(lines[i++]);
+
+                    var right = new List<DiffLine>();
+                    while (i < lines.Count && lines[i].Kind == DiffLineKind.Addition) right.Add(lines[i++]);
+
+                    for (var index = 0; index < Math.Max(left.Count, right.Count); index++)
+                        rows.Add(new DiffSplitRow(
+                            index < left.Count ? left[index] : null,
+                            index < right.Count ? right[index] : null));
+                    break;
+            }
+        }
+        return rows;
+    }
+}

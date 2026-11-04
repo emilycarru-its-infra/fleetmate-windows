@@ -31,13 +31,52 @@
             </Grid>
         </DataTemplate>
 
+        <!-- One half of a side-by-side row: line number, gutter strip, wrapped content. -->
+        <DataTemplate x:Key="DiffSideCellTemplate">
+            <Grid Background="{Binding CellBackground}"
+                  AutomationProperties.Name="{Binding AccessibleText}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="44" />
+                    <ColumnDefinition Width="3" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" Text="{Binding NumberLabel}" FontFamily="Consolas"
+                           FontSize="11" TextAlignment="Right" Padding="0,0,6,0" VerticalAlignment="Top"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <Rectangle Grid.Column="1" Fill="{Binding GutterStrip}" />
+                <TextBlock Grid.Column="2" Text="{Binding Content}" FontFamily="Consolas" FontSize="11"
+                           Padding="4,0,6,0" TextWrapping="Wrap"
+                           Foreground="{Binding ContentBrush}" FontStyle="{Binding ContentStyle}" />
+            </Grid>
+        </DataTemplate>
+
+        <!-- Side by side: old on the left, new on the right, one row per pair. -->
+        <DataTemplate x:Key="DiffSplitRowTemplate">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="1" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <ContentPresenter Grid.Column="0" Content="{Binding Left}"
+                                  ContentTemplate="{StaticResource DiffSideCellTemplate}" />
+                <Rectangle Grid.Column="1" Fill="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+                <ContentPresenter Grid.Column="2" Content="{Binding Right}"
+                                  ContentTemplate="{StaticResource DiffSideCellTemplate}" />
+            </Grid>
+        </DataTemplate>
+
         <DataTemplate x:Key="DiffHunkTemplate">
             <StackPanel>
                 <Border Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}" Padding="6,2">
                     <TextBlock Text="{Binding Header}" FontFamily="Consolas" FontSize="10"
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                 </Border>
-                <ItemsControl ItemsSource="{Binding Lines}" ItemTemplate="{StaticResource DiffLineTemplate}" />
+                <ItemsControl ItemsSource="{Binding Lines}" ItemTemplate="{StaticResource DiffLineTemplate}"
+                              Visibility="{Binding InlineVisibility}" />
+                <ItemsControl ItemsSource="{Binding SplitRows}" ItemTemplate="{StaticResource DiffSplitRowTemplate}"
+                              Visibility="{Binding SplitVisibility}" />
             </StackPanel>
         </DataTemplate>
 
@@ -65,9 +104,9 @@
                                Padding="10,8" FontSize="11" TextWrapping="Wrap"
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
 
-                    <!-- Wide lines scroll within their own card rather than
-                         forcing the whole sheet sideways. -->
-                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                    <!-- Inline: wide lines scroll within their own card rather than
+                         forcing the whole sheet sideways. Side by side wraps instead. -->
+                    <ScrollViewer HorizontalScrollBarVisibility="{Binding HorizontalScroll}" VerticalScrollBarVisibility="Disabled">
                         <ItemsControl ItemsSource="{Binding Hunks}" ItemTemplate="{StaticResource DiffHunkTemplate}" />
                     </ScrollViewer>
                 </StackPanel>

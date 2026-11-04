@@ -204,6 +204,8 @@
                     <!-- Changes -->
                     <StackPanel x:Name="ChangesSection">
                         <DockPanel Margin="0,0,0,4">
+                            <shared:DiffLayoutPicker x:Name="DiffLayoutPicker" DockPanel.Dock="Right" Margin="8,0,0,0"
+                                                     LayoutChanged="OnDiffLayoutChanged" />
                             <TextBlock x:Name="TruncationNotice" DockPanel.Dock="Right" FontSize="10"
                                        Visibility="Collapsed" VerticalAlignment="Center"
                                        Foreground="#FFB800" />
