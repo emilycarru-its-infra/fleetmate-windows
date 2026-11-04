@@ -93,9 +93,9 @@ public sealed record GrepRow(RepoGrepMatch Match)
 /// ported from FleetMate for Mac (header with branch menu, Fetch, Pull, Push;
 /// commit composer above the change list; structured diff with per-chunk
 /// Stage, Unstage and Discard; History with the lane graph and commit
-/// actions), plus the Files panel's tree, content search and editor, and
-/// Insights. Lazygit-style keys work while the pane has focus outside a text
-/// field. Destructive steps — discarding files or a chunk, checking out,
+/// actions), plus the Files panel's tree, content search and editor.
+/// Repository Insights live in the Graphs strip above. Lazygit-style keys
+/// work while the pane has focus outside a text field. Destructive steps — discarding files or a chunk, checking out,
 /// deleting a stale index lock — ask first.
 /// </summary>
 public partial class RepoWorkspaceView : UserControl
@@ -126,7 +126,6 @@ public partial class RepoWorkspaceView : UserControl
         DiffView.StageChunk = (file, hunk) => _model?.Git.ApplyChunkAsync(file, hunk, reverse: false) ?? Task.CompletedTask;
         DiffView.UnstageChunk = (file, hunk) => _model?.Git.ApplyChunkAsync(file, hunk, reverse: true) ?? Task.CompletedTask;
         DiffView.DiscardChunk = (file, hunk) => _model?.Git.DiscardChunkAsync(file, hunk) ?? Task.CompletedTask;
-        Insights.OpenFile = path => OpenInEditor(path);
         BuildHelp();
     }
 
@@ -141,7 +140,6 @@ public partial class RepoWorkspaceView : UserControl
     public void Attach(RepoWorkspaceModel model)
     {
         _model = model;
-        Insights.Attach(model);
         model.Git.Confirm = Confirm;
         model.ErrorReported += ShowError;
         model.PropertyChanged += OnModelChanged;
@@ -264,8 +262,6 @@ public partial class RepoWorkspaceView : UserControl
         if (_model == null) return;
         var panel = _model.Git.Panel;
         static Visibility Show(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
-        Insights.Visibility = Show(panel == RepoPanel.Insights);
-        PanelGrid.Visibility = Show(panel != RepoPanel.Insights);
         Composer.Visibility = Show(panel == RepoPanel.Changes);
         FilesHeader.Visibility = Show(panel == RepoPanel.Files);
         ChangesList.Visibility = Show(panel == RepoPanel.Changes);
@@ -515,6 +511,9 @@ public partial class RepoWorkspaceView : UserControl
     {
         if (_model?.SelectedPath is { } path) RepoShell.Reveal(path);
     }
+
+    /// <summary>Show <paramref name="relativePath"/> in the Files panel — Insights' most-changed files open here.</summary>
+    public void OpenFile(string relativePath) => OpenInEditor(relativePath);
 
     private void OpenInEditor(string relativePath)
     {
@@ -785,7 +784,6 @@ public partial class RepoWorkspaceView : UserControl
             case Key.D1 when !shift: git.Panel = RepoPanel.Changes; break;
             case Key.D2 when !shift: git.Panel = RepoPanel.History; break;
             case Key.D3 when !shift: git.Panel = RepoPanel.Files; break;
-            case Key.D4 when !shift: git.Panel = RepoPanel.Insights; break;
             case Key.J or Key.Down when !shift && git.Panel is RepoPanel.Changes or RepoPanel.History: git.MoveSelection(1); break;
             case Key.K or Key.Up when !shift && git.Panel is RepoPanel.Changes or RepoPanel.History: git.MoveSelection(-1); break;
             case Key.Space when git.Panel == RepoPanel.Changes: await git.ToggleStageSelectedAsync(); break;
@@ -832,7 +830,7 @@ public partial class RepoWorkspaceView : UserControl
         for (var i = 0; i < 3; i++) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         Column(grid, 0, "Navigation", new[]
         {
-            ("1 / 2 / 3 / 4", "Changes / History / Files / Insights"), ("Tab", "Next panel"), ("Shift+Tab", "Previous panel"),
+            ("1 / 2 / 3", "Changes / History / Files"), ("Tab", "Next panel"), ("Shift+Tab", "Previous panel"),
             ("j / ↓", "Down"), ("k / ↑", "Up"), ("/", "Filter"), ("Esc", "Close filter or help"),
         });
         Column(grid, 1, "Changes", new[]

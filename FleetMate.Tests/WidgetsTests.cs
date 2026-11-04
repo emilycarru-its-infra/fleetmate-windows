@@ -10,9 +10,11 @@ public class WidgetsTests
     [Fact]
     public void Rows_FillWidthWhileEachUnitStaysAtLeastMinimum()
     {
-        // 1000px fits floor((1000+12)/(240+12)) = 4 units per row.
+        // 1000px fits floor((1000+12)/(240+12)) = 4 units per row. Five
+        // units need two rows, balanced two and three rather than three and
+        // a stretched leftover.
         var rows = WidgetFlowPanel.Rows(new[] { 1, 1, 1, 2 }, 1000);
-        Assert.Equal(new[] { new[] { 0, 1, 2 }, new[] { 3 } }, rows.Select(r => r.ToArray()));
+        Assert.Equal(new[] { new[] { 0, 1 }, new[] { 2, 3 } }, rows.Select(r => r.ToArray()));
 
         Assert.Single(WidgetFlowPanel.Rows(new[] { 1, 1, 2 }, 1000));
     }
@@ -153,7 +155,7 @@ public class WidgetsTests
     [InlineData("Devices", "Assets", false)]
     [InlineData("Projects", "Issues", true)]
     [InlineData("Development", "Runs", true)]
-    [InlineData("Development", "Commits", false)]
+    [InlineData("Development", "Commits", true)]
     public void RedrawOnlyForTheTabsOwnData(string tab, string key, bool expected) =>
         Assert.Equal(expected, WidgetCatalog.DependsOn(tab, key));
 

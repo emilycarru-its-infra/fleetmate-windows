@@ -5,8 +5,8 @@ namespace FleetMate.GUI.Views.Development;
 
 /// <summary>
 /// The Repos segment, first and the default as in FleetMate for Mac: tracked
-/// checkouts in the sidebar, the selected one's git pane, files, editor and
-/// Insights in the detail column. The other segments keep their order after it,
+/// checkouts in the sidebar, the selected one's git pane, files and editor in
+/// the detail column, and its Insights in the Graphs strip above. The other segments keep their order after it,
 /// and every link and widget that opens Pulls, Commits or Pipelines still picks
 /// its segment explicitly.
 /// </summary>
@@ -18,6 +18,12 @@ public partial class DevelopmentView
     public event EventHandler? ReposShownChanged;
 
     public bool IsReposShown => ReposSegment.IsChecked == true;
+
+    /// <summary>The workspace the Repos Insights read, created on first use.</summary>
+    public RepoWorkspaceModel ReposModel => Repos;
+
+    /// <summary>Open a file from Insights in the Files panel.</summary>
+    public void OpenRepoFile(string relativePath) => ReposWorkspace.OpenFile(relativePath);
 
     private RepoWorkspaceModel Repos
     {
