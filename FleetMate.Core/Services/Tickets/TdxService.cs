@@ -1,4 +1,5 @@
 #nullable disable warnings
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
@@ -521,8 +522,10 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
     /// <summary>
     /// Update a ticket. <paramref name="updates"/> is a sparse map of field name
     /// to new value; it is sent as a JSON Patch document.
+    /// <paramref name="notifyNewResponsible"/> asks TDX to email whoever the
+    /// change makes responsible.
     /// </summary>
-    public async Task<TdxTicket?> UpdateTicketAsync(int ticketId, IDictionary<string, object?> updates)
+    public async Task<TdxTicket?> UpdateTicketAsync(int ticketId, IDictionary<string, object?> updates, bool notifyNewResponsible = false)
     {
         if (!await SetAuthorizationAsync())
         {
@@ -538,6 +541,7 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
         try
         {
             var url = _config.GetTicketsUrl(ticketId.ToString());
+            if (notifyNewResponsible) url += "?notifyNewResponsible=true";
             var patch = ToJsonPatch(updates);
             Log.Information("TDX PATCH ticket {Id} fields: {Fields}",
                 ticketId, string.Join(", ", updates.Keys.OrderBy(k => k, StringComparer.Ordinal)));
@@ -607,28 +611,70 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
     /// </summary>
     public async Task<bool> UploadAttachmentAsync(int ticketId, string fileName, byte[] content)
     {
-        if (!await SetAuthorizationAsync()) return false;
-
         try
         {
-            using var form = new MultipartFormDataContent();
-            var file = new ByteArrayContent(content);
-            file.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-            form.Add(file, "file", fileName);
-
-            var response = await _client.PostAsync(_config.GetTicketsUrl($"{ticketId}/attachments"), form);
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync();
-                Log.Warning("Failed to attach a file to ticket {Id}: {Status} - {Error}", ticketId, response.StatusCode, error);
-                return false;
-            }
+            await UploadAttachmentOrThrowAsync(ticketId, fileName, content);
             return true;
+        }
+        catch (TdxUploadException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Upload a file to a ticket, saying why when it does not land.
+    ///
+    /// TDX's feed endpoint takes no attachments, so a comment's files go to the
+    /// ticket itself, the same place the web UI puts them, and appear in its
+    /// Attachments list. <paramref name="isPrivate"/> hides the file from the
+    /// client portal. Returns the attachment record when TDX sends one back.
+    /// </summary>
+    /// <exception cref="TdxUploadException">The file did not reach the ticket.</exception>
+    public async Task<TdxAttachment?> UploadAttachmentOrThrowAsync(
+        int ticketId, string fileName, byte[] content, string? mimeType = null,
+        bool isPrivate = false, CancellationToken ct = default)
+    {
+        if (!await SetAuthorizationAsync())
+            throw new TdxUploadException(fileName, (int)HttpStatusCode.Unauthorized);
+
+        var form = new TdxMultipartForm(fileName, content, mimeType);
+        var url = _config.GetTicketsUrl($"{ticketId}/attachments") + $"?isPrivate={(isPrivate ? "true" : "false")}";
+        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new ByteArrayContent(form.Body),
+        };
+        request.Content.Headers.TryAddWithoutValidation("Content-Type", form.ContentType);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _client.SendAsync(request, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to attach a file to ticket {Id}", ticketId);
-            return false;
+            Log.Warning(ex, "Failed to attach a file to ticket {Id}", ticketId);
+            throw new TdxUploadException(fileName, 0, inner: ex);
+        }
+
+        using (response)
+        {
+            var body = await response.Content.ReadAsStringAsync(ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Warning("Failed to attach a file to ticket {Id}: {Status}", ticketId, (int)response.StatusCode);
+                throw new TdxUploadException(fileName, (int)response.StatusCode, body);
+            }
+
+            // The record is a convenience: a success whose body does not
+            // decode still means the file landed.
+            try { return JsonSerializer.Deserialize<TdxAttachment>(body, _jsonOptions); }
+            catch (JsonException) { return null; }
         }
     }
 
@@ -1164,6 +1210,32 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
     #endregion
 
     #region People
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (List<TdxEligibleAssignment> Items, DateTime Expiry)> _eligibleCache = new();
+
+    /// <summary>
+    /// People and groups the ticketing application accepts as a ticket's
+    /// responsible, matching <paramref name="searchText"/>:
+    /// <c>GET /api/{appId}/tickets/resources?searchText=</c>.
+    ///
+    /// This is TDX's own eligibility rule, the list its web Responsible picker
+    /// draws from, rather than the whole people directory. TDX answers at most
+    /// five matches per search, so the picker searches as you type. Answers
+    /// are cached per search for the reference-data lifetime, since the
+    /// eligible set changes only with application access.
+    /// </summary>
+    /// <exception cref="TdxRequestException">The search failed.</exception>
+    public async Task<List<TdxEligibleAssignment>> SearchEligibleResponsiblesAsync(string searchText, CancellationToken ct = default)
+    {
+        var key = (searchText ?? "").Trim().ToLowerInvariant();
+        if (_eligibleCache.TryGetValue(key, out var cached) && DateTime.UtcNow < cached.Expiry) return cached.Items;
+
+        var items = await GetJsonOrThrowAsync<List<TdxEligibleAssignment>>(
+            _config.GetTicketsUrl("resources") + "?searchText=" + Uri.EscapeDataString(key),
+            "search people and groups", ct);
+        _eligibleCache[key] = (items, DateTime.UtcNow.Add(_cacheDuration));
+        return items;
+    }
 
     /// <summary>
     /// Look people up by name or email, for the Reassign picker. Empty on any

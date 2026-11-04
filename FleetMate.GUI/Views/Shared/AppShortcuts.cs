@@ -17,6 +17,7 @@ internal enum AppShortcut
     PreviousTab,
     ShowList,
     ShowBoard,
+    ShowInbox,
     ToggleFilters,
     ClearFilters,
     Refresh,
@@ -47,6 +48,7 @@ internal static class AppShortcuts
             (Key.Tab, Ctrl | Shift) or (Key.PageUp, Ctrl) => AppShortcut.PreviousTab,
             (Key.D1 or Key.NumPad1, Ctrl | Alt) => AppShortcut.ShowList,
             (Key.D2 or Key.NumPad2, Ctrl | Alt) => AppShortcut.ShowBoard,
+            (Key.D3 or Key.NumPad3, Ctrl | Alt) => AppShortcut.ShowInbox,
             (Key.F, Ctrl | Shift) => AppShortcut.ToggleFilters,
             (Key.K, Ctrl | Shift) => AppShortcut.ClearFilters,
             (Key.F5, ModifierKeys.None) or (Key.R, Ctrl) => AppShortcut.Refresh,
@@ -89,6 +91,7 @@ internal static class PageCommands
             AppShortcut.Refresh => Click(page, "RefreshButton"),
             AppShortcut.ShowList => Check(page, "ListViewRadio") || Check(page, "ListModeRadio"),
             AppShortcut.ShowBoard => Check(page, "BoardViewRadio") || Check(page, "BoardModeRadio"),
+            AppShortcut.ShowInbox => Check(page, "InboxViewRadio"),
             AppShortcut.ToggleFilters => Click(page, "FiltersButton"),
             _ => false,
         };

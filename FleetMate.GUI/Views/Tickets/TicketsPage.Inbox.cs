@@ -182,12 +182,14 @@ public partial class TicketsPage
     {
         var state = _inboxState;
         var unread = state?.UnreadCount ?? 0;
-        InboxViewRadio.Content = unread > 0 ? $"Inbox ({unread})" : "Inbox";
+        InboxBadgeText.Text = TicketInboxBadge.Label(unread);
+        InboxBadge.Visibility = unread > 0 ? Visibility.Visible : Visibility.Collapsed;
+        System.Windows.Automation.AutomationProperties.SetItemStatus(InboxViewRadio, TicketInboxBadge.AccessibleValue(unread));
 
         // Nobody sees a partial inbox: the mode appears once this computer's
         // first full pass has finished.
         var ready = state?.ScannedThrough != null;
-        InboxViewRadio.Visibility = ready ? Visibility.Visible : Visibility.Collapsed;
+        InboxButtonHost.Visibility = ready ? Visibility.Visible : Visibility.Collapsed;
         if (!ready && InboxViewRadio.IsChecked == true) BoardViewRadio.IsChecked = true;
         InboxMarkAllReadButton.IsEnabled = unread > 0;
 

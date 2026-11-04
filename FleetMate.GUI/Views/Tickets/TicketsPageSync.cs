@@ -48,9 +48,9 @@ internal static class TicketsPageSync
     public static bool ShowLoading(bool loading, FleetMate.Core.Models.Tickets.TdxSignInStep? step, int ticketCount) =>
         ticketCount == 0 && (loading || step != null);
 
-    /// <summary>The Activity bar's button: "(Draft)" when closed over unsent text.</summary>
-    public static string AddCommentLabel(bool composeOpen, string? draft) =>
-        !composeOpen && !string.IsNullOrWhiteSpace(draft) ? "Add Comment (Draft)" : "Add Comment";
+    /// <summary>The Activity bar's button: "(Draft)" when closed over unsent text or files.</summary>
+    public static string AddCommentLabel(bool composeOpen, string? draft, bool hasFiles = false) =>
+        !composeOpen && (hasFiles || !string.IsNullOrWhiteSpace(draft)) ? "Add Comment (Draft)" : "Add Comment";
 
     /// <summary>
     /// Why the list is empty. A link opened from a cold launch lands before

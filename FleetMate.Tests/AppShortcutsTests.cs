@@ -14,6 +14,7 @@ public class AppShortcutsTests
     [InlineData(Key.Tab, ModifierKeys.Control | ModifierKeys.Shift, "PreviousTab")]
     [InlineData(Key.D1, ModifierKeys.Control | ModifierKeys.Alt, "ShowList")]
     [InlineData(Key.D2, ModifierKeys.Control | ModifierKeys.Alt, "ShowBoard")]
+    [InlineData(Key.D3, ModifierKeys.Control | ModifierKeys.Alt, "ShowInbox")]
     [InlineData(Key.F, ModifierKeys.Control | ModifierKeys.Shift, "ToggleFilters")]
     [InlineData(Key.K, ModifierKeys.Control | ModifierKeys.Shift, "ClearFilters")]
     [InlineData(Key.F5, ModifierKeys.None, "Refresh")]

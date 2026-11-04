@@ -144,3 +144,13 @@ public static class TicketInboxMatch
 
     private static readonly Regex AngleEmail = new(@"<[^>]*>", RegexOptions.Compiled);
 }
+
+/// <summary>The Inbox button's unread badge.</summary>
+public static class TicketInboxBadge
+{
+    /// <summary>The count on the badge: empty at zero, capped at "99+".</summary>
+    public static string Label(int unread) => unread <= 0 ? "" : unread > 99 ? "99+" : unread.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>What a screen reader hears after "Inbox".</summary>
+    public static string AccessibleValue(int unread) => unread <= 0 ? "No unread" : $"{unread} unread";
+}

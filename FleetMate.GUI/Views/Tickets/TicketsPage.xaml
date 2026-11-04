@@ -57,22 +57,62 @@
                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
 
             <WrapPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
-                <!-- List | Board, as on Mac (ViewModePill): lifted into the window's
-                     title bar after Back and Forward (IChromeToolbar). -->
-                <Border x:Name="ViewModeChrome" Height="32" Margin="0,0,12,0" CornerRadius="8" Padding="2" VerticalAlignment="Center"
-                        BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
-                    <StackPanel Orientation="Horizontal">
-                        <RadioButton x:Name="ListViewRadio" Content="List" GroupName="ViewMode" Padding="11,0"
-                                     Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
-                        <RadioButton x:Name="BoardViewRadio" Content="Board" IsChecked="True" GroupName="ViewMode" Padding="11,0"
-                                     Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
-                        <!-- Inbox: every recent comment that notified you, on any ticket.
-                             Hidden until the first full scan finishes. -->
-                        <RadioButton x:Name="InboxViewRadio" Content="Inbox" GroupName="ViewMode" Padding="11,0" Visibility="Collapsed"
-                                     Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}"
-                                     ToolTip="Comments from the last 90 days that notified you" />
-                    </StackPanel>
-                </Border>
+                <!-- Inbox, then List | Board, as on Mac (ViewModePill): lifted together
+                     into the window's title bar after Back and Forward (IChromeToolbar). -->
+                <StackPanel x:Name="ViewModeChrome" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Inbox: every recent comment that notified you, on any ticket.
+                         A mail icon ahead of List | Board, with the unread count as a
+                         red badge on its corner. Hidden until the first full scan
+                         finishes. Same group as List and Board, so picking it
+                         leaves either of them. -->
+                    <Grid x:Name="InboxButtonHost" Visibility="Collapsed" Margin="0,0,8,0" VerticalAlignment="Center">
+                        <RadioButton x:Name="InboxViewRadio" GroupName="ViewMode" Width="38" Height="32"
+                                     Checked="OnViewModeChanged" Cursor="Hand"
+                                     ToolTip="Inbox: comments from the last 90 days that notified you (Ctrl+Alt+3)"
+                                     AutomationProperties.Name="Inbox">
+                            <RadioButton.Template>
+                                <ControlTemplate TargetType="RadioButton">
+                                    <Border x:Name="Chrome" CornerRadius="8" BorderThickness="1" Background="Transparent"
+                                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                                        <ui:FontIcon x:Name="Icon" FontFamily="Segoe Fluent Icons" Glyph="&#xE715;" FontSize="15"
+                                                     HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                     Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SystemControlHighlightListLowBrush}" />
+                                        </Trigger>
+                                        <Trigger Property="IsChecked" Value="True">
+                                            <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SystemControlHighlightListAccentLowBrush}" />
+                                            <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
+                                            <Setter TargetName="Icon" Property="Foreground" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
+                                        </Trigger>
+                                        <Trigger Property="IsKeyboardFocused" Value="True">
+                                            <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </RadioButton.Template>
+                        </RadioButton>
+                        <!-- The standard red count badge, hidden at zero. -->
+                        <Border x:Name="InboxBadge" Visibility="Collapsed" IsHitTestVisible="False"
+                                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-5,-6,0"
+                                MinWidth="17" Height="17" Padding="4,0" CornerRadius="8.5" Background="#FFC42B1C">
+                            <TextBlock x:Name="InboxBadgeText" Foreground="White" FontSize="10.5" FontWeight="SemiBold"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                    </Grid>
+
+                    <Border Height="32" Margin="0,0,12,0" CornerRadius="8" Padding="2" VerticalAlignment="Center"
+                            BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton x:Name="ListViewRadio" Content="List" GroupName="ViewMode" Padding="11,0"
+                                         Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
+                            <RadioButton x:Name="BoardViewRadio" Content="Board" IsChecked="True" GroupName="ViewMode" Padding="11,0"
+                                         Checked="OnViewModeChanged" Style="{StaticResource NavigationTabStyle}" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
 
                 <!-- Board column dimension, mirroring the macOS BoardGroupBy
                      options; shown only on the board, as on Mac. -->
@@ -560,38 +600,60 @@
                         </WrapPanel>
                         </DockPanel>
 
-                        <!-- Reassign popover, anchored to its button: search people,
-                             pick one, and the ticket's responsible changes. -->
+                        <!-- Reassign popover, anchored to its button. The candidates
+                             are TDX's eligible assignments for the ticketing
+                             application, people and groups, the same list its web
+                             Responsible picker offers. Up/Down move, Enter picks,
+                             Esc or a click outside closes. -->
                         <Popup x:Name="ReassignPopup" PlacementTarget="{Binding ElementName=ReassignButton}"
                                Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
                                Opened="OnReassignPopupOpened">
                             <Border Background="{DynamicResource CardBackgroundBrush}"
                                     BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1"
-                                    CornerRadius="8" Padding="12" Width="320" Margin="0,4,8,8"
+                                    CornerRadius="8" Padding="12" Width="340" Margin="0,4,8,8"
                                     TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
                                 <Border.Effect>
                                     <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.25" />
                                 </Border.Effect>
                                 <StackPanel>
-                                    <TextBlock Text="Reassign to" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8" />
-                                    <TextBox x:Name="ReassignSearchBox" ui:ControlHelper.PlaceholderText="Search people by name or email"
-                                             TextChanged="OnReassignSearchChanged" PreviewKeyDown="OnReassignSearchKeyDown" />
+                                    <TextBlock Text="Reassign Ticket" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8" />
+                                    <DockPanel>
+                                        <ui:ProgressRing x:Name="ReassignProgress" DockPanel.Dock="Right" IsActive="False" Visibility="Collapsed"
+                                                         Width="14" Height="14" Margin="6,0,0,0" />
+                                        <TextBox x:Name="ReassignSearchBox" ui:ControlHelper.PlaceholderText="Search people and groups"
+                                                 AutomationProperties.Name="Search people and groups who can own this ticket"
+                                                 TextChanged="OnReassignSearchChanged" PreviewKeyDown="OnReassignSearchKeyDown" />
+                                    </DockPanel>
                                     <TextBlock x:Name="ReassignStatusText" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
                                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                                               Text="Type at least two characters." />
+                                               Text="Type at least 2 letters of a name, email or group." />
                                     <ListBox x:Name="ReassignResultsList" MaxHeight="240" Margin="0,6,0,0"
                                              BorderThickness="0" Background="Transparent"
+                                             AutomationProperties.Name="Candidates"
                                              MouseLeftButtonUp="OnReassignResultPicked" KeyDown="OnReassignResultsKeyDown">
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>
-                                                <StackPanel Margin="0,2">
-                                                    <TextBlock Text="{Binding DisplayName}" FontSize="13" />
-                                                    <TextBlock Text="{Binding PrimaryEmail}" FontSize="11"
-                                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                                </StackPanel>
+                                                <DockPanel Margin="0,2" AutomationProperties.Name="{Binding SpokenName}">
+                                                    <ui:FontIcon DockPanel.Dock="Left" FontFamily="Segoe Fluent Icons" Glyph="{Binding Glyph}" FontSize="14"
+                                                                 Width="20" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                                    <ui:FontIcon DockPanel.Dock="Right" FontFamily="Segoe Fluent Icons" Glyph="&#xE73E;" FontSize="12"
+                                                                 Margin="6,0,0,0" VerticalAlignment="Center" Visibility="{Binding CurrentVisibility}"
+                                                                 ToolTip="Current responsible" />
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding DisplayName}" FontSize="13" />
+                                                        <TextBlock Text="{Binding Subtitle}" FontSize="11"
+                                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                    </StackPanel>
+                                                </DockPanel>
                                             </DataTemplate>
                                         </ListBox.ItemTemplate>
                                     </ListBox>
+                                    <Separator Margin="0,8,0,6" />
+                                    <CheckBox x:Name="ReassignNotifyCheckBox" Content="Notify new responsible" IsChecked="True" FontSize="13"
+                                              ToolTip="Email the new responsible when the change is saved" />
+                                    <TextBlock FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                               Text="Lists the people and groups that can be responsible for tickets in this application. TeamDynamix returns up to five matches per search." />
                                 </StackPanel>
                             </Border>
                         </Popup>
@@ -653,7 +715,7 @@
                     <!-- Detail Content -->
                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                     <Grid>
-                        <StackPanel x:Name="DetailContent" Margin="12,0,12,12" Visibility="Collapsed">
+                        <StackPanel x:Name="DetailContent" Margin="12,0,12,12" Visibility="Collapsed" Grid.IsSharedSizeScope="True">
                             <!-- Title -->
                             <TextBlock x:Name="DetailTitleText" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8" />
 
@@ -764,49 +826,6 @@
                                 <TextBlock x:Name="DetailDescriptionText" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" TextWrapping="Wrap" />
                             </StackPanel>
 
-                            <!-- Attachments: open the viewable ones, save any -->
-                            <StackPanel x:Name="AttachmentsSection" Visibility="Collapsed" Margin="0,12,0,0">
-                                <Separator Margin="0,0,0,8" />
-                                <TextBlock x:Name="AttachmentsHeaderText" Text="Attachments" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,4" />
-                                <ItemsControl x:Name="AttachmentsList">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Padding="8" Margin="0,0,0,6" CornerRadius="6" BorderThickness="1"
-                                                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
-                                                <DockPanel>
-                                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                                                        <Button Tag="{Binding}" Click="OnOpenAttachmentClicked" Padding="6,2" Margin="4,0,0,0"
-                                                                Visibility="{Binding OpenVisibility}"
-                                                                ToolTip="{Binding OpenTooltip}"
-                                                                AutomationProperties.Name="{Binding OpenTooltip}">
-                                                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8A7;" FontSize="12" />
-                                                        </Button>
-                                                        <Button Tag="{Binding}" Click="OnSaveAttachmentClicked" Padding="6,2" Margin="4,0,0,0"
-                                                                ToolTip="{Binding SaveTooltip}"
-                                                                AutomationProperties.Name="{Binding SaveTooltip}">
-                                                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE896;" FontSize="12" />
-                                                        </Button>
-                                                    </StackPanel>
-                                                    <ui:FontIcon DockPanel.Dock="Left" FontFamily="Segoe Fluent Icons" Glyph="&#xE723;" FontSize="14"
-                                                                 Margin="0,0,8,0" VerticalAlignment="Center" />
-                                                    <StackPanel VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding Name}" FontSize="13" TextTrimming="CharacterEllipsis" />
-                                                        <TextBlock Text="{Binding Subtitle}" FontSize="11"
-                                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                                    </StackPanel>
-                                                </DockPanel>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
-
-                            <!-- Tasks: progress, updates and standard-task management -->
-                            <tickets:TicketTasksPanel x:Name="TasksPanel" />
-
-                            <!-- Workflow: active steps and the actions the signed-in user may take -->
-                            <tickets:TicketWorkflowPanel x:Name="WorkflowPanel" />
-
                             <!-- People: contacts with add and remove, and the responsible
                                  group. Folded by default; contacts added here are
                                  offered as notify recipients straight away. -->
@@ -888,6 +907,49 @@
                                 </StackPanel>
                             </StackPanel>
 
+                            <!-- Attachments: open the viewable ones, save any -->
+                            <StackPanel x:Name="AttachmentsSection" Visibility="Collapsed" Margin="0,12,0,0">
+                                <Separator Margin="0,0,0,8" />
+                                <TextBlock x:Name="AttachmentsHeaderText" Text="Attachments" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,4" />
+                                <ItemsControl x:Name="AttachmentsList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Padding="8" Margin="0,0,0,6" CornerRadius="6" BorderThickness="1"
+                                                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                                                <DockPanel>
+                                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Button Tag="{Binding}" Click="OnOpenAttachmentClicked" Padding="6,2" Margin="4,0,0,0"
+                                                                Visibility="{Binding OpenVisibility}"
+                                                                ToolTip="{Binding OpenTooltip}"
+                                                                AutomationProperties.Name="{Binding OpenTooltip}">
+                                                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8A7;" FontSize="12" />
+                                                        </Button>
+                                                        <Button Tag="{Binding}" Click="OnSaveAttachmentClicked" Padding="6,2" Margin="4,0,0,0"
+                                                                ToolTip="{Binding SaveTooltip}"
+                                                                AutomationProperties.Name="{Binding SaveTooltip}">
+                                                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE896;" FontSize="12" />
+                                                        </Button>
+                                                    </StackPanel>
+                                                    <ui:FontIcon DockPanel.Dock="Left" FontFamily="Segoe Fluent Icons" Glyph="&#xE723;" FontSize="14"
+                                                                 Margin="0,0,8,0" VerticalAlignment="Center" />
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Name}" FontSize="13" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding Subtitle}" FontSize="11"
+                                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                    </StackPanel>
+                                                </DockPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <!-- Tasks: progress, updates and standard-task management -->
+                            <tickets:TicketTasksPanel x:Name="TasksPanel" />
+
+                            <!-- Workflow: active steps and the actions the signed-in user may take -->
+                            <tickets:TicketWorkflowPanel x:Name="WorkflowPanel" />
+
                             <!-- Action Message -->
                             <Border x:Name="ActionMessageBorder" Visibility="Collapsed" Padding="8" Margin="0,8,0,0" CornerRadius="4">
                                 <StackPanel Orientation="Horizontal">
@@ -916,16 +978,65 @@
                                     </StackPanel>
                                 </DockPanel>
 
-                                <!-- Compose space: under the Activity bar, above the feed it adds to. -->
-                                <StackPanel x:Name="ComposePanel" Visibility="Collapsed" Margin="0,0,0,10">
+                                <!-- Compose space: under the Activity bar, above the feed it adds to.
+                                     Files dropped anywhere on it, or pasted into the text, are
+                                     attached. They go to the ticket's Attachments, since TDX
+                                     cannot attach a file to one comment. -->
+                                <StackPanel x:Name="ComposePanel" Visibility="Collapsed" Margin="0,0,0,10" Background="Transparent"
+                                            AllowDrop="True" DragOver="OnComposeDragOver" Drop="OnComposeDrop">
                                     <TextBox x:Name="CommentTextBox" AcceptsReturn="True" Height="90" TextWrapping="Wrap" FontSize="13"
-                                             VerticalScrollBarVisibility="Auto"
+                                             VerticalScrollBarVisibility="Auto" SpellCheck.IsEnabled="True" AllowDrop="True"
+                                             PreviewDragOver="OnComposeDragOver" PreviewDragEnter="OnComposeDragOver" PreviewDrop="OnComposeDrop"
+                                             CommandManager.PreviewExecuted="OnCommentPreviewExecuted" CommandManager.PreviewCanExecute="OnCommentPreviewCanExecute"
                                              TextChanged="OnCommentTextChanged" PreviewKeyDown="OnCommentKeyDown" />
+                                    <!-- Files waiting to go up with the comment. -->
+                                    <ItemsControl x:Name="CommentAttachmentsList" Margin="0,6,0,0" Visibility="Collapsed"
+                                                  AutomationProperties.Name="Files to attach">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Padding="8,3,4,3" Margin="0,0,6,6" CornerRadius="12" BorderThickness="1"
+                                                        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                                                        Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                                                        ToolTip="{Binding Path}" AutomationProperties.Name="{Binding Name}">
+                                                    <Border.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="Show in File Explorer" Tag="{Binding}" Click="OnShowPendingAttachmentClicked" />
+                                                            <MenuItem Header="Remove" Tag="{Binding}" Click="OnRemovePendingAttachmentClicked" />
+                                                        </ContextMenu>
+                                                    </Border.ContextMenu>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE723;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                                        <TextBlock Text="{Binding Name}" FontSize="12" MaxWidth="220" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                        <TextBlock Text="{Binding SizeLabel}" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                        <Button Tag="{Binding}" Click="OnRemovePendingAttachmentClicked" Padding="4,1" Margin="4,0,0,0"
+                                                                MinHeight="0" MinWidth="0" Background="Transparent" BorderThickness="0"
+                                                                ToolTip="Remove" AutomationProperties.Name="Remove attachment">
+                                                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE711;" FontSize="10" />
+                                                        </Button>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                     <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                         <Button x:Name="PostCommentButton" Content="Post Comment" IsEnabled="False"
                                                 Click="OnPostCommentClicked" ToolTip="Post comment (Ctrl+Enter)" />
                                         <Button x:Name="CancelCommentButton" Content="Cancel" Margin="8,0,0,0" Click="OnCancelCommentClicked"
                                                 ToolTip="Close the comment editor; the draft is kept" />
+                                        <Button x:Name="AttachFilesButton" Margin="8,0,0,0" Click="OnAttachFilesClicked"
+                                                ToolTip="Attach files to the ticket with this comment. You can also drop files here or paste them."
+                                                AutomationProperties.Name="Attach files">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE723;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                                <TextBlock Text="Attach…" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
                                         <CheckBox x:Name="PrivateCheckBox" Content="Private" Margin="14,0,0,0" FontSize="13" VerticalAlignment="Center" />
                                     </StackPanel>
                                     <StackPanel x:Name="NotifyOptionsPanel" Margin="0,8,0,0">
