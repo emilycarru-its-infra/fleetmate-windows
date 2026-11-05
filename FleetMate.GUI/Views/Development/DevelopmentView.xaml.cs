@@ -392,7 +392,7 @@ public partial class DevelopmentView : UserControl
     /// <summary>One thing in the centre pane at a time.</summary>
     private void ShowDetail(FrameworkElement visible)
     {
-        foreach (var pane in new FrameworkElement[] { DetailPlaceholder, NonPullRequestPanel, DetailView, CommitView, RunView, SkillDetail })
+        foreach (var pane in new FrameworkElement[] { DetailPlaceholder, DevOpsWaitHost, NonPullRequestPanel, DetailView, CommitView, RunView, SkillDetail })
             pane.Visibility = pane == visible ? Visibility.Visible : Visibility.Collapsed;
     }
 

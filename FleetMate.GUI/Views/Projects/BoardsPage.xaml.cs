@@ -65,6 +65,18 @@ public partial class BoardsPage : Page, IChromeToolbar
 
         HookTileFilter();
 
+        // A list loaded before Azure DevOps sign-in finished left its work items
+        // out; load it again once sign-in lands.
+        if (_app != null) _app.DevOpsSignedIn += async () =>
+        {
+            UpdateSsoButtonState();
+            if (!_isInitialLoadDone) return;
+            if (!_allTasks.Any(t => string.Equals(t.Provider, "azdevops", StringComparison.OrdinalIgnoreCase)))
+                await LoadTasksAsync();
+            if (WorkItemsList.Visibility == Visibility.Visible && _allWorkItems.Count == 0)
+                await LoadWorkItemsAsync();
+        };
+
         DetailPanel.CloseRequested += (_, _) =>
         {
             DetailPanel.Visibility = Visibility.Collapsed;

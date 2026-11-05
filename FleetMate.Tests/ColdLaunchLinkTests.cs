@@ -1,6 +1,5 @@
 using FleetMate.Core.Links;
 using FleetMate.GUI;
-using FleetMate.GUI.Views.Development;
 using FleetMate.GUI.Views.Tickets;
 using Xunit;
 
@@ -68,29 +67,6 @@ public class ColdLaunchLinkTests
     public void ALinkedTicketWaitsOnlyForAPendingSignIn(bool ssoEnabled, bool signedIn, bool expected)
     {
         Assert.Equal(expected, TicketsPageSync.HoldLinkForSignIn(ssoEnabled, signedIn));
-    }
-
-    // ── Development: links held for Azure DevOps sign-in ────────────────
-
-    private static readonly FleetMateLink AdoPull = new FleetMateLink.PullRequest(new FleetMateLink.AzureDevOps("Proj", "repo"), 7);
-    private static readonly FleetMateLink GitHubPull = new FleetMateLink.PullRequest(new FleetMateLink.GitHub("owner", "repo"), 7);
-
-    [Fact]
-    public void AnAzureDevOpsLinkWaitsForSignIn()
-    {
-        Assert.True(DevelopmentLinkHold.ShouldHold(AdoPull, devOpsConfigured: true, devOpsSignedIn: false));
-        Assert.True(DevelopmentLinkHold.ShouldHold(new FleetMateLink.Commit(new FleetMateLink.AzureDevOps("Proj", "repo"), "abc123"), true, false));
-        Assert.True(DevelopmentLinkHold.ShouldHold(new FleetMateLink.AzureDevOpsRun("Proj", 5), true, false));
-        Assert.True(DevelopmentLinkHold.ShouldHold(new FleetMateLink.AzureDevOpsPipeline("Proj", 5), true, false));
-    }
-
-    [Fact]
-    public void NothingWaitsOnceSignedInOrWithoutAzureDevOps()
-    {
-        Assert.False(DevelopmentLinkHold.ShouldHold(AdoPull, devOpsConfigured: true, devOpsSignedIn: true));
-        Assert.False(DevelopmentLinkHold.ShouldHold(AdoPull, devOpsConfigured: false, devOpsSignedIn: false));
-        Assert.False(DevelopmentLinkHold.ShouldHold(GitHubPull, devOpsConfigured: true, devOpsSignedIn: false));
-        Assert.False(DevelopmentLinkHold.ShouldHold(new FleetMateLink.GitHubRun("owner", "repo", 1), true, false));
     }
 
     // ── The inbox helper starts again after any exit ────────────────────

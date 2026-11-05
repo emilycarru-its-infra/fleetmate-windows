@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using FleetMate.Core.Links;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
 using FleetMate.Core.Services.Projects.Tasks;
@@ -72,13 +73,28 @@ public partial class TaskDetailPanel
         _detail = null;
         _editing = false;
         _actionError = null;
+        _awaitingSignIn = false;
         ContentPanel.Children.Add(Muted("Loading work item…"));
 
+        var app = Application.Current as App;
+        var startedSignedIn = app?.IsDevOpsSsoAuthenticated ?? false;
         var detail = await service.GetWorkItemDetailAsync(id);
         if (token != _loadToken) return;
         if (detail == null)
         {
             ContentPanel.Children.Clear();
+            // A link that launched the app gets here before sign-in finishes:
+            // hold the item rather than show an empty stub.
+            switch (app?.DevOpsRetry(startedSignedIn) ?? SignInRetry.ShowError)
+            {
+                case SignInRetry.RetryNow:
+                    LoadWorkItemSidebar(task);
+                    return;
+                case SignInRetry.WaitForSignIn:
+                    ShowWorkItemWaiting(task);
+                    return;
+            }
+            ContentPanel.Children.Add(WorkItemLoadFailed(task));
             RenderAzDoDetail(task);
             return;
         }
@@ -103,6 +119,55 @@ public partial class TaskDetailPanel
         _states = await statesTask ?? new();
         if (token != _loadToken) return;
         Render();
+    }
+
+    /// <summary>
+    /// The work item load failed before Azure DevOps sign-in finished; it runs
+    /// again once sign-in completes.
+    /// </summary>
+    private bool _awaitingSignIn;
+    private bool _signInHooked;
+
+    private void ShowWorkItemWaiting(UnifiedTask task)
+    {
+        _awaitingSignIn = true;
+        HookDevOpsSignIn();
+        ContentPanel.Children.Clear();
+        ContentPanel.Children.Add(new DevOpsSignInWaitPanel($"#{task.Id}"));
+    }
+
+    private void HookDevOpsSignIn()
+    {
+        if (_signInHooked || Application.Current is not App app) return;
+        _signInHooked = true;
+        app.DevOpsSignedIn += () =>
+        {
+            if (!_awaitingSignIn || _task is not { } task) return;
+            if (!string.Equals(task.Provider, "azdevops", StringComparison.OrdinalIgnoreCase)) return;
+            ContentPanel.Children.Clear();
+            LoadWorkItemSidebar(task);
+        };
+    }
+
+    /// <summary>
+    /// The notice above the stub fields when the work item didn't load. Retry
+    /// signs in first when sign-in is the problem — silently, never a window —
+    /// since a plain reload while signed out fails the same way.
+    /// </summary>
+    private FrameworkElement WorkItemLoadFailed(UnifiedTask task)
+    {
+        var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
+        panel.Children.Add(Muted("Couldn't load this work item from Azure DevOps."));
+        var retry = new Button { Content = "Retry", HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 6, 0, 0), Padding = new Thickness(12, 3, 12, 3) };
+        retry.Click += async (_, _) =>
+        {
+            void Reload() { ContentPanel.Children.Clear(); LoadWorkItemSidebar(task); }
+            if (Application.Current is not App app) { Reload(); return; }
+            if (!await app.RetryDevOpsRequestAsync(() => { Reload(); return Task.CompletedTask; }))
+                ShowWorkItemWaiting(task);
+        };
+        panel.Children.Add(retry);
+        return panel;
     }
 
     /// <summary>
