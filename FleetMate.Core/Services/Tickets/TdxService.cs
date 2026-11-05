@@ -69,6 +69,14 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
 
     public TdxService(TdxConfig config) : this(config, null) { }
 
+    /// <summary>
+    /// The window's saved sign-in, when this service may reuse it. The
+    /// command line sets this so a ticket command runs on the session FleetMate
+    /// already holds instead of a fresh silent SSO each time. The window
+    /// restores its session itself and leaves this unset.
+    /// </summary>
+    public TdxSessionCache? SharedSession { get; set; }
+
     /// <summary>Tests pass a handler that answers in place of TeamDynamix.</summary>
     internal TdxService(TdxConfig config, HttpMessageHandler? handler)
     {
@@ -131,6 +139,8 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
             return _ssoToken;
         }
 
+        if (await TryUseSharedSessionAsync()) return _ssoToken;
+
         // Try the silent SSO chain — Negotiate/Kerberos into loginsso — before
         // giving up. On a domain-joined machine this needs no interaction.
         if (!string.IsNullOrEmpty(_config.BaseUrl))
@@ -156,6 +166,36 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
         Log.Warning("[tdx] No TDX credential — sign in to TeamDynamix. " +
                     "There is no service account to fall back to by design.");
         return null;
+    }
+
+    /// <summary>
+    /// Use the saved session when it passes the same identity check a live
+    /// sign-in makes: this Windows account, this tenant, and a token that still
+    /// carries that address.
+    /// </summary>
+    private async Task<bool> TryUseSharedSessionAsync()
+    {
+        if (SharedSession is not { } store || store.Load() is not { } session) return false;
+
+        var expected = await TdxSsoIdentity.ResolveWindowsUpnAsync();
+        var verified = TdxSsoIdentity.Verify(session.Token, expected);
+        if (!session.ReusableBy(expected, _config.BaseUrl, DateTime.UtcNow) || !verified.Success)
+        {
+            // Removed only when it is known to be someone else's or another
+            // tenant's. An address that cannot be resolved, or a session that has
+            // merely run low, is left for the window to deal with.
+            if (expected != null && (!session.BelongsTo(expected, _config.BaseUrl) || !verified.Success))
+            {
+                Log.Information("[tdx] Saved session is not this account's or tenant's; removing it");
+                store.Clear();
+            }
+            return false;
+        }
+
+        SetSsoToken(session.Token, session.ExpiryUtc, verified.UserEmail, session.UserName ?? verified.UserName);
+        if (session.VerifiedMe is { } me) RememberMe(me);
+        Log.Information("[tdx] Using FleetMate's saved session for {User}", session.UserName ?? "(unknown)");
+        return true;
     }
 
     private async Task<bool> SetAuthorizationAsync()

@@ -110,7 +110,9 @@ class Program
             TdxService? tdxService = null;
             if (config.Tdx?.IsConfigured == true)
             {
-                tdxService = new TdxService(config.Tdx);
+                // Ticket commands reuse the sign-in FleetMate saved for this
+                // Windows user, and fall back to silent SSO without it.
+                tdxService = new TdxService(config.Tdx) { SharedSession = new TdxSessionCache() };
             }
 
             // Build command tree
