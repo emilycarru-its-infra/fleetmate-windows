@@ -36,7 +36,10 @@ public partial class TicketsPage : Page
     private readonly HashSet<int> _collapsedTickets = new();
 
     /// <summary>Unsent comments, keyed by ticket. A draft belongs to its ticket.</summary>
-    private readonly Dictionary<int, string> _commentDrafts = new();
+    private readonly Dictionary<int, TicketCommentDraft> _commentDrafts = new();
+
+    /// <summary>Which detail load may still paint; see <see cref="TicketDetailLoadState"/>.</summary>
+    private readonly TicketDetailLoadState _detailLoads = new();
 
     /// <summary>
     /// The list's filter selections, any number of values per category. The
@@ -1029,6 +1032,10 @@ private bool _isInitialLoadDone;
     {
         StashCommentDraft();
         _selectedTicket = null;
+        // A load still in flight for the closed ticket must not paint later.
+        _detailLoads.Invalidate();
+        _ticketFeed = new();
+        UpdateFeedPanel();
         TicketsListView.SelectedItem = null;
         WorkflowPanel.Clear();
         TasksPanel.Clear();
@@ -1080,15 +1087,23 @@ private bool _isInitialLoadDone;
     {
         if (_selectedTicket is not { } previous) return;
 
-        var draft = CommentTextBox.Text?.Trim();
-
-        if (string.IsNullOrEmpty(draft)) _commentDrafts.Remove(previous.Id);
-        else _commentDrafts[previous.Id] = CommentTextBox.Text ?? "";
+        var draft = CurrentCommentDraft();
+        if (draft.IsEmpty) _commentDrafts.Remove(previous.Id);
+        else _commentDrafts[previous.Id] = draft;
     }
 
+    /// <summary>
+    /// Put back the ticket's own text, Private choice and ticked recipients.
+    /// The notify boxes are cleared here and redrawn for this ticket once it
+    /// loads, so a quick switch never saves the last ticket's boxes as this one's.
+    /// </summary>
     private void RestoreCommentDraft(int ticketId)
     {
-        CommentTextBox.Text = _commentDrafts.GetValueOrDefault(ticketId) ?? "";
+        var draft = _commentDrafts.GetValueOrDefault(ticketId) ?? TicketCommentDraft.Empty;
+        CommentTextBox.Text = draft.Text;
+        PrivateCheckBox.IsChecked = draft.IsPrivate;
+        _notifyOptionsTicketId = null;
+        NotifyCheckboxesPanel.Children.Clear();
         RestoreAttachmentDraft(ticketId);
         SetComposeOpen(false);
     }
@@ -1170,6 +1185,9 @@ private bool _isInitialLoadDone;
             ? quoted
             : existing.TrimEnd() + "\n\n" + quoted;
 
+        // Quoting a private entry keeps the reply private; it never turns a
+        // private draft public.
+        if (entry.IsPrivate) PrivateCheckBox.IsChecked = true;
         SetComposeOpen(true, focus: true);
     }
 
@@ -1194,6 +1212,13 @@ private bool _isInitialLoadDone;
         
         DetailTicketIdText.Text = $"#{ticketId}";
 
+        // The previous ticket's activity goes at once, and only this request's
+        // answers may paint: A, then B, then A again ignores the first A.
+        var load = _detailLoads.Begin(ticketId);
+        _ticketFeed = new();
+        UpdateFeedPanel();
+        FeedHeaderText.Text = "Loading activity…";
+
         // The workflow loads beside the ticket and feed; the panel drops its
         // own answer if another ticket is opened first.
         var workflowLoad = WorkflowPanel.LoadAsync(ticketId);
@@ -1205,7 +1230,7 @@ private bool _isInitialLoadDone;
             var ticket = await _tdxService.GetTicketAsync(ticketId);
             // The operator may have moved on while this was in flight; a slow
             // answer for the previous ticket must not paint over the next.
-            if (_selectedTicket?.Id != ticketId) return;
+            if (!_detailLoads.IsCurrent(load) || _selectedTicket?.Id != ticketId) return;
             if (ticket != null)
             {
                 _selectedTicket = ticket;
@@ -1215,12 +1240,14 @@ private bool _isInitialLoadDone;
             
             // Get feed/comments
             var feed = await _tdxService.GetTicketFeedAsync(ticketId);
-            if (_selectedTicket?.Id != ticketId) return;
+            if (!_detailLoads.IsCurrent(load) || _selectedTicket?.Id != ticketId) return;
             _ticketFeed = feed;
             UpdateFeedPanel();
         }
         catch (Exception ex)
         {
+            if (!_detailLoads.IsCurrent(load) || _selectedTicket?.Id != ticketId) return;
+            FeedHeaderText.Text = "Activity unavailable — refresh to retry";
             ShowActionMessage($"Error loading details: {ex.Message}", isError: true);
         }
         finally
@@ -1625,7 +1652,7 @@ private bool _isInitialLoadDone;
     {
         var ticked = _notifyOptionsTicketId == ticket.Id
             ? NotifyCheckboxesPanel.Children.OfType<CheckBox>().Where(c => c.IsChecked == true).Select(c => c.Tag as string).OfType<string>().ToHashSet()
-            : new HashSet<string>();
+            : (_commentDrafts.GetValueOrDefault(ticket.Id)?.NotifyIds ?? Array.Empty<string>()).ToHashSet();
         _notifyOptionsTicketId = ticket.Id;
         NotifyCheckboxesPanel.Children.Clear();
 
@@ -1653,6 +1680,15 @@ private bool _isInitialLoadDone;
 
     /// <summary>Everyone the notify boxes were last drawn for.</summary>
     private List<NotifyRecipient> _notifyRecipients = new();
+
+    /// <summary>The ids of the ticked notify boxes.</summary>
+    private string[] TickedNotifyIds() => NotifyCheckboxesPanel.Children.OfType<CheckBox>()
+        .Where(c => c.IsChecked == true).Select(c => c.Tag as string).OfType<string>()
+        .Distinct(StringComparer.Ordinal).ToArray();
+
+    /// <summary>What the composer holds now, for the ticket on screen.</summary>
+    private TicketCommentDraft CurrentCommentDraft() =>
+        new(CommentTextBox.Text ?? "", PrivateCheckBox.IsChecked == true, TickedNotifyIds());
 
     /// <summary>The emails of the ticked notify boxes, each address once.</summary>
     private List<string> SelectedNotifyEmails()
@@ -1890,6 +1926,8 @@ private bool _isInitialLoadDone;
         if (!hasText && !HasComposeAttachments) return;
 
         var isPrivate = PrivateCheckBox.IsChecked == true;
+        // What was sent, so edits made while it posts are kept, not cleared.
+        var submitted = CurrentCommentDraft();
         _postingComment = true;
         UpdatePostCommentButton();
 
@@ -1918,17 +1956,27 @@ private bool _isInitialLoadDone;
                 : $"Comment added{files}; notified {notify.Count} {(notify.Count == 1 ? "person" : "people")}");
 
             // Drop the stashed copy too, or navigating away and back would
-            // resurrect a comment that was already posted.
-            _commentDrafts.Remove(ticketId);
-            if (_selectedTicket?.Id != ticketId) return;
+            // resurrect a comment that was already posted. A draft changed
+            // since Post was pressed is the person's newer work and stays.
+            if (_selectedTicket?.Id != ticketId)
+            {
+                if (_commentDrafts.GetValueOrDefault(ticketId) is { } saved && saved.Matches(submitted))
+                    _commentDrafts.Remove(ticketId);
+                return;
+            }
+            if (!CurrentCommentDraft().Matches(submitted))
+            {
+                await RefreshFeedAsync(ticketId);
+                return;
+            }
 
+            _commentDrafts.Remove(ticketId);
             CommentTextBox.Text = "";
+            PrivateCheckBox.IsChecked = false;
             foreach (var box in NotifyCheckboxesPanel.Children.OfType<CheckBox>()) box.IsChecked = false;
             SetComposeOpen(false);
 
-            // Refresh feed
-            _ticketFeed = await _tdxService.GetTicketFeedAsync(ticketId);
-            if (_selectedTicket?.Id == ticketId) UpdateFeedPanel();
+            await RefreshFeedAsync(ticketId);
         }
         catch (TdxCommentException ex)
         {
@@ -1945,6 +1993,19 @@ private bool _isInitialLoadDone;
             _postingComment = false;
             UpdatePostCommentButton();
         }
+    }
+
+    /// <summary>
+    /// Read the open ticket's activity again. The answer paints only if no
+    /// other load started meanwhile, so a later open of the same ticket wins.
+    /// </summary>
+    internal async Task RefreshFeedAsync(int ticketId)
+    {
+        if (_tdxService == null || _detailLoads.Current is not { } load || load.TicketId != ticketId) return;
+        var feed = await _tdxService.GetTicketFeedAsync(ticketId);
+        if (!_detailLoads.IsCurrent(load) || _selectedTicket?.Id != ticketId) return;
+        _ticketFeed = feed;
+        UpdateFeedPanel();
     }
 
     private void ShowActionMessage(string message, bool isError = false, bool isLoading = false)
