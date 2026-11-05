@@ -32,25 +32,8 @@ public static class TerminalFontSize
 }
 
 /// <summary>
-/// What the strip at the bottom of the window says while the terminal is
-/// closed: plain text, never a badge.
-/// </summary>
-public static class TerminalStripStatus
-{
-    public static string Describe(IReadOnlyCollection<ActivityState> sessions)
-    {
-        if (sessions.Count == 0) return "No sessions";
-        var text = sessions.Count == 1 ? "1 session" : $"{sessions.Count} sessions";
-        if (sessions.Contains(ActivityState.Attention)) text += " · waiting for you";
-        else if (sessions.Contains(ActivityState.Active)) text += " · working";
-        return text;
-    }
-}
-
-/// <summary>
-/// The icon controls at the left of the bar on the window's bottom edge, which
-/// stays there whether the terminal is open or not: split view, full window,
-/// and show or hide. The shortcuts are in the tooltips.
+/// The terminal's layout controls in the session list's header: full window
+/// or restore, and hide. The shortcuts are in the tooltips.
 /// </summary>
 public sealed record TerminalBarControls(
     bool FullWindow, string FullWindowName, string FullWindowTip,

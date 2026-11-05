@@ -62,20 +62,6 @@ public class TerminalStripTests
         Assert.Equal(320, layout.Height);
     }
 
-    // ── What the strip says ──────────────────────────────────────────────
-
-    [Fact]
-    public void Status_IsPlainText()
-    {
-        Assert.Equal("No sessions", TerminalStripStatus.Describe([]));
-        Assert.Equal("1 session", TerminalStripStatus.Describe([ActivityState.Idle]));
-        Assert.Equal("2 sessions · working", TerminalStripStatus.Describe([ActivityState.Idle, ActivityState.Active]));
-        Assert.Equal("1 session · waiting for you", TerminalStripStatus.Describe([ActivityState.Attention]));
-        // Waiting for you outranks working.
-        Assert.Equal("3 sessions · waiting for you",
-            TerminalStripStatus.Describe([ActivityState.Active, ActivityState.Attention, ActivityState.Exited]));
-    }
-
     // ── Text size ────────────────────────────────────────────────────────
 
     [Theory]

@@ -44,6 +44,52 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
+                <!-- Agent comes first, on every tab, as a pill: accent-filled with a
+                     white name and icon while the terminal is closed, a subtle
+                     surface in the theme's text colour with a check while it is
+                     open. Ctrl+J or Ctrl+`. -->
+                <StackPanel x:Name="ToolbarLeft" Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left"
+                            VerticalAlignment="Center" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <ToggleButton x:Name="TerminalToggleButton" ToolTip="Show Agent (Ctrl+J or Ctrl+`)" Click="OnTerminalToggleClicked"
+                                  AutomationProperties.AutomationId="TerminalToggleButton"
+                                  AutomationProperties.Name="Agent"
+                                  shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                                  Cursor="Hand">
+                        <ToggleButton.Template>
+                            <ControlTemplate TargetType="ToggleButton">
+                                <Border x:Name="AgentChrome" Height="28" CornerRadius="14" Padding="14,0" BorderThickness="1"
+                                        BorderBrush="Transparent"
+                                        Background="{DynamicResource SystemControlHighlightAccentBrush}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:FontIcon x:Name="AgentIcon" Glyph="&#xE756;" FontFamily="Segoe Fluent Icons" FontSize="14"
+                                                     Foreground="White" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="AgentLabel" Text="Agent" Margin="6,0,0,0" FontSize="13" FontWeight="SemiBold"
+                                                   Foreground="White" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsChecked" Value="True">
+                                        <Setter TargetName="AgentIcon" Property="Glyph" Value="&#xE73E;" />
+                                        <Setter TargetName="AgentChrome" Property="Background" Value="{DynamicResource SystemControlBackgroundBaseLowBrush}" />
+                                        <Setter TargetName="AgentChrome" Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+                                        <Setter TargetName="AgentIcon" Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                                        <Setter TargetName="AgentLabel" Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                                    </Trigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="AgentChrome" Property="Opacity" Value="0.88" />
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="AgentChrome" Property="Opacity" Value="0.75" />
+                                    </Trigger>
+                                    <Trigger Property="IsKeyboardFocused" Value="True">
+                                        <Setter TargetName="AgentChrome" Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </ToggleButton.Template>
+                    </ToggleButton>
+                </StackPanel>
+
                 <Border x:Name="TabBarBorder" Grid.Column="1" CornerRadius="9"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True"
                         BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
@@ -131,13 +177,6 @@
                                        VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <ToggleButton x:Name="TerminalToggleButton" ToolTip="Show Agent Terminal (Ctrl+`)" Click="OnTerminalToggleClicked"
-                                  AutomationProperties.AutomationId="TerminalToggleButton"
-                                  AutomationProperties.Name="Show Agent Terminal"
-                                  shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                                  Background="Transparent" BorderThickness="0" Padding="8,5" Margin="0,0,4,0">
-                        <ui:FontIcon Glyph="&#xE756;" FontFamily="Segoe Fluent Icons" FontSize="14" />
-                    </ToggleButton>
                     <!-- Graphs: shows or hides this tab's widget strip (Ctrl+Alt+G).
                          Accent while shown, secondary while hidden; absent on tabs
                          with no widgets. -->
@@ -279,8 +318,8 @@
         <!-- The divider is a Thumb, not a GridSplitter: its height comes from
              the pointer's position in the window, so it tracks smoothly, and
              dragging it near the top switches to full-window mode. Dragging it
-             to the bottom, or double-clicking it, folds the terminal into the
-             bar below it. Full window, it is not drawn. -->
+             to the bottom, or double-clicking it, hides the terminal. Full
+             window, it is not drawn. -->
         <Thumb x:Name="TerminalDivider" Grid.Row="2" Height="5" Cursor="SizeNS" Visibility="Collapsed"
                AutomationProperties.AutomationId="TerminalDivider"
                AutomationProperties.Name="Agent Terminal divider"
@@ -294,7 +333,5 @@
             </Thumb.Template>
         </Thumb>
         <term:TerminalPanel x:Name="Terminal" Grid.Row="4" Visibility="Collapsed" />
-        <!-- The bar stays on the window edge, open or closed. -->
-        <term:TerminalStrip x:Name="TerminalStrip" Grid.Row="3" />
     </Grid>
 </Window>

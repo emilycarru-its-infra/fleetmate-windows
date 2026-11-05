@@ -69,6 +69,12 @@ public sealed record RepoRegistryEntry
     public string? RemoteUrl { get; init; }
     public string? DefaultBranch { get; init; }
     public DateTimeOffset AddedAt { get; init; } = DateTimeOffset.Now;
+    /// <summary>
+    /// Left out of the Repos sidebar while staying tracked: batch commands and
+    /// the CLI still act on it. Written only when set.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Hidden { get; init; }
 }
 
 /// <summary>

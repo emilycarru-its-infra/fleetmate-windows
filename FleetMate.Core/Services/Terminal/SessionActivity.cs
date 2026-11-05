@@ -46,7 +46,7 @@ public sealed class SessionActivity
 }
 
 /// <summary>What a key chord inside a terminal asks the panel to do.</summary>
-public enum TerminalAction { None, NewSession, CloseSession, Split, Clear, Select, Next, Previous, FullWindow, ZoomIn, ZoomOut, ActualSize }
+public enum TerminalAction { None, NewSession, CloseSession, Split, Clear, Select, Next, Previous, FullWindow, ZoomIn, ZoomOut, ActualSize, ToggleSessionList }
 
 /// <summary>
 /// The panel's key bindings, following Windows Terminal. Each needs Ctrl+Shift
@@ -71,12 +71,13 @@ public static class TerminalKeyBindings
         new Binding("Ctrl+=", TerminalAction.ZoomIn, "Larger terminal text"),
         new Binding("Ctrl+-", TerminalAction.ZoomOut, "Smaller terminal text"),
         new Binding("Ctrl+0", TerminalAction.ActualSize, "Terminal text at the app's text size"),
+        new Binding("Ctrl+Shift+S", TerminalAction.ToggleSessionList, "Show or hide the session list (also works anywhere in the app while the terminal is open)"),
     };
 
     /// <summary>Every chord that maps to an action, as "ctrl,shift,alt:code" — the page swallows exactly these.</summary>
     public static IReadOnlyList<string> Chords()
     {
-        var codes = new[] { "KeyT", "KeyW", "KeyD", "KeyK", "Tab", "Enter", "NumpadEnter",
+        var codes = new[] { "KeyT", "KeyW", "KeyD", "KeyK", "KeyS", "Tab", "Enter", "NumpadEnter",
                 "Equal", "NumpadAdd", "Minus", "NumpadSubtract", "Digit0", "Numpad0" }
             .Concat(Enumerable.Range(1, 9).Select(i => $"Digit{i}"));
         var chords = new List<string>();
@@ -108,6 +109,7 @@ public static class TerminalKeyBindings
             ("KeyW", true, true, false) => TerminalAction.CloseSession,
             ("KeyD", false, true, true) => TerminalAction.Split,
             ("KeyK", true, true, false) => TerminalAction.Clear,
+            ("KeyS", true, true, false) => TerminalAction.ToggleSessionList,
             ("Tab", true, false, false) => TerminalAction.Next,
             ("Tab", true, true, false) => TerminalAction.Previous,
             ("Enter", true, true, false) => TerminalAction.FullWindow,
@@ -126,8 +128,8 @@ public static class TerminalKeyBindings
 /// <see cref="FullWindowThreshold"/> of the space, the shortcut, or the button
 /// fills the space below the tab bar with the terminal; dragging it back down,
 /// or the same shortcut or button, restores the page and the height from before.
-/// Released below <see cref="CollapseHeight"/>, the panel folds into the strip
-/// and keeps the height it had for next time.
+/// Released below <see cref="CollapseHeight"/>, the panel hides and keeps the
+/// height it had for next time.
 /// </summary>
 public sealed class TerminalLayoutState
 {
@@ -135,9 +137,9 @@ public sealed class TerminalLayoutState
     public const double MinHeight = 120;
     /// <summary>The page keeps at least this much room when the terminal is not full-window.</summary>
     public const double MinPageHeight = 160;
-    /// <summary>Released below this, the panel closes into the strip.</summary>
+    /// <summary>Released below this, the panel hides.</summary>
     public const double CollapseHeight = 80;
-    /// <summary>The smallest the panel draws while being dragged toward the strip.</summary>
+    /// <summary>The smallest the panel draws while being dragged toward the bottom.</summary>
     public const double DragFloor = 24;
 
     public double Height { get; private set; }

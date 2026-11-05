@@ -334,6 +334,10 @@
                                           Content="Open a session when FleetMate starts" Margin="0,6,0,0" />
                                 <TextBlock x:Name="AgentAutoStartSourceText" FontSize="11" Margin="28,2,0,0" Visibility="Collapsed"
                                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <CheckBox x:Name="TerminalRestoreSessionsCheckBox" AutomationProperties.AutomationId="TerminalRestoreSessionsCheckBox"
+                                          Content="Reopen the last sessions when FleetMate starts" Margin="0,6,0,0"
+                                          Click="OnTerminalRestoreSessionsClicked"
+                                          ToolTip="Sessions open when FleetMate quits come back at the next launch; Claude Code and Codex resume their last conversation" />
                             </StackPanel>
                         </Border>
 
