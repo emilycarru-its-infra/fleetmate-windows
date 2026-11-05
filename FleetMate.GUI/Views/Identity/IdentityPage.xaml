@@ -11,16 +11,15 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Header with inline toggle -->
-        <DockPanel Grid.Row="0" Margin="0,0,0,12">
-            <TextBlock Text="Identity" Style="{StaticResource TitleTextStyle}" DockPanel.Dock="Left" VerticalAlignment="Center" />
-            <StackPanel Orientation="Horizontal" Margin="16,0,0,0" VerticalAlignment="Center">
-                <RadioButton x:Name="GroupsRadio" Content="Groups" IsChecked="True" GroupName="IdentityTab" 
-                             Checked="OnTabChanged" Style="{StaticResource NavigationTabStyle}" />
-                <RadioButton x:Name="UsersRadio" Content="Users" GroupName="IdentityTab" 
-                             Checked="OnTabChanged" Style="{StaticResource NavigationTabStyle}" />
-            </StackPanel>
-        </DockPanel>
+        <!-- Entra Groups | Users, as on Mac (IdentityTab). No page heading: the
+             switch is lifted into the window's title bar after Back and Forward
+             (IChromeToolbar), and the tab bar names the tab. -->
+        <StackPanel x:Name="IdentityChrome" Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center">
+            <RadioButton x:Name="GroupsRadio" Content="Entra Groups" IsChecked="True" GroupName="IdentityTab"
+                         Checked="OnTabChanged" Style="{StaticResource NavigationTabStyle}" />
+            <RadioButton x:Name="UsersRadio" Content="Users" GroupName="IdentityTab"
+                         Checked="OnTabChanged" Style="{StaticResource NavigationTabStyle}" />
+        </StackPanel>
 
         <!-- Content -->
         <Grid Grid.Row="1">

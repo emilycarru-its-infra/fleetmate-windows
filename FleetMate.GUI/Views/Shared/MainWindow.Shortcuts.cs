@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using FleetMate.Core.Config;
@@ -12,10 +13,11 @@ public partial class MainWindow
 {
     private readonly TabHistory _tabHistory = new();
     private bool _navigatingHistory;
-    private string _lastTab = "Development";
+    private NavigationLocation _location = new(LaunchTab);
 
     private void InitShortcuts()
     {
+        _location = new NavigationLocation(LaunchTab, ChromeSections.Current(ToolbarOf(GetOrCreatePage(LaunchTab))));
         // Zoom and Settings › Appearance › Text size are one setting, as on
         // Mac. A zoom saved before they were joined carries over once.
         if (!UserPreferences.HasTextScale && ZoomScale.Load() is var legacy && Math.Abs(legacy - ZoomScale.Default) > 0.001)
@@ -26,15 +28,36 @@ public partial class MainWindow
             if (e.ChangedButton == MouseButton.XButton1) e.Handled = RunShortcut(AppShortcut.Back);
             else if (e.ChangedButton == MouseButton.XButton2) e.Handled = RunShortcut(AppShortcut.Forward);
         };
+        // A sub-tab chosen in the title bar is a step in history, as a tab is.
+        PageToolbarHost.AddHandler(ToggleButton.CheckedEvent, new RoutedEventHandler(OnPageSectionChecked));
+        UpdateHistoryButtons();
     }
 
     /// <summary>Called on every tab change, so Back knows where it came from.</summary>
-    private void RecordTabVisit(string tag)
+    private void RecordVisit(NavigationLocation to)
     {
         if (!_navigatingHistory)
-            _tabHistory.Visit(_lastTab, tag);
-        _lastTab = tag;
+            _tabHistory.Visit(_location, to);
+        _location = to;
+        UpdateHistoryButtons();
     }
+
+    private void OnPageSectionChecked(object sender, RoutedEventArgs e)
+    {
+        if (e.OriginalSource is not RadioButton segment || PageToolbarHost.Child is not FrameworkElement toolbar) return;
+        if (ChromeSections.Current(toolbar) != ChromeSections.NameOf(segment)) return;
+        RecordVisit(new NavigationLocation(CurrentTab, ChromeSections.NameOf(segment)));
+    }
+
+    private void UpdateHistoryButtons()
+    {
+        BackButton.IsEnabled = _tabHistory.CanGoBack;
+        ForwardButton.IsEnabled = _tabHistory.CanGoForward;
+    }
+
+    private void OnBackClicked(object sender, RoutedEventArgs e) => RunShortcut(AppShortcut.Back);
+
+    private void OnForwardClicked(object sender, RoutedEventArgs e) => RunShortcut(AppShortcut.Forward);
 
     private bool HandleAppShortcut(Key key, ModifierKeys mods) =>
         AppShortcuts.Resolve(key, mods) is { } shortcut && RunShortcut(shortcut);
@@ -44,9 +67,9 @@ public partial class MainWindow
         switch (shortcut)
         {
             case AppShortcut.Back:
-                return MoveInHistory(_tabHistory.Back(CurrentTab));
+                return MoveInHistory(_tabHistory.Back(_location));
             case AppShortcut.Forward:
-                return MoveInHistory(_tabHistory.Forward(CurrentTab));
+                return MoveInHistory(_tabHistory.Forward(_location));
             case AppShortcut.NextTab:
                 CycleTab(1);
                 return true;
@@ -74,18 +97,23 @@ public partial class MainWindow
         }
     }
 
-    private bool MoveInHistory(string? tag)
+    private bool MoveInHistory(NavigationLocation? target)
     {
-        if (tag == null) return false;
+        if (target is not { } place) return false;
         _navigatingHistory = true;
         try
         {
-            NavigateToTab(tag);
+            NavigateToTab(place.Tab);
+            // A sub-tab that has since gone leaves the tab on whichever
+            // sub-tab it shows.
+            if (place.Section != null) ChromeSections.Show(PageToolbarHost.Child as FrameworkElement, place.Section);
+            _location = new NavigationLocation(CurrentTab, ChromeSections.Current(PageToolbarHost.Child as FrameworkElement));
         }
         finally
         {
             _navigatingHistory = false;
         }
+        UpdateHistoryButtons();
         return true;
     }
 

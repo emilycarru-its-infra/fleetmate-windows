@@ -1,20 +1,30 @@
 namespace FleetMate.GUI.Views.Shared;
 
 /// <summary>
-/// Back and Forward over the tabs visited, as FleetMate for Mac keeps it:
-/// visiting a tab clears Forward, and moving through history records nothing.
+/// Where the window is: a tab and, for a tab with sub-tabs, the one showing.
+/// </summary>
+internal readonly record struct NavigationLocation(string Tab, string? Section = null)
+{
+    public override string ToString() => Section == null ? Tab : $"{Tab} › {Section}";
+}
+
+/// <summary>
+/// Back and Forward over the places visited, as FleetMate for Mac keeps its tab
+/// history: visiting a place clears Forward, and moving through history records
+/// nothing. A place is a tab and its sub-tab, so switching Development from
+/// Pulls to Commits is a step Back retraces, as switching tabs is.
 /// </summary>
 internal sealed class TabHistory
 {
-    private readonly List<string> _back = new();
-    private readonly List<string> _forward = new();
+    private readonly List<NavigationLocation> _back = new();
+    private readonly List<NavigationLocation> _forward = new();
     private const int Limit = 50;
 
     public bool CanGoBack => _back.Count > 0;
     public bool CanGoForward => _forward.Count > 0;
 
     /// <summary>Record leaving <paramref name="from"/> for <paramref name="to"/>.</summary>
-    public void Visit(string from, string to)
+    public void Visit(NavigationLocation from, NavigationLocation to)
     {
         if (from == to) return;
         _back.Add(from);
@@ -22,13 +32,20 @@ internal sealed class TabHistory
         _forward.Clear();
     }
 
-    /// <summary>The tab to show for Back from <paramref name="current"/>, or null.</summary>
-    public string? Back(string current) => Move(_back, _forward, current);
+    /// <summary>Record leaving one tab for another, neither with a sub-tab.</summary>
+    public void Visit(string from, string to) => Visit(new NavigationLocation(from), new NavigationLocation(to));
 
-    /// <summary>The tab to show for Forward from <paramref name="current"/>, or null.</summary>
-    public string? Forward(string current) => Move(_forward, _back, current);
+    /// <summary>The place to show for Back from <paramref name="current"/>, or null.</summary>
+    public NavigationLocation? Back(NavigationLocation current) => Move(_back, _forward, current);
 
-    private static string? Move(List<string> from, List<string> to, string current)
+    /// <summary>The place to show for Forward from <paramref name="current"/>, or null.</summary>
+    public NavigationLocation? Forward(NavigationLocation current) => Move(_forward, _back, current);
+
+    public string? Back(string current) => Back(new NavigationLocation(current))?.Tab;
+
+    public string? Forward(string current) => Forward(new NavigationLocation(current))?.Tab;
+
+    private static NavigationLocation? Move(List<NavigationLocation> from, List<NavigationLocation> to, NavigationLocation current)
     {
         if (from.Count == 0) return null;
         var target = from[^1];
