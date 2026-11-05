@@ -46,6 +46,15 @@ public sealed class TdxSession
     public TdxPerson? VerifiedMe =>
         Me is { } me && NormalizeAddress(me.PrimaryEmail) is { } email && email == NormalizeAddress(VerifiedAddress) ? me : null;
 
+    /// <summary>
+    /// Whether a command-line run may use this session in place of its own
+    /// sign-in: it is this account's and tenant's, and has more than five
+    /// minutes left. Shorter than the window's hour, since a command is brief.
+    /// </summary>
+    public bool ReusableBy(string? expectedAddress, string? baseUrl, DateTime utcNow) =>
+        !string.IsNullOrEmpty(Token) && ExpiryUtc.ToUniversalTime() > utcNow.AddMinutes(5)
+        && BelongsTo(expectedAddress, baseUrl);
+
     public static string? NormalizeAddress(string? value)
     {
         var trimmed = value?.Trim().ToLowerInvariant();

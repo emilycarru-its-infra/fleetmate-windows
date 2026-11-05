@@ -113,4 +113,30 @@ public sealed class TdxSessionCacheTests : IDisposable
     {
         Assert.Equal(expected, InboxAgent.IsRequested(args));
     }
+
+    [Fact]
+    public void TheCommandLineReusesASessionUntilItsLastMinutes()
+    {
+        Assert.True(Session(Now.AddMinutes(30)).ReusableBy(Address, BaseUrl, Now));
+        Assert.False(Session(Now.AddMinutes(4)).ReusableBy(Address, BaseUrl, Now));
+        Assert.False(Session(Now.AddMinutes(-1)).ReusableBy(Address, BaseUrl, Now));
+    }
+
+    [Fact]
+    public void TheCommandLineReusesOnlyThisAccountsAndTenantsSession()
+    {
+        var session = Session();
+        Assert.True(session.ReusableBy("PAT@example.invalid ", BaseUrl + "/", Now));
+        Assert.False(session.ReusableBy("someone-else@example.invalid", BaseUrl, Now));
+        Assert.False(session.ReusableBy(Address, "https://other.example.com", Now));
+        Assert.False(session.ReusableBy(null, BaseUrl, Now));
+    }
+
+    [Fact]
+    public void AnEmptyTokenIsNeverReused()
+    {
+        var session = Session();
+        session.Token = "";
+        Assert.False(session.ReusableBy(Address, BaseUrl, Now));
+    }
 }
