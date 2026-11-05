@@ -55,35 +55,95 @@ public sealed record ElevationSessionInfo(string? ContainerState, long? ExpiresU
 }
 
 /// <summary>Operator-facing wording for elevation states, shared by chrome and tests.</summary>
+/// <summary>The shield dot's colours. Never red or amber.</summary>
+public enum ElevationDotTone { Grey, Blue, Green }
+
 public static class ElevationStatusText
 {
-    public static string Label(ElevationSessionState state) => state switch
+    /// <summary>
+    /// The colour of the dot on the toolbar's Authentication shield. The toolbar
+    /// shows no elevation text: stopped, idle and unchecked stay a quiet grey,
+    /// since the next action starts the session. The state is spelled out in
+    /// the Authentication popover.
+    /// </summary>
+    public static ElevationDotTone DotTone(ElevationSessionState state) => state switch
     {
-        ElevationSessionState.Ready => "Elevation ready",
-        ElevationSessionState.Starting => "Elevation starting…",
-        ElevationSessionState.Expired => "Elevation expired",
-        ElevationSessionState.None => "Elevation idle",
-        ElevationSessionState.Unknown => "Elevation unknown",
-        _ => "Elevation off",
+        ElevationSessionState.Ready => ElevationDotTone.Green,
+        ElevationSessionState.Starting => ElevationDotTone.Blue,
+        _ => ElevationDotTone.Grey,
     };
 
+    /// <summary>What the feature is called wherever it is listed.</summary>
+    public const string Title = "Elevated sessions";
+
+    /// <summary>One line on what an elevated session is, for tooltips.</summary>
+    public static string Explainer(int ttlHours = 8) =>
+        "Elevated sessions are Azure containers that run admin actions as a managed identity, "
+        + "authorized by your az sign-in. One starts on first use, takes about a minute, "
+        + $"and then stays ready for up to {ttlHours} hours.";
+
+    /// <summary>The short state in a session's pill.</summary>
+    public static string StateLabel(ElevationSessionState state) => state switch
+    {
+        ElevationSessionState.Ready => "Ready",
+        ElevationSessionState.Starting => "Starting…",
+        ElevationSessionState.Expired or ElevationSessionState.None => "Stopped",
+        ElevationSessionState.Unknown => "Not checked",
+        _ => "Off",
+    };
+
+    /// <summary>The line under a session's name: what happens next, or time left.</summary>
+    public static string Detail(ElevationSessionState state, DateTimeOffset? expires, DateTimeOffset now) => state switch
+    {
+        ElevationSessionState.Ready when expires is { } e => $"Ready, {FormatRemaining(e - now)} left",
+        ElevationSessionState.Ready => "Ready",
+        ElevationSessionState.Starting => "Starting… a cold start takes about a minute",
+        ElevationSessionState.Expired or ElevationSessionState.None => "Stopped, restarts on next use",
+        ElevationSessionState.Unknown => "Not checked yet",
+        _ => "Off",
+    };
+
+    /// <summary>What a domain's session is used for, so its row reads as more than an internal name.</summary>
+    public static string DomainTitle(GraphDomain domain) => domain switch
+    {
+        GraphDomain.Devices => "Devices (Intune, Microsoft Graph)",
+        GraphDomain.Identity => "Identity (Entra ID)",
+        GraphDomain.Systems => "Systems (app registrations)",
+        GraphDomain.Cloud => "Cloud (SharePoint, Teams)",
+        GraphDomain.Security => "Security",
+        _ => "Infrastructure",
+    };
+
+    /// <summary>One domain's line in the chrome tooltip.</summary>
     public static string DomainLine(GraphDomain domain, ElevationSessionState state,
         DateTimeOffset? expires, string? error, DateTimeOffset now)
     {
-        var name = domain.DomainName();
-        return state switch
-        {
-            ElevationSessionState.Ready when expires is { } e =>
-                $"{name}: ready, expires in {FormatRemaining(e - now)}",
-            ElevationSessionState.Ready => $"{name}: ready",
-            ElevationSessionState.Starting => $"{name}: starting (first boot takes about a minute)",
-            ElevationSessionState.Expired => $"{name}: expired — the next action restarts it",
-            ElevationSessionState.None => $"{name}: not started — the next action starts it",
-            ElevationSessionState.Unknown when !string.IsNullOrWhiteSpace(error) => $"{name}: unknown ({error})",
-            ElevationSessionState.Unknown => $"{name}: not checked yet",
-            _ => $"{name}: off",
-        };
+        var name = DomainTitle(domain);
+        if (state == ElevationSessionState.Unknown && !string.IsNullOrWhiteSpace(error))
+            return $"{name}: not checked ({error})";
+        return $"{name}: {Detail(state, expires, now)}";
     }
+
+    /// <summary>The toolbar shield's first tooltip line, and its whole tooltip when elevation is off.</summary>
+    public const string ShieldTooltipTitle = "Authentication status for every connected system";
+
+    /// <summary>
+    /// The toolbar shield's tooltip: what it is, one line on what an elevated
+    /// session is, then one line per domain with its state or time left.
+    /// </summary>
+    public static string ShieldTooltip(IEnumerable<(GraphDomain Domain, ElevationSessionState State, DateTimeOffset? Expires, string? Error)> domains,
+        int ttlHours, DateTimeOffset now)
+    {
+        var lines = new List<string> { ShieldTooltipTitle, Explainer(ttlHours), "" };
+        lines.AddRange(domains.Select(d => DomainLine(d.Domain, d.State, d.Expires, d.Error, now)));
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    /// <summary>The shield's accessible name, which carries the state its dot only shows.</summary>
+    public static string ShieldAccessibleName(ElevationSessionState overall) =>
+        overall == ElevationSessionState.Off
+            ? "Authentication"
+            : $"Authentication, elevated sessions {StateLabel(overall).ToLowerInvariant()}";
 
     private static string FormatRemaining(TimeSpan span)
     {
