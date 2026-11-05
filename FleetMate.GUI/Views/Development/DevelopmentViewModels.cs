@@ -177,6 +177,28 @@ public sealed class DevelopmentNotificationRowViewModel
 {
     public required GitHubNotification Notification { get; init; }
 
+    /// <summary>
+    /// The author of the pull request the thread is about, from the pull
+    /// requests already loaded. GitHub's notification does not say who acted,
+    /// so this is labelled as the PR's author, never as the sender.
+    /// </summary>
+    public string? PullRequestAuthor { get; init; }
+
+    public string AuthorLabel => string.IsNullOrWhiteSpace(PullRequestAuthor)
+        ? "PR author unavailable" : $"PR author: {PullRequestAuthor}";
+
+    /// <summary>A row for <paramref name="notification"/>, naming its PR's author when that PR is loaded.</summary>
+    public static DevelopmentNotificationRowViewModel Create(
+        GitHubNotification notification, IEnumerable<UnifiedPullRequest> pullRequests) => new()
+    {
+        Notification = notification,
+        PullRequestAuthor = notification.IsPullRequest && notification.SubjectNumber is { } number
+            ? pullRequests.FirstOrDefault(pr => pr.Source == PullRequestSource.GitHub
+                && pr.Number == number
+                && $"{pr.Container}/{pr.Repository}".Equals(notification.Repository, StringComparison.OrdinalIgnoreCase))?.AuthorName
+            : null,
+    };
+
     public string Title => Notification.SubjectTitle;
     public bool Unread => Notification.Unread;
     public FontWeight TitleWeight => Unread ? FontWeights.SemiBold : FontWeights.Normal;
@@ -184,7 +206,8 @@ public sealed class DevelopmentNotificationRowViewModel
     public Visibility MarkReadVisibility => Unread ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>"Review requested · owner/repo · 3h ago".</summary>
-    public string Byline => $"{ReasonLabel(Notification.Reason)} · {Notification.Repository} · {Age(Notification.UpdatedAt)}";
+    public string Byline => $"{ReasonLabel(Notification.Reason)} · {Notification.Repository} · {Age(Notification.UpdatedAt)}"
+        + (Notification.IsPullRequest ? $" · {AuthorLabel}" : "");
 
     public string TypeGlyph => Notification.SubjectType switch
     {

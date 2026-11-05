@@ -492,14 +492,15 @@ public partial class DevelopmentView : UserControl
 
         var selectedId = _selectedNotification?.Id;
         var rows = DevelopmentFilter.Inbox(inbox.Notifications, _showReadNotifications)
-            .Select(n => new DevelopmentNotificationRowViewModel { Notification = n }).ToList();
+            .Select(n => DevelopmentNotificationRowViewModel.Create(n,
+                app.DevelopmentPullRequests?.PullRequests ?? Enumerable.Empty<UnifiedPullRequest>())).ToList();
         InboxList.ItemsSource = rows;
         if (selectedId != null) InboxList.SelectedItem = rows.FirstOrDefault(r => r.Notification.Id == selectedId);
 
         InboxStatus.Text = inbox.LastError is { } error && inbox.Notifications.Count == 0
             ? $"GitHub inbox unavailable — {error}"
             : (inbox.LastRefreshed is { } at ? $"Checked {at:HH:mm}" : "")
-              + (inbox.LastError != null ? " · last refresh failed" : "");
+              + (inbox.LastError != null ? $" · showing saved notifications; refresh failed: {inbox.LastError}" : "");
 
         InboxEmptyText.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         InboxEmptyText.Text = inbox.LastError != null ? "Could not reach GitHub notifications."

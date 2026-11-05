@@ -21,18 +21,23 @@ public sealed class GitHubNotificationService : IDisposable
         _client = new GitHubGraphQLClient(config);
     }
 
+    /// <summary>Threads GitHub returns per page, its maximum for this endpoint.</summary>
+    internal const int PageSize = 50;
+
+    /// <summary>Pages read at most, so a busy account stops at 200 threads.</summary>
+    internal const int MaxPages = 4;
+
     /// <summary>
     /// Recent notification threads, unread first and newest first within each.
     /// Read threads are included (<c>all=true</c>) so a thread marked read on
-    /// github.com does not vanish from the list mid-review.
+    /// github.com does not vanish from the list mid-review. Up to
+    /// <see cref="MaxPages"/> pages are read, so threads past the first 50
+    /// are not lost.
     /// </summary>
     public async Task<List<GitHubNotification>> ListAsync(bool includeRead = true, CancellationToken ct = default)
     {
-        var path = $"/notifications?per_page=50&all={(includeRead ? "true" : "false")}";
-        var raw = await _client.ExecuteRestAsync(path, ct: ct);
-        using var doc = JsonDocument.Parse(raw);
-
-        var result = Parse(doc.RootElement);
+        var result = await ReadPagesAsync(page => _client.ExecuteRestAsync(
+            $"/notifications?per_page={PageSize}&page={page}&all={(includeRead ? "true" : "false")}", ct: ct));
         Log.Information("[github] inbox → {Count} notifications ({Unread} unread)",
             result.Count, result.Count(n => n.Unread));
         return result;
@@ -85,6 +90,28 @@ public sealed class GitHubNotificationService : IDisposable
             Log.Warning(ex, "[github] notification action failed");
             return PullRequestActionResult.Failed(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Read pages until one comes back short or <see cref="MaxPages"/> is
+    /// reached, keeping each thread once. A thread that moves between pages
+    /// while they are read appears once, with its later copy. A page that
+    /// fails fails the whole read, so the caller keeps the list it already had
+    /// rather than showing part of one as if it were complete.
+    /// </summary>
+    internal static async Task<List<GitHubNotification>> ReadPagesAsync(Func<int, Task<byte[]>> fetch)
+    {
+        var threads = new Dictionary<string, GitHubNotification>();
+        for (var page = 1; page <= MaxPages; page++)
+        {
+            using var document = JsonDocument.Parse(await fetch(page));
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+                throw new JsonException("GitHub did not answer with a list of notifications");
+
+            foreach (var thread in Parse(document.RootElement)) threads[thread.Id] = thread;
+            if (document.RootElement.GetArrayLength() < PageSize) break;
+        }
+        return Sort(threads.Values);
     }
 
     internal static List<GitHubNotification> Parse(JsonElement root)
