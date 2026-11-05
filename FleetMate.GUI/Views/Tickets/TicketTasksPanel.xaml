@@ -22,20 +22,26 @@
 
             <StackPanel Margin="0,6,0,0">
                 <WrapPanel Margin="0,0,0,6">
-                    <Button x:Name="AddTaskButton" Click="OnAddTaskClicked" Padding="8,3" Margin="0,0,6,0"
-                            ToolTip="Add a standard task to this ticket" AutomationProperties.Name="Add a task">
-                        <StackPanel Orientation="Horizontal">
-                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE710;" FontSize="12" Margin="0,0,6,0" />
-                            <TextBlock Text="Add Task" />
-                        </StackPanel>
-                    </Button>
-                    <Button x:Name="ApplyTemplateButton" Click="OnApplyTemplateClicked" Padding="8,3" Margin="0,0,6,0"
-                            ToolTip="Add the tasks of a task template" AutomationProperties.Name="Apply a task template">
-                        <StackPanel Orientation="Horizontal">
-                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8A5;" FontSize="12" Margin="0,0,6,0" />
-                            <TextBlock Text="Apply Template" />
-                        </StackPanel>
-                    </Button>
+                    <Grid Margin="0,0,6,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" SharedSizeGroup="TicketSectionButton" /></Grid.ColumnDefinitions>
+                        <Button x:Name="AddTaskButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="OnAddTaskClicked" Padding="8,3"
+                                ToolTip="Add a standard task to this ticket" AutomationProperties.Name="Add a task">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE710;" FontSize="12" Margin="0,0,6,0" />
+                                <TextBlock Text="Add Task…" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                    <Grid Margin="0,0,6,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" SharedSizeGroup="TicketSectionButton" /></Grid.ColumnDefinitions>
+                        <Button x:Name="ApplyTemplateButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="OnApplyTemplateClicked" Padding="8,3"
+                                ToolTip="Add the tasks of a task template" AutomationProperties.Name="Apply a task template">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8A5;" FontSize="12" Margin="0,0,6,0" />
+                                <TextBlock Text="Apply Template…" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
                     <Button x:Name="RefreshButton" Click="OnRefreshClicked" Padding="6,3"
                             ToolTip="Refresh the tasks" AutomationProperties.Name="Refresh the tasks">
                         <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;" FontSize="12" />

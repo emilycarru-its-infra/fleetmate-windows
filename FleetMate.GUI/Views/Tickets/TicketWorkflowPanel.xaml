@@ -43,12 +43,18 @@
                             AutomationProperties.AutomationId="TicketWorkflowRefresh">
                         <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;" FontSize="12" />
                     </Button>
-                    <Button x:Name="RestartWorkflowButton" Content="Restart Workflow…" Padding="8,2" Margin="0,0,6,0"
-                            Click="OnRestartClicked" AutomationProperties.AutomationId="TicketWorkflowRestart"
-                            ToolTip="Start the ticket's workflow over from its first step" />
-                    <Button x:Name="ChangeWorkflowButton" Content="Change Workflow…" Padding="8,2"
-                            Click="OnChangeClicked" AutomationProperties.AutomationId="TicketWorkflowChange"
-                            ToolTip="Put a different workflow on the ticket" />
+                    <Grid Margin="0,0,6,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" SharedSizeGroup="TicketSectionButton" /></Grid.ColumnDefinitions>
+                        <Button x:Name="RestartWorkflowButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Restart Workflow…" Padding="8,2"
+                                Click="OnRestartClicked" AutomationProperties.AutomationId="TicketWorkflowRestart"
+                                ToolTip="Start the ticket's workflow over from its first step" />
+                    </Grid>
+                    <Grid Margin="0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" SharedSizeGroup="TicketSectionButton" /></Grid.ColumnDefinitions>
+                        <Button x:Name="ChangeWorkflowButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Content="Change Workflow…" Padding="8,2"
+                                Click="OnChangeClicked" AutomationProperties.AutomationId="TicketWorkflowChange"
+                                ToolTip="Put a different workflow on the ticket" />
+                    </Grid>
                 </WrapPanel>
 
                 <WrapPanel x:Name="WorkflowHeader" Margin="0,0,0,4" Visibility="Collapsed">

@@ -70,3 +70,23 @@ public sealed class TicketRowViewModel
     /// </summary>
     public string LastActivityLabel => Ticket.LastActivityLabel();
 }
+
+/// <summary>One candidate in the Reassign popover.</summary>
+public sealed class ReassignCandidateRow
+{
+    public ReassignCandidateRow(FleetMate.Core.Models.Tickets.TdxEligibleAssignment candidate, bool isCurrent)
+    {
+        Candidate = candidate;
+        IsCurrent = isCurrent;
+    }
+
+    public FleetMate.Core.Models.Tickets.TdxEligibleAssignment Candidate { get; }
+    public bool IsCurrent { get; }
+
+    public string DisplayName => Candidate.DisplayName;
+    public string Subtitle => Candidate.Subtitle;
+    /// <summary>Contact for a person, the group icon the People section uses for a group.</summary>
+    public string Glyph => Candidate.IsUser ? "" : "";
+    public System.Windows.Visibility CurrentVisibility => IsCurrent ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+    public string SpokenName => (Candidate.IsUser ? DisplayName : $"{DisplayName}, group") + (IsCurrent ? ", current responsible" : "");
+}

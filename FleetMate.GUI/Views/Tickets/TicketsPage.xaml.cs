@@ -1089,6 +1089,7 @@ private bool _isInitialLoadDone;
     private void RestoreCommentDraft(int ticketId)
     {
         CommentTextBox.Text = _commentDrafts.GetValueOrDefault(ticketId) ?? "";
+        RestoreAttachmentDraft(ticketId);
         SetComposeOpen(false);
     }
 
@@ -1115,12 +1116,12 @@ private bool _isInitialLoadDone;
     private bool _postingComment;
 
     /// <summary>
-    /// Post Comment is the accent button only with text to post; empty, it is
-    /// a plain disabled button rather than a greyed-out accent one.
+    /// Post Comment is the accent button only with text or files to post;
+    /// empty, it is a plain disabled button rather than a greyed-out accent one.
     /// </summary>
     private void UpdatePostCommentButton()
     {
-        var canPost = !_postingComment && !string.IsNullOrWhiteSpace(CommentTextBox.Text);
+        var canPost = !_postingComment && (!string.IsNullOrWhiteSpace(CommentTextBox.Text) || HasComposeAttachments);
         PostCommentButton.IsEnabled = canPost;
         if (canPost) PostCommentButton.SetResourceReference(StyleProperty, "AccentButtonStyle");
         else PostCommentButton.ClearValue(StyleProperty);
@@ -1129,7 +1130,7 @@ private bool _isInitialLoadDone;
     private void UpdateAddCommentButton()
     {
         UpdatePostCommentButton();
-        AddCommentButtonText.Text = TicketsPageSync.AddCommentLabel(_composeOpen, CommentTextBox.Text);
+        AddCommentButtonText.Text = TicketsPageSync.AddCommentLabel(_composeOpen, CommentTextBox.Text, HasComposeAttachments);
         AddCommentButton.ToolTip = _composeOpen ? "Close the comment editor" : "Write a comment";
     }
 
@@ -1695,12 +1696,18 @@ private bool _isInitialLoadDone;
         ReassignPopup.IsOpen = !ReassignPopup.IsOpen;
     }
 
+    private const int ReassignMinimumQuery = 2;
+
     private void OnReassignPopupOpened(object? sender, EventArgs e)
     {
+        _reassignSearchCts?.Cancel();
         ReassignSearchBox.Text = "";
         ReassignResultsList.ItemsSource = null;
-        ReassignStatusText.Text = "Type at least two characters.";
-        ReassignSearchBox.Focus();
+        ReassignProgress.IsActive = false;
+        ReassignProgress.Visibility = Visibility.Collapsed;
+        ReassignStatusText.Text = $"Type at least {ReassignMinimumQuery} letters of a name, email or group.";
+        ReassignNotifyCheckBox.IsChecked = true;
+        Dispatcher.BeginInvoke(() => Keyboard.Focus(ReassignSearchBox), System.Windows.Threading.DispatcherPriority.Input);
     }
 
     private async void OnReassignSearchChanged(object sender, TextChangedEventArgs e)
@@ -1711,47 +1718,92 @@ private bool _isInitialLoadDone;
         var cts = _reassignSearchCts = new CancellationTokenSource();
         var query = ReassignSearchBox.Text?.Trim() ?? "";
 
-        if (query.Length < 2)
+        if (query.Length < ReassignMinimumQuery)
         {
             ReassignResultsList.ItemsSource = null;
-            ReassignStatusText.Text = "Type at least two characters.";
+            ReassignProgress.IsActive = false;
+            ReassignProgress.Visibility = Visibility.Collapsed;
+            ReassignStatusText.Text = $"Type at least {ReassignMinimumQuery} letters of a name, email or group.";
             return;
         }
 
         // Debounce: one lookup per pause in typing, not one per keystroke.
-        try { await Task.Delay(300, cts.Token); }
+        try { await Task.Delay(250, cts.Token); }
         catch (TaskCanceledException) { return; }
 
-        ReassignStatusText.Text = "Searching…";
-        var people = await _tdxService.SearchPeopleAsync(query, 15);
-        if (cts.IsCancellationRequested) return;
+        ReassignProgress.Visibility = Visibility.Visible;
+        ReassignProgress.IsActive = true;
+        try
+        {
+            var found = await _tdxService.SearchEligibleResponsiblesAsync(query, cts.Token);
+            if (cts.IsCancellationRequested) return;
 
-        var pickable = people.Where(p => p.Uid is { } u && u != Guid.Empty).ToList();
-        ReassignResultsList.ItemsSource = pickable;
-        ReassignStatusText.Text = pickable.Count == 0 ? "No matching people." : "Pick a person.";
+            var ticket = _selectedTicket;
+            var rows = TdxEligibleAssignment.Ordered(found)
+                .Where(a => a.ResponsibleUpdates() != null)
+                .Select(a => new ReassignCandidateRow(a, a.IsCurrent(ticket?.ResponsibleUid, ticket?.ResponsibleGroupId)))
+                .ToList();
+            ReassignResultsList.ItemsSource = rows;
+            if (rows.Count > 0) ReassignResultsList.SelectedIndex = 0;
+            ReassignStatusText.Text = rows.Count == 0
+                ? $"No one who can own tickets matches “{query}”."
+                : "Up and Down move, Enter picks.";
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (cts.IsCancellationRequested) return;
+            ReassignResultsList.ItemsSource = null;
+            ReassignStatusText.Text = $"Couldn't search TeamDynamix: {ex.Message}";
+        }
+        finally
+        {
+            if (!cts.IsCancellationRequested)
+            {
+                ReassignProgress.IsActive = false;
+                ReassignProgress.Visibility = Visibility.Collapsed;
+            }
+        }
     }
 
-    private void OnReassignSearchKeyDown(object sender, KeyEventArgs e)
+    /// <summary>
+    /// The search box keeps the focus: Up and Down move the highlight, Enter
+    /// picks it, Esc closes.
+    /// </summary>
+    private async void OnReassignSearchKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Down && ReassignResultsList.Items.Count > 0)
+        var count = ReassignResultsList.Items.Count;
+        switch (e.Key)
         {
-            ReassignResultsList.SelectedIndex = 0;
-            (ReassignResultsList.ItemContainerGenerator.ContainerFromIndex(0) as ListBoxItem)?.Focus();
-            e.Handled = true;
-        }
-        else if (e.Key == Key.Escape)
-        {
-            ReassignPopup.IsOpen = false;
-            e.Handled = true;
+            case Key.Down when count > 0:
+                ReassignResultsList.SelectedIndex = Math.Min(ReassignResultsList.SelectedIndex + 1, count - 1);
+                ReassignResultsList.ScrollIntoView(ReassignResultsList.SelectedItem);
+                e.Handled = true;
+                break;
+            case Key.Up when count > 0:
+                ReassignResultsList.SelectedIndex = Math.Max(ReassignResultsList.SelectedIndex - 1, 0);
+                ReassignResultsList.ScrollIntoView(ReassignResultsList.SelectedItem);
+                e.Handled = true;
+                break;
+            case Key.Enter when ReassignResultsList.SelectedItem is ReassignCandidateRow row:
+                e.Handled = true;
+                await PickReassignAsync(row.Candidate);
+                break;
+            case Key.Escape:
+                ReassignPopup.IsOpen = false;
+                e.Handled = true;
+                break;
         }
     }
 
     private async void OnReassignResultsKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && ReassignResultsList.SelectedItem is TdxPerson person)
+        if (e.Key == Key.Enter && ReassignResultsList.SelectedItem is ReassignCandidateRow row)
         {
             e.Handled = true;
-            await PickReassignAsync(person);
+            await PickReassignAsync(row.Candidate);
         }
         else if (e.Key == Key.Escape)
         {
@@ -1762,14 +1814,36 @@ private bool _isInitialLoadDone;
 
     private async void OnReassignResultPicked(object sender, MouseButtonEventArgs e)
     {
-        if (ReassignResultsList.SelectedItem is TdxPerson person)
-            await PickReassignAsync(person);
+        if (ReassignResultsList.SelectedItem is ReassignCandidateRow row)
+            await PickReassignAsync(row.Candidate);
     }
 
-    private async Task PickReassignAsync(TdxPerson person)
+    /// <summary>
+    /// Make the chosen candidate responsible. A group takes the ticket on its
+    /// own, as TDX's picker does: the group becomes responsible and the
+    /// responsible person is cleared.
+    /// </summary>
+    private async Task PickReassignAsync(TdxEligibleAssignment candidate)
     {
         ReassignPopup.IsOpen = false;
-        if (person.Uid is { } uid && _selectedTicket != null) await SetResponsibleAsync(_selectedTicket.Id, uid, person.DisplayName);
+        if (_selectedTicket == null || _tdxService == null || _app == null) return;
+        if (candidate.ResponsibleUpdates() is not { } updates) return;
+
+        var notify = ReassignNotifyCheckBox.IsChecked == true;
+        var ticketId = _selectedTicket.Id;
+        ShowActionMessage($"Reassigning to {candidate.DisplayName}…", isLoading: true);
+        var updated = await _tdxService.UpdateTicketAsync(ticketId, updates, notifyNewResponsible: notify);
+        if (updated == null)
+        {
+            ShowActionMessage("TeamDynamix did not accept the change. See the log for the response.", isError: true);
+            return;
+        }
+
+        ReplaceCachedTicket(updated);
+        var who = candidate.IsUser
+            ? updated.ResponsibleFullName ?? candidate.DisplayName
+            : updated.ResponsibleGroupName ?? candidate.DisplayName;
+        ShowActionMessage(notify ? $"Reassigned to {who} and notified" : $"Reassigned to {who}");
     }
 
     /// <summary>
@@ -1808,38 +1882,53 @@ private bool _isInitialLoadDone;
 
     private async void OnPostCommentClicked(object sender, RoutedEventArgs e)
     {
-        if (_selectedTicket == null || _tdxService == null) return;
-        
-        var comment = CommentTextBox.Text?.Trim();
-        if (string.IsNullOrEmpty(comment)) return;
+        if (_selectedTicket == null || _tdxService == null || _postingComment) return;
 
-        ShowActionMessage("Adding comment...", isLoading: true);
+        var ticketId = _selectedTicket.Id;
+        var comment = CommentTextBox.Text?.Trim();
+        var hasText = !string.IsNullOrEmpty(comment);
+        if (!hasText && !HasComposeAttachments) return;
+
+        var isPrivate = PrivateCheckBox.IsChecked == true;
         _postingComment = true;
         UpdatePostCommentButton();
 
         try
         {
-            var notify = SelectedNotifyEmails();
-            await _tdxService.AddCommentAsync(
-                _selectedTicket.Id,
-                comment,
-                PrivateCheckBox.IsChecked == true,
-                notify: notify);
+            // Files first: TDX cannot attach a file to a comment, so they go to
+            // the ticket. If any fails the text is not posted, and Post again
+            // retries only the files that did not land.
+            var attachedCount = _composeAttachments?.Count ?? 0;
+            if (!await UploadComposeAttachmentsAsync(ticketId, isPrivate, hasText)) return;
 
+            if (!hasText)
+            {
+                ShowActionMessage(attachedCount == 1 ? "Attached 1 file to the ticket" : $"Attached {attachedCount} files to the ticket");
+                if (_selectedTicket?.Id == ticketId) SetComposeOpen(false);
+                return;
+            }
+
+            ShowActionMessage("Adding comment...", isLoading: true);
+            var notify = SelectedNotifyEmails();
+            await _tdxService.AddCommentAsync(ticketId, comment!, isPrivate, notify: notify);
+
+            var files = attachedCount == 0 ? "" : attachedCount == 1 ? " with 1 file" : $" with {attachedCount} files";
             ShowActionMessage(notify.Count == 0
-                ? "Comment added successfully"
-                : $"Comment added; notified {notify.Count} {(notify.Count == 1 ? "person" : "people")}");
+                ? $"Comment added{files}"
+                : $"Comment added{files}; notified {notify.Count} {(notify.Count == 1 ? "person" : "people")}");
+
+            // Drop the stashed copy too, or navigating away and back would
+            // resurrect a comment that was already posted.
+            _commentDrafts.Remove(ticketId);
+            if (_selectedTicket?.Id != ticketId) return;
+
             CommentTextBox.Text = "";
             foreach (var box in NotifyCheckboxesPanel.Children.OfType<CheckBox>()) box.IsChecked = false;
             SetComposeOpen(false);
 
-            // Drop the stashed copy too, or navigating away and back would
-            // resurrect a comment that was already posted.
-            _commentDrafts.Remove(_selectedTicket.Id);
-
             // Refresh feed
-            _ticketFeed = await _tdxService.GetTicketFeedAsync(_selectedTicket.Id);
-            UpdateFeedPanel();
+            _ticketFeed = await _tdxService.GetTicketFeedAsync(ticketId);
+            if (_selectedTicket?.Id == ticketId) UpdateFeedPanel();
         }
         catch (TdxCommentException ex)
         {
