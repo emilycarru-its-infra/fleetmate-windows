@@ -175,6 +175,44 @@ public class DiffFileViewModelTests
         Assert.Equal(2, vm.Hunks.Count);
         Assert.All(vm.Hunks, h => Assert.NotEmpty(h.Lines));
     }
+
+    [Fact]
+    public void SideBySideIsTheDefaultAndWrapsInsteadOfScrolling()
+    {
+        var vm = new DiffFileViewModel { File = DiffBuilder.Build("a.txt", "old\nsame", "new\nsame") };
+
+        Assert.Equal(DiffLayout.Split, vm.Layout);
+        Assert.Equal(System.Windows.Controls.ScrollBarVisibility.Disabled, vm.HorizontalScroll);
+        var hunk = Assert.Single(vm.Hunks);
+        Assert.Equal(System.Windows.Visibility.Visible, hunk.SplitVisibility);
+        Assert.Equal(System.Windows.Visibility.Collapsed, hunk.InlineVisibility);
+
+        var changed = hunk.SplitRows.First(r => r.Left.Line?.Kind == DiffLineKind.Deletion);
+        Assert.Equal("- old", changed.Left.Content);
+        Assert.Equal("+ new", changed.Right.Content);
+        Assert.Equal("1", changed.Left.NumberLabel);
+        Assert.Equal("1", changed.Right.NumberLabel);
+    }
+
+    [Fact]
+    public void InlineLayoutKeepsOneScrollingColumn()
+    {
+        var vm = new DiffFileViewModel { File = DiffBuilder.Build("a.txt", "old", "new"), Layout = DiffLayout.Inline };
+
+        Assert.Equal(System.Windows.Controls.ScrollBarVisibility.Auto, vm.HorizontalScroll);
+        var hunk = Assert.Single(vm.Hunks);
+        Assert.Empty(hunk.SplitRows);
+        Assert.NotEmpty(hunk.Lines);
+        Assert.Equal(System.Windows.Visibility.Visible, hunk.InlineVisibility);
+    }
+
+    [Fact]
+    public void AnEmptySideReadsAsNoLine()
+    {
+        var cell = new DiffSideCellViewModel { Line = null, IsLeft = true };
+        Assert.Equal("", cell.NumberLabel);
+        Assert.Equal("No line", cell.AccessibleText);
+    }
 }
 
 public class PullRequestCommentViewModelTests

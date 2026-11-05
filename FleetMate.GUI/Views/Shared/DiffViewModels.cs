@@ -121,21 +121,117 @@ public sealed class DiffLineViewModel
     }
 }
 
+/// <summary>
+/// One half of a side-by-side row: a line number, the gutter strip and the
+/// wrapped content. An empty half is shaded so the gap reads as "no line here"
+/// rather than a blank line.
+/// </summary>
+public sealed class DiffSideCellViewModel
+{
+    public DiffLine? Line { get; init; }
+
+    /// <summary>Which side this cell is on, so a context line shows the right number.</summary>
+    public bool IsLeft { get; init; }
+
+    public string NumberLabel => (IsLeft ? Line?.OldLine : Line?.NewLine)?.ToString() ?? "";
+
+    public string Content => Line is null ? "" : $"{Marker} {Line.Content}";
+
+    private string Marker => Line?.Kind switch
+    {
+        DiffLineKind.Addition => "+",
+        DiffLineKind.Deletion => "-",
+        DiffLineKind.NoNewline => "\\",
+        _ => " ",
+    };
+
+    public Brush CellBackground => Line is null
+        ? EmptyFill
+        : new DiffLineViewModel { Line = Line }.RowBackground;
+
+    public Brush GutterStrip => Line is null ? Brushes.Transparent : new DiffLineViewModel { Line = Line }.GutterStrip;
+
+    public Brush ContentBrush => Line is null ? Brushes.Transparent : new DiffLineViewModel { Line = Line }.ContentBrush;
+
+    public FontStyle ContentStyle => Line?.Kind == DiffLineKind.NoNewline ? FontStyles.Italic : FontStyles.Normal;
+
+    public string AccessibleText
+    {
+        get
+        {
+            if (Line is null) return "No line";
+            var kind = Line.Kind switch
+            {
+                DiffLineKind.Addition => "Added",
+                DiffLineKind.Deletion => "Removed",
+                DiffLineKind.Context => "Unchanged",
+                _ => "",
+            };
+            var number = NumberLabel.Length > 0 ? $"line {NumberLabel}, " : "";
+            return $"{kind} {number}{Line.Content}".Trim();
+        }
+    }
+
+    private static readonly Brush EmptyFill = FrozenGray();
+
+    private static Brush FrozenGray()
+    {
+        var brush = new SolidColorBrush(Color.FromArgb(0x10, 0x80, 0x80, 0x80));
+        brush.Freeze();
+        return brush;
+    }
+}
+
+/// <summary>One side-by-side row: the old line on the left, the new on the right.</summary>
+public sealed class DiffSplitRowViewModel
+{
+    public required DiffSideCellViewModel Left { get; init; }
+    public required DiffSideCellViewModel Right { get; init; }
+}
+
 /// <summary>One <c>@@</c> section, with its rows.</summary>
 public sealed class DiffHunkViewModel
 {
     public required DiffHunk Hunk { get; init; }
 
+    /// <summary>Inline unless a host asks for side by side, so older callers keep one column.</summary>
+    public DiffLayout Layout { get; init; } = DiffLayout.Inline;
+
     public string Header => Hunk.Header;
 
+    /// <summary>The one-column rows. Always filled: other views draw them whatever the layout.</summary>
     public List<DiffLineViewModel> Lines =>
         Hunk.Lines.Select(l => new DiffLineViewModel { Line = l }).ToList();
+
+    public List<DiffSplitRowViewModel> SplitRows =>
+        Layout == DiffLayout.Split
+            ? DiffSplit.Rows(Hunk).Select(r => new DiffSplitRowViewModel
+            {
+                Left = new DiffSideCellViewModel { Line = r.Left, IsLeft = true },
+                Right = new DiffSideCellViewModel { Line = r.Right, IsLeft = false },
+            }).ToList()
+            : new();
+
+    public Visibility InlineVisibility => Layout == DiffLayout.Inline ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility SplitVisibility => Layout == DiffLayout.Split ? Visibility.Visible : Visibility.Collapsed;
 }
 
 /// <summary>One file card in the Changes section.</summary>
 public sealed class DiffFileViewModel
 {
     public required DiffFile File { get; init; }
+
+    /// <summary>Side by side or inline; the hosts pass the saved choice.</summary>
+    public DiffLayout Layout { get; init; } = DiffLayouts.Default;
+
+    /// <summary>
+    /// Inline rows keep their width and scroll inside the card; side by side
+    /// wraps long lines so both halves stay in view, which needs a fixed width.
+    /// </summary>
+    public System.Windows.Controls.ScrollBarVisibility HorizontalScroll =>
+        Layout == DiffLayout.Inline
+            ? System.Windows.Controls.ScrollBarVisibility.Auto
+            : System.Windows.Controls.ScrollBarVisibility.Disabled;
 
     public string Path => File.DisplayPath;
 
@@ -156,7 +252,7 @@ public sealed class DiffFileViewModel
         string.IsNullOrEmpty(StatusLabel) ? Visibility.Collapsed : Visibility.Visible;
 
     public List<DiffHunkViewModel> Hunks =>
-        File.Hunks.Select(h => new DiffHunkViewModel { Hunk = h }).ToList();
+        File.Hunks.Select(h => new DiffHunkViewModel { Hunk = h, Layout = Layout }).ToList();
 
     /// <summary>
     /// A file with no hunks is binary, too large, or a rename with no content

@@ -186,6 +186,18 @@ public partial class PullRequestDetailView : UserControl
         return await github.GetChecksAsync(pr.Container, pr.Repository, pr.Number);
     }
 
+    /// <summary>The diff on screen, kept so a layout change can redraw it.</summary>
+    private IReadOnlyList<DiffFile> _files = Array.Empty<DiffFile>();
+
+    private void ShowFiles()
+    {
+        var layout = UserPreferences.DiffLayout;
+        DiffLayoutPicker.Show(layout);
+        FilesList.ItemsSource = _files.Select(f => new DiffFileViewModel { File = f, Layout = layout }).ToList();
+    }
+
+    private void OnDiffLayoutChanged(DiffLayout layout) => ShowFiles();
+
     private void Render(PullRequestDetail detail)
     {
         LoadingPanel.Visibility = Visibility.Collapsed;
@@ -220,7 +232,8 @@ public partial class PullRequestDetailView : UserControl
 
         ChangesSection.Visibility = PullRequestCheckViewModel.Show(detail.Files.Count > 0);
         ChangesHeader.Text = $"Changes ({detail.Files.Count} files, +{detail.Insertions} −{detail.Deletions})";
-        FilesList.ItemsSource = detail.Files.Select(f => new DiffFileViewModel { File = f }).ToList();
+        _files = detail.Files;
+        ShowFiles();
 
         // A capped file list is stated, not hidden.
         TruncationNotice.Visibility = PullRequestCheckViewModel.Show(detail.Truncated);
