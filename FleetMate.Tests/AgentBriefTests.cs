@@ -172,9 +172,52 @@ public class AgentBriefTests
     public void Codex_SkipsItsOwnUpdateCheck_WhenFleetMateUpdates()
     {
         var args = AgentBrief.LaunchArguments("codex", Array.Empty<string>(), BriefPath, "x", selfUpdate: false, codexNoDaemon: true);
-        Assert.Equal(new[] { "--no-daemon", "-c", "check_for_update_on_startup=false", "-c", "developer_instructions=\"x\"" }, args);
+        Assert.Equal(new[] { "-c", "check_for_update_on_startup=false", "-c", "developer_instructions=\"x\"" }, args);
         Assert.DoesNotContain(AgentBrief.LaunchArguments("codex", Array.Empty<string>(), BriefPath, "x"),
             a => a.Contains("check_for_update_on_startup"));
+    }
+
+    [Fact]
+    public void AppOwnedDirectoriesAreScopedToDirectAgentSessions()
+    {
+        string[] roots = [@"C:\profile\.fleetmate", @"C:\profile\AppData\Local\FleetMate\Agent"];
+        var args = AgentBrief.LaunchArguments("codex", ["--sandbox", "workspace-write"], BriefPath, "guide", additionalDirectories: roots);
+        Assert.Contains(roots[0], args);
+        Assert.Contains(roots[1], args);
+        Assert.Equal(2, args.Count(argument => argument == "--add-dir"));
+        Assert.DoesNotContain("--dangerously-bypass-approvals-and-sandbox", args);
+        var remote = AgentBrief.LaunchArguments("codex", ["--remote"], BriefPath, "guide", additionalDirectories: roots);
+        Assert.Equal(new[] { "--remote" }, remote);
+        var command = AgentBrief.LaunchArguments("codex", ["--version"], BriefPath, "guide", additionalDirectories: roots);
+        Assert.Equal(new[] { "--version" }, command);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("read-only")]
+    [InlineData("danger-full-access")]
+    public void CodexDoesNotAddWritableRootsToReadOnlyOrUnknownPolicy(string? sandbox)
+    {
+        var args = AgentBrief.LaunchArguments("codex", sandbox == null ? [] : ["--sandbox", sandbox], BriefPath,
+            "guide", additionalDirectories: [@"C:\profile\.fleetmate"]);
+        Assert.DoesNotContain("--add-dir", args);
+    }
+
+    [Fact]
+    public void LastExplicitSandboxChoiceWins()
+    {
+        var args = AgentBrief.LaunchArguments("codex", ["--sandbox", "workspace-write", "-s", "read-only"],
+            BriefPath, "guide", additionalDirectories: [@"C:\profile\.fleetmate"]);
+        Assert.DoesNotContain("--add-dir", args);
+    }
+
+    [Fact]
+    public void CodexDoesNotDisableTheSharedDaemonButPreservesAnExplicitOptOut()
+    {
+        var automatic = AgentBrief.LaunchArguments("codex", [], BriefPath, "guide", codexNoDaemon: true);
+        Assert.DoesNotContain("--no-daemon", automatic);
+        var explicitCommand = AgentBrief.LaunchArguments("codex", ["--no-daemon"], BriefPath, "guide");
+        Assert.Single(explicitCommand, argument => argument == "--no-daemon");
     }
 
     [Theory]

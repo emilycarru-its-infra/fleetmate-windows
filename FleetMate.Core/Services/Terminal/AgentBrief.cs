@@ -275,7 +275,7 @@ public static class AgentBrief
     internal static readonly HashSet<string> CodexNonSessionSubcommands = new(StringComparer.OrdinalIgnoreCase)
     {
         "login", "logout", "mcp", "mcp-server", "app-server", "completion", "doctor", "help", "features",
-        "agents", "remote-control", "sandbox", "debug", "apply", "cloud",
+        "agents", "queue", "remote-control", "sandbox", "debug", "apply", "cloud",
     };
 
     /// <summary>Longest developer_instructions value passed on a command line, which Windows caps at 32,767 characters.</summary>
@@ -305,36 +305,57 @@ public static class AgentBrief
     /// (<paramref name="codexInstructions"/>). With <paramref name="selfUpdate"/>
     /// false, which FleetMate passes when it keeps the CLIs current itself,
     /// Codex also skips its own update check, so a session never opens on an
-    /// update prompt; and where this Codex has --no-daemon, the line says so,
-    /// since any -c override otherwise makes Codex warn about running without
-    /// its shared background server.
+    /// update prompt. FleetMate does not disable the shared background server;
+    /// cross-session discovery and messaging depend on it.
     ///
     /// The -remote presets (--remote) start the agent elsewhere, where a local
     /// path means nothing, so they get the environment variable only.
     /// </summary>
     public static IReadOnlyList<string> LaunchArguments(string program, IReadOnlyList<string> arguments,
-        string briefPath, string codexInstructions, bool selfUpdate = true, bool codexNoDaemon = false)
+        string briefPath, string codexInstructions, bool selfUpdate = true, bool codexNoDaemon = false, IReadOnlyList<string>? additionalDirectories = null)
     {
         if (arguments.Any(a => a.Equals("--remote", StringComparison.OrdinalIgnoreCase))) return arguments;
+        if (arguments.Any(argument => argument is "--help" or "-h" or "--version" or "-V")) return arguments;
         var first = arguments.FirstOrDefault();
+        var directories = (additionalDirectories ?? []).Where(directory => !string.IsNullOrWhiteSpace(directory))
+            .Distinct(StringComparer.OrdinalIgnoreCase).SelectMany(directory => new[] { "--add-dir", directory }).ToList();
         switch (AgentOf(program))
         {
             case "claude":
                 if (first != null && ClaudeNonSessionSubcommands.Contains(first)) return arguments;
-                return new[] { "--append-system-prompt-file", briefPath }.Concat(arguments).ToList();
+                return new[] { "--append-system-prompt-file", briefPath }.Concat(directories).Concat(arguments).ToList();
             case "codex":
                 if (first != null && CodexNonSessionSubcommands.Contains(first)) return arguments;
                 var line = new List<string>();
-                if (codexNoDaemon) line.Add("--no-daemon");
+                // Keep the shared daemon available for cross-session discovery and messaging.
+                // An explicit --no-daemon in the person's command remains untouched.
                 if (!selfUpdate) line.AddRange(new[] { "-c", "check_for_update_on_startup=false" });
                 // The fixed pointer goes as a TOML literal string: no double
                 // quotes, so cmd.exe reads the whole argument as one quoted run.
                 var value = codexInstructions == PointerInstructions ? "'" + PointerInstructions + "'" : TomlString(codexInstructions);
                 line.AddRange(new[] { "-c", "developer_instructions=" + value });
-                return line.Concat(arguments).ToList();
+                // Read-only Codex sessions reject --add-dir. Unknown/default policy is
+                // deliberately left alone rather than widening the person's sandbox.
+                return line.Concat(ExplicitWorkspaceWrite(arguments) ? directories : []).Concat(arguments).ToList();
             default:
                 return arguments;
         }
+    }
+
+    private static bool ExplicitWorkspaceWrite(IReadOnlyList<string> arguments)
+    {
+        string? sandbox = null;
+        for (var index = 0; index < arguments.Count; index++)
+        {
+            if (arguments[index] == "--") break;
+            if (arguments[index] is "--sandbox" or "-s")
+            {
+                if (index + 1 < arguments.Count) sandbox = arguments[++index];
+            }
+            else if (arguments[index].StartsWith("--sandbox=", StringComparison.Ordinal))
+                sandbox = arguments[index]["--sandbox=".Length..];
+        }
+        return sandbox == "workspace-write";
     }
 
     /// <summary>

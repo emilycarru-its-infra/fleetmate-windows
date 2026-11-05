@@ -328,6 +328,9 @@
                                          Visibility="Collapsed" FontFamily="Cascadia Mono, Consolas"
                                          ui:ControlHelper.PlaceholderText="Program and arguments, e.g. my-agent --model fast"
                                          AutomationProperties.AutomationId="AgentCustomCommandTextBox" />
+                                <TextBlock Text="Codex follows your own configuration. Codex (workspace) opts into editing the checkout and FleetMate guide/context folders, with approval requested when needed."
+                                           TextWrapping="Wrap" FontSize="12" Margin="0,6,0,4"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                 <TextBlock x:Name="AgentCommandSourceText" FontSize="11" Margin="0,4,0,10" Visibility="Collapsed"
                                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                 <CheckBox x:Name="AgentAutoStartCheckBox" AutomationProperties.AutomationId="AgentAutoStartCheckBox"
