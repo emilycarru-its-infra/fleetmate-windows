@@ -1501,7 +1501,7 @@
                                                                          VerticalScrollBarVisibility="Auto" SpellCheck.IsEnabled="True"
                                                                          ui:ControlHelper.PlaceholderText="{Binding ReplyLabel}"
                                                                          AutomationProperties.Name="{Binding ReplyLabel}"
-                                                                         PreviewKeyDown="OnReplyKeyDown" IsVisibleChanged="OnReplyBoxVisibleChanged" />
+                                                                         PreviewKeyDown="OnReplyKeyDown" />
                                                                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                                                     <Button Content="Post Reply" Tag="{Binding}" Click="OnPostReplyClicked"
                                                                             IsEnabled="{Binding CanPostReply}" Style="{DynamicResource AccentButtonStyle}"

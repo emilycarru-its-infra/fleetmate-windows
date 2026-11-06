@@ -1398,10 +1398,10 @@ private bool _isInitialLoadDone;
             // Unsaved picks on this ticket survive a redraw.
             if (_pendingEdits is { } edits && edits.TicketId == ticket.Id)
             {
-                foreach (var combo in new[] { DetailStatusCombo, DetailPriorityCombo, DetailClassificationCombo,
+                foreach (var picker in new[] { DetailStatusCombo, DetailPriorityCombo, DetailClassificationCombo,
                              DetailFormCombo, DetailServiceCombo, DetailTypeCombo, DetailGroupCombo })
                 {
-                    if (combo.Tag is string field && edits.IsEdited(field)) combo.SelectedValue = edits.Value(field);
+                    if (picker.Tag is string field && edits.IsEdited(field)) picker.SelectedValue = edits.Value(field);
                 }
             }
         }

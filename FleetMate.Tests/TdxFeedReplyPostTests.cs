@@ -12,7 +12,7 @@ namespace FleetMate.Tests;
 /// with a <c>Body</c> and nothing else. Every fixture is synthetic, and
 /// nothing here reaches a server.
 /// </summary>
-public class TdxFeedReplyTests
+public class TdxFeedReplyPostTests
 {
     private sealed class StubHandler : HttpMessageHandler
     {

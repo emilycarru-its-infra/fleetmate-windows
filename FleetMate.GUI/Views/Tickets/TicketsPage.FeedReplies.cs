@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using FleetMate.Core.Models.Tickets;
 
@@ -19,9 +20,6 @@ public partial class TicketsPage
 
     /// <summary>The comment whose thread has the composer open, if any.</summary>
     private int? _replyingToEntryId;
-
-    /// <summary>The composer to put the cursor in once it shows.</summary>
-    private int? _focusReplyFor;
 
     /// <summary>The feed items on screen, top-level comments only; replies hang off them.</summary>
     private IEnumerable<FeedDisplayItem> ShownThreads =>
@@ -65,28 +63,39 @@ public partial class TicketsPage
     private void OpenReplyComposer(int threadId)
     {
         _replyingToEntryId = threadId;
-        _focusReplyFor = threadId;
-        foreach (var thread in ShownThreads) thread.IsComposing = thread.Id == threadId;
+        FeedDisplayItem? opened = null;
+        foreach (var thread in ShownThreads)
+        {
+            thread.IsComposing = thread.Id == threadId;
+            if (thread.IsComposing) opened = thread;
+        }
+        if (opened == null) return;
+
+        // Put the cursor in the composer once it has been laid out.
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (FeedItemsControl.ItemContainerGenerator.ContainerFromItem(opened) is not DependencyObject container) return;
+            if (FindReplyBox(container, opened) is not { } box) return;
+            Keyboard.Focus(box);
+            box.CaretIndex = box.Text.Length;
+            box.BringIntoView();
+        }, DispatcherPriority.Loaded);
+    }
+
+    private static TextBox? FindReplyBox(DependencyObject node, FeedDisplayItem thread)
+    {
+        if (node is TextBox { Tag: FeedDisplayItem tagged } box && ReferenceEquals(tagged, thread)) return box;
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(node); i++)
+        {
+            if (FindReplyBox(VisualTreeHelper.GetChild(node, i), thread) is { } found) return found;
+        }
+        return null;
     }
 
     private void CloseReplyComposer(int threadId)
     {
         if (_replyingToEntryId == threadId) _replyingToEntryId = null;
         if (ShownThreads.FirstOrDefault(t => t.Id == threadId) is { } thread) thread.IsComposing = false;
-    }
-
-    /// <summary>Put the cursor in a composer as it opens.</summary>
-    private void OnReplyBoxVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
-    {
-        if (e.NewValue is not true || sender is not TextBox { Tag: FeedDisplayItem thread } box) return;
-        if (_focusReplyFor != thread.Id) return;
-        _focusReplyFor = null;
-        Dispatcher.BeginInvoke(() =>
-        {
-            Keyboard.Focus(box);
-            box.CaretIndex = box.Text.Length;
-            box.BringIntoView();
-        }, DispatcherPriority.Input);
     }
 
     private void OnCancelReplyClicked(object sender, RoutedEventArgs e)
