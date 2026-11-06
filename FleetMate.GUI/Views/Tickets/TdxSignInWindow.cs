@@ -12,14 +12,20 @@ using Serilog;
 namespace FleetMate.GUI.Views.Tickets;
 
 /// <summary>
-/// The visible TeamDynamix sign-in, opened by Sign In when the hidden one
-/// could not finish, most often because Entra asked for multi-factor
-/// authentication. It walks the same chain in the same browser profile as
-/// <see cref="TdxHeadlessSso"/>, but the person answers Entra's pages,
-/// passkeys included. Once TeamDynamix is reached it asks loginsso for the
-/// JWT and closes. The Entra cookies stay in the shared profile and the
-/// caller saves the session, so the next launch signs in silently again.
-/// The token passes the same identity check as a silent sign-in.
+/// The visible TeamDynamix sign-in: a short-lived last resort after every
+/// silent path has failed, most often because Entra asked for multi-factor
+/// authentication. Sign In opens it on demand, and the app may open it by
+/// itself once the token is gone (see <see cref="TdxSessionPolicy.ShouldAutoOpenWindow"/>).
+/// It walks the same chain in the same browser profile as
+/// <see cref="TdxHeadlessSso"/>, with the Windows account filled in: the
+/// account tile is answered and Entra's request carries <c>login_hint</c>,
+/// so single sign-on can finish it, and otherwise the person answers Entra's
+/// pages, passkeys included. Once TeamDynamix is reached it asks loginsso
+/// for the JWT and closes. It is never modal, closes as soon as a token
+/// arrives by any route (the caller cancels it), and times out on its own.
+/// The Entra cookies stay in the shared profile and the caller saves the
+/// session, so the next launch signs in silently again. The token passes the
+/// same identity check as a silent sign-in.
 /// </summary>
 internal sealed class TdxSignInWindow : Window
 {
@@ -53,10 +59,14 @@ internal sealed class TdxSignInWindow : Window
     }
 
     /// <summary>
-    /// Show the window over <paramref name="owner"/> and wait for it to close.
-    /// Null when the person closed it, or the browser could not start.
+    /// Show the window over <paramref name="owner"/>, without blocking the UI,
+    /// and wait for it to close. Null when the person closed it or
+    /// <paramref name="ct"/> was cancelled (a token arrived another way); a
+    /// failure when it timed out or the browser could not start.
     /// </summary>
-    public static async Task<TdxSsoResult?> SignInAsync(string baseUrl, Window? owner)
+    /// <param name="activate">False opens it without taking focus, for an automatic open.</param>
+    public static async Task<TdxSsoResult?> SignInAsync(string baseUrl, Window? owner, TimeSpan timeout,
+        bool activate, CancellationToken ct)
     {
         var upn = await TdxSsoIdentity.ResolveWindowsUpnAsync();
         if (upn == null)
@@ -65,14 +75,38 @@ internal sealed class TdxSignInWindow : Window
             return TdxSsoResult.Refused(TdxSsoResult.UnknownExpectedAddressReason);
         }
 
-        var window = new TdxSignInWindow(baseUrl, upn);
+        if (ct.IsCancellationRequested) return null;
+
+        var window = new TdxSignInWindow(baseUrl, upn) { ShowActivated = activate };
         if (owner is { IsVisible: true }) window.Owner = owner;
         else window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        Log.Information("[tdx-sso] Opening the sign-in window for {Upn}", upn);
-        window.ShowDialog();
+
+        var closed = new TaskCompletionSource<TdxSsoResult?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        window.Closed += (_, _) => closed.TrySetResult(window.Result);
+
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = timeout };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (window.Result != null) return;
+            Log.Warning("[tdx-sso] The sign-in window timed out after {Timeout}; closing it", timeout);
+            window.Finish(TdxSsoResult.Failed("The sign-in window timed out"));
+        };
+        using var cancel = ct.Register(() => window.Dispatcher.BeginInvoke(() =>
+        {
+            if (window.Result != null || !window.IsVisible) return;
+            Log.Information("[tdx-sso] A TeamDynamix token arrived; closing the sign-in window");
+            window.Close();
+        }));
+
+        Log.Information("[tdx-sso] Opening the sign-in window for {Upn} ({How})", upn, activate ? "on request" : "automatically");
+        timer.Start();
+        window.Show();
+        var result = await closed.Task;
+        timer.Stop();
         Log.Information("[tdx-sso] Sign-in window closed: {Outcome}",
-            window.Result is { Success: true } ? "signed in" : window.Result?.Error ?? "closed before signing in");
-        return window.Result;
+            result is { Success: true } ? "signed in" : result?.Error ?? "closed before signing in");
+        return result;
     }
 
     private async Task StartAsync()
@@ -92,6 +126,13 @@ internal sealed class TdxSignInWindow : Window
         core.Settings.AreDevToolsEnabled = false;
         // A sign-in page that opens a window stays in this one.
         core.NewWindowRequested += (_, e) => { e.Handled = true; core.Navigate(e.Uri); };
+        // Entra's request carries the Windows account, so it is filled in.
+        core.NavigationStarting += (_, e) =>
+        {
+            if (Result != null || EntraWebSignIn.WithLoginHint(e.Uri, _upn) is not { } hinted) return;
+            e.Cancel = true;
+            core.Navigate(hinted);
+        };
         core.NavigationCompleted += async (_, e) => await OnNavigatedAsync(core, e);
         core.Navigate(TdxSsoService.BuildEntryUrl(_baseUrl));
     }

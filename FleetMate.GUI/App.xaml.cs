@@ -430,6 +430,13 @@ public partial class App : Application
     {
         var report = !renew && !IsTdxSsoAuthenticated && Config.Tdx?.SsoEnabled == true;
         Action<TdxSignInStep>? step = report ? s => SetTdxLaunchStep(s) : null;
+        // Nothing to do when signed in and not renewing; anything else is an
+        // attempt, and its outcome drives the renewal backoff.
+        var attempted = Config.Tdx?.SsoEnabled == true && TdxService != null && (renew || !IsTdxSsoAuthenticated);
+        var wasSignedIn = IsTdxSsoAuthenticated;
+        var expiryBefore = TdxService?.CurrentSsoExpiry;
+        // Requests made by this attempt never start another one.
+        using var signingIn = FleetMate.Core.Services.Tickets.TdxService.BeginSignIn();
         step?.Invoke(TdxSignInStep.FindingAccount);
         try
         {
@@ -439,6 +446,16 @@ public partial class App : Application
         {
             if (report)
                 SetTdxLaunchStep(IsTdxSsoAuthenticated && !IsTicketsCacheValid ? TdxSignInStep.LoadingTickets : null);
+            if (attempted && !_isInboxAgent)
+            {
+                var renewed = IsTdxSsoAuthenticated && (!wasSignedIn || TdxService?.CurrentSsoExpiry > expiryBefore);
+                if (renewed) _tdxPolicy.RecordSuccess();
+                else _tdxPolicy.RecordFailure();
+                if (!renewed)
+                    Log.Information("[tdx-sso] Silent sign-in did not renew ({Failures} in a row); next try in {Delay}",
+                        _tdxPolicy.Failures, TdxSessionPolicy.RetryDelay(_tdxPolicy.Failures));
+                RefreshTdxSessionStatus();
+            }
         }
     }
 
@@ -532,6 +549,7 @@ public partial class App : Application
         _ticketsCacheTime = null;
         AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Valid(session.UserName, session.ExpiryUtc));
         Log.Information("[tdx-sso] Reused the saved session for {UserName}", session.UserName ?? "(unknown)");
+        _tdxWindowCts?.Cancel();
         NotifyTdxSignInChanged();
         return true;
     }
@@ -541,6 +559,16 @@ public partial class App : Application
     /// </summary>
     private void HandleSilentSsoSuccess(TdxSsoResult result)
     {
+        // A token arrived; the sign-in window has nothing left to do.
+        _tdxWindowCts?.Cancel();
+        // A late result never replaces, or overwrites the saved copy of, a
+        // session that outlasts it: the window and the silent loop can both
+        // finish, and the newer one stands.
+        if (TdxService is { CurrentSsoToken: not null } held && !_tdxPolicy.ShouldAccept(result.Expiry, held.CurrentSsoExpiry))
+        {
+            Log.Information("[tdx-sso] Kept the session held; the new sign-in does not outlast it");
+            return;
+        }
         TdxService?.SetSsoToken(result.Token!, result.Expiry, result.UserEmail, result.UserName);
         TdxSessionStore.Save(new TdxSession
         {
@@ -576,7 +604,7 @@ public partial class App : Application
     /// <summary>The last silent attempt's result, so Sign In knows whether a window can help.</summary>
     private TdxSsoResult? _lastSilentTdxResult;
 
-    private Task<bool>? _tdxWindowSignIn;
+    private Task<bool>? _tdxRetry;
 
     /// <summary>
     /// The Sign In buttons' action: retry the silent sign-in, and when that
@@ -588,14 +616,22 @@ public partial class App : Application
     /// </summary>
     public Task<bool> RetryTdxSsoAsync()
     {
-        if (_tdxWindowSignIn is { IsCompleted: false } running) return running;
-        return _tdxWindowSignIn = RetryTdxSsoCoreAsync();
+        if (_tdxRetry is { IsCompleted: false } running) return running;
+        return _tdxRetry = RetryTdxSsoCoreAsync();
     }
 
     private async Task<bool> RetryTdxSsoCoreAsync()
     {
+        // A window already open is the one to finish.
+        if (_tdxWindow is { IsCompleted: false } open) return await open;
+
         _lastSilentTdxResult = null;
-        try { await AttemptSilentTdxSsoAsync(); }
+        try
+        {
+            // Silent first: a session another process saved, then the chain.
+            if (TdxService == null || !await TdxService.ReloadSharedSessionAsync(force: true))
+                await AttemptSilentTdxSsoAsync();
+        }
         catch (Exception ex) { Log.Warning(ex, "[tdx-sso] Silent SSO retry failed"); }
         if (IsTdxSsoAuthenticated) return true;
 
@@ -606,19 +642,7 @@ public partial class App : Application
             return false;
         }
 
-        var owner = Current.Windows.OfType<MainWindow>().FirstOrDefault();
-        var result = await TdxSignInWindow.SignInAsync(tdx.BaseUrl, owner);
-        if (result is { Success: true, Token: not null })
-        {
-            HandleSilentSsoSuccess(result);
-            return true;
-        }
-        if (result != null)
-        {
-            if (result.IdentityRefused) TdxSessionStore.Clear();
-            AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Failed(result.Error ?? "TeamDynamix sign-in did not finish"));
-        }
-        return false;
+        return await OpenTdxSignInWindowAsync(automatic: false);
     }
 
     // MARK: - DevOps SSO Authentication
@@ -871,6 +895,7 @@ public partial class App : Application
         if (inboxAgent)
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            StartTdxSessionKeeper();
             _ = Dispatcher.InvokeAsync(() => new InboxAgent(this).RunAsync());
             return;
         }
@@ -919,6 +944,9 @@ public partial class App : Application
                 .Select(r => new FleetMate.GUI.Views.Shared.ToolbarSearchResult(r.Category, r.Title, r.Detail, r.Open, r.Record))
                 .ToList();
         ElevationMonitor?.Start();
+
+        // Keep the TeamDynamix sign-in renewed while the window is open.
+        StartTdxSessionKeeper();
 
         // Attempt silent TDX SSO, then preload all data in the background
         _ = InitializeAndPreloadAsync();
@@ -1181,6 +1209,7 @@ public partial class App : Application
         Config = LoadDesktopConfiguration();
         AuthManager = new AuthManager(Config);
         InitializeServices();
+        StartTdxSessionKeeper();
         ElevationMonitor?.Start();
         // The Handbook and skills repositories can change in Settings too.
         Handbook?.Stop();
@@ -1268,6 +1297,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        StopTdxSessionKeeper();
         Links.LinkHost.Stop();
         GraphService?.Dispose();
         SnipeService?.Dispose();
