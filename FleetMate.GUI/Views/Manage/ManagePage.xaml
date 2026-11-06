@@ -554,7 +554,7 @@
                     <ListBox x:Name="ResultsList" Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
                              Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemContainerStyle>
-                            <Style TargetType="ListBoxItem">
+                            <Style TargetType="ListBoxItem" BasedOn="{StaticResource FleetListBoxItemStyle}">
                                 <Setter Property="Padding" Value="8,2" />
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                 <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
