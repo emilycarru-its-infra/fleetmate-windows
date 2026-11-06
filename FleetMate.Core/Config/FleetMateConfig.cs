@@ -132,6 +132,22 @@ public class FleetMateConfig
     /// </summary>
     public string? TeamsApiPurpose { get; set; }
 
+    /// <summary>
+    /// Extra hosts whose links in Teams search results may be opened or printed, beside the
+    /// Microsoft Teams and SharePoint hosts allowed by default; comma separated, a leading
+    /// <c>*.</c> or a bare domain also allows its subdomains. config.yaml
+    /// <c>teams_link_hosts</c>, registry or policy <c>TeamsLinkHosts</c>, or
+    /// <c>FLEETMATE_TEAMS_LINK_HOSTS</c>.
+    /// </summary>
+    public string? TeamsLinkHosts { get; set; }
+
+    [YamlMember(Alias = "teams_link_hosts", ApplyNamingConventions = false)]
+    public string? TeamsLinkHostsSetting
+    {
+        get => null;
+        set { if (!string.IsNullOrWhiteSpace(value)) TeamsLinkHosts = value; }
+    }
+
     [YamlMember(Alias = "teams_api_purpose", ApplyNamingConventions = false)]
     public string? TeamsApiPurposeSetting
     {
@@ -413,6 +429,10 @@ public class FleetMateConfig
         if (!string.IsNullOrWhiteSpace(teamsApiPurpose))
             config.TeamsApiPurpose = teamsApiPurpose;
 
+        var teamsLinkHosts = Environment.GetEnvironmentVariable("FLEETMATE_TEAMS_LINK_HOSTS");
+        if (!string.IsNullOrWhiteSpace(teamsLinkHosts))
+            config.TeamsLinkHosts = teamsLinkHosts;
+
         var devOpsBaseUrlEnv = Environment.GetEnvironmentVariable("AZDEVOPS_URL");
         if (!string.IsNullOrWhiteSpace(devOpsBaseUrlEnv))
         {
@@ -478,6 +498,7 @@ public class FleetMateConfig
         TeamsApiUrl = null;
         TeamsApiScope = null;
         TeamsApiPurpose = null;
+        TeamsLinkHosts = null;
 #pragma warning disable CS0618 // the retired secrets go too
         SnipeApiKey = null;
         ReportMatePassphrase = null;
@@ -658,6 +679,10 @@ public class FleetMateConfig
             var teamsApiPurpose = key.GetValue("TeamsApiPurpose") as string;
             if (!string.IsNullOrEmpty(teamsApiPurpose))
                 config.TeamsApiPurpose = teamsApiPurpose;
+
+            var teamsLinkHosts = key.GetValue("TeamsLinkHosts") as string;
+            if (!string.IsNullOrEmpty(teamsLinkHosts))
+                config.TeamsLinkHosts = teamsLinkHosts;
 
             var entraClientId = key.GetValue("EntraClientId") as string;
             if (!string.IsNullOrEmpty(entraClientId))
@@ -858,7 +883,7 @@ public class FleetMateConfig
             "GraphTenantId", "GraphClientId", "SnipeUrl", "SnipeOidcAudience",
             "TdxBaseUrl", "TdxTicketingAppId", "DevOpsBaseUrl", "DevOpsOrganization", "DevOpsProject",
             "ReportMateUrl", "HandbookRepoUrl", "HandbookSiteUrl", "AgentsHubRepoUrl",
-            "TeamsApiUrl", "TeamsApiScope", "TeamsApiPurpose",
+            "TeamsApiUrl", "TeamsApiScope", "TeamsApiPurpose", "TeamsLinkHosts",
             "ManageRosterPath", "ManageRosterRepoProject", "ManageRosterRepo", "ManageRosterRepoPath",
             "ManageCommandsPath", "ManageTerminalProfile", "ManageRdpUser",
             "ManageIncludeRetired", "ManageIncludeProvisioning", "SecureShellKeyPath", "SecureShellUser"
