@@ -124,3 +124,14 @@ vertical space so shorter lists use their card instead of leaving an unused lowe
 
 Repository Insights history always reads `refs/remotes/origin/main`, never the checked-out
 branch or local `main`. A missing remote ref is an error; do not silently fall back to HEAD.
+
+## TeamDynamix sign-in
+
+Sign-in is silent first and the window is a last resort. The window renews its TeamDynamix token
+two hours before expiry: first a fresher session another process saved (the inbox helper or the
+other edition), then HTTP Negotiate, then the hidden WebView2. Failures are retried after 1, 5 and
+15 minutes, then every 15, and at once on wake, unlock and network changes. The sign-in window
+opens by itself only when every silent path has just failed and the token is gone or under 10
+minutes from it, at most once per 30 minutes. It never blocks the UI, fills in the account, closes
+when a token arrives and times out on its own. The rules live in `TdxSessionPolicy`, so change
+them there, with its tests, rather than in the GUI.

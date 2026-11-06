@@ -35,6 +35,7 @@ public partial class App
     private bool _tdxTickRunning;
     private bool _tdxSystemHooks;
     private bool _tdxLastSignedIn;
+    private volatile bool _tdxSessionLocked;
     private TdxService? _tdxWiredService;
     private CancellationTokenSource? _tdxWindowCts;
     private Task<bool>? _tdxWindow;
@@ -213,6 +214,9 @@ public partial class App
         if (_tdxPolicy.IsUsable(HeldTdxExpiry) && _tdxPolicy.Failures == 0) return;
 
         var silentFailed = _lastSilentTdxResult is { Success: false } last && TdxSsoResult.ShouldOfferWindow(last);
+        // Nobody can answer a window on a locked session, and with no network
+        // it would only show an error page; the next kick tries again.
+        if (_tdxSessionLocked || !NetworkInterface.GetIsNetworkAvailable()) return;
         if (_tdxPolicy.ShouldAutoOpenWindow(HeldTdxExpiry, silentFailed,
                 identityRefused: _lastSilentTdxResult is { IdentityRefused: true },
                 windowOpen: _tdxWindow is { IsCompleted: false }))
@@ -327,6 +331,8 @@ public partial class App
 
     private void OnTdxSessionSwitch(object? sender, SessionSwitchEventArgs e)
     {
+        if (e.Reason is SessionSwitchReason.SessionLock) _tdxSessionLocked = true;
+        else if (e.Reason is SessionSwitchReason.SessionUnlock) _tdxSessionLocked = false;
         if (e.Reason is SessionSwitchReason.SessionUnlock or SessionSwitchReason.SessionLogon
             or SessionSwitchReason.ConsoleConnect or SessionSwitchReason.RemoteConnect)
             KickTdxRenewal("session unlock");
