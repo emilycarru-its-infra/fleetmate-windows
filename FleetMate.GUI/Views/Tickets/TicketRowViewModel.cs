@@ -39,7 +39,11 @@ public sealed class TicketRowViewModel
     /// private-use codepoints, which render as empty boxes in any font that is
     /// not MDL2 — and the XAML asks for Segoe UI Symbol.
     /// </summary>
-    public string TriangleGlyph => Row.IsExpanded ? "▾" : "▸";
+    /// <summary>
+    /// The disclosure chevron, the same Segoe Fluent glyphs the detail pane's
+    /// accordions use: down when open, right when folded.
+    /// </summary>
+    public string TriangleGlyph => Row.IsExpanded ? "" : "";
 
     /// <summary>
     /// Leaves get no triangle but still need the space, or their titles would

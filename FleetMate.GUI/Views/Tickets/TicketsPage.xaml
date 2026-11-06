@@ -390,7 +390,7 @@
                                                         AutomationProperties.Name="{Binding DisclosureName}"
                                                         Tag="{Binding}" Click="OnToggleTicketFold"
                                                         Focusable="False"
-                                                        FontFamily="Segoe UI Symbol" FontSize="9"
+                                                        FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="10"
                                                         Width="14" Height="16" MinWidth="0" MinHeight="0" Padding="0" Margin="0,0,2,0"
                                                         VerticalAlignment="Center"
                                                         Background="Transparent" BorderThickness="0" />
@@ -620,7 +620,7 @@
                                                                         Visibility="{Binding TriangleVisibility}"
                                                                         ToolTip="{Binding ChildCountTooltip}"
                                                                         Tag="{Binding}" Click="OnToggleTicketFold"
-                                                                        FontFamily="Segoe UI Symbol" FontSize="9"
+                                                                        FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="10"
                                                                         Width="14" Height="14" Padding="0" Margin="0,0,4,0"
                                                                         VerticalAlignment="Center"
                                                                         Background="Transparent" BorderThickness="0" />

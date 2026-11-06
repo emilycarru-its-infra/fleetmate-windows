@@ -65,8 +65,8 @@ public class TicketRowViewModelTests
     {
         // Matching the glyph to the direction the content moves is what makes a
         // disclosure control legible without a label.
-        Assert.Equal("▾", Vm(childCount: 2, expanded: true).TriangleGlyph);
-        Assert.Equal("▸", Vm(childCount: 2, expanded: false).TriangleGlyph);
+        Assert.Equal("", Vm(childCount: 2, expanded: true).TriangleGlyph);
+        Assert.Equal("", Vm(childCount: 2, expanded: false).TriangleGlyph);
     }
 
     [Fact]
