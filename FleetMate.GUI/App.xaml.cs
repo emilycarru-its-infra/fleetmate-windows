@@ -394,8 +394,8 @@ public partial class App : Application
 
     /// <param name="renew">
     /// Sign in again even while signed in, without reusing the saved session.
-    /// The inbox helper renews this way twice a day so the saved session stays
-    /// fresh for the window's next launch.
+    /// The session keeper renews this way two hours before expiry, in the
+    /// window and the inbox helper alike.
     /// </param>
     internal Task AttemptSilentTdxSsoAsync(bool renew)
     {
@@ -446,7 +446,7 @@ public partial class App : Application
         {
             if (report)
                 SetTdxLaunchStep(IsTdxSsoAuthenticated && !IsTicketsCacheValid ? TdxSignInStep.LoadingTickets : null);
-            if (attempted && !_isInboxAgent)
+            if (attempted)
             {
                 var renewed = IsTdxSsoAuthenticated && (!wasSignedIn || TdxService?.CurrentSsoExpiry > expiryBefore);
                 if (renewed) _tdxPolicy.RecordSuccess();
@@ -478,12 +478,33 @@ public partial class App : Application
         if (!renew) AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Authenticating());
         Log.Information("[tdx-sso] Starting silent SSO for {BaseUrl}", Config.Tdx.BaseUrl);
 
-        var result = await TdxHeadlessSso.SignInAsync(Config.Tdx.BaseUrl, step: step);
-        _lastSilentTdxResult = result;
-        if (result is { Success: true, Token: not null })
+        // One process signs in at a time, across the window, the inbox helper
+        // and the other edition. One that finds another signing in waits for
+        // it and takes the session it saved instead of running the chain too.
+        var baseUrl = Config.Tdx.BaseUrl;
+        TdxSsoResult? result = null;
+        var turn = await RenewalLock.RenewOrAdoptAsync(
+            renew: async () =>
+            {
+                result = await TdxHeadlessSso.SignInAsync(baseUrl, step: step);
+                _lastSilentTdxResult = result;
+                if (result is not { Success: true, Token: not null }) return false;
+                // Saved with the lock still held, so the next process to take it sees this session.
+                HandleSilentSsoSuccess(result);
+                return true;
+            },
+            adopt: () => TdxService is { } tdx ? tdx.ReloadSharedSessionAsync(force: true) : Task.FromResult(false),
+            wait: TdxSessionPolicy.RenewalLockWait);
+        if (turn is TdxRenewalTurn.Renewed) return;
+        if (turn is TdxRenewalTurn.Adopted)
         {
-            HandleSilentSsoSuccess(result);
+            Log.Information("[tdx-sso] Took the session another process just saved");
             return;
+        }
+        if (turn is TdxRenewalTurn.OtherFailed || result == null)
+        {
+            result = TdxSsoResult.Failed("Another app was signing in to TeamDynamix and did not finish");
+            _lastSilentTdxResult = result;
         }
 
         if (result.IdentityRefused) TdxSessionStore.Clear();
@@ -502,6 +523,9 @@ public partial class App : Application
 
     /// <summary>The saved TeamDynamix session, encrypted for this Windows user.</summary>
     internal TdxSessionCache TdxSessionStore { get; } = new();
+
+    /// <summary>Held while this process runs the sign-in chain; shared with the helper and the other edition.</summary>
+    private static readonly TdxRenewalLock RenewalLock = new();
 
     /// <summary>
     /// Reuse the saved sign-in when it has more than an hour left, skipping the
@@ -642,7 +666,7 @@ public partial class App : Application
             return false;
         }
 
-        return await OpenTdxSignInWindowAsync(automatic: false);
+        return await OpenTdxSignInWindowAsync();
     }
 
     // MARK: - DevOps SSO Authentication
