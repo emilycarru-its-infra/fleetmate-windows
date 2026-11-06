@@ -52,7 +52,7 @@
             <!-- Sign In appears only when silent sign-in failed; a signed-in
                  user needs no indicator, since the tickets loading says it. -->
             <Button x:Name="SsoLoginButton" DockPanel.Dock="Right" Content="Sign In" Margin="8,0,0,0"
-                    ToolTip="Sign-in to TeamDynamix failed. Try the silent sign-in again." Click="OnSsoLoginClicked" Visibility="Collapsed"/>
+                    ToolTip="Sign in to TeamDynamix. A sign-in window opens if the automatic sign-in cannot finish." Click="OnSsoLoginClicked" Visibility="Collapsed"/>
             <TextBlock x:Name="TicketCountText" DockPanel.Dock="Right" Text="0 of 0" VerticalAlignment="Center" Margin="12,0,0,0"
                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
 

@@ -298,7 +298,26 @@ public class TdxSsoResult
     public const string UnknownExpectedAddressReason =
         "TDX sign-in refused: the signed-in user's own address could not be determined";
 
+    /// <summary>
+    /// The sign-in stopped where a person has to answer: Entra asked for
+    /// multi-factor authentication, which a hidden browser cannot give. Only
+    /// a visible sign-in window can finish it.
+    /// </summary>
+    public bool NeedsInteraction { get; init; }
+
     public static TdxSsoResult Failed(string error) => new() { Success = false, Error = error };
+
+    /// <summary>A sign-in that needs a person at the machine to finish.</summary>
+    public static TdxSsoResult NeedsSignIn(string reason) =>
+        new() { Success = false, NeedsInteraction = true, Error = reason };
+
+    /// <summary>
+    /// Whether Sign In should open the visible sign-in window after this
+    /// silent attempt: it did not succeed, and it was not refused for being
+    /// the wrong account, which a window would only reach again.
+    /// </summary>
+    public static bool ShouldOfferWindow(TdxSsoResult? silent) =>
+        silent is not { Success: true } && silent is not { IdentityRefused: true };
 
     /// <summary>A sign-in refused by the identity check; no token is carried.</summary>
     public static TdxSsoResult Refused(string reason) =>

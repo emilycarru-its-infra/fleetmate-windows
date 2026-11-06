@@ -198,8 +198,9 @@ private bool _isInitialLoadDone;
     private async void OnSsoLoginClicked(object sender, RoutedEventArgs e)
     {
         if (_app == null) return;
-        // Retries the silent sign-in; no window opens. A success raises
-        // TdxSignInChanged, which reloads the list and resolves the person.
+        // Retries the silent sign-in, then opens the sign-in window if that
+        // cannot finish. A success raises TdxSignInChanged, which reloads the
+        // list and resolves the person.
         await _app.RetryTdxSsoAsync();
         UpdateSsoState();
     }

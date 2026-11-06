@@ -1,3 +1,4 @@
+using FleetMate.Core.Services.Tickets;
 using FleetMate.Core.Services;
 using Xunit;
 
@@ -84,10 +85,11 @@ public class HeadlessSignInTests
     }
 
     [Fact]
-    public void TheAppHasNoSignInWindow()
+    public void TheOnlySignInWindowIsTheTeamDynamixFallback()
     {
-        // Web sign-in runs in a hidden WebView2 and fails rather than prompting;
-        // a Window subclass for sign-in would be a way back to a visible prompt.
+        // Web sign-in runs in a hidden WebView2. The one visible sign-in is the
+        // TeamDynamix window that Sign In opens when Entra wants a second
+        // factor; any other sign-in Window would be a new prompt on launch.
         var assembly = typeof(FleetMate.GUI.Views.Shared.HiddenWebView).Assembly;
         Type[] types;
         try { types = assembly.GetTypes(); }
@@ -99,6 +101,25 @@ public class HeadlessSignInTests
                      || t.Name.Contains("SignIn", StringComparison.OrdinalIgnoreCase))
             .Select(t => t.FullName)
             .ToList();
-        Assert.Empty(signInWindows);
+        Assert.Equal(new[] { typeof(FleetMate.GUI.Views.Tickets.TdxSignInWindow).FullName }, signInWindows);
+    }
+
+    [Fact]
+    public void SignInOffersTheWindowUnlessTheSilentAttemptWorkedOrWasTheWrongAccount()
+    {
+        Assert.True(TdxSsoResult.ShouldOfferWindow(TdxSsoResult.NeedsSignIn("Entra wants a second factor")));
+        Assert.True(TdxSsoResult.ShouldOfferWindow(TdxSsoResult.Failed("Silent SSO stopped")));
+        Assert.True(TdxSsoResult.ShouldOfferWindow(null));
+        Assert.False(TdxSsoResult.ShouldOfferWindow(new TdxSsoResult { Success = true, Token = "a.b.c" }));
+        Assert.False(TdxSsoResult.ShouldOfferWindow(TdxSsoResult.Refused(TdxSsoResult.NoAddressInTokenReason)));
+    }
+
+    [Fact]
+    public void AMultiFactorStopNeedsAPerson()
+    {
+        var result = TdxSsoResult.NeedsSignIn("Entra wants a second factor");
+        Assert.False(result.Success);
+        Assert.True(result.NeedsInteraction);
+        Assert.False(result.IdentityRefused);
     }
 }

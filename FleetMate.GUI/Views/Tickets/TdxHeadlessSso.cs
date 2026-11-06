@@ -20,7 +20,13 @@ namespace FleetMate.GUI.Views.Tickets;
 ///      Windows account's, "Stay signed in" is accepted, and once TeamDynamix is
 ///      reached the browser session asks loginsso for the JWT.
 ///
-/// There is no third, visible step. When neither finishes within
+/// Entra's passkey page means it wants multi-factor authentication, which a
+/// hidden browser cannot give: the attempt stops there at once with
+/// <see cref="TdxSsoResult.NeedsInteraction"/>, rather than moving on to an
+/// Authenticator push whose number nobody can see, and Sign In opens
+/// <see cref="TdxSignInWindow"/> to finish it.
+///
+/// When neither phase finishes within
 /// <see cref="EntraWebSignIn.HeadlessTimeout"/> the result is a failure that
 /// names where the chain stopped, and TeamDynamix is reported as not signed in.
 /// It is the user's own identity or nothing: there is no shared account to
@@ -33,7 +39,7 @@ namespace FleetMate.GUI.Views.Tickets;
 internal static class TdxHeadlessSso
 {
     /// <summary>Paths that mean the browser has reached TeamDynamix signed in.</summary>
-    private static readonly string[] SignedInPaths =
+    internal static readonly string[] SignedInPaths =
     {
         "/SBTDClient/",
         "/TDClient/",
@@ -116,6 +122,13 @@ internal static class TdxHeadlessSso
 
                 try
                 {
+                    if (EntraWebSignIn.IsPasskeyPage(url))
+                    {
+                        Log.Information("[tdx-sso] Microsoft sign-in asked for multi-factor authentication; a visible sign-in is needed");
+                        tcs.TrySetResult(TdxSsoResult.NeedsSignIn(MfaReason));
+                        return;
+                    }
+
                     if (EntraWebSignIn.IsEntraPage(url))
                     {
                         // The same handling as the API and Azure DevOps sign-ins,
@@ -170,7 +183,10 @@ internal static class TdxHeadlessSso
     /// Windows account's. A refused token is dropped here and never
     /// reaches the caller.
     /// </summary>
-    private static TdxSsoResult Checked(string token, string expectedUpn)
+    internal const string MfaReason =
+        "Microsoft sign-in asked for multi-factor authentication. Click Sign In to finish it in a sign-in window.";
+
+    internal static TdxSsoResult Checked(string token, string expectedUpn)
     {
         var result = TdxSsoIdentity.Verify(token, expectedUpn);
         if (!result.Success)
@@ -178,7 +194,7 @@ internal static class TdxHeadlessSso
             Log.Error("[tdx-sso] {Reason}; token discarded, sign-in refused", result.Error);
             return result;
         }
-        Log.Information("[tdx-sso] JWT acquired in the hidden browser for {User}", result.UserName ?? result.UserEmail ?? "(unknown)");
+        Log.Information("[tdx-sso] JWT acquired for {User}", result.UserName ?? result.UserEmail ?? "(unknown)");
         return result;
     }
 }
