@@ -38,7 +38,7 @@ public partial class TicketsPage
             .ToList();
 
         AttachmentsList.ItemsSource = rows;
-        AttachmentsHeaderText.Text = "Attachments";
+        AttachmentsHeaderText.Text = $"Attachments · {rows.Count}";
         AttachmentsSection.Visibility = rows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 

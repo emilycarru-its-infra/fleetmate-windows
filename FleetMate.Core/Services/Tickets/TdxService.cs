@@ -1482,6 +1482,62 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
         return _priorityCache;
     }
 
+    private readonly Dictionary<string, (Dictionary<int, string> Items, DateTime Expiry)> _lookupCache = new();
+
+    /// <summary>The ticketing application's forms, active ones only, for the detail pane's Form picker.</summary>
+    public Task<Dictionary<int, string>> GetFormsAsync() =>
+        GetLookupAsync("forms", () => _client.GetAsync(_config.GetTicketsUrl("forms")),
+            (List<TdxLookupItem> items) => items.Where(i => i.Active != false));
+
+    /// <summary>Services, labelled by their full category path where TDX supplies one.</summary>
+    public Task<Dictionary<int, string>> GetServicesAsync() =>
+        GetLookupAsync("services", () => _client.GetAsync(_config.GetApiUrl("services")),
+            (List<TdxLookupItem> items) => items.Where(i => i.IsActive != false)
+                .Select(i => string.IsNullOrWhiteSpace(i.CompositeName) ? i : new TdxLookupItem { Id = i.Id, Name = i.CompositeName }));
+
+    /// <summary>Active groups, for the detail pane's Group picker.</summary>
+    public Task<Dictionary<int, string>> GetGroupsAsync() =>
+        GetLookupAsync("groups", () => _client.PostAsync(_config.GetApiUrl("groups/search"),
+                new StringContent(JsonSerializer.Serialize(new Dictionary<string, object> { ["IsActive"] = true }, _jsonOptions),
+                    Encoding.UTF8, "application/json")),
+            (List<TdxLookupItem> items) => items.Where(i => i.IsActive != false));
+
+    /// <summary>
+    /// One reference list, cached like statuses and priorities. A failed read
+    /// keeps the last list it had, and an empty one means the picker offers
+    /// only the ticket's own value.
+    /// </summary>
+    private async Task<Dictionary<int, string>> GetLookupAsync(
+        string key, Func<Task<HttpResponseMessage>> send, Func<List<TdxLookupItem>, IEnumerable<TdxLookupItem>> select)
+    {
+        if (_lookupCache.TryGetValue(key, out var cached) && DateTime.UtcNow < cached.Expiry) return cached.Items;
+        var last = cached.Items ?? new Dictionary<int, string>();
+        if (!await SetAuthorizationAsync()) return last;
+
+        try
+        {
+            using var response = await send();
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Warning("Failed to load ticket {Lookup}: {Status}", key, response.StatusCode);
+                return last;
+            }
+            var items = await response.Content.ReadFromJsonAsync<List<TdxLookupItem>>(_jsonOptions) ?? new();
+            var result = new Dictionary<int, string>();
+            foreach (var item in select(items))
+            {
+                if (item.Id > 0 && !string.IsNullOrWhiteSpace(item.Name)) result[item.Id] = item.Name!;
+            }
+            _lookupCache[key] = (result, DateTime.UtcNow.Add(_cacheDuration));
+            return result;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to load ticket {Lookup}", key);
+            return last;
+        }
+    }
+
     #endregion
 
     private TdxTicketTaskService? _tasks;
@@ -1512,6 +1568,16 @@ internal class TdxTypeItem
 {
     public int Id { get; set; }
     public string? Name { get; set; }
+}
+
+/// <summary>A form, service or group: the fields the detail pane's pickers need.</summary>
+internal class TdxLookupItem
+{
+    public int Id { get; set; }
+    public string? Name { get; set; }
+    public string? CompositeName { get; set; }
+    public bool? IsActive { get; set; }
+    public bool? Active { get; set; }
 }
 
 internal class TdxPriorityItem

@@ -710,14 +710,20 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <!-- Panel Header, laid out like the macOS detail header: a
-                         chevron that closes the pane, pointing the way it goes; the
-                         ticket number (click to copy), copy-link and open-in-TDX,
-                         then the actions on the same row. The actions wrap under
-                         themselves in a narrow pane instead of clipping. -->
-                    <StackPanel Grid.Row="0" Margin="12,12,12,8">
-                        <DockPanel>
-                            <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Top" Margin="0,0,8,0">
+                    <!-- Panel Header, laid out like the macOS detail header. One row:
+                         on the left a chevron that closes the pane, the ticket number
+                         (click to copy), copy-link and open-in-browser; on the right
+                         the ticket actions. The actions never wrap: when the row is
+                         too narrow for their labels they drop to icons, as on the Mac.
+                         The title sits on the line below, then a divider. -->
+                    <StackPanel Grid.Row="0" Margin="12,12,12,0">
+                        <Grid x:Name="DetailHeaderRow" SizeChanged="OnDetailHeaderSizeChanged">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel x:Name="DetailIdentityPanel" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0"
+                                        SizeChanged="OnDetailHeaderSizeChanged">
                                 <Button x:Name="CloseDetailButton" Click="OnCloseDetailPanel" ToolTip="Close the ticket (Esc)"
                                         AutomationProperties.Name="Close the ticket"
                                         Style="{StaticResource ChromeIconButtonStyle}" MinWidth="0" Padding="2,5,6,5">
@@ -725,70 +731,83 @@
                                                  Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                 </Button>
                                 <Button x:Name="CopyTicketIdButton" Click="OnCopyTicketIdClicked"
-                                        ToolTip="Copy ticket number" Style="{StaticResource ChromeIconButtonStyle}" Padding="0,2,6,2">
+                                        ToolTip="Copy ticket number" AutomationProperties.Name="Copy ticket number"
+                                        Style="{StaticResource ChromeIconButtonStyle}" Padding="0,2,6,2">
                                     <TextBlock x:Name="DetailTicketIdText" FontWeight="Bold" FontSize="18"
                                                Foreground="{DynamicResource SystemControlForegroundAccentBrush}" />
                                 </Button>
                                 <Button x:Name="CopyTicketLinkButton" Click="OnCopyTicketLinkClicked"
-                                        ToolTip="Copy ticket link" Style="{StaticResource ChromeIconButtonStyle}">
+                                        ToolTip="Copy ticket link" AutomationProperties.Name="Copy ticket link"
+                                        Style="{StaticResource ChromeIconButtonStyle}">
                                     <ui:FontIcon Glyph="&#xE71B;" FontFamily="Segoe Fluent Icons" FontSize="14" />
                                 </Button>
                                 <Button x:Name="OpenInWebButton" Click="OnOpenInWebClicked"
-                                        ToolTip="Open in TDX" Style="{StaticResource ChromeIconButtonStyle}">
+                                        ToolTip="Open ticket in web browser" AutomationProperties.Name="Open ticket in web browser"
+                                        Style="{StaticResource ChromeIconButtonStyle}">
                                     <ui:FontIcon Glyph="&#xE774;" FontFamily="Segoe Fluent Icons" FontSize="14" />
                                 </Button>
                                 <shared:AgentContextButton x:Name="AgentButton" Style="{StaticResource ChromeIconButtonStyle}" />
                             </StackPanel>
 
-                        <WrapPanel x:Name="DetailActionsPanel" VerticalAlignment="Center">
-                            <WrapPanel.Resources>
-                                <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-                                    <Setter Property="Padding" Value="10,0" />
-                                    <Setter Property="Height" Value="30" />
-                                    <Setter Property="MinHeight" Value="0" />
-                                    <Setter Property="Margin" Value="0,2,6,2" />
-                                    <Setter Property="FontSize" Value="12" />
-                                </Style>
-                            </WrapPanel.Resources>
-                            <Button x:Name="AssignToMeButton" Click="OnAssignToMeClicked" ToolTip="Make me the responsible">
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:FontIcon Glyph="&#xE77B;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
-                                    <TextBlock Text="Assign to me" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </Button>
-                            <Button x:Name="ReassignButton" Click="OnReassignClicked" ToolTip="Reassign to someone else">
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:FontIcon Glyph="&#xE716;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
-                                    <TextBlock Text="Reassign" VerticalAlignment="Center" />
-                                    <ui:FontIcon Glyph="&#xE70D;" FontFamily="Segoe Fluent Icons" FontSize="9" Margin="6,0,0,0" />
-                                </StackPanel>
-                            </Button>
-                            <Button x:Name="UnassignButton" Click="OnUnassignClicked" ToolTip="Clear the responsible person">
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:FontIcon Glyph="&#xE8F8;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
-                                    <TextBlock Text="Unassign" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </Button>
-                            <Button x:Name="SetParentButton" Click="OnSetParentClicked" ToolTip="Set or clear this ticket's parent">
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:FontIcon Glyph="&#xE74A;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
-                                    <TextBlock Text="Set Parent" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </Button>
-                            <Button x:Name="CreateParentButton" Click="OnCreateParentClicked" ToolTip="Create a new ticket and make it this ticket's parent">
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:FontIcon Glyph="&#xE710;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
-                                    <TextBlock Text="Create Parent" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </Button>
-                            <Button Click="OnRefreshDetailClicked" ToolTip="Refresh this ticket">
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:FontIcon Glyph="&#xE72C;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
-                                    <TextBlock Text="Refresh" VerticalAlignment="Center" />
-                                </StackPanel>
-                            </Button>
-                        </WrapPanel>
-                        </DockPanel>
+                            <StackPanel x:Name="DetailActionsPanel" Grid.Column="1" Orientation="Horizontal"
+                                        HorizontalAlignment="Right" VerticalAlignment="Center" ClipToBounds="True">
+                                <StackPanel.Resources>
+                                    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                        <Setter Property="Padding" Value="10,0" />
+                                        <Setter Property="Height" Value="30" />
+                                        <Setter Property="MinHeight" Value="0" />
+                                        <Setter Property="MinWidth" Value="0" />
+                                        <Setter Property="Margin" Value="6,2,0,2" />
+                                        <Setter Property="FontSize" Value="12" />
+                                    </Style>
+                                </StackPanel.Resources>
+                                <Button x:Name="AssignToMeButton" Click="OnAssignToMeClicked" ToolTip="Make me the responsible"
+                                        AutomationProperties.Name="Assign to me">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:FontIcon Glyph="&#xE77B;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
+                                        <TextBlock Text="Assign to me" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="ReassignButton" Click="OnReassignClicked" ToolTip="Reassign to someone else"
+                                        AutomationProperties.Name="Reassign">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:FontIcon Glyph="&#xE716;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
+                                        <TextBlock Text="Reassign" VerticalAlignment="Center" />
+                                        <ui:FontIcon Glyph="&#xE70D;" FontFamily="Segoe Fluent Icons" FontSize="9" Margin="6,0,0,0" />
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="UnassignButton" Click="OnUnassignClicked" ToolTip="Clear the responsible person"
+                                        AutomationProperties.Name="Unassign">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:FontIcon Glyph="&#xE8F8;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
+                                        <TextBlock Text="Unassign" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="SetParentButton" Click="OnSetParentClicked" ToolTip="Set or clear this ticket's parent"
+                                        AutomationProperties.Name="Set Parent">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:FontIcon Glyph="&#xE74A;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
+                                        <TextBlock Text="Set Parent" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="CreateParentButton" Click="OnCreateParentClicked" ToolTip="Create a new ticket and make it this ticket's parent"
+                                        AutomationProperties.Name="Create Parent">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:FontIcon Glyph="&#xE710;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
+                                        <TextBlock Text="Create Parent" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Click="OnRefreshDetailClicked" ToolTip="Refresh this ticket" AutomationProperties.Name="Refresh">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:FontIcon Glyph="&#xE72C;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
+                                        <TextBlock Text="Refresh" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBlock x:Name="DetailTitleText" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0" />
+                        <Separator Margin="0,8,0,0" />
 
                         <!-- Reassign popover, anchored to its button. The candidates
                              are TDX's eligible assignments for the ticketing
@@ -906,61 +925,72 @@
                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                     <Grid>
                         <StackPanel x:Name="DetailContent" Margin="12,0,12,12" Visibility="Collapsed" Grid.IsSharedSizeScope="True">
-                            <!-- Title -->
-                            <TextBlock x:Name="DetailTitleText" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8" />
-
-                            <!-- Status and Priority -->
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                <Border x:Name="DetailStatusBadge" Padding="8,4" CornerRadius="4" Margin="0,0,8,0">
-                                    <TextBlock x:Name="DetailStatusText" FontSize="12" />
-                                </Border>
-                                <Border Background="#FFF0D080" Padding="8,4" CornerRadius="4">
-                                    <TextBlock x:Name="DetailPriorityText" FontSize="12" />
-                                </Border>
-                            </StackPanel>
-
-                            <!-- Two columns to save height: the editable fields on the
-                                 left, the read-only facts on the right. Status, Priority
-                                 and Classification change the ticket as soon as a new
-                                 value is picked, like Reassign. -->
-                            <Grid Margin="0,0,0,4">
+                            <!-- Fields, as on the Mac: two equal columns filling the width.
+                                 Left, the ticket's own fields, each a picker that changes the
+                                 ticket as soon as a new value is chosen; right, the people on it
+                                 and its timestamps. Labels carry no colons. -->
+                            <Grid Margin="0,8,0,4">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="24" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="20" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
+                                <Grid.Resources>
+                                    <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                                        <Setter Property="Height" Value="30" />
+                                        <Setter Property="MinHeight" Value="0" />
+                                        <Setter Property="MinWidth" Value="0" />
+                                        <Setter Property="HorizontalAlignment" Value="Stretch" />
+                                        <Setter Property="VerticalAlignment" Value="Center" />
+                                        <Setter Property="VerticalContentAlignment" Value="Center" />
+                                        <Setter Property="FontSize" Value="13" />
+                                        <Setter Property="DisplayMemberPath" Value="Value" />
+                                        <Setter Property="SelectedValuePath" Value="Key" />
+                                    </Style>
+                                    <Style x:Key="DetailLabel" TargetType="TextBlock">
+                                        <Setter Property="FontSize" Value="13" />
+                                        <Setter Property="VerticalAlignment" Value="Center" />
+                                        <Setter Property="Margin" Value="0,0,12,0" />
+                                        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    </Style>
+                                    <Style x:Key="DetailValue" TargetType="TextBlock">
+                                        <Setter Property="FontSize" Value="13" />
+                                        <Setter Property="VerticalAlignment" Value="Center" />
+                                        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                    </Style>
+                                </Grid.Resources>
+
                                 <Grid Grid.Column="0" VerticalAlignment="Top">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" MinHeight="36" />
+                                        <RowDefinition Height="Auto" MinHeight="36" />
+                                        <RowDefinition Height="Auto" MinHeight="36" />
+                                        <RowDefinition Height="Auto" MinHeight="36" />
+                                        <RowDefinition Height="Auto" MinHeight="36" />
+                                        <RowDefinition Height="Auto" MinHeight="36" />
                                     </Grid.RowDefinitions>
-                                    <Grid.Resources>
-                                        <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
-                                            <Setter Property="Width" Value="190" />
-                                            <Setter Property="Height" Value="30" />
-                                            <Setter Property="MinHeight" Value="0" />
-                                            <Setter Property="HorizontalAlignment" Value="Left" />
-                                            <Setter Property="VerticalContentAlignment" Value="Center" />
-                                            <Setter Property="FontSize" Value="13" />
-                                        </Style>
-                                    </Grid.Resources>
-                                    <TextBlock Grid.Row="0" Text="Status:" FontSize="13" VerticalAlignment="Center" Margin="0,0,10,0"
-                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                    <ComboBox Grid.Row="0" Grid.Column="1" x:Name="DetailStatusCombo"
-                                              DisplayMemberPath="Value" SelectedValuePath="Key" SelectionChanged="OnDetailFieldChanged" Tag="StatusID" />
-                                    <TextBlock Grid.Row="1" Text="Priority:" FontSize="13" VerticalAlignment="Center" Margin="0,4,10,0"
-                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                    <ComboBox Grid.Row="1" Grid.Column="1" x:Name="DetailPriorityCombo" Margin="0,4,0,0"
-                                              DisplayMemberPath="Value" SelectedValuePath="Key" SelectionChanged="OnDetailFieldChanged" Tag="PriorityID" />
-                                    <TextBlock Grid.Row="2" Text="Class:" FontSize="13" VerticalAlignment="Center" Margin="0,4,10,0"
-                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                    <ComboBox Grid.Row="2" Grid.Column="1" x:Name="DetailClassificationCombo" Margin="0,4,0,0"
-                                              DisplayMemberPath="Value" SelectedValuePath="Key" SelectionChanged="OnDetailFieldChanged" Tag="Classification" />
+                                    <TextBlock Grid.Row="0" Text="Status" Style="{StaticResource DetailLabel}" />
+                                    <ComboBox Grid.Row="0" Grid.Column="1" x:Name="DetailStatusCombo" AutomationProperties.Name="Status"
+                                              SelectionChanged="OnDetailFieldChanged" Tag="StatusID" />
+                                    <TextBlock Grid.Row="1" Text="Priority" Style="{StaticResource DetailLabel}" />
+                                    <ComboBox Grid.Row="1" Grid.Column="1" x:Name="DetailPriorityCombo" AutomationProperties.Name="Priority"
+                                              SelectionChanged="OnDetailFieldChanged" Tag="PriorityID" />
+                                    <TextBlock Grid.Row="2" Text="Classification" Style="{StaticResource DetailLabel}" />
+                                    <ComboBox Grid.Row="2" Grid.Column="1" x:Name="DetailClassificationCombo" AutomationProperties.Name="Classification"
+                                              SelectionChanged="OnDetailFieldChanged" Tag="Classification" />
+                                    <TextBlock Grid.Row="3" Text="Form" Style="{StaticResource DetailLabel}" />
+                                    <ComboBox Grid.Row="3" Grid.Column="1" x:Name="DetailFormCombo" AutomationProperties.Name="Form"
+                                              SelectionChanged="OnDetailFieldChanged" Tag="FormID" />
+                                    <TextBlock Grid.Row="4" Text="Service" Style="{StaticResource DetailLabel}" />
+                                    <ComboBox Grid.Row="4" Grid.Column="1" x:Name="DetailServiceCombo" AutomationProperties.Name="Service"
+                                              SelectionChanged="OnDetailFieldChanged" Tag="ServiceID" />
+                                    <TextBlock Grid.Row="5" Text="Type" Style="{StaticResource DetailLabel}" />
+                                    <ComboBox Grid.Row="5" Grid.Column="1" x:Name="DetailTypeCombo" AutomationProperties.Name="Type"
+                                              SelectionChanged="OnDetailFieldChanged" Tag="TypeID" />
                                 </Grid>
 
                                 <Grid Grid.Column="2" VerticalAlignment="Top">
@@ -969,90 +999,53 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" MinHeight="36" />
+                                        <RowDefinition Height="Auto" MinHeight="36" />
+                                        <RowDefinition Height="Auto" MinHeight="36" />
+                                        <RowDefinition Height="Auto" MinHeight="36" />
+                                        <RowDefinition Height="Auto" MinHeight="36" />
+                                        <RowDefinition Height="Auto" MinHeight="36" />
                                     </Grid.RowDefinitions>
-                                    <Grid.Resources>
-                                        <Style x:Key="DetailLabel" TargetType="TextBlock">
-                                            <Setter Property="FontSize" Value="12" />
-                                            <Setter Property="Margin" Value="0,2,10,0" />
-                                            <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                        </Style>
-                                        <Style x:Key="DetailValue" TargetType="TextBlock">
-                                            <Setter Property="FontSize" Value="12" />
-                                            <Setter Property="Margin" Value="0,2,0,0" />
-                                            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-                                        </Style>
-                                    </Grid.Resources>
 
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Requestor:" Style="{StaticResource DetailLabel}" />
-                                    <TextBlock Grid.Row="0" Grid.Column="1" x:Name="DetailRequestorText" Style="{StaticResource DetailValue}" />
-
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Email:" Style="{StaticResource DetailLabel}" />
-                                    <TextBlock Grid.Row="1" Grid.Column="1" x:Name="DetailEmailText" Style="{StaticResource DetailValue}" />
-
-                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Group:" Style="{StaticResource DetailLabel}" />
-                                    <TextBlock Grid.Row="2" Grid.Column="1" x:Name="DetailGroupText" Style="{StaticResource DetailValue}" />
-
-                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Responsible:" Style="{StaticResource DetailLabel}" />
-                                    <TextBlock Grid.Row="3" Grid.Column="1" x:Name="DetailResponsibleText" Style="{StaticResource DetailValue}" />
-
-                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Created:" Style="{StaticResource DetailLabel}" />
-                                    <TextBlock Grid.Row="4" Grid.Column="1" x:Name="DetailCreatedText" Style="{StaticResource DetailValue}" />
-
-                                    <TextBlock Grid.Row="5" Grid.Column="0" Text="Modified:" Style="{StaticResource DetailLabel}" />
-                                    <TextBlock Grid.Row="5" Grid.Column="1" x:Name="DetailModifiedText" Style="{StaticResource DetailValue}" />
-                                </Grid>
-                            </Grid>
-
-                            <!-- Description -->
-                            <StackPanel x:Name="DescriptionSection" Visibility="Collapsed" Margin="0,12,0,0">
-                                <Separator Margin="0,0,0,8" />
-                                <TextBlock Text="Description" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,4" />
-                                <TextBlock x:Name="DetailDescriptionText" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" TextWrapping="Wrap" />
-                            </StackPanel>
-
-                            <!-- People: contacts with add and remove, and the responsible
-                                 group. Folded by default; contacts added here are
-                                 offered as notify recipients straight away. -->
-                            <StackPanel x:Name="PeopleSection" Margin="0,12,0,0">
-                                <Separator Margin="0,0,0,8" />
-                                <Button x:Name="PeopleToggleButton" Click="OnPeopleToggleClicked" Background="Transparent" BorderThickness="0"
-                                        Padding="0" HorizontalAlignment="Left" HorizontalContentAlignment="Left"
-                                        ToolTip="Show the ticket's contacts and group">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock x:Name="PeopleChevron" Text="▸" FontFamily="Segoe UI Symbol" FontSize="11" Margin="0,0,6,0" VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                        <TextBlock Text="People" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Button>
-                                <StackPanel x:Name="PeopleBody" Visibility="Collapsed" Margin="0,6,0,0">
-                                    <TextBlock x:Name="PeopleErrorText" Visibility="Collapsed" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6"
-                                               Foreground="DarkOrange" />
-                                    <TextBlock Text="Contacts" FontSize="12" Margin="0,0,0,4"
-                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                    <DockPanel MaxWidth="360" HorizontalAlignment="Left">
-                                        <ui:ProgressRing x:Name="ContactAddProgress" DockPanel.Dock="Right" IsActive="False" Width="14" Height="14"
-                                                         Margin="6,0,0,0" Visibility="Collapsed" />
-                                        <TextBox x:Name="ContactSearchBox" MinWidth="240" ui:ControlHelper.PlaceholderText="Add a contact: search people"
-                                                 TextChanged="OnContactSearchChanged" PreviewKeyDown="OnContactSearchKeyDown" />
+                                    <TextBlock Grid.Row="0" Text="Requestor" Style="{StaticResource DetailLabel}" />
+                                    <DockPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                                        <Button x:Name="ChangeRequestorButton" DockPanel.Dock="Left" Click="OnChangeRequestorClicked"
+                                                Padding="6,3" MinHeight="0" MinWidth="0" Margin="0,0,8,0" VerticalAlignment="Center"
+                                                ToolTip="Change the requestor" AutomationProperties.Name="Change the requestor">
+                                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE70F;" FontSize="12" />
+                                        </Button>
+                                        <TextBlock x:Name="DetailRequestorText" Style="{StaticResource DetailValue}" />
                                     </DockPanel>
-                                    <Popup x:Name="ContactSearchPopup" PlacementTarget="{Binding ElementName=ContactSearchBox}" Placement="Bottom"
-                                           StaysOpen="False" AllowsTransparency="True">
-                                        <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderThickness="1"
-                                                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" CornerRadius="6" Padding="4" Width="320">
+                                    <!-- Change requestor: an anchored people search. Up/Down move,
+                                         Enter picks, Esc or a click outside closes. -->
+                                    <Popup x:Name="RequestorPopup" PlacementTarget="{Binding ElementName=ChangeRequestorButton}"
+                                           Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
+                                           Opened="OnRequestorPopupOpened">
+                                        <Border Background="{DynamicResource CardBackgroundBrush}"
+                                                BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1"
+                                                CornerRadius="8" Padding="12" Width="320" Margin="0,4,8,8"
+                                                TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
+                                            <Border.Effect>
+                                                <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.25" />
+                                            </Border.Effect>
                                             <StackPanel>
-                                                <TextBlock x:Name="ContactSearchStatusText" FontSize="11" Margin="4,2" TextWrapping="Wrap"
+                                                <TextBlock Text="Change Requestor" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8" />
+                                                <DockPanel>
+                                                    <ui:ProgressRing x:Name="RequestorProgress" DockPanel.Dock="Right" IsActive="False" Visibility="Collapsed"
+                                                                     Width="14" Height="14" Margin="6,0,0,0" />
+                                                    <TextBox x:Name="RequestorSearchBox" ui:ControlHelper.PlaceholderText="Search people"
+                                                             AutomationProperties.Name="Search people for the new requestor"
+                                                             TextChanged="OnRequestorSearchChanged" PreviewKeyDown="OnRequestorSearchKeyDown" />
+                                                </DockPanel>
+                                                <TextBlock x:Name="RequestorStatusText" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
                                                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                                <ListBox x:Name="ContactResultsList" MaxHeight="240" BorderThickness="0" Background="Transparent"
-                                                         MouseUp="OnContactResultPicked" KeyDown="OnContactResultsKeyDown">
+                                                <ListBox x:Name="RequestorResultsList" MaxHeight="240" Margin="0,6,0,0"
+                                                         BorderThickness="0" Background="Transparent"
+                                                         AutomationProperties.Name="People"
+                                                         MouseLeftButtonUp="OnRequestorResultPicked" KeyDown="OnRequestorResultsKeyDown">
                                                     <ListBox.ItemTemplate>
                                                         <DataTemplate>
-                                                            <StackPanel Margin="2">
+                                                            <StackPanel Margin="0,2" AutomationProperties.Name="{Binding DisplayName}">
                                                                 <TextBlock Text="{Binding DisplayName}" FontSize="13" />
                                                                 <TextBlock Text="{Binding Subtitle}" FontSize="11"
                                                                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
@@ -1063,75 +1056,185 @@
                                             </StackPanel>
                                         </Border>
                                     </Popup>
-                                    <TextBlock x:Name="NoContactsText" Text="No contacts" FontSize="12" Margin="0,6,0,0"
-                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                    <ItemsControl x:Name="ContactsList" Margin="0,6,0,0">
+
+                                    <TextBlock Grid.Row="1" Text="Email" Style="{StaticResource DetailLabel}" />
+                                    <TextBlock Grid.Row="1" Grid.Column="1" x:Name="DetailEmailText" Style="{StaticResource DetailValue}" />
+
+                                    <TextBlock Grid.Row="2" Text="Group" Style="{StaticResource DetailLabel}" />
+                                    <ComboBox Grid.Row="2" Grid.Column="1" x:Name="DetailGroupCombo" AutomationProperties.Name="Group"
+                                              SelectionChanged="OnDetailFieldChanged" Tag="ResponsibleGroupID" />
+
+                                    <TextBlock Grid.Row="3" Text="Responsible" Style="{StaticResource DetailLabel}" />
+                                    <TextBlock Grid.Row="3" Grid.Column="1" x:Name="DetailResponsibleText" Style="{StaticResource DetailValue}" />
+
+                                    <TextBlock Grid.Row="4" Text="Created" Style="{StaticResource DetailLabel}" />
+                                    <TextBlock Grid.Row="4" Grid.Column="1" x:Name="DetailCreatedText" Style="{StaticResource DetailValue}" />
+
+                                    <TextBlock Grid.Row="5" Text="Modified" Style="{StaticResource DetailLabel}" />
+                                    <TextBlock Grid.Row="5" Grid.Column="1" x:Name="DetailModifiedText" Style="{StaticResource DetailValue}" />
+                                </Grid>
+                            </Grid>
+
+                            <!-- Description, with edit and copy on the right as on the Mac.
+                                 Edit opens the text in place; the check mark or Ctrl+Enter
+                                 saves it, Esc cancels. -->
+                            <StackPanel x:Name="DescriptionSection" Margin="0,12,0,0">
+                                <Separator Margin="0,0,0,8" />
+                                <DockPanel Margin="0,0,0,6">
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <StackPanel.Resources>
+                                            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                                <Setter Property="Padding" Value="6,3" />
+                                                <Setter Property="MinHeight" Value="0" />
+                                                <Setter Property="MinWidth" Value="0" />
+                                                <Setter Property="Margin" Value="6,0,0,0" />
+                                            </Style>
+                                        </StackPanel.Resources>
+                                        <ui:ProgressRing x:Name="DescriptionProgress" IsActive="False" Visibility="Collapsed"
+                                                         Width="14" Height="14" VerticalAlignment="Center" />
+                                        <Button x:Name="EditDescriptionButton" Click="OnEditDescriptionClicked"
+                                                ToolTip="Edit description" AutomationProperties.Name="Edit description">
+                                            <ui:FontIcon x:Name="EditDescriptionIcon" FontFamily="Segoe Fluent Icons" Glyph="&#xE70F;" FontSize="12" />
+                                        </Button>
+                                        <Button x:Name="CancelDescriptionButton" Click="OnCancelDescriptionClicked" Visibility="Collapsed"
+                                                ToolTip="Cancel editing (Esc)" AutomationProperties.Name="Cancel editing the description">
+                                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE711;" FontSize="12" />
+                                        </Button>
+                                        <Button x:Name="CopyDescriptionButton" Click="OnCopyDescriptionClicked"
+                                                ToolTip="Copy description" AutomationProperties.Name="Copy description">
+                                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8C8;" FontSize="12" />
+                                        </Button>
+                                    </StackPanel>
+                                    <TextBlock Text="Description" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+                                </DockPanel>
+                                <TextBlock x:Name="DetailDescriptionText" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" TextWrapping="Wrap" />
+                                <TextBlock x:Name="NoDescriptionText" Text="No description" FontSize="13" FontStyle="Italic" Visibility="Collapsed"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <TextBox x:Name="DescriptionEditor" Visibility="Collapsed" AcceptsReturn="True" TextWrapping="Wrap" FontSize="13"
+                                         MinHeight="80" MaxHeight="300" VerticalScrollBarVisibility="Auto" SpellCheck.IsEnabled="True"
+                                         AutomationProperties.Name="Description" PreviewKeyDown="OnDescriptionEditorKeyDown" />
+                            </StackPanel>
+
+                            <!-- People: contacts with add and remove, and the responsible
+                                 group. Folded by default, with the same header as Tasks and
+                                 Workflow; contacts added here are offered as notify
+                                 recipients straight away. -->
+                            <StackPanel x:Name="PeopleSection" Margin="0,12,0,0">
+                                <Separator Margin="0,0,0,8" />
+                                <Expander x:Name="PeopleExpander" IsExpanded="False" AutomationProperties.Name="People">
+                                    <Expander.Header>
+                                        <TextBlock Text="People" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+                                    </Expander.Header>
+                                    <StackPanel x:Name="PeopleBody" Margin="0,6,0,0">
+                                        <TextBlock x:Name="PeopleErrorText" Visibility="Collapsed" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6"
+                                                   Foreground="DarkOrange" />
+                                        <TextBlock Text="Contacts" FontSize="12" Margin="0,0,0,4"
+                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                        <DockPanel MaxWidth="360" HorizontalAlignment="Left">
+                                            <ui:ProgressRing x:Name="ContactAddProgress" DockPanel.Dock="Right" IsActive="False" Width="14" Height="14"
+                                                             Margin="6,0,0,0" Visibility="Collapsed" />
+                                            <TextBox x:Name="ContactSearchBox" MinWidth="240" ui:ControlHelper.PlaceholderText="Add a contact: search people" AutomationProperties.Name="Add a contact"
+                                                     TextChanged="OnContactSearchChanged" PreviewKeyDown="OnContactSearchKeyDown" />
+                                        </DockPanel>
+                                        <Popup x:Name="ContactSearchPopup" PlacementTarget="{Binding ElementName=ContactSearchBox}" Placement="Bottom"
+                                               StaysOpen="False" AllowsTransparency="True">
+                                            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" BorderThickness="1"
+                                                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" CornerRadius="6" Padding="4" Width="320">
+                                                <StackPanel>
+                                                    <TextBlock x:Name="ContactSearchStatusText" FontSize="11" Margin="4,2" TextWrapping="Wrap"
+                                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                    <ListBox x:Name="ContactResultsList" MaxHeight="240" BorderThickness="0" Background="Transparent"
+                                                             MouseUp="OnContactResultPicked" KeyDown="OnContactResultsKeyDown">
+                                                        <ListBox.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <StackPanel Margin="2">
+                                                                    <TextBlock Text="{Binding DisplayName}" FontSize="13" />
+                                                                    <TextBlock Text="{Binding Subtitle}" FontSize="11"
+                                                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                                </StackPanel>
+                                                            </DataTemplate>
+                                                        </ListBox.ItemTemplate>
+                                                    </ListBox>
+                                                </StackPanel>
+                                            </Border>
+                                        </Popup>
+                                        <TextBlock x:Name="NoContactsText" Text="No contacts" FontSize="12" Margin="0,6,0,0"
+                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                        <ItemsControl x:Name="ContactsList" Margin="0,6,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <DockPanel Margin="0,0,0,6">
+                                                        <Button DockPanel.Dock="Right" Tag="{Binding}" Click="OnRemoveContactClicked" Padding="6,2"
+                                                                VerticalAlignment="Center" ToolTip="Remove from the ticket's contacts"
+                                                                AutomationProperties.Name="Remove contact">
+                                                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE74D;" FontSize="12" />
+                                                        </Button>
+                                                        <StackPanel VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding DisplayName}" FontSize="13" />
+                                                            <TextBox Text="{Binding Subtitle, Mode=OneWay}" IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                                                                     Padding="0" MinHeight="0" FontSize="11"
+                                                                     Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                        </StackPanel>
+                                                    </DockPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <StackPanel x:Name="ResourcesSection" Visibility="Collapsed" Margin="0,6,0,0">
+                                            <TextBlock Text="Resources" FontSize="12" Margin="0,0,0,4"
+                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                            <StackPanel x:Name="ResourcesGroupRow" Orientation="Horizontal" Background="Transparent">
+                                                <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE902;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                                <TextBlock x:Name="ResourcesGroupText" FontSize="13" VerticalAlignment="Center" />
+                                                <TextBlock Text="Group" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Expander>
+                            </StackPanel>
+
+                            <!-- Attachments: open the viewable ones, save any. Folded by
+                                 default like the Mac, with the same header as the others. -->
+                            <StackPanel x:Name="AttachmentsSection" Visibility="Collapsed" Margin="0,12,0,0">
+                                <Separator Margin="0,0,0,8" />
+                                <Expander x:Name="AttachmentsExpander" IsExpanded="False" AutomationProperties.Name="Attachments">
+                                    <Expander.Header>
+                                        <TextBlock x:Name="AttachmentsHeaderText" Text="Attachments" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+                                    </Expander.Header>
+                                    <StackPanel Margin="0,6,0,0">
+                                    <ItemsControl x:Name="AttachmentsList">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <DockPanel Margin="0,0,0,6">
-                                                    <Button DockPanel.Dock="Right" Tag="{Binding}" Click="OnRemoveContactClicked" Padding="6,2"
-                                                            VerticalAlignment="Center" ToolTip="Remove from the ticket's contacts"
-                                                            AutomationProperties.Name="Remove contact">
-                                                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE74D;" FontSize="12" />
-                                                    </Button>
-                                                    <StackPanel VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding DisplayName}" FontSize="13" />
-                                                        <TextBox Text="{Binding Subtitle, Mode=OneWay}" IsReadOnly="True" BorderThickness="0" Background="Transparent"
-                                                                 Padding="0" MinHeight="0" FontSize="11"
-                                                                 Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                                    </StackPanel>
-                                                </DockPanel>
+                                                <Border Padding="8" Margin="0,0,0,6" CornerRadius="6" BorderThickness="1"
+                                                        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                                                    <DockPanel>
+                                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <Button Tag="{Binding}" Click="OnOpenAttachmentClicked" Padding="6,2" Margin="4,0,0,0"
+                                                                    Visibility="{Binding OpenVisibility}"
+                                                                    ToolTip="{Binding OpenTooltip}"
+                                                                    AutomationProperties.Name="{Binding OpenTooltip}">
+                                                                <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8A7;" FontSize="12" />
+                                                            </Button>
+                                                            <Button Tag="{Binding}" Click="OnSaveAttachmentClicked" Padding="6,2" Margin="4,0,0,0"
+                                                                    ToolTip="{Binding SaveTooltip}"
+                                                                    AutomationProperties.Name="{Binding SaveTooltip}">
+                                                                <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE896;" FontSize="12" />
+                                                            </Button>
+                                                        </StackPanel>
+                                                        <ui:FontIcon DockPanel.Dock="Left" FontFamily="Segoe Fluent Icons" Glyph="&#xE723;" FontSize="14"
+                                                                     Margin="0,0,8,0" VerticalAlignment="Center" />
+                                                        <StackPanel VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Name}" FontSize="13" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding Subtitle}" FontSize="11"
+                                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                        </StackPanel>
+                                                    </DockPanel>
+                                                </Border>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
-                                    <StackPanel x:Name="ResourcesSection" Visibility="Collapsed" Margin="0,6,0,0">
-                                        <TextBlock Text="Resources" FontSize="12" Margin="0,0,0,4"
-                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                        <StackPanel x:Name="ResourcesGroupRow" Orientation="Horizontal" Background="Transparent">
-                                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE902;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
-                                            <TextBlock x:Name="ResourcesGroupText" FontSize="13" VerticalAlignment="Center" />
-                                            <TextBlock Text="Group" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center"
-                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                        </StackPanel>
                                     </StackPanel>
-                                </StackPanel>
-                            </StackPanel>
-
-                            <!-- Attachments: open the viewable ones, save any -->
-                            <StackPanel x:Name="AttachmentsSection" Visibility="Collapsed" Margin="0,12,0,0">
-                                <Separator Margin="0,0,0,8" />
-                                <TextBlock x:Name="AttachmentsHeaderText" Text="Attachments" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,4" />
-                                <ItemsControl x:Name="AttachmentsList">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Padding="8" Margin="0,0,0,6" CornerRadius="6" BorderThickness="1"
-                                                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
-                                                <DockPanel>
-                                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                                                        <Button Tag="{Binding}" Click="OnOpenAttachmentClicked" Padding="6,2" Margin="4,0,0,0"
-                                                                Visibility="{Binding OpenVisibility}"
-                                                                ToolTip="{Binding OpenTooltip}"
-                                                                AutomationProperties.Name="{Binding OpenTooltip}">
-                                                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8A7;" FontSize="12" />
-                                                        </Button>
-                                                        <Button Tag="{Binding}" Click="OnSaveAttachmentClicked" Padding="6,2" Margin="4,0,0,0"
-                                                                ToolTip="{Binding SaveTooltip}"
-                                                                AutomationProperties.Name="{Binding SaveTooltip}">
-                                                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE896;" FontSize="12" />
-                                                        </Button>
-                                                    </StackPanel>
-                                                    <ui:FontIcon DockPanel.Dock="Left" FontFamily="Segoe Fluent Icons" Glyph="&#xE723;" FontSize="14"
-                                                                 Margin="0,0,8,0" VerticalAlignment="Center" />
-                                                    <StackPanel VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding Name}" FontSize="13" TextTrimming="CharacterEllipsis" />
-                                                        <TextBlock Text="{Binding Subtitle}" FontSize="11"
-                                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                                    </StackPanel>
-                                                </DockPanel>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                </Expander>
                             </StackPanel>
 
                             <!-- Tasks: progress, updates and standard-task management -->

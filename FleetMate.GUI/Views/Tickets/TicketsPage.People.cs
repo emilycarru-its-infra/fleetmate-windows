@@ -18,7 +18,6 @@ public partial class TicketsPage
 
     /// <summary>The ticket the people above were loaded for.</summary>
     private int? _ticketPeopleTicketId;
-    private bool _peopleExpanded;
     private CancellationTokenSource? _contactSearchCts;
 
     /// <summary>
@@ -111,14 +110,6 @@ public partial class TicketsPage
     {
         PeopleErrorText.Text = message ?? "";
         PeopleErrorText.Visibility = string.IsNullOrEmpty(message) ? Visibility.Collapsed : Visibility.Visible;
-    }
-
-    private void OnPeopleToggleClicked(object sender, RoutedEventArgs e)
-    {
-        _peopleExpanded = !_peopleExpanded;
-        PeopleBody.Visibility = _peopleExpanded ? Visibility.Visible : Visibility.Collapsed;
-        PeopleChevron.Text = _peopleExpanded ? "▾" : "▸";
-        PeopleToggleButton.ToolTip = _peopleExpanded ? "Hide people" : "Show the ticket's contacts and group";
     }
 
     private async void OnContactSearchChanged(object sender, TextChangedEventArgs e)
