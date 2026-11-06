@@ -5,13 +5,14 @@ namespace FleetMate.Core.Services.Tickets;
 /// <summary>
 /// Decides how the window keeps its TeamDynamix sign-in alive: when to renew,
 /// how to back off when silent sign-in keeps failing, whether a session another
-/// process saved is worth adopting, whether the sign-in window may open by
-/// itself, when Tickets asks for attention, and what the Authentication panel
-/// may claim. The GUI wires it to timers and system events. Everything here
-/// reads the injected clock, so it can be tested without waiting.
+/// process saved is worth adopting, when Tickets asks for attention, and what
+/// the Authentication panel may claim. The window and the inbox helper both
+/// wire it to timers and system events. Everything here reads the injected
+/// clock, so it can be tested without waiting.
 ///
 /// The numbers follow FleetMate for Mac: renew two hours before expiry; after a
-/// failure, retry after 1, 5 and 15 minutes, then every 15.
+/// failure, retry after 1, 5 and 15 minutes, then every 15. The sign-in window
+/// is never opened from here: only a Sign In click opens it.
 /// </summary>
 public sealed class TdxSessionPolicy
 {
@@ -35,13 +36,7 @@ public sealed class TdxSessionPolicy
     /// <summary>Consecutive failures, with no usable token left, before Tickets asks for attention.</summary>
     public const int FailuresBeforeAttention = 2;
 
-    /// <summary>The window may open by itself only when the token has less than this left.</summary>
-    public static readonly TimeSpan WindowNearExpiry = TimeSpan.FromMinutes(10);
-
-    /// <summary>After the window was closed or timed out, it does not open by itself again for this long.</summary>
-    public static readonly TimeSpan WindowCooldown = TimeSpan.FromMinutes(30);
-
-    /// <summary>The window gives up on its own after this long.</summary>
+    /// <summary>The sign-in window, opened by a Sign In click, gives up on its own after this long.</summary>
     public static readonly TimeSpan WindowTimeout = TimeSpan.FromMinutes(3);
 
     /// <summary>Wake, unlock and network events arriving together count as one.</summary>
@@ -49,6 +44,13 @@ public sealed class TdxSessionPolicy
 
     /// <summary>An event-driven or 401-driven attempt runs at most this often.</summary>
     public static readonly TimeSpan KickSpacing = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How long a process that finds another one renewing waits for it to
+    /// finish (see <see cref="TdxRenewalLock"/>) before taking whatever session
+    /// it saved. Long enough for the whole silent chain.
+    /// </summary>
+    public static readonly TimeSpan RenewalLockWait = TimeSpan.FromMinutes(2);
 
     private readonly Func<DateTime> _utcNow;
 
@@ -67,9 +69,6 @@ public sealed class TdxSessionPolicy
     /// sign-in, restore or adoption sets it again.
     /// </summary>
     public bool LastCheckPassed { get; private set; } = true;
-
-    /// <summary>When the sign-in window was last closed or timed out without signing in.</summary>
-    public DateTime? WindowDismissedUtc { get; private set; }
 
     // MARK: - Renewal
 
@@ -168,31 +167,6 @@ public sealed class TdxSessionPolicy
     /// </summary>
     public bool ShouldAccept(DateTime resultExpiryUtc, DateTime? heldExpiryUtc) =>
         !IsUsable(heldExpiryUtc) || resultExpiryUtc.ToUniversalTime() > heldExpiryUtc!.Value.ToUniversalTime();
-
-    // MARK: - Sign-in window
-
-    /// <summary>
-    /// Whether the sign-in window may open without a click. Only after the
-    /// whole silent chain has just failed, with the token expired or under
-    /// <see cref="WindowNearExpiry"/> from it, the identity not refused, no
-    /// window already open, and not within <see cref="WindowCooldown"/> of the
-    /// last one being closed or timing out.
-    /// </summary>
-    public bool ShouldAutoOpenWindow(DateTime? expiryUtc, bool silentChainFailed, bool identityRefused,
-        bool windowOpen)
-    {
-        if (!silentChainFailed || identityRefused || windowOpen) return false;
-        var now = UtcNow;
-        if (expiryUtc is { } expiry && expiry.ToUniversalTime() - now >= WindowNearExpiry) return false;
-        return WindowDismissedUtc is not { } dismissed || now - dismissed >= WindowCooldown;
-    }
-
-    /// <summary>The window closed. Only a close without a sign-in starts the cool-down.</summary>
-    public void RecordWindowClosed(bool signedIn)
-    {
-        if (signedIn) RecordSuccess();
-        else WindowDismissedUtc = UtcNow;
-    }
 
     // MARK: - What to show
 

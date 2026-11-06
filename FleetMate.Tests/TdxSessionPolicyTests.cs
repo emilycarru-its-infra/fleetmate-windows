@@ -5,9 +5,9 @@ using Xunit;
 namespace FleetMate.Tests;
 
 /// <summary>
-/// When the window renews its TeamDynamix sign-in, how it backs off, which
-/// saved sessions it adopts, when the sign-in window may open by itself, and
-/// what it shows. The clock is a field the tests move. Synthetic values only.
+/// When the window and the inbox helper renew their TeamDynamix sign-in, how
+/// they back off, which saved sessions they adopt, and what the window shows.
+/// Nothing here opens the sign-in window; only a Sign In click does. The clock is a field the tests move. Synthetic values only.
 /// </summary>
 public class TdxSessionPolicyTests
 {
@@ -243,59 +243,6 @@ public class TdxSessionPolicyTests
         Assert.True(policy.ShouldAccept(_now.AddHours(21), held));
         Assert.True(policy.ShouldAccept(_now.AddHours(1), _now.AddMinutes(2)));
         Assert.True(policy.ShouldAccept(_now.AddHours(1), null));
-    }
-
-    // MARK: - The sign-in window
-
-    [Fact]
-    public void TheWindowNeverOpensByItselfWhileAValidTokenRemains()
-    {
-        var policy = Policy();
-        Assert.False(policy.ShouldAutoOpenWindow(_now.AddHours(1), silentChainFailed: true, identityRefused: false, windowOpen: false));
-        Assert.False(policy.ShouldAutoOpenWindow(_now.AddMinutes(10), true, false, false));
-    }
-
-    [Fact]
-    public void TheWindowOpensByItselfOnlyWhenTheTokenIsExpiredOrNearlyAndTheSilentChainFailed()
-    {
-        var policy = Policy();
-
-        Assert.True(policy.ShouldAutoOpenWindow(null, silentChainFailed: true, identityRefused: false, windowOpen: false));
-        Assert.True(policy.ShouldAutoOpenWindow(_now.AddMinutes(9), true, false, false));
-        Assert.True(policy.ShouldAutoOpenWindow(_now.AddMinutes(-30), true, false, false));
-        Assert.False(policy.ShouldAutoOpenWindow(null, silentChainFailed: false, identityRefused: false, windowOpen: false));
-    }
-
-    [Fact]
-    public void TheWindowNeverOpensByItselfForTheWrongAccountOrWhenOneIsOpen()
-    {
-        var policy = Policy();
-        Assert.False(policy.ShouldAutoOpenWindow(null, true, identityRefused: true, windowOpen: false));
-        Assert.False(policy.ShouldAutoOpenWindow(null, true, identityRefused: false, windowOpen: true));
-    }
-
-    [Fact]
-    public void TheWindowWaitsThirtyMinutesAfterItWasClosedOrTimedOut()
-    {
-        var policy = Policy();
-        policy.RecordWindowClosed(signedIn: false);
-
-        Advance(TimeSpan.FromMinutes(29));
-        Assert.False(policy.ShouldAutoOpenWindow(null, true, false, false));
-        Advance(TimeSpan.FromMinutes(1));
-        Assert.True(policy.ShouldAutoOpenWindow(null, true, false, false));
-    }
-
-    [Fact]
-    public void AWindowThatSignedInStartsNoCooldown()
-    {
-        var policy = Policy();
-        policy.RecordFailure();
-        policy.RecordWindowClosed(signedIn: true);
-
-        Assert.Null(policy.WindowDismissedUtc);
-        Assert.Equal(0, policy.Failures);
-        Assert.True(policy.ShouldAutoOpenWindow(null, true, false, false));
     }
 
     // MARK: - Banner and status

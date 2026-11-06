@@ -14,9 +14,8 @@ namespace FleetMate.GUI.Views.Tickets;
 /// <summary>
 /// The visible TeamDynamix sign-in: a short-lived last resort after every
 /// silent path has failed, most often because Entra asked for multi-factor
-/// authentication. Sign In opens it on demand, and the app may open it by
-/// itself once the token is gone (see <see cref="TdxSessionPolicy.ShouldAutoOpenWindow"/>).
-/// It walks the same chain in the same browser profile as
+/// authentication. Only a Sign In click opens it, as on FleetMate for Mac;
+/// renewal never does. It walks the same chain in the same browser profile as
 /// <see cref="TdxHeadlessSso"/>, with the Windows account filled in: the
 /// account tile is answered and Entra's request carries <c>login_hint</c>,
 /// so single sign-on can finish it, and otherwise the person answers Entra's
@@ -64,9 +63,8 @@ internal sealed class TdxSignInWindow : Window
     /// <paramref name="ct"/> was cancelled (a token arrived another way); a
     /// failure when it timed out or the browser could not start.
     /// </summary>
-    /// <param name="activate">False opens it without taking focus, for an automatic open.</param>
     public static async Task<TdxSsoResult?> SignInAsync(string baseUrl, Window? owner, TimeSpan timeout,
-        bool activate, CancellationToken ct)
+        CancellationToken ct)
     {
         var upn = await TdxSsoIdentity.ResolveWindowsUpnAsync();
         if (upn == null)
@@ -77,7 +75,7 @@ internal sealed class TdxSignInWindow : Window
 
         if (ct.IsCancellationRequested) return null;
 
-        var window = new TdxSignInWindow(baseUrl, upn) { ShowActivated = activate };
+        var window = new TdxSignInWindow(baseUrl, upn);
         if (owner is { IsVisible: true }) window.Owner = owner;
         else window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
@@ -99,7 +97,7 @@ internal sealed class TdxSignInWindow : Window
             window.Close();
         }));
 
-        Log.Information("[tdx-sso] Opening the sign-in window for {Upn} ({How})", upn, activate ? "on request" : "automatically");
+        Log.Information("[tdx-sso] Opening the sign-in window for {Upn}", upn);
         timer.Start();
         window.Show();
         var result = await closed.Task;
