@@ -847,6 +847,20 @@ public partial class App : Application
         // custom resources proved not to resolve reliably at runtime.
         ApplyPaletteBrushes();
         ThemeManager.Current.ActualApplicationThemeChanged += (_, _) => ApplyPaletteBrushes();
+        // Row selection follows the accent colour and high contrast, which
+        // change without the light/dark theme changing. Applied after
+        // ModernWPF has taken the new accent.
+        SystemParameters.StaticPropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SystemParameters.HighContrast)) SchedulePaletteBrushes();
+        };
+        Microsoft.Win32.SystemEvents.UserPreferenceChanged += (_, e) =>
+        {
+            if (e.Category is Microsoft.Win32.UserPreferenceCategory.General
+                or Microsoft.Win32.UserPreferenceCategory.Color
+                or Microsoft.Win32.UserPreferenceCategory.Accessibility)
+                SchedulePaletteBrushes();
+        };
 
         // Initialize auth manager
         AuthManager = new AuthManager(Config);
@@ -1244,7 +1258,13 @@ public partial class App : Application
         Set("CardBackgroundBrush", "#2C2C30", "#FFFFFF");
         Set("CardBorderBrush", "#3C3C41", "#E3E3E7");
         Set("SubtleFillBrush", "#37373C", "#E9E9EC");
+
+        // List and table rows; see Views/Shared/ListRows.xaml.
+        Views.Shared.ListRowPalette.Current(dark).ApplyTo(Resources);
     }
+
+    private void SchedulePaletteBrushes() =>
+        Dispatcher.BeginInvoke(new Action(ApplyPaletteBrushes), System.Windows.Threading.DispatcherPriority.Background);
 
     protected override void OnExit(ExitEventArgs e)
     {

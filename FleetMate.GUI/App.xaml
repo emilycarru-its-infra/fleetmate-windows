@@ -29,6 +29,9 @@
                 </ui:ThemeResources>
                 <ui:XamlControlsResources />
                 <ResourceDictionary Source="Views/Shared/DiffTemplates.xaml" />
+                <!-- After XamlControlsResources, so its implicit row styles
+                     replace ModernWPF's. -->
+                <ResourceDictionary Source="Views/Shared/ListRows.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
             <!-- Converters -->
@@ -123,79 +126,9 @@
                 </Setter>
             </Style>
 
-            <Style x:Key="FleetListViewItemStyle" TargetType="ListViewItem">
-                <!-- This style REPLACES the implicit themed ListViewItem style, so
-                     without an explicit Foreground every row falls back to WPF's
-                     default black — invisible in dark mode. -->
-                <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
-                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                <Setter Property="VerticalContentAlignment" Value="Center" />
-                <Setter Property="Padding" Value="5,2" />
-                <Setter Property="MinHeight" Value="26" />
-                <Setter Property="BorderThickness" Value="0" />
-                <Style.Triggers>
-                    <Trigger Property="IsSelected" Value="True">
-                        <Setter Property="Background" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
-                        <Setter Property="Foreground" Value="White" />
-                    </Trigger>
-                </Style.Triggers>
-            </Style>
-
-            <!-- The stock WPF DataGrid paints a white body, white headers, and
-                 black text regardless of the ModernWPF theme, so every surface
-                 it owns is restated in theme brushes here. -->
-            <Style x:Key="FleetDataGridColumnHeaderStyle" TargetType="DataGridColumnHeader">
-                <Setter Property="Background" Value="Transparent" />
-                <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
-                <Setter Property="BorderThickness" Value="0,0,0,1" />
-                <Setter Property="Padding" Value="8,4" />
-                <Setter Property="FontWeight" Value="SemiBold" />
-                <Setter Property="FontSize" Value="12" />
-            </Style>
-
-            <Style x:Key="FleetDataGridCellStyle" TargetType="DataGridCell">
-                <Setter Property="Background" Value="Transparent" />
-                <Setter Property="BorderThickness" Value="0" />
-                <Setter Property="Template">
-                    <Setter.Value>
-                        <ControlTemplate TargetType="DataGridCell">
-                            <Border Background="{TemplateBinding Background}" Padding="8,0">
-                                <ContentPresenter VerticalAlignment="Center" />
-                            </Border>
-                        </ControlTemplate>
-                    </Setter.Value>
-                </Setter>
-                <Style.Triggers>
-                    <Trigger Property="IsSelected" Value="True">
-                        <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListAccentLowBrush}" />
-                        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
-                    </Trigger>
-                </Style.Triggers>
-            </Style>
-
-            <Style x:Key="FleetDataGridRowStyle" TargetType="DataGridRow">
-                <Setter Property="Background" Value="Transparent" />
-            </Style>
-
-            <Style x:Key="FleetDataGridStyle" TargetType="DataGrid">
-                <Setter Property="Background" Value="Transparent" />
-                <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
-                <Setter Property="BorderThickness" Value="0" />
-                <Setter Property="RowHeight" Value="27" />
-                <Setter Property="ColumnHeaderHeight" Value="29" />
-                <Setter Property="CanUserAddRows" Value="False" />
-                <Setter Property="CanUserResizeRows" Value="False" />
-                <!-- No grid lines, no alternating stripes: rows read like the
-                     macOS list, not a spreadsheet. -->
-                <Setter Property="GridLinesVisibility" Value="None" />
-                <Setter Property="AlternatingRowBackground" Value="Transparent" />
-                <Setter Property="RowBackground" Value="Transparent" />
-                <Setter Property="HeadersVisibility" Value="Column" />
-                <Setter Property="ColumnHeaderStyle" Value="{StaticResource FleetDataGridColumnHeaderStyle}" />
-                <Setter Property="CellStyle" Value="{StaticResource FleetDataGridCellStyle}" />
-                <Setter Property="RowStyle" Value="{StaticResource FleetDataGridRowStyle}" />
-            </Style>
+            <!-- List, table and data grid rows (FleetListViewItemStyle,
+                 FleetDataGridStyle and the implicit item styles) live in
+                 Views/Shared/ListRows.xaml. -->
 
             <!-- Typography -->
             <Style x:Key="TitleTextStyle" TargetType="TextBlock">
