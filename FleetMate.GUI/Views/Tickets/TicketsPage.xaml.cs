@@ -524,13 +524,20 @@ private bool _isInitialLoadDone;
     {
         if (sender is not FrameworkElement { Tag: TicketRowViewModel row }) return;
 
+        // Alt-click folds or unfolds every parent, as Option-click does on the Mac.
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Alt))
+        {
+            if (_collapsedTickets.Contains(row.Id)) ExpandAllTickets(); else CollapseAllTickets();
+            return;
+        }
+
         if (!_collapsedTickets.Remove(row.Id)) _collapsedTickets.Add(row.Id);
 
         RebuildOutline();
         if (_isBoardView) UpdateBoardView();
     }
 
-    private void OnCollapseAllClicked(object sender, RoutedEventArgs e)
+    private void CollapseAllTickets()
     {
         foreach (var id in TicketHierarchy.AllParentIds(TicketHierarchy.Build(_filteredTickets)))
             _collapsedTickets.Add(id);
@@ -539,7 +546,7 @@ private bool _isInitialLoadDone;
         if (_isBoardView) UpdateBoardView();
     }
 
-    private void OnExpandAllClicked(object sender, RoutedEventArgs e)
+    private void ExpandAllTickets()
     {
         _collapsedTickets.Clear();
 

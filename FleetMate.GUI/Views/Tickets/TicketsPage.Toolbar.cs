@@ -23,7 +23,6 @@ public partial class TicketsPage
         var mode = CurrentViewMode;
         BoardGroupComboBox.Visibility = VisibleIf(TicketsToolbarRules.ShowsBoardGrouping(mode));
         SortControls.Visibility = VisibleIf(TicketsToolbarRules.ShowsSortControls(mode));
-        FoldControls.Visibility = VisibleIf(TicketsToolbarRules.ShowsFoldControls(mode));
         UpdateToolbarLabels();
     }
 
