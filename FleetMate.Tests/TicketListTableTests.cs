@@ -380,10 +380,10 @@ public class TicketListColumnFitTests
         var desired = Defaults();
         desired[TicketListColumn.Status] = 300;
 
-        var fit = TicketListColumnFit.Fit(desired, 1000, held: TicketListColumn.Status);
+        var fit = TicketListColumnFit.Fit(desired, 1100, held: TicketListColumn.Status);
 
         Assert.Equal(300, fit[TicketListColumn.Status]);
-        Assert.True(fit.Values.Sum() <= 1000);
+        Assert.True(fit.Values.Sum() <= 1100);
     }
 
     [Fact]

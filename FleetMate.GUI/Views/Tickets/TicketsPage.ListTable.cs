@@ -34,6 +34,26 @@ public partial class TicketsPage
     /// <summary>Set while the saved layout is applied, so applying it is not read as a change.</summary>
     private bool _restoringColumns;
 
+    /// <summary>
+    /// Each column's own width: the saved or default one, then whatever a
+    /// person drags it to. Fitting the table to the pane shows narrower widths
+    /// without touching these, and these are what is saved.
+    /// </summary>
+    private readonly Dictionary<TicketListColumn, double> _desiredColumnWidths = new();
+
+    /// <summary>Set while fitting sets widths, so a fit is not read as a drag.</summary>
+    private bool _fittingColumns;
+
+    /// <summary>Refits once a Title drag settles; Title always fills, so its drag snaps back.</summary>
+    private DispatcherTimer? _columnFitTimer;
+
+    /// <summary>
+    /// Width the rows add around the columns (the item's padding and the
+    /// header row's margin), with a little to spare so rounding never brings
+    /// up a horizontal scroll bar.
+    /// </summary>
+    private const double TicketRowChromeWidth = 14;
+
     private static readonly SolidColorBrush UnknownStatusBrush = Frozen(Color.FromRgb(0x80, 0x80, 0x80));
 
     private GridView TicketsGrid => (GridView)TicketsListView.View;
@@ -61,6 +81,14 @@ public partial class TicketsPage
 
         TicketsListView.AddHandler(ButtonBase.ClickEvent, new RoutedEventHandler(OnTicketColumnHeaderClicked));
         TicketsListView.PreviewKeyDown += OnTicketListKeyDown;
+
+        // The vertical scroll bar coming and going changes the viewport as
+        // much as resizing the pane does, so both refit.
+        TicketsListView.SizeChanged += (_, _) => FitTicketColumns();
+        TicketsListView.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler((_, e) =>
+        {
+            if (e.ViewportWidthChange != 0) FitTicketColumns();
+        }));
 
         UpdateColumnHeaders();
     }
@@ -141,7 +169,8 @@ public partial class TicketsPage
                 if (!byColumn.TryGetValue(column, out var gridColumn)) continue;
                 var current = columns.IndexOf(gridColumn);
                 if (current != index) columns.Move(current, index);
-                gridColumn.Width = layout.WidthOf(column);
+                _desiredColumnWidths[column] = layout.WidthOf(column);
+                gridColumn.Width = _desiredColumnWidths[column];
                 index++;
             }
         }
@@ -157,9 +186,87 @@ public partial class TicketsPage
 
     private void OnTicketColumnsChanged(object? sender, NotifyCollectionChangedEventArgs e) => ScheduleColumnSave();
 
+    /// <summary>
+    /// A width change that fitting did not make is a person dragging a header
+    /// edge. Any column but Title keeps the dragged width, and the rest make
+    /// room for it as it moves. Title is the column that fills, so a Title drag
+    /// is refit once it settles.
+    /// </summary>
     private void OnTicketColumnPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(GridViewColumn.Width)) ScheduleColumnSave();
+        if (e.PropertyName != nameof(GridViewColumn.Width) || _fittingColumns || _restoringColumns) return;
+        if (sender is not GridViewColumn gridColumn || !_columnHeaders.TryGetValue(gridColumn, out var header)) return;
+
+        if (header.Column == TicketListColumn.Title)
+        {
+            ScheduleColumnFit();
+            return;
+        }
+
+        if (double.IsFinite(gridColumn.Width) && gridColumn.Width > 0)
+            _desiredColumnWidths[header.Column] = Math.Max(TicketListColumns.MinWidth, gridColumn.Width);
+        FitTicketColumns(held: header.Column);
+        ScheduleColumnSave();
+    }
+
+    private void ScheduleColumnFit()
+    {
+        if (_columnFitTimer == null)
+        {
+            _columnFitTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+            _columnFitTimer.Tick += (_, _) =>
+            {
+                _columnFitTimer.Stop();
+                FitTicketColumns();
+            };
+        }
+        _columnFitTimer.Stop();
+        _columnFitTimer.Start();
+    }
+
+    /// <summary>
+    /// Show the columns at the widths that fit the pane: Title fills what the
+    /// others leave, and they give way when the pane is narrow. See
+    /// <see cref="TicketListColumnFit"/>.
+    /// </summary>
+    private void FitTicketColumns(TicketListColumn? held = null)
+    {
+        if (_columnHeaders.Count == 0 || _desiredColumnWidths.Count == 0) return;
+
+        var fit = TicketListColumnFit.Fit(_desiredColumnWidths, TicketListViewportWidth() - TicketRowChromeWidth, held);
+        _fittingColumns = true;
+        try
+        {
+            foreach (var (gridColumn, header) in _columnHeaders)
+            {
+                if (header.Column == held) continue;
+                if (fit.TryGetValue(header.Column, out var width) && Math.Abs(gridColumn.Width - width) >= 0.5)
+                    gridColumn.Width = width;
+            }
+        }
+        finally
+        {
+            _fittingColumns = false;
+        }
+    }
+
+    /// <summary>The width rows are laid out in: the list less its vertical scroll bar, when shown.</summary>
+    private double TicketListViewportWidth()
+    {
+        var scroller = FindDescendant<ScrollViewer>(TicketsListView);
+        if (scroller is { ViewportWidth: > 0 }) return scroller.ViewportWidth;
+        return TicketsListView.ActualWidth - SystemParameters.VerticalScrollBarWidth;
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match) return match;
+            if (FindDescendant<T>(child) is { } nested) return nested;
+        }
+        return null;
     }
 
     private void ScheduleColumnSave()
@@ -182,9 +289,14 @@ public partial class TicketsPage
     {
         try
         {
+            // The widths saved are each column's own, not the narrower ones a
+            // small pane shows, so a wider window brings them back.
             var layout = TicketListColumnLayout.Capture(TicketsGrid.Columns
                 .Where(_columnHeaders.ContainsKey)
-                .Select(c => (_columnHeaders[c].Column, double.IsNaN(c.Width) ? c.ActualWidth : c.Width)));
+                .Select(c => (_columnHeaders[c].Column,
+                    _desiredColumnWidths.TryGetValue(_columnHeaders[c].Column, out var width)
+                        ? width
+                        : double.IsNaN(c.Width) ? c.ActualWidth : c.Width)));
             UserPreferences.SetTicketsListColumns(layout.Serialize());
         }
         catch (Exception ex)
