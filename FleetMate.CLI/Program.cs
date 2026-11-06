@@ -25,6 +25,12 @@ class Program
     {
         // Load configuration
         var config = FleetMateConfig.Load();
+
+        // The command line, unlike the desktop app, may sign in: when no silent token exists it
+        // falls back to the operator's az session, which signs in at this console if az needs
+        // it -- the same way the Mac CLI gets its tokens.
+        var azTokens = new AzCliTokenSource();
+        EntraTokenSource.CommandLineFallback = (scope, tenant, ct) => azTokens.AcquireAsync(scope, tenant, ct);
         
         // Setup logging
         var logPath = Path.Combine(config.LogPath, "fleetmate-.log");

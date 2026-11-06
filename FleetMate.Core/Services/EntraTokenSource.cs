@@ -69,6 +69,17 @@ public sealed class EntraTokenSource
     /// </summary>
     public static Func<EntraHeadlessRequest, CancellationToken, Task<(string Token, DateTimeOffset ExpiresOn)>>? HeadlessSignIn { get; set; }
 
+    /// <summary>
+    /// The command line's fallback once every silent path has failed: the operator's own az
+    /// session, which signs in at the console when az needs it (<see cref="AzCliTokenSource"/>).
+    /// Only the command line registers it, so the desktop app still never opens a sign-in.
+    /// Arguments are the scope and the tenant.
+    /// </summary>
+    public static Func<string, string, CancellationToken, Task<(string Token, DateTimeOffset ExpiresOn)>>? CommandLineFallback { get; set; }
+
+    /// <summary>Test seam: replaces <see cref="CommandLineFallback"/> for this instance.</summary>
+    internal Func<string, string, CancellationToken, Task<(string Token, DateTimeOffset ExpiresOn)>>? CommandLineOverride { get; init; }
+
     /// <summary>Test seam: replaces <see cref="HeadlessSignIn"/> for this instance.</summary>
     internal Func<EntraHeadlessRequest, CancellationToken, Task<(string Token, DateTimeOffset ExpiresOn)>>? HeadlessOverride { get; init; }
 
@@ -148,7 +159,14 @@ public sealed class EntraTokenSource
             }
             catch (EntraTokenException brokerFailure)
             {
-                result = await AcquireHeadlessAsync(scope, brokerFailure, ct);
+                try
+                {
+                    result = await AcquireHeadlessAsync(scope, brokerFailure, ct);
+                }
+                catch (EntraTokenException silentFailure) when ((CommandLineOverride ?? CommandLineFallback) is not null)
+                {
+                    result = await AcquireFromCommandLineAsync(scope, silentFailure, ct);
+                }
             }
 
             // Refresh a little early so a token never expires mid-flight.
@@ -217,6 +235,25 @@ public sealed class EntraTokenSource
         {
             throw new EntraTokenException(scope,
                 $"{BrokerReason(brokerFailure)}; the hidden browser sign-in failed too: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>The command line's az fallback, tried only after every silent path.</summary>
+    private async Task<(string Token, DateTimeOffset ExpiresOn)> AcquireFromCommandLineAsync(
+        string scope, EntraTokenException silentFailure, CancellationToken ct)
+    {
+        var fallback = (CommandLineOverride ?? CommandLineFallback)!;
+        Log.Information("[entra] No silent token for {Scope}; trying the az session", scope);
+        try
+        {
+            var result = await fallback(scope, Tenant, ct);
+            if (string.IsNullOrEmpty(result.Token))
+                throw new InvalidOperationException("az returned no token");
+            return result;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            throw new EntraTokenException(scope, $"{BrokerReason(silentFailure)}; {ex.Message}", ex);
         }
     }
 

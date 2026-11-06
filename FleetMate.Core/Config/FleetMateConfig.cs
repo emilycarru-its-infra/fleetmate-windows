@@ -377,11 +377,13 @@ public class FleetMateConfig
             LoadEnvFile(EnvFile, config);
         }
         
-        // Also check for .env in current directory or repo root
+        // Also check for .env in current directory or repo root. Whoever controls that folder
+        // must not decide which tenant or client a token comes from, or which host receives the
+        // operator's bearer token, so those keys are ignored there.
         var localEnv = Path.Combine(Directory.GetCurrentDirectory(), ".env");
         if (File.Exists(localEnv))
         {
-            LoadEnvFile(localEnv, config);
+            LoadEnvFile(localEnv, config, fromWorkingDirectory: true);
         }
         
         // Load from Windows Registry (CSP OMA-URI style credentials store)
@@ -975,7 +977,34 @@ public class FleetMateConfig
         }
     }
     
-    private static void LoadEnvFile(string path, FleetMateConfig config)
+    /// <summary>
+    /// The only keys a .env in the working directory may set, compared after normalizing.
+    /// Everything that decides which tenant or client a token is minted for, or which host
+    /// receives the operator's token (GRAPH_TENANT_ID, GRAPH_CLIENT_ID, REPORTMATE_URL,
+    /// SNIPE_URL, TDX_BASE_URL), is left out, so whoever controls that folder cannot set it.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> WorkingDirectoryKeys = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "REPORTMATE_PASSPHRASE", "SNIPE_API_KEY", "GRAPH_CLIENT_SECRET", "GRAPH_USE_AZURE_CLI",
+        "TDX_APP_ID", "TDX_USERNAME", "TDX_PASSWORD", "TDX_BEID", "TDX_WEB_SERVICES_KEY",
+        "TDX_BEID_SECRET", "TDX_KEY_VAULT_NAME", "SECURE_SHELL_PRIVATE_KEY",
+    };
+
+    /// <summary>
+    /// A .env key in the one form every check uses: trimmed and upper-cased, or null when it
+    /// holds anything but ASCII letters, digits and underscores, so no casing or look-alike
+    /// character can reach the switch in a form the allowlist did not see.
+    /// </summary>
+    internal static string? NormalizeEnvKey(string raw)
+    {
+        var key = raw.Trim();
+        if (key.Length == 0) return null;
+        foreach (var c in key)
+            if (c > 0x7F || !(char.IsAsciiLetterOrDigit(c) || c == '_')) return null;
+        return key.ToUpperInvariant();
+    }
+
+    internal static void LoadEnvFile(string path, FleetMateConfig config, bool fromWorkingDirectory = false)
     {
         try
         {
@@ -989,10 +1018,20 @@ public class FleetMateConfig
                 if (parts.Length != 2)
                     continue;
                 
-                var key = parts[0].Trim();
+                var key = NormalizeEnvKey(parts[0]);
                 var value = parts[1].Trim().Trim('"', '\'');
-                
-                switch (key.ToUpperInvariant())
+                if (key is null)
+                {
+                    Log.Warning("Ignoring a .env key that is not plain ASCII in {Path}", path);
+                    continue;
+                }
+                if (fromWorkingDirectory && !WorkingDirectoryKeys.Contains(key))
+                {
+                    Log.Warning("Ignoring {Key} from the .env in the working directory", key);
+                    continue;
+                }
+
+                switch (key)
                 {
                     case "REPORTMATE_URL":
                         config.ReportMateUrl = value;
