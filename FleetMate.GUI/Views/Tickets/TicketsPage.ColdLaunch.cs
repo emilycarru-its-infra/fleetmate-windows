@@ -109,11 +109,5 @@ public partial class TicketsPage
         ShowClosedCheckBox.IsChecked = true;
 
     /// <summary>Every filter cleared and the date range back to the current term.</summary>
-    private void OnEmptyStateClearFiltersClicked(object sender, RoutedEventArgs e)
-    {
-        _filters.ClearAll();
-        if (DateRangeComboBox.ItemsSource is IEnumerable<DateRangeOption> options
-            && options.FirstOrDefault(o => o.Preset == TicketDateRangePreset.CurrentTerm) is { } term)
-            DateRangeComboBox.SelectedItem = term;
-    }
+    private void OnEmptyStateClearFiltersClicked(object sender, RoutedEventArgs e) => ClearAllFilters();
 }

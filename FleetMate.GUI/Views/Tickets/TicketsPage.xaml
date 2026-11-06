@@ -22,13 +22,12 @@
         </Grid.ColumnDefinitions>
 
         <!-- One toolbar row, in the Mac's order: the view's own controls
-             (board grouping, sort, folding), then what narrows the list
-             (Assigned to Me, the created-date window, one dropdown per
-             category, Show Closed), then the actions, with the count at the
-             right edge. Inbox | List | Board are lifted into the title bar.
-             When the window narrows the button labels drop to icons, as the
-             Mac's do, and the filter strip shrinks and scrolls sideways
-             rather than wrapping onto a second row. -->
+             (board grouping, sort), then what narrows the list (Clear
+             Filters, Assigned to Me, and one Filters button whose popover
+             holds every category, the created-date window and Show Closed),
+             then the actions, with the count at the right edge. Inbox | List |
+             Board are lifted into the title bar. When the window narrows the
+             button labels drop to icons, as the Mac's do. -->
         <Grid x:Name="TicketsToolbar" Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,10"
               SizeChanged="OnToolbarSizeChanged">
             <Grid.Resources>
@@ -164,6 +163,12 @@
                     </Button>
                 </StackPanel>
 
+                <!-- Clear Filters shows while any filter is on, as on Mac. -->
+                <Button x:Name="ClearFiltersButton" Width="32" Padding="0" Margin="0,0,8,0" Visibility="Collapsed"
+                        Click="OnClearFiltersClicked" ToolTip="Clear every filter"
+                        AutomationProperties.Name="Clear Filters">
+                    <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE711;" FontSize="12" VerticalAlignment="Center" />
+                </Button>
                 <!-- Assigned to Me narrows the list to tickets the signed-in TDX
                      person is responsible for; the choice is remembered. As on
                      Mac, on reads as a filled person in the accent colour over a
@@ -224,56 +229,116 @@
                 </ToggleButton>
             </StackPanel>
 
-            <!-- The filters and the actions after them, packed left. The
-                 actions dock right inside a panel that is only as wide as its
-                 content, so they sit right after the filters on a wide window
-                 and the filter strip is what gives way on a narrow one. -->
-            <DockPanel Grid.Column="1" HorizontalAlignment="Left" LastChildFill="True">
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button x:Name="DetailPanelButton" Margin="0,0,8,0" Click="OnToggleDetailPanel"
-                            ToolTip="Show or hide the ticket details" AutomationProperties.Name="Details">
-                        <StackPanel Orientation="Horizontal">
-                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE89F;" FontSize="12" VerticalAlignment="Center" />
-                            <TextBlock x:Name="DetailPanelLabel" Text="Details" Margin="6,0,0,0" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
-                    <Button x:Name="NewTicketButton" Margin="0,0,8,0" Click="OnNewTicketClicked"
-                            ToolTip="Create a ticket" AutomationProperties.Name="New Ticket">
-                        <StackPanel Orientation="Horizontal">
-                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE710;" FontSize="12" VerticalAlignment="Center" />
-                            <TextBlock x:Name="NewTicketLabel" Text="New Ticket" Margin="6,0,0,0" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
-                    <Button x:Name="RefreshButton" Click="OnRefreshClicked"
-                            ToolTip="Reload the tickets" AutomationProperties.Name="Refresh">
-                        <StackPanel Orientation="Horizontal">
-                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;" FontSize="12" VerticalAlignment="Center" />
-                            <TextBlock x:Name="RefreshLabel" Text="Refresh" Margin="6,0,0,0" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
-
-                <!-- Keyboard focus scrolls a hidden filter into view; the wheel
-                     and a trackpad swipe scroll the strip sideways. -->
-                <ScrollViewer x:Name="FilterStripScroller" Margin="0,0,8,0" Focusable="False"
-                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
-                              PreviewMouseWheel="OnFilterStripMouseWheel">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <!-- Created-date window, same presets as macOS. Up to 5000
-                             tickets load per window, so there is no separate limit. -->
-                        <ComboBox x:Name="DateRangeComboBox" Width="150" Margin="0,0,8,0"
-                                  ToolTip="Tickets created in" AutomationProperties.Name="Tickets created in"
-                                  DisplayMemberPath="Label" SelectionChanged="OnDateRangeChanged" />
-                        <TextBox x:Name="SearchBox" Visibility="Collapsed" Width="160" ui:ControlHelper.PlaceholderText="Search..." TextChanged="OnSearchChanged" />
-                        <!-- One dropdown per filter category. Each holds any number of
-                             values, which the widgets above also toggle. -->
-                        <StackPanel x:Name="FilterButtonsPanel" Orientation="Horizontal" VerticalAlignment="Center" />
-                        <CheckBox x:Name="ShowClosedCheckBox" Content="Show Closed" IsChecked="False" VerticalAlignment="Center" Margin="4,0,0,0"
-                                  MinWidth="0" AutomationProperties.Name="Show Closed"
-                                  Checked="OnShowClosedChanged" Unchecked="OnShowClosedChanged" />
+            <!-- The Filters button and the actions after it, packed left. -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                <!-- One Filters button opens every filter in a popover, as on
+                     Mac (FilterPanelView). The badge counts what is on: each
+                     picked value, Show Closed, and a date window other than
+                     the current term. -->
+                <Button x:Name="FiltersButton" Margin="0,0,8,0" Click="OnFiltersButtonClicked"
+                        ToolTip="Filter the tickets" AutomationProperties.Name="Filters">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE71C;" FontSize="12" VerticalAlignment="Center" />
+                        <TextBlock x:Name="FiltersLabel" Text="Filters" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        <Border x:Name="FiltersBadge" Visibility="Collapsed" Margin="6,0,0,0" MinWidth="18" Height="18" Padding="5,0"
+                                CornerRadius="9" VerticalAlignment="Center" Background="{DynamicResource SystemControlHighlightAccentBrush}">
+                            <TextBlock x:Name="FiltersBadgeText" Foreground="White" FontSize="11" FontWeight="SemiBold"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
                     </StackPanel>
-                </ScrollViewer>
-            </DockPanel>
+                </Button>
+
+                <!-- The Filters popover. Focus moves in when it opens, Tab
+                     stays inside it, and Esc or a click outside closes it. -->
+                <Popup x:Name="FiltersPopup" PlacementTarget="{Binding ElementName=FiltersButton}"
+                       Placement="Bottom" StaysOpen="False" AllowsTransparency="True"
+                       Opened="OnFiltersPopupOpened" Closed="OnFiltersPopupClosed">
+                    <Border Background="{DynamicResource CardBackgroundBrush}"
+                            BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1"
+                            CornerRadius="8" Width="480" Height="360" Margin="0,4,8,8"
+                            TextElement.Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                            KeyboardNavigation.TabNavigation="Cycle" KeyboardNavigation.ControlTabNavigation="Cycle"
+                            AutomationProperties.Name="Filters" PreviewKeyDown="OnFiltersPopoverKeyDown">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.25" />
+                        </Border.Effect>
+                        <DockPanel>
+                            <DockPanel DockPanel.Dock="Top" Margin="14,8,10,8">
+                                <Button x:Name="FiltersClearAllButton" DockPanel.Dock="Right" Content="Clear All" Visibility="Collapsed"
+                                        FontWeight="SemiBold" Click="OnFiltersClearAllClicked"
+                                        ToolTip="Clear every filter and go back to the current term"
+                                        AutomationProperties.Name="Clear all filters" />
+                                <TextBlock Text="Filters" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            </DockPanel>
+                            <Rectangle DockPanel.Dock="Top" Height="1" Fill="{DynamicResource CardBorderBrush}" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Categories, each with a count of what is picked in it. -->
+                                <ListBox x:Name="FilterSectionsList" Grid.Column="0" Padding="4,6" BorderThickness="0"
+                                         Background="Transparent" AutomationProperties.Name="Filter categories"
+                                         SelectionChanged="OnFilterSectionChanged" />
+                                <Rectangle Grid.Column="1" Width="1" Fill="{DynamicResource CardBorderBrush}" />
+
+                                <!-- The chosen category's values, searchable, each a checkbox. -->
+                                <DockPanel x:Name="FilterValuesPanel" Grid.Column="2">
+                                    <TextBox x:Name="FilterValueSearchBox" DockPanel.Dock="Top" Margin="8"
+                                             ui:ControlHelper.PlaceholderText="Search..."
+                                             AutomationProperties.Name="Search values"
+                                             TextChanged="OnFilterValueSearchChanged" />
+                                    <TextBlock x:Name="FilterNoValuesText" DockPanel.Dock="Top" Text="No matching values" Margin="12,4"
+                                               Visibility="Collapsed" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                                        <StackPanel x:Name="FilterValuesList" Margin="12,0,8,8" />
+                                    </ScrollViewer>
+                                </DockPanel>
+
+                                <!-- Time Period: the created-date window, same presets
+                                     as macOS, and Show Closed. Up to 5000 tickets load
+                                     per window, so there is no separate limit. -->
+                                <StackPanel x:Name="FilterTimePeriodPanel" Grid.Column="2" Margin="12" Visibility="Collapsed">
+                                    <TextBlock Text="Tickets created in" Margin="0,0,0,6"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    <ComboBox x:Name="DateRangeComboBox" HorizontalAlignment="Stretch"
+                                              ToolTip="Tickets created in" AutomationProperties.Name="Tickets created in"
+                                              DisplayMemberPath="Label" SelectionChanged="OnDateRangeChanged" />
+                                    <CheckBox x:Name="ShowClosedCheckBox" Content="Show Closed" IsChecked="False" Margin="0,12,0,0"
+                                              MinWidth="0" AutomationProperties.Name="Show Closed"
+                                              Checked="OnShowClosedChanged" Unchecked="OnShowClosedChanged" />
+                                </StackPanel>
+                            </Grid>
+                        </DockPanel>
+                    </Border>
+                </Popup>
+
+                <TextBox x:Name="SearchBox" Visibility="Collapsed" Width="160" ui:ControlHelper.PlaceholderText="Search..." TextChanged="OnSearchChanged" />
+
+                <Button x:Name="DetailPanelButton" Margin="0,0,8,0" Click="OnToggleDetailPanel"
+                        ToolTip="Show or hide the ticket details" AutomationProperties.Name="Details">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE89F;" FontSize="12" VerticalAlignment="Center" />
+                        <TextBlock x:Name="DetailPanelLabel" Text="Details" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="NewTicketButton" Margin="0,0,8,0" Click="OnNewTicketClicked"
+                        ToolTip="Create a ticket" AutomationProperties.Name="New Ticket">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE710;" FontSize="12" VerticalAlignment="Center" />
+                        <TextBlock x:Name="NewTicketLabel" Text="New Ticket" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <Button x:Name="RefreshButton" Click="OnRefreshClicked"
+                        ToolTip="Reload the tickets" AutomationProperties.Name="Refresh">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;" FontSize="12" VerticalAlignment="Center" />
+                        <TextBlock x:Name="RefreshLabel" Text="Refresh" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
 
             <!-- Sign In appears only when silent sign-in failed; a signed-in
                  user needs no indicator, since the tickets loading says it. -->
