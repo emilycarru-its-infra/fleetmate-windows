@@ -1424,25 +1424,51 @@
                                     <Separator Margin="0,10,0,0" />
                                 </StackPanel>
 
-                                <ItemsControl x:Name="FeedItemsControl">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" Padding="10" CornerRadius="6" Margin="0,0,0,8">
+                                <!-- Each comment, then its thread: the replies, and the reply
+                                     composer when it is open, indented on a rail, as on the Mac.
+                                     The arrow on any card replies in the thread; the card's
+                                     menu (right-click or the Menu key) adds Quote in New Comment
+                                     and Copy. -->
+                                <ItemsControl x:Name="FeedItemsControl" AutomationProperties.Name="Activity">
+                                    <ItemsControl.Resources>
+                                        <DataTemplate x:Key="FeedCardTemplate">
+                                            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}" Padding="10" CornerRadius="6" Margin="0,0,0,8"
+                                                    AutomationProperties.Name="{Binding AccessibleName}">
+                                                <Border.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="Reply in Thread" Tag="{Binding}" Click="OnReplyInThreadClicked" />
+                                                        <MenuItem Header="Quote in New Comment" Tag="{Binding}" Click="OnQuoteFeedEntry" />
+                                                        <Separator />
+                                                        <MenuItem Header="Copy" Tag="{Binding}" Click="OnCopyFeedEntryClicked" />
+                                                    </ContextMenu>
+                                                </Border.ContextMenu>
                                                 <StackPanel>
                                                     <DockPanel>
-                                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                                            <!-- Quote, not Reply: the TDX Web API has no route
-                                                                 for a threaded reply, so quoting into a new
-                                                                 comment is the closest thing it supports. -->
-                                                            <Button Content="Quote" FontSize="10" Padding="6,1" Margin="0,0,6,0"
-                                                                    Click="OnQuoteFeedEntry" Tag="{Binding}"
-                                                                    ToolTip="Quote this comment into a new one" />
-                                                            <Border x:Name="PrivateBadge" Background="#FFFFD080" Padding="6,2" CornerRadius="4" Margin="0,0,4,0" Visibility="{Binding IsPrivate, Converter={StaticResource BoolToVisibilityConverter}}">
-                                                                <TextBlock Text="Private" FontSize="10" />
+                                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <!-- Private: a lock and the word in the secondary text
+                                                                 colour on a faint pill, as on the Mac. Theme brushes
+                                                                 only, so it reads in light, dark and high contrast. -->
+                                                            <Border Visibility="{Binding PrivateVisibility}" Padding="6,1,7,1" CornerRadius="8" Margin="0,0,8,0"
+                                                                    VerticalAlignment="Center" Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                                                                    ToolTip="Private: not shown to the requestor" AutomationProperties.Name="Private">
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72E;" FontSize="10" Margin="0,0,4,0" VerticalAlignment="Center"
+                                                                                 Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                                    <TextBlock Text="Private" FontSize="11" VerticalAlignment="Center"
+                                                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                                </StackPanel>
                                                             </Border>
-                                                            <TextBlock Text="{Binding FormattedDate}" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                            <TextBlock Text="{Binding FormattedDate}" FontSize="11" VerticalAlignment="Center"
+                                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                            <Button Tag="{Binding}" Click="OnReplyInThreadClicked" Margin="6,0,0,0" Padding="4,2"
+                                                                    Style="{StaticResource ChromeIconButtonStyle}"
+                                                                    ToolTip="Reply in this thread" AutomationProperties.Name="Reply in thread">
+                                                                <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE97A;" FontSize="12"
+                                                                             Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                            </Button>
                                                         </StackPanel>
-                                                        <TextBlock Text="{Binding CreatedFullName}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding CreatedFullName}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                                                   VerticalAlignment="Center" />
                                                     </DockPanel>
                                                     <!-- Uncapped: a clipped comment reads as a rendering fault,
                                                          and the detail you need is often at the bottom. -->
@@ -1452,6 +1478,46 @@
                                                     <TextBlock Text="{Binding StrippedBody}" FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
                                                 </StackPanel>
                                             </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.Resources>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel>
+                                                <ContentPresenter Content="{Binding}" ContentTemplate="{StaticResource FeedCardTemplate}" />
+                                                <Border Visibility="{Binding ThreadVisibility}" Margin="12,-2,0,8" Padding="12,0,0,0"
+                                                        BorderThickness="2,0,0,0" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                                                    <StackPanel>
+                                                        <ItemsControl ItemsSource="{Binding Replies}" ItemTemplate="{StaticResource FeedCardTemplate}"
+                                                                      Focusable="False" AutomationProperties.Name="Replies" />
+                                                        <!-- The reply composer, where the next reply will land.
+                                                             The API takes only a body, so no Private or Notify. -->
+                                                        <Border Visibility="{Binding ComposerVisibility}" Padding="10" CornerRadius="6" BorderThickness="1"
+                                                                BorderBrush="{DynamicResource SystemControlForegroundAccentBrush}"
+                                                                Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                                                                AutomationProperties.Name="{Binding ReplyLabel}">
+                                                            <StackPanel>
+                                                                <TextBox Tag="{Binding}" Text="{Binding ReplyDraft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                         AcceptsReturn="True" TextWrapping="Wrap" Height="64" FontSize="13"
+                                                                         VerticalScrollBarVisibility="Auto" SpellCheck.IsEnabled="True"
+                                                                         ui:ControlHelper.PlaceholderText="{Binding ReplyLabel}"
+                                                                         AutomationProperties.Name="{Binding ReplyLabel}"
+                                                                         PreviewKeyDown="OnReplyKeyDown" IsVisibleChanged="OnReplyBoxVisibleChanged" />
+                                                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                                                    <Button Content="Post Reply" Tag="{Binding}" Click="OnPostReplyClicked"
+                                                                            IsEnabled="{Binding CanPostReply}" Style="{DynamicResource AccentButtonStyle}"
+                                                                            ToolTip="Post this reply in the thread (Ctrl+Enter)" />
+                                                                    <Button Content="Cancel" Tag="{Binding}" Click="OnCancelReplyClicked" Margin="8,0,0,0"
+                                                                            ToolTip="Close the reply; the draft is kept (Esc)" />
+                                                                    <ui:ProgressRing IsActive="{Binding IsPostingReply}" Visibility="{Binding PostingVisibility}"
+                                                                                     Width="14" Height="14" Margin="10,0,0,0" VerticalAlignment="Center" />
+                                                                </StackPanel>
+                                                                <TextBlock Text="{Binding ReplyHint}" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"
+                                                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </StackPanel>
+                                                </Border>
+                                            </StackPanel>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>

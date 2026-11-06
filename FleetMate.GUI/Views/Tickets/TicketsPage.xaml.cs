@@ -1129,6 +1129,8 @@ private bool _isInitialLoadDone;
         NotifyCheckboxesPanel.Children.Clear();
         RestoreAttachmentDraft(ticketId);
         SetComposeOpen(false);
+        // A reply composer belongs to the ticket it was opened on; its draft is kept.
+        _replyingToEntryId = null;
     }
 
     // ── Compose space ─────────────────────────────────────────────
@@ -1188,12 +1190,9 @@ private bool _isInitialLoadDone;
     }
 
     /// <summary>
-    /// Seed the comment box with the selected entry, quoted.
-    ///
-    /// Quote rather than Reply because the TDX Web API has no route for a
-    /// threaded reply — posting one creates another top-level entry with the
-    /// named parent's reply count still zero. Quoting is the closest thing the
-    /// API actually supports, so it is what the button offers.
+    /// Quote in New Comment, from a card's menu: seed the comment box with the
+    /// entry, quoted. Unlike a threaded reply, a new comment can be private and
+    /// notify people, which is why the Mac keeps this beside Reply in Thread.
     /// </summary>
     private void OnQuoteFeedEntry(object sender, RoutedEventArgs e)
     {
@@ -1642,16 +1641,8 @@ private bool _isInitialLoadDone;
             FeedHeaderText.Text = $"Activity ({feedList.Count})";
             
             // Convert feed entries for display
-            var displayFeed = feedList.Take(20).Select(f => new FeedDisplayItem
-            {
-                CreatedFullName = f.CreatedFullName ?? "Unknown",
-                FormattedDate = FormatDate(f.CreatedDate),
-                StrippedBody = DecodeHtml(f.Body ?? ""),
-                IsPrivate = f.IsPrivate,
-                // Only when TDX says who was notified. Replies and most system
-                // entries carry no list, and an empty one says nothing.
-                NotificationRecipients = FeedDisplayItem.NotifiedLine(f.NotifiedList)
-            }).ToList();
+            // Each comment carries its thread: replies and the reply composer.
+            var displayFeed = feedList.Take(20).Select(ToDisplayItem).ToList();
             
             FeedItemsControl.ItemsSource = displayFeed;
             FeedSection.Visibility = Visibility.Visible;
@@ -2096,22 +2087,6 @@ private bool _isInitialLoadDone;
         
         return result.Trim();
     }
-}
-
-// Helper class for feed display
-public class FeedDisplayItem
-{
-    public string CreatedFullName { get; set; } = "";
-    public string FormattedDate { get; set; } = "";
-    public string StrippedBody { get; set; } = "";
-    public bool IsPrivate { get; set; }
-    public string NotificationRecipients { get; set; } = "";
-    /// <summary>"Notified: …", or nothing when TDX sent no names.</summary>
-    public static string NotifiedLine(string? notifiedList) =>
-        string.IsNullOrWhiteSpace(notifiedList) ? "" : $"Notified: {System.Net.WebUtility.HtmlDecode(notifiedList.Trim())}";
-
-    public Visibility NotificationVisibility =>
-        string.IsNullOrEmpty(NotificationRecipients) ? Visibility.Collapsed : Visibility.Visible;
 }
 
 /// <summary>A date-range choice for the Tickets toolbar.</summary>
