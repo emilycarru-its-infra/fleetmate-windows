@@ -66,9 +66,13 @@
                          A mail icon ahead of List | Board, with the unread count as a
                          red badge on its corner. Hidden until the first full scan
                          finishes, as on Mac, so nobody reads a partial inbox. Same
-                         group as List and Board, so picking it leaves either of them. -->
-                    <Grid x:Name="InboxButtonHost" Visibility="Collapsed" Margin="0,0,8,0" VerticalAlignment="Center">
-                        <RadioButton x:Name="InboxViewRadio" GroupName="ViewMode" Width="38" Height="32"
+                         group as List and Board, so picking it leaves either of them.
+                         A square as tall as the List | Board segment. ModernWPF's
+                         RadioButton style sets a MinWidth of 120, which stretched it into a
+                         wide pill with the icon adrift, so the minimums are cleared. -->
+                    <Grid x:Name="InboxButtonHost" Visibility="Collapsed" Margin="0,0,10,0" VerticalAlignment="Center">
+                        <RadioButton x:Name="InboxViewRadio" GroupName="ViewMode" Width="32" Height="32"
+                                     MinWidth="0" MinHeight="0" Padding="0"
                                      Checked="OnViewModeChanged" Cursor="Hand"
                                      ToolTip="Inbox: comments from the last 90 days that notified you (Ctrl+Alt+3)"
                                      AutomationProperties.Name="Inbox">
@@ -98,7 +102,7 @@
                         </RadioButton>
                         <!-- The standard red count badge, hidden at zero. -->
                         <Border x:Name="InboxBadge" Visibility="Collapsed" IsHitTestVisible="False"
-                                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-5,-6,0"
+                                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-6,-8,0"
                                 MinWidth="17" Height="17" Padding="4,0" CornerRadius="8.5" Background="#FFC42B1C">
                             <TextBlock x:Name="InboxBadgeText" Foreground="White" FontSize="10.5" FontWeight="SemiBold"
                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
