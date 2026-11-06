@@ -96,6 +96,8 @@ public sealed class TicketRowViewModel
     /// <summary>Last modified, "Oct 15 at 7:01 PM".</summary>
     public string ModifiedLabel => TicketListFormat.Modified(Ticket.ModifiedDate);
 
+    public string CreatedLabel => TicketListFormat.Created(Ticket.CreatedDate);
+
     /// <summary>What the disclosure button does, for its tooltip and screen readers.</summary>
     public string DisclosureName => (Row.IsExpanded ? "Hide " : "Show ") + ChildCountTooltip;
 

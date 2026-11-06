@@ -14,6 +14,7 @@ public enum TicketListColumn
     Responsible,
     Age,
     Modified,
+    Created,
 }
 
 /// <summary>
@@ -46,6 +47,7 @@ public static class TicketListColumns
         TicketListColumn.Responsible => "Responsible",
         TicketListColumn.Age => "Age",
         TicketListColumn.Modified => "Modified",
+        TicketListColumn.Created => "Created",
         _ => column.ToString(),
     };
 
@@ -67,6 +69,7 @@ public static class TicketListColumns
         TicketListColumn.Responsible => 130,
         TicketListColumn.Age => 70,
         TicketListColumn.Modified => 120,
+        TicketListColumn.Created => 120,
         _ => 100,
     };
 }
@@ -126,7 +129,7 @@ public static class TicketListSort
             : (field, true);
     }
 
-    /// <summary>The column a sort field belongs to; Created has none in the table.</summary>
+    /// <summary>The column a sort field belongs to, if the table has one.</summary>
     public static TicketListColumn? ColumnFor(string? field) => TicketListColumns.FromHeader(field);
 
     /// <summary>What a screen reader says for a header: its name and whether the list is sorted by it.</summary>
@@ -145,6 +148,9 @@ public static class TicketListFormat
     public const int AgeHighlightDays = 14;
 
     public static bool IsAgeHighlighted(int? days) => days is { } d && d >= AgeHighlightDays;
+
+    /// <summary>The Created column reads like Modified.</summary>
+    public static string Created(DateTime value, IFormatProvider? culture = null) => Modified(value, culture);
 
     /// <summary>"Oct 15 at 7:01 PM" in local time, the detail pane's and the Mac's format.</summary>
     public static string Modified(DateTime? value, IFormatProvider? culture = null)

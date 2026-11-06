@@ -15,7 +15,7 @@ public class TicketListColumnsTests
     public void ColumnsFollowTheMacOrder()
     {
         Assert.Equal(
-            new[] { "ID", "Title", "Status", "Priority", "Requestor", "Responsible", "Age", "Modified" },
+            new[] { "ID", "Title", "Status", "Priority", "Requestor", "Responsible", "Age", "Modified", "Created" },
             TicketListColumns.All.Select(TicketListColumns.Header));
     }
 
@@ -28,6 +28,7 @@ public class TicketListColumnsTests
     [InlineData(TicketListColumn.Responsible, 130)]
     [InlineData(TicketListColumn.Age, 70)]
     [InlineData(TicketListColumn.Modified, 120)]
+    [InlineData(TicketListColumn.Created, 120)]
     public void DefaultWidthsAreTheMacWidths(TicketListColumn column, double width)
     {
         Assert.Equal(width, TicketListColumns.DefaultWidth(column));
@@ -47,7 +48,7 @@ public class TicketListColumnsTests
     {
         foreach (var column in TicketListColumns.All)
             Assert.Equal(column, TicketListColumns.FromHeader(TicketListColumns.Header(column)));
-        Assert.Null(TicketListColumns.FromHeader("Created"));
+        Assert.Null(TicketListColumns.FromHeader("Bogus"));
         Assert.Null(TicketListColumns.FromHeader(null));
     }
 }
@@ -126,8 +127,7 @@ public class TicketListSortTests
         Assert.Equal("Age, sorted ascending", TicketListSort.SpokenHeader(TicketListColumn.Age, "Age", true));
         Assert.Equal("Age, sorted descending", TicketListSort.SpokenHeader(TicketListColumn.Age, "Age", false));
         Assert.Equal("Title, not sorted", TicketListSort.SpokenHeader(TicketListColumn.Title, "Age", true));
-        // Created has no column, so no header claims the sort.
-        Assert.All(TicketListColumns.All, c => Assert.EndsWith("not sorted", TicketListSort.SpokenHeader(c, "Created", true)));
+        Assert.Equal("Created, sorted ascending", TicketListSort.SpokenHeader(TicketListColumn.Created, "Created", true));
     }
 
     [Fact]
@@ -174,6 +174,7 @@ public class TicketListColumnLayoutTests
         {
             TicketListColumn.Title, TicketListColumn.Id, TicketListColumn.Status, TicketListColumn.Priority,
             TicketListColumn.Requestor, TicketListColumn.Responsible, TicketListColumn.Modified, TicketListColumn.Age,
+            TicketListColumn.Created,
         };
         var saved = TicketListColumnLayout.Capture(order.Select(c => (c, c == TicketListColumn.Title ? 321.4 : 100.0)));
 
@@ -195,9 +196,21 @@ public class TicketListColumnLayoutTests
         // Status follows Title by default, and so on down the defaults.
         Assert.Equal(new[]
         {
-            TicketListColumn.Modified, TicketListColumn.Id, TicketListColumn.Title, TicketListColumn.Status,
+            TicketListColumn.Modified, TicketListColumn.Created, TicketListColumn.Id, TicketListColumn.Title, TicketListColumn.Status,
             TicketListColumn.Priority, TicketListColumn.Requestor, TicketListColumn.Responsible, TicketListColumn.Age,
         }, layout.Arrange());
+    }
+
+    [Fact]
+    public void ALayoutSavedBeforeCreatedExistedPutsCreatedAfterModified()
+    {
+        var layout = new TicketListColumnLayout
+        {
+            Order = { "ID", "Title", "Status", "Priority", "Requestor", "Responsible", "Age", "Modified" },
+        };
+
+        Assert.Equal(TicketListColumns.All, layout.Arrange());
+        Assert.Equal(TicketListColumns.DefaultWidth(TicketListColumn.Created), layout.WidthOf(TicketListColumn.Created));
     }
 
     [Theory]
