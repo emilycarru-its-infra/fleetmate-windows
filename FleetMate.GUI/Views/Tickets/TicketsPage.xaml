@@ -21,12 +21,17 @@
             <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
-        <!-- Toolbar, left-aligned as on Mac: List|Board first, then the board's
-             column picker, sort, Assigned to Me and the actions. Every control
-             is the same height so the row reads as one strip. The count sits at
-             the right edge. -->
-        <DockPanel Grid.Row="0" Grid.ColumnSpan="2" LastChildFill="True">
-            <DockPanel.Resources>
+        <!-- One toolbar row, in the Mac's order: the view's own controls
+             (board grouping, sort, folding), then what narrows the list
+             (Assigned to Me, the created-date window, one dropdown per
+             category, Show Closed), then the actions, with the count at the
+             right edge. Inbox | List | Board are lifted into the title bar.
+             When the window narrows the button labels drop to icons, as the
+             Mac's do, and the filter strip shrinks and scrolls sideways
+             rather than wrapping onto a second row. -->
+        <Grid x:Name="TicketsToolbar" Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,10"
+              SizeChanged="OnToolbarSizeChanged">
+            <Grid.Resources>
                 <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
                     <Setter Property="Height" Value="32" />
                     <Setter Property="MinHeight" Value="0" />
@@ -47,24 +52,22 @@
                     <Setter Property="VerticalAlignment" Value="Center" />
                     <Setter Property="VerticalContentAlignment" Value="Center" />
                 </Style>
-            </DockPanel.Resources>
+            </Grid.Resources>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
-            <!-- Sign In appears only when silent sign-in failed; a signed-in
-                 user needs no indicator, since the tickets loading says it. -->
-            <Button x:Name="SsoLoginButton" DockPanel.Dock="Right" Content="Sign In" Margin="8,0,0,0"
-                    ToolTip="Sign in to TeamDynamix. A sign-in window opens if the automatic sign-in cannot finish." Click="OnSsoLoginClicked" Visibility="Collapsed"/>
-            <TextBlock x:Name="TicketCountText" DockPanel.Dock="Right" Text="0 of 0" VerticalAlignment="Center" Margin="12,0,0,0"
-                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-
-            <WrapPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                 <!-- Inbox, then List | Board, as on Mac (ViewModePill): lifted together
                      into the window's title bar after Back and Forward (IChromeToolbar). -->
                 <StackPanel x:Name="ViewModeChrome" Orientation="Horizontal" VerticalAlignment="Center">
                     <!-- Inbox: every recent comment that notified you, on any ticket.
                          A mail icon ahead of List | Board, with the unread count as a
                          red badge on its corner. Hidden until the first full scan
-                         finishes. Same group as List and Board, so picking it
-                         leaves either of them. -->
+                         finishes, as on Mac, so nobody reads a partial inbox. Same
+                         group as List and Board, so picking it leaves either of them. -->
                     <Grid x:Name="InboxButtonHost" Visibility="Collapsed" Margin="0,0,8,0" VerticalAlignment="Center">
                         <RadioButton x:Name="InboxViewRadio" GroupName="ViewMode" Width="38" Height="32"
                                      Checked="OnViewModeChanged" Cursor="Hand"
@@ -116,7 +119,8 @@
 
                 <!-- Board column dimension, mirroring the macOS BoardGroupBy
                      options; shown only on the board, as on Mac. -->
-                <ComboBox x:Name="BoardGroupComboBox" Width="150" Margin="0,0,8,0" ToolTip="Group board columns by"
+                <ComboBox x:Name="BoardGroupComboBox" Width="130" Margin="0,0,8,0" ToolTip="Group board columns by"
+                          AutomationProperties.Name="Group board columns by"
                           SelectionChanged="OnBoardGroupChanged">
                     <ComboBoxItem Content="Status" />
                     <ComboBoxItem Content="Responsible" IsSelected="True" />
@@ -124,69 +128,179 @@
                     <ComboBoxItem Content="Group" />
                 </ComboBox>
 
-                <ComboBox x:Name="SortComboBox" Width="130" Margin="0,0,4,0" ToolTip="Sort by" SelectionChanged="OnSortChanged">
-                    <ComboBoxItem Content="Modified" IsSelected="True" />
-                    <ComboBoxItem Content="Created" />
-                    <ComboBoxItem Content="ID" />
-                    <ComboBoxItem Content="Age" />
-                    <ComboBoxItem Content="Title" />
-                    <ComboBoxItem Content="Status" />
-                    <ComboBoxItem Content="Priority" />
-                    <ComboBoxItem Content="Requestor" />
-                    <ComboBoxItem Content="Responsible" />
-                </ComboBox>
-                <Button x:Name="SortDirectionButton" Content="↓" Width="32" Padding="0" Margin="0,0,8,0" Click="OnSortDirectionClicked" ToolTip="Toggle sort direction" />
+                <!-- Sort field and direction: shown on the board only. In List
+                     view the column headers sort, as on Mac, and they read and
+                     write the same _sortField / _sortAscending through SetTicketSort. -->
+                <StackPanel x:Name="SortControls" Orientation="Horizontal" VerticalAlignment="Center">
+                    <ComboBox x:Name="SortComboBox" Width="120" Margin="0,0,4,0" ToolTip="Sort by"
+                              AutomationProperties.Name="Sort by" SelectionChanged="OnSortChanged">
+                        <ComboBoxItem Content="Modified" IsSelected="True" />
+                        <ComboBoxItem Content="Created" />
+                        <ComboBoxItem Content="ID" />
+                        <ComboBoxItem Content="Age" />
+                        <ComboBoxItem Content="Title" />
+                        <ComboBoxItem Content="Status" />
+                        <ComboBoxItem Content="Priority" />
+                        <ComboBoxItem Content="Requestor" />
+                        <ComboBoxItem Content="Responsible" />
+                    </ComboBox>
+                    <!-- An arrow beside three bars that grow or shrink with it:
+                         the usual sort-ascending / sort-descending picture. -->
+                    <Button x:Name="SortDirectionButton" Width="32" Padding="0" Margin="0,0,8,0" Click="OnSortDirectionClicked"
+                            ToolTip="Sorted descending. Click to sort ascending."
+                            AutomationProperties.Name="Sort direction" AutomationProperties.ItemStatus="Descending">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <ui:FontIcon x:Name="SortDirectionIcon" FontFamily="Segoe Fluent Icons" Glyph="&#xE74B;" FontSize="12"
+                                         VerticalAlignment="Center" />
+                            <StackPanel Margin="2,0,0,0" VerticalAlignment="Center">
+                                <Rectangle x:Name="SortBarTop" Height="1.5" Width="9" Margin="0,1" HorizontalAlignment="Left"
+                                           Fill="{Binding Foreground, ElementName=SortDirectionIcon}" />
+                                <Rectangle x:Name="SortBarMiddle" Height="1.5" Width="6.5" Margin="0,1" HorizontalAlignment="Left"
+                                           Fill="{Binding Foreground, ElementName=SortDirectionIcon}" />
+                                <Rectangle x:Name="SortBarBottom" Height="1.5" Width="4" Margin="0,1" HorizontalAlignment="Left"
+                                           Fill="{Binding Foreground, ElementName=SortDirectionIcon}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
 
                 <!-- Fold controls change how rows are drawn, not which rows are there. -->
-                <Button x:Name="CollapseAllButton" Content="▸" FontFamily="Segoe UI Symbol" FontSize="10" Width="32" Padding="0"
-                        ToolTip="Collapse all" Click="OnCollapseAllClicked" Margin="0,0,4,0" />
-                <Button x:Name="ExpandAllButton" Content="▾" FontFamily="Segoe UI Symbol" FontSize="10" Width="32" Padding="0"
-                        ToolTip="Expand all" Click="OnExpandAllClicked" Margin="0,0,12,0" />
+                <StackPanel x:Name="FoldControls" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                    <Button x:Name="ExpandAllButton" Width="32" Padding="0" Margin="0,0,4,0" Click="OnExpandAllClicked"
+                            ToolTip="Expand all: show every parent ticket's children"
+                            AutomationProperties.Name="Expand all">
+                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xECCD;" FontSize="14" />
+                    </Button>
+                    <Button x:Name="CollapseAllButton" Width="32" Padding="0" Click="OnCollapseAllClicked"
+                            ToolTip="Collapse all: fold child tickets under their parents"
+                            AutomationProperties.Name="Collapse all">
+                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xF165;" FontSize="14" />
+                    </Button>
+                </StackPanel>
 
                 <!-- Assigned to Me narrows the list to tickets the signed-in TDX
-                     person is responsible for; the choice is remembered. -->
+                     person is responsible for; the choice is remembered. As on
+                     Mac, on reads as a filled person in the accent colour over a
+                     faint accent tint, never an accent fill that hides the label. -->
                 <ToggleButton x:Name="AssignedToMeToggle" Margin="0,0,8,0" IsEnabled="False"
                               ToolTip="Waiting to identify you in TeamDynamix"
+                              AutomationProperties.Name="Assigned to Me"
                               Checked="OnAssignedToMeChanged" Unchecked="OnAssignedToMeChanged">
-                    <!-- On: icon and text in the accent colour, not only a faint pressed fill. -->
+                    <ToggleButton.Template>
+                        <ControlTemplate TargetType="ToggleButton">
+                            <Border x:Name="Chrome" CornerRadius="{DynamicResource ControlCornerRadius}" BorderThickness="1"
+                                    Background="{DynamicResource ButtonBackground}" BorderBrush="{DynamicResource ButtonBorderBrush}"
+                                    SnapsToDevicePixels="True">
+                                <ContentPresenter x:Name="Presenter" Margin="{TemplateBinding Padding}"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{DynamicResource ButtonForeground}" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ButtonBackgroundPointerOver}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ButtonBackgroundPressed}" />
+                                </Trigger>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SystemControlHighlightListAccentLowBrush}" />
+                                    <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
+                                    <Setter TargetName="Presenter" Property="TextElement.Foreground" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
+                                </Trigger>
+                                <MultiTrigger>
+                                    <MultiTrigger.Conditions>
+                                        <Condition Property="IsChecked" Value="True" />
+                                        <Condition Property="IsMouseOver" Value="True" />
+                                    </MultiTrigger.Conditions>
+                                    <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource SystemControlHighlightListAccentMediumBrush}" />
+                                </MultiTrigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="Chrome" Property="Opacity" Value="0.5" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </ToggleButton.Template>
                     <StackPanel Orientation="Horizontal">
-                        <StackPanel.Style>
-                            <Style TargetType="StackPanel">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsChecked, ElementName=AssignedToMeToggle}" Value="True">
-                                        <Setter Property="TextElement.Foreground" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </StackPanel.Style>
-                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE77B;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
-                        <TextBlock Text="Assigned to Me" VerticalAlignment="Center" />
+                        <ui:FontIcon FontFamily="Segoe Fluent Icons" FontSize="13" VerticalAlignment="Center">
+                            <ui:FontIcon.Style>
+                                <Style TargetType="ui:FontIcon">
+                                    <Setter Property="Glyph" Value="&#xE77B;" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsChecked, ElementName=AssignedToMeToggle}" Value="True">
+                                            <Setter Property="Glyph" Value="&#xEA8C;" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ui:FontIcon.Style>
+                        </ui:FontIcon>
+                        <TextBlock x:Name="AssignedToMeLabel" Text="Assigned to Me" Margin="6,0,0,0" VerticalAlignment="Center" />
                     </StackPanel>
                 </ToggleButton>
-                <Button x:Name="DetailPanelButton" Margin="0,0,8,0" Click="OnToggleDetailPanel"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE89F;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="Details" VerticalAlignment="Center" /></StackPanel></Button>
-                <Button x:Name="NewTicketButton" Margin="0,0,8,0" Click="OnNewTicketClicked" ToolTip="Create a ticket"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE710;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="New Ticket" VerticalAlignment="Center" /></StackPanel></Button>
-                <Button x:Name="RefreshButton" Click="OnRefreshClicked"><StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="Refresh" VerticalAlignment="Center" /></StackPanel></Button>
-            </WrapPanel>
-        </DockPanel>
+            </StackPanel>
 
-        <!-- Filters, left-aligned under the toolbar: the created-date window,
-             one dropdown per category, then Show Closed. -->
-        <DockPanel Grid.Row="1" Grid.ColumnSpan="2" Margin="0,10,0,8" LastChildFill="True">
-            <!-- Created-date window, same presets as macOS. Up to 5000
-                 tickets load per window, so there is no separate limit. -->
-            <ComboBox x:Name="DateRangeComboBox" DockPanel.Dock="Left" Width="170" Height="32" MinHeight="0" Margin="0,0,8,4"
-                      VerticalAlignment="Top" VerticalContentAlignment="Center" ToolTip="Tickets created in"
-                      DisplayMemberPath="Label" SelectionChanged="OnDateRangeChanged" />
-            <TextBox x:Name="SearchBox" DockPanel.Dock="Left" Visibility="Collapsed" Width="160" ui:ControlHelper.PlaceholderText="Search..." TextChanged="OnSearchChanged" />
-            <!-- One dropdown per filter category. Each holds any number of
-                 values, which the widgets above also toggle. Show Closed rides
-                 at the end of the same wrap so it stays with the filters. -->
-            <WrapPanel x:Name="FilterRowPanel" HorizontalAlignment="Left" VerticalAlignment="Top">
-                <WrapPanel x:Name="FilterButtonsPanel" VerticalAlignment="Center" />
-                <CheckBox x:Name="ShowClosedCheckBox" Content="Show Closed" IsChecked="False" VerticalAlignment="Center" Margin="4,0,0,4"
-                          Checked="OnShowClosedChanged" Unchecked="OnShowClosedChanged" />
-            </WrapPanel>
-        </DockPanel>
+            <!-- The filters and the actions after them, packed left. The
+                 actions dock right inside a panel that is only as wide as its
+                 content, so they sit right after the filters on a wide window
+                 and the filter strip is what gives way on a narrow one. -->
+            <DockPanel Grid.Column="1" HorizontalAlignment="Left" LastChildFill="True">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="DetailPanelButton" Margin="0,0,8,0" Click="OnToggleDetailPanel"
+                            ToolTip="Show or hide the ticket details" AutomationProperties.Name="Details">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE89F;" FontSize="12" VerticalAlignment="Center" />
+                            <TextBlock x:Name="DetailPanelLabel" Text="Details" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="NewTicketButton" Margin="0,0,8,0" Click="OnNewTicketClicked"
+                            ToolTip="Create a ticket" AutomationProperties.Name="New Ticket">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE710;" FontSize="12" VerticalAlignment="Center" />
+                            <TextBlock x:Name="NewTicketLabel" Text="New Ticket" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="RefreshButton" Click="OnRefreshClicked"
+                            ToolTip="Reload the tickets" AutomationProperties.Name="Refresh">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;" FontSize="12" VerticalAlignment="Center" />
+                            <TextBlock x:Name="RefreshLabel" Text="Refresh" Margin="6,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+
+                <!-- Keyboard focus scrolls a hidden filter into view; the wheel
+                     and a trackpad swipe scroll the strip sideways. -->
+                <ScrollViewer x:Name="FilterStripScroller" Margin="0,0,8,0" Focusable="False"
+                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                              PreviewMouseWheel="OnFilterStripMouseWheel">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- Created-date window, same presets as macOS. Up to 5000
+                             tickets load per window, so there is no separate limit. -->
+                        <ComboBox x:Name="DateRangeComboBox" Width="150" Margin="0,0,8,0"
+                                  ToolTip="Tickets created in" AutomationProperties.Name="Tickets created in"
+                                  DisplayMemberPath="Label" SelectionChanged="OnDateRangeChanged" />
+                        <TextBox x:Name="SearchBox" Visibility="Collapsed" Width="160" ui:ControlHelper.PlaceholderText="Search..." TextChanged="OnSearchChanged" />
+                        <!-- One dropdown per filter category. Each holds any number of
+                             values, which the widgets above also toggle. -->
+                        <StackPanel x:Name="FilterButtonsPanel" Orientation="Horizontal" VerticalAlignment="Center" />
+                        <CheckBox x:Name="ShowClosedCheckBox" Content="Show Closed" IsChecked="False" VerticalAlignment="Center" Margin="4,0,0,0"
+                                  MinWidth="0" AutomationProperties.Name="Show Closed"
+                                  Checked="OnShowClosedChanged" Unchecked="OnShowClosedChanged" />
+                    </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
+
+            <!-- Sign In appears only when silent sign-in failed; a signed-in
+                 user needs no indicator, since the tickets loading says it. -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock x:Name="TicketCountText" Text="0 of 0" VerticalAlignment="Center" Margin="4,0,0,0"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <Button x:Name="SsoLoginButton" Content="Sign In" Margin="8,0,0,0"
+                        ToolTip="Sign in to TeamDynamix. A sign-in window opens if the automatic sign-in cannot finish." Click="OnSsoLoginClicked" Visibility="Collapsed"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Row 1 held a second filter row; everything now sits on the one
+             toolbar row above, so this row is empty and takes no height. -->
 
         <!-- Main Content -->
         <Grid Grid.Row="2" Grid.ColumnSpan="2">

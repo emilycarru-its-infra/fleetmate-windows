@@ -185,9 +185,10 @@ public partial class TicketsPage
         InboxBadgeText.Text = TicketInboxBadge.Label(unread);
         InboxBadge.Visibility = unread > 0 ? Visibility.Visible : Visibility.Collapsed;
         System.Windows.Automation.AutomationProperties.SetItemStatus(InboxViewRadio, TicketInboxBadge.AccessibleValue(unread));
+        InboxViewRadio.ToolTip = TicketsToolbarRules.InboxToolTip(unread);
 
         // Nobody sees a partial inbox: the mode appears once this computer's
-        // first full pass has finished.
+        // first full pass has finished, as the Mac's TicketInboxModel.isReady has it.
         var ready = state?.ScannedThrough != null;
         InboxButtonHost.Visibility = ready ? Visibility.Visible : Visibility.Collapsed;
         if (!ready && InboxViewRadio.IsChecked == true) BoardViewRadio.IsChecked = true;
