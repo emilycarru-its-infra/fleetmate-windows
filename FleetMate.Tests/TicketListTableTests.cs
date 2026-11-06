@@ -315,3 +315,105 @@ public class TicketTableRowTests
         Assert.Equal("#42", Vm().IdLabel);
     }
 }
+
+public class TicketListColumnFitTests
+{
+    private static Dictionary<TicketListColumn, double> Defaults() =>
+        TicketListColumns.All.ToDictionary(c => c, TicketListColumns.DefaultWidth);
+
+    private static double Others(IReadOnlyDictionary<TicketListColumn, double> widths) =>
+        widths.Where(p => p.Key != TicketListColumn.Title).Sum(p => p.Value);
+
+    [Fact]
+    public void TitleTakesTheLeftoverWidthInAWidePane()
+    {
+        var fit = TicketListColumnFit.Fit(Defaults(), 1600);
+
+        Assert.Equal(1600 - Others(Defaults()), fit[TicketListColumn.Title]);
+        Assert.All(fit.Where(p => p.Key != TicketListColumn.Title), p => Assert.Equal(TicketListColumns.DefaultWidth(p.Key), p.Value));
+        Assert.Equal(1600, fit.Values.Sum());
+    }
+
+    [Theory]
+    [InlineData(860)]
+    [InlineData(1000)]
+    [InlineData(1200)]
+    public void ColumnsNeverRunPastANormalPane(double pane)
+    {
+        var fit = TicketListColumnFit.Fit(Defaults(), pane);
+
+        Assert.True(fit.Values.Sum() <= pane, $"{fit.Values.Sum()} > {pane}");
+        Assert.True(fit[TicketListColumn.Title] >= TicketListColumnFit.TitleMinWidth);
+        Assert.All(fit.Where(p => p.Key != TicketListColumn.Title),
+            p => Assert.True(p.Value >= TicketListColumnFit.Floor(p.Key) - 1, $"{p.Key} at {p.Value}"));
+    }
+
+    [Fact]
+    public void SavedWidthsApplyWhenTheyFit()
+    {
+        var desired = Defaults();
+        desired[TicketListColumn.Requestor] = 200;
+
+        var fit = TicketListColumnFit.Fit(desired, 1600);
+
+        Assert.Equal(200, fit[TicketListColumn.Requestor]);
+        Assert.Equal(1600 - Others(desired), fit[TicketListColumn.Title]);
+    }
+
+    [Fact]
+    public void AWideSavedWidthGivesWayInsteadOfScrolling()
+    {
+        var desired = Defaults();
+        desired[TicketListColumn.Requestor] = 900;
+
+        var fit = TicketListColumnFit.Fit(desired, 1200);
+
+        Assert.True(fit.Values.Sum() <= 1200);
+        Assert.True(fit[TicketListColumn.Requestor] < 900);
+        // The widest column gives the most.
+        Assert.True(900 - fit[TicketListColumn.Requestor] > TicketListColumns.DefaultWidth(TicketListColumn.Id) - fit[TicketListColumn.Id]);
+    }
+
+    [Fact]
+    public void ADraggedColumnKeepsItsWidthWhileTheOthersMakeRoom()
+    {
+        var desired = Defaults();
+        desired[TicketListColumn.Status] = 300;
+
+        var fit = TicketListColumnFit.Fit(desired, 1100, held: TicketListColumn.Status);
+
+        Assert.Equal(300, fit[TicketListColumn.Status]);
+        Assert.True(fit.Values.Sum() <= 1100);
+    }
+
+    [Fact]
+    public void FittingNeverWidensANarrowColumn()
+    {
+        var desired = Defaults();
+        desired[TicketListColumn.Age] = 40;
+
+        var fit = TicketListColumnFit.Fit(desired, 700);
+
+        Assert.Equal(40, fit[TicketListColumn.Age]);
+    }
+
+    [Fact]
+    public void ATooNarrowPaneScrollsWithEveryColumnAtItsFloor()
+    {
+        var fit = TicketListColumnFit.Fit(Defaults(), 300);
+
+        Assert.Equal(TicketListColumnFit.TitleMinWidth, fit[TicketListColumn.Title]);
+        Assert.All(fit.Where(p => p.Key != TicketListColumn.Title),
+            p => Assert.True(Math.Abs(p.Value - TicketListColumnFit.Floor(p.Key)) <= 1, $"{p.Key} at {p.Value}"));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    [InlineData(double.NaN)]
+    public void APaneNotLaidOutKeepsTheDesiredWidths(double pane)
+    {
+        var fit = TicketListColumnFit.Fit(Defaults(), pane);
+        Assert.All(fit, p => Assert.Equal(TicketListColumns.DefaultWidth(p.Key), p.Value));
+    }
+}

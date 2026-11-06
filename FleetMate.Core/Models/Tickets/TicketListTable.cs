@@ -241,3 +241,73 @@ public sealed class TicketListColumnLayout
 
     private static bool IsUsable(double width) => double.IsFinite(width) && width > 0 && width <= TicketListColumns.MaxWidth;
 }
+
+/// <summary>
+/// Fits the table to its pane, as the Mac's table does: Title takes whatever
+/// width the other columns leave, and when the pane is too narrow for the other
+/// columns' widths they give way, down to a floor that keeps their values
+/// readable, before anything scrolls sideways. The widths a person dragged are
+/// the starting point and are never changed by fitting; fitting only decides
+/// what is shown.
+/// </summary>
+public static class TicketListColumnFit
+{
+    /// <summary>The narrowest Title is squeezed to before the other columns give way.</summary>
+    public const double TitleMinWidth = 180;
+
+    /// <summary>
+    /// The narrowest fitting takes each column. It never widens a column a
+    /// person dragged narrower than this; it only stops shrinking there.
+    /// </summary>
+    public static double Floor(TicketListColumn column) => column switch
+    {
+        TicketListColumn.Id => 84,
+        TicketListColumn.Title => TitleMinWidth,
+        TicketListColumn.Status => 90,
+        TicketListColumn.Priority => 64,
+        TicketListColumn.Requestor => 90,
+        TicketListColumn.Responsible => 90,
+        TicketListColumn.Age => 48,
+        TicketListColumn.Modified => 100,
+        TicketListColumn.Created => 100,
+        _ => TicketListColumns.MinWidth,
+    };
+
+    /// <summary>
+    /// The width to show each column at in a pane <paramref name="available"/>
+    /// wide. <paramref name="desired"/> holds each column's own width, saved or
+    /// default. <paramref name="held"/> is a column being dragged right now: it
+    /// keeps the width under the pointer while the others make room. Widths are
+    /// whole pixels. A pane not yet laid out (zero or less) shows the desired
+    /// widths unchanged.
+    /// </summary>
+    public static IReadOnlyDictionary<TicketListColumn, double> Fit(
+        IReadOnlyDictionary<TicketListColumn, double> desired, double available, TicketListColumn? held = null)
+    {
+        var result = desired.ToDictionary(p => p.Key, p => Math.Round(Math.Max(p.Value, TicketListColumns.MinWidth)));
+        if (!double.IsFinite(available) || available <= 0 || !result.ContainsKey(TicketListColumn.Title)) return result;
+
+        var others = result.Keys.Where(c => c != TicketListColumn.Title).ToList();
+        var othersWidth = others.Sum(c => result[c]);
+        var overflow = othersWidth + TitleMinWidth - available;
+
+        if (overflow > 0)
+        {
+            // Share the cut across the columns by how much each has to give,
+            // so a wide column gives more than one already near its floor.
+            var giving = others.Where(c => c != held).ToList();
+            var slack = giving.ToDictionary(c => c, c => Math.Max(0, result[c] - Math.Min(result[c], Floor(c))));
+            var totalSlack = slack.Values.Sum();
+            if (totalSlack > 0)
+            {
+                var cut = Math.Min(overflow, totalSlack);
+                foreach (var column in giving)
+                    result[column] = Math.Floor(result[column] - cut * slack[column] / totalSlack);
+            }
+            othersWidth = others.Sum(c => result[c]);
+        }
+
+        result[TicketListColumn.Title] = Math.Max(TitleMinWidth, Math.Floor(available - othersWidth));
+        return result;
+    }
+}

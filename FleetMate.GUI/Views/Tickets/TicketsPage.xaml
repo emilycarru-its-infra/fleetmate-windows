@@ -406,26 +406,15 @@
                               VirtualizingPanel.VirtualizationMode="Recycling"
                               ScrollViewer.CanContentScroll="True"
                               SelectionChanged="OnTicketSelectionChanged">
-                        <ListView.Resources>
-                            <!-- A faint stripe, light enough for either theme, as on Mac. -->
-                            <SolidColorBrush x:Key="TicketRowStripeBrush" Color="#14808080" />
-                        </ListView.Resources>
+                        <!-- Rows, stripes and selection are the shared ones in
+                             Views/Shared/ListRows.xaml. The padding is the row
+                             chrome TicketsPage.ListTable.cs allows for when it
+                             fits the columns to the pane. -->
                         <ListView.ItemContainerStyle>
                             <Style TargetType="ListViewItem" BasedOn="{StaticResource FleetListViewItemStyle}">
                                 <Setter Property="MinHeight" Value="28" />
+                                <Setter Property="Padding" Value="2,0" />
                                 <Setter Property="AutomationProperties.Name" Value="{Binding SpokenName}" />
-                                <Style.Triggers>
-                                    <Trigger Property="ItemsControl.AlternationIndex" Value="1">
-                                        <Setter Property="Background" Value="{StaticResource TicketRowStripeBrush}" />
-                                    </Trigger>
-                                    <!-- Restated after the stripe so a selected odd row
-                                         still shows the selection. The accent tint keeps
-                                         the text and the orange age readable. -->
-                                    <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListAccentLowBrush}" />
-                                        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
-                                    </Trigger>
-                                </Style.Triggers>
                             </Style>
                         </ListView.ItemContainerStyle>
                         <ListView.View>
@@ -533,6 +522,15 @@
                                                             <DataTrigger Binding="{Binding IsAgeHighlighted}" Value="True">
                                                                 <Setter Property="Foreground" Value="#FFFFA040" />
                                                             </DataTrigger>
+                                                            <!-- On the accent fill of a focused selection the
+                                                                 age reads in the row's white, as on Mac. -->
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListViewItem}}" Value="True" />
+                                                                    <Condition Binding="{Binding (Selector.IsSelectionActive), RelativeSource={RelativeSource AncestorType=ListViewItem}}" Value="True" />
+                                                                </MultiDataTrigger.Conditions>
+                                                                <Setter Property="Foreground" Value="{DynamicResource FleetRowSelectedForegroundBrush}" />
+                                                            </MultiDataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
                                                 </TextBlock.Style>
@@ -544,8 +542,7 @@
                                 <GridViewColumn Header="Modified" Width="120">
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
-                                            <TextBlock Text="{Binding ModifiedLabel}" FontSize="11" TextTrimming="CharacterEllipsis"
-                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                            <TextBlock Text="{Binding ModifiedLabel}" FontSize="11" TextTrimming="CharacterEllipsis" Opacity="0.72" />
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
@@ -553,8 +550,7 @@
                                 <GridViewColumn Header="Created" Width="120">
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
-                                            <TextBlock Text="{Binding CreatedLabel}" FontSize="11" TextTrimming="CharacterEllipsis"
-                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                            <TextBlock Text="{Binding CreatedLabel}" FontSize="11" TextTrimming="CharacterEllipsis" Opacity="0.72" />
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
