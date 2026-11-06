@@ -87,6 +87,7 @@ private bool _isInitialLoadDone;
     {
         InitializeComponent();
         AttachTicketMenus();
+        InitListTable();
         AgentButton.Source = () => _selectedTicket is { } ticket ? AgentContextMenu.Resolve(ticket) : null;
 
         // Get services from App
@@ -405,22 +406,9 @@ private bool _isInitialLoadDone;
 
         IEnumerable<TdxTicket> filtered = TicketsMatching(null);
 
-        // Sort
-        filtered = _sortField switch
-        {
-            "Modified" => _sortAscending ? filtered.OrderBy(t => t.ModifiedDate) : filtered.OrderByDescending(t => t.ModifiedDate),
-            "Created" => _sortAscending ? filtered.OrderBy(t => t.CreatedDate) : filtered.OrderByDescending(t => t.CreatedDate),
-            "ID" => _sortAscending ? filtered.OrderBy(t => t.Id) : filtered.OrderByDescending(t => t.Id),
-            // Oldest first when descending: a queue is read by what has been
-            // waiting longest, as on Mac.
-            "Age" => _sortAscending ? filtered.OrderByDescending(t => t.CreatedDate) : filtered.OrderBy(t => t.CreatedDate),
-            "Title" => _sortAscending ? filtered.OrderBy(t => t.Title) : filtered.OrderByDescending(t => t.Title),
-            "Status" => _sortAscending ? filtered.OrderBy(t => t.StatusName) : filtered.OrderByDescending(t => t.StatusName),
-            "Priority" => _sortAscending ? filtered.OrderBy(t => t.PriorityName) : filtered.OrderByDescending(t => t.PriorityName),
-            "Requestor" => _sortAscending ? filtered.OrderBy(t => t.RequestorName) : filtered.OrderByDescending(t => t.RequestorName),
-            "Responsible" => _sortAscending ? filtered.OrderBy(t => t.ResponsibleFullName) : filtered.OrderByDescending(t => t.ResponsibleFullName),
-            _ => _sortAscending ? filtered.OrderBy(t => t.ModifiedDate) : filtered.OrderByDescending(t => t.ModifiedDate)
-        };
+        // Sort. The list's headers show the same state.
+        filtered = TicketListSort.Apply(filtered, _sortField, _sortAscending);
+        UpdateColumnHeaders();
 
         _filteredTickets.Clear();
         foreach (var ticket in filtered)

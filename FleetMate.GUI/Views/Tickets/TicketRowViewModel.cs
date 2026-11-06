@@ -69,6 +69,47 @@ public sealed class TicketRowViewModel
     /// untouched for three weeks is not.
     /// </summary>
     public string LastActivityLabel => Ticket.LastActivityLabel();
+
+    // ---- The list's table cells ----
+
+    /// <summary>"#3802354", the Mac's ID cell.</summary>
+    public string IdLabel => $"#{Id}";
+
+    /// <summary>The ID cell's indent: 14 per level, as on Mac, so children sit under their parent.</summary>
+    public Thickness TableIndent => new(Row.Depth * 14, 0, 0, 0);
+
+    /// <summary>The child-count badge after a parent's title; hidden on leaves.</summary>
+    public string ChildCountLabel => Row.ChildCount.ToString(System.Globalization.CultureInfo.CurrentCulture);
+
+    public Visibility ChildBadgeVisibility => Row.HasChildren ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>The status dot's colour, the board's status colours.</summary>
+    public System.Windows.Media.Brush StatusBrush => TicketsPage.StatusBrush(StatusName);
+
+    /// <summary>Weeks-old tickets show their age in orange, as on Mac.</summary>
+    public bool IsAgeHighlighted => TicketListFormat.IsAgeHighlighted(Ticket.AgeInDays());
+
+    /// <summary>Last modified, "Oct 15 at 7:01 PM".</summary>
+    public string ModifiedLabel => TicketListFormat.Modified(Ticket.ModifiedDate);
+
+    /// <summary>What the disclosure button does, for its tooltip and screen readers.</summary>
+    public string DisclosureName => (Row.IsExpanded ? "Hide " : "Show ") + ChildCountTooltip;
+
+    /// <summary>
+    /// The row as a screen reader announces it: number, title, status, and for
+    /// a parent its children and whether they are shown.
+    /// </summary>
+    public string SpokenName
+    {
+        get
+        {
+            var name = $"Ticket {Id}, {Title ?? "untitled"}";
+            if (!string.IsNullOrEmpty(StatusName)) name += $", {StatusName}";
+            if (Row.HasChildren) name += $", {ChildCountTooltip}, {(Row.IsExpanded ? "expanded" : "collapsed")}";
+            if (Row.Depth > 0) name += ", child ticket";
+            return name;
+        }
+    }
 }
 
 /// <summary>One candidate in the Reassign popover.</summary>

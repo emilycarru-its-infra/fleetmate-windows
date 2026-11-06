@@ -101,6 +101,11 @@ public static class UserPreferences
 
     public static void SetTicketsAssignedToMe(bool on) => Write("tickets.assignedToMe", on ? "1" : null);
 
+    /// <summary>The Tickets list's column order and widths, as <see cref="FleetMate.Core.Models.Tickets.TicketListColumnLayout"/> JSON.</summary>
+    public static string? TicketsListColumns => Read("tickets.listColumns");
+
+    public static void SetTicketsListColumns(string? json) => Write("tickets.listColumns", json);
+
     /// <summary>Pulls sections per repository instead of one list by last modified.</summary>
     public static bool PullsGroupedByRepository => Read("development.pulls.grouped") == "1";
 
