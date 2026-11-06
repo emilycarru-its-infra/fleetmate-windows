@@ -855,19 +855,63 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
         }
     }
 
-    // Posting a threaded reply is not possible through the TDX Web API, and no
-    // method for it belongs here. Verified against the live API on 2026-07-28:
-    //
-    //   • OPTIONS /api/feed/{id} answers `Allow: GET,DELETE` — there is no POST
-    //     route under a feed entry at all, under any suffix.
-    //   • POST /api/{appId}/tickets/{id}/feed accepts ParentID,
-    //     ParentFeedEntryID, ReplyToID and ItemUpdateID without complaint and
-    //     ignores every one of them: each returns 201 having created another
-    //     top-level entry, with the named parent's RepliesCount still 0.
-    //
-    // Existing threads *are* readable — see GetTicketFeedAsync(includeReplies).
-    // The UI offers quoting into a new comment instead. This note is here so the
-    // route does not get re-added a third time.
+    /// <summary>
+    /// Reply inside a comment's thread: <c>POST /api/feed/{id}/replies</c>,
+    /// the route TeamDynamix 12.3 added (OpenAPI operation <c>Feed_AddReply</c>),
+    /// which FleetMate for Mac uses. The body is the only field, so a reply
+    /// cannot notify anyone or be private on its own. Threads are one level
+    /// deep: replying to a reply means posting to its parent's id.
+    ///
+    /// Before 12.3 there was no such route (<c>OPTIONS /api/feed/{id}</c>
+    /// answered <c>GET,DELETE</c>, and the ticket feed POST ignored every
+    /// parent-id field), which is why quoting into a new comment came first.
+    /// A site still on an older version answers 404, and the message says so.
+    /// </summary>
+    /// <exception cref="TdxFeedReplyException">The reply was not accepted.</exception>
+    public async Task<TdxFeedEntry?> ReplyToFeedEntryAsync(int entryId, string plainText)
+    {
+        if (string.IsNullOrWhiteSpace(plainText))
+            throw new TdxFeedReplyException(entryId, null, "A reply needs some text.");
+        if (!await SetAuthorizationAsync())
+            throw new TdxFeedReplyException(entryId, 401, TdxFeedReplyException.Describe(System.Net.HttpStatusCode.Unauthorized));
+
+        var request = TdxFeedReplyRequest.FromPlainText(plainText.Trim());
+        var url = _config.GetApiUrl($"feed/{entryId}/replies");
+        var content = new StringContent(JsonSerializer.Serialize(request, _jsonOptions), Encoding.UTF8, "application/json");
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _client.PostAsync(url, content);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to reply to feed entry {Id}", entryId);
+            throw new TdxFeedReplyException(entryId, null, TdxFeedReplyException.Describe(null), ex);
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Warning("Failed to reply to feed entry {Id}: {Status} - {Error}", entryId, response.StatusCode, error);
+                throw new TdxFeedReplyException(entryId, (int)response.StatusCode, TdxFeedReplyException.Describe(response.StatusCode));
+            }
+
+            Log.Debug("Replied to feed entry {Id}", entryId);
+            try
+            {
+                return await response.Content.ReadFromJsonAsync<TdxFeedEntry>(_jsonOptions);
+            }
+            catch (Exception ex)
+            {
+                // Posted, but the answer did not read; a refresh shows it.
+                Log.Debug(ex, "[tdx] Reply to {Id} posted; response did not decode", entryId);
+                return null;
+            }
+        }
+    }
 
     /// <summary>
     /// Post a top-level comment on a ticket, returning the created feed entry.

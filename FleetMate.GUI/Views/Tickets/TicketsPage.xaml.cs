@@ -846,6 +846,7 @@ private bool _isInitialLoadDone;
         if (_selectedTicket?.Id != ticket.Id)
         {
             StashCommentDraft();
+            DropPendingEditsUnlessFor(ticket.Id);
             _selectedTicket = ticket;
             RestoreCommentDraft(ticket.Id);
         }
@@ -1029,6 +1030,7 @@ private bool _isInitialLoadDone;
     private void CloseTicket()
     {
         StashCommentDraft();
+        DropPendingEditsUnlessFor(null);
         _selectedTicket = null;
         // A load still in flight for the closed ticket must not paint later.
         _detailLoads.Invalidate();
@@ -1043,8 +1045,18 @@ private bool _isInitialLoadDone;
         CloseDetailPanel();
     }
 
-    private void OnPageKeyDown(object sender, KeyEventArgs e)
+    private async void OnPageKeyDown(object sender, KeyEventArgs e)
     {
+        // Ctrl+Enter saves unsaved field picks, as Cmd+Return does on the Mac.
+        // A text box's own Ctrl+Enter (post a comment or reply, save the
+        // description) is handled there first.
+        if (e.Key == Key.Enter && Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && !e.Handled
+            && e.OriginalSource is not TextBox && _selectedTicket is { } open && HasPendingEdits(open.Id))
+        {
+            e.Handled = true;
+            await SaveEditsAsync();
+            return;
+        }
         if (e.Key != Key.Escape || e.Handled || !_detailPanelVisible) return;
         // Esc in a text box belongs to the box (and a half-written comment).
         if (e.OriginalSource is TextBox) return;
@@ -1072,6 +1084,9 @@ private bool _isInitialLoadDone;
             // because it looks like it worked.
             StashCommentDraft();
 
+            // Unsaved field picks belong to their ticket and are dropped when
+            // another opens, as on the Mac; the same ticket re-selected keeps them.
+            DropPendingEditsUnlessFor(ticket.Id);
             _selectedTicket = ticket;
             RestoreCommentDraft(ticket.Id);
 
@@ -1114,6 +1129,8 @@ private bool _isInitialLoadDone;
         NotifyCheckboxesPanel.Children.Clear();
         RestoreAttachmentDraft(ticketId);
         SetComposeOpen(false);
+        // A reply composer belongs to the ticket it was opened on; its draft is kept.
+        _replyingToEntryId = null;
     }
 
     // ── Compose space ─────────────────────────────────────────────
@@ -1173,12 +1190,9 @@ private bool _isInitialLoadDone;
     }
 
     /// <summary>
-    /// Seed the comment box with the selected entry, quoted.
-    ///
-    /// Quote rather than Reply because the TDX Web API has no route for a
-    /// threaded reply — posting one creates another top-level entry with the
-    /// named parent's reply count still zero. Quoting is the closest thing the
-    /// API actually supports, so it is what the button offers.
+    /// Quote in New Comment, from a card's menu: seed the comment box with the
+    /// entry, quoted. Unlike a threaded reply, a new comment can be private and
+    /// notify people, which is why the Mac keeps this beside Reply in Thread.
     /// </summary>
     private void OnQuoteFeedEntry(object sender, RoutedEventArgs e)
     {
@@ -1329,8 +1343,8 @@ private bool _isInitialLoadDone;
     private void UpdateDetailPanel(TdxTicket ticket)
     {
         DetailTitleText.Text = ticket.Title ?? "Untitled";
-        DetailRequestorText.Text = ticket.RequestorName ?? "-";
-        DetailEmailText.Text = ticket.RequestorEmail ?? "-";
+        SyncPendingEdits(ticket);
+        ShowRequestor(ticket);
         DetailResponsibleText.Text = ticket.ResponsibleFullName ?? "-";
         DetailCreatedText.Text = FormatDate(ticket.CreatedDate);
         DetailModifiedText.Text = FormatDate(ticket.ModifiedDate as DateTime?);
@@ -1380,6 +1394,16 @@ private bool _isInitialLoadDone;
             Fill(DetailServiceCombo, servicesLoad.Result, ticket.ServiceId, ticket.ServiceName, "Service");
             Fill(DetailTypeCombo, typesLoad.Result, ticket.TypeId, ticket.TypeName, "Type");
             Fill(DetailGroupCombo, groupsLoad.Result, ticket.ResponsibleGroupId, ticket.ResponsibleGroupName, "Group");
+
+            // Unsaved picks on this ticket survive a redraw.
+            if (_pendingEdits is { } edits && edits.TicketId == ticket.Id)
+            {
+                foreach (var picker in new[] { DetailStatusCombo, DetailPriorityCombo, DetailClassificationCombo,
+                             DetailFormCombo, DetailServiceCombo, DetailTypeCombo, DetailGroupCombo })
+                {
+                    if (picker.Tag is string field && edits.IsEdited(field)) picker.SelectedValue = edits.Value(field);
+                }
+            }
         }
         finally
         {
@@ -1395,20 +1419,22 @@ private bool _isInitialLoadDone;
         }
     }
 
-    private async void OnDetailFieldChanged(object sender, SelectionChangedEventArgs e)
+    /// <summary>
+    /// A detail picker changed: hold the pick for Save, as on the Mac, rather
+    /// than sending it at once.
+    /// </summary>
+    private void OnDetailFieldChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_populatingEditors || _selectedTicket == null || _tdxService == null || _app == null) return;
+        if (_populatingEditors || _selectedTicket == null) return;
         if (sender is not ComboBox combo || combo.SelectedValue is not int value) return;
-        var field = (string)combo.Tag;
-        if (TicketDetailFields.Change(_selectedTicket, field, value) == null) return;
-        await UpdateTicketFieldAsync(_selectedTicket.Id, field, value);
+        HoldEdit((string)combo.Tag, value);
     }
 
     /// <summary>
-    /// Save one field of a ticket at once — Status, Priority, Classification,
-    /// Form, Service, Type, Group or Requestor — from the detail pane or the
-    /// ticket menu, then redraw the list and, when it is open there, the
-    /// detail pane. Nothing is sent when the ticket already holds the value.
+    /// Save one field of a ticket at once from the ticket menu (Status or
+    /// Priority), as the Mac's menu does, then redraw the list and, when it is
+    /// open there, the detail pane. Nothing is sent when the ticket already
+    /// holds the value. The detail pane's own pickers wait for Save instead.
     /// </summary>
     private async Task UpdateTicketFieldAsync(int ticketId, string field, object value)
     {
@@ -1615,16 +1641,8 @@ private bool _isInitialLoadDone;
             FeedHeaderText.Text = $"Activity ({feedList.Count})";
             
             // Convert feed entries for display
-            var displayFeed = feedList.Take(20).Select(f => new FeedDisplayItem
-            {
-                CreatedFullName = f.CreatedFullName ?? "Unknown",
-                FormattedDate = FormatDate(f.CreatedDate),
-                StrippedBody = DecodeHtml(f.Body ?? ""),
-                IsPrivate = f.IsPrivate,
-                // Only when TDX says who was notified. Replies and most system
-                // entries carry no list, and an empty one says nothing.
-                NotificationRecipients = FeedDisplayItem.NotifiedLine(f.NotifiedList)
-            }).ToList();
+            // Each comment carries its thread: replies and the reply composer.
+            var displayFeed = feedList.Take(20).Select(ToDisplayItem).ToList();
             
             FeedItemsControl.ItemsSource = displayFeed;
             FeedSection.Visibility = Visibility.Visible;
@@ -1906,6 +1924,10 @@ private bool _isInitialLoadDone;
     {
         if (_selectedTicket != null)
         {
+            // Refresh shows the ticket as TeamDynamix holds it, dropping
+            // unsaved picks, as the Mac's Refresh does.
+            _pendingEdits?.Clear();
+            UpdateEditButtons();
             await LoadTicketDetailAsync(_selectedTicket.Id);
         }
     }
@@ -2065,22 +2087,6 @@ private bool _isInitialLoadDone;
         
         return result.Trim();
     }
-}
-
-// Helper class for feed display
-public class FeedDisplayItem
-{
-    public string CreatedFullName { get; set; } = "";
-    public string FormattedDate { get; set; } = "";
-    public string StrippedBody { get; set; } = "";
-    public bool IsPrivate { get; set; }
-    public string NotificationRecipients { get; set; } = "";
-    /// <summary>"Notified: …", or nothing when TDX sent no names.</summary>
-    public static string NotifiedLine(string? notifiedList) =>
-        string.IsNullOrWhiteSpace(notifiedList) ? "" : $"Notified: {System.Net.WebUtility.HtmlDecode(notifiedList.Trim())}";
-
-    public Visibility NotificationVisibility =>
-        string.IsNullOrEmpty(NotificationRecipients) ? Visibility.Collapsed : Visibility.Visible;
 }
 
 /// <summary>A date-range choice for the Tickets toolbar.</summary>
