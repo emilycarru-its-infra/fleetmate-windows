@@ -80,8 +80,8 @@ public partial class TicketsPage
 
     // ── Pending field edits ───────────────────────────────────────
     // Status, Priority, Classification, Form, Service, Type, Group and
-    // Requestor picks wait here until Save sends them as one PATCH, as on the
-    // Mac. They belong to one ticket: opening another drops them unasked, as
+    // Requestor picks, and Assign to me, Reassign and Unassign, wait here
+    // until Save sends them as one PATCH, as on the Mac. They belong to one ticket: opening another drops them unasked, as
     // the Mac does, while a redraw of the same ticket keeps them.
 
     private TicketPendingEdits? _pendingEdits;
@@ -166,7 +166,10 @@ public partial class TicketsPage
             ShowActionMessage($"Saving #{ticket.Id}…", isLoading: true);
             var latest = await _tdxService.GetTicketAsync(ticket.Id) ?? ticket;
             var patch = edits.Patch(latest);
-            var updated = patch == null ? latest : await _tdxService.UpdateTicketAsync(ticket.Id, patch);
+            // As on the Mac, the new responsible is emailed only when the box
+            // is ticked and Save really changes who is responsible.
+            var notify = patch != null && edits.ShouldNotify(latest);
+            var updated = patch == null ? latest : await _tdxService.UpdateTicketAsync(ticket.Id, patch, notifyNewResponsible: notify);
             if (updated == null)
             {
                 ShowActionMessage("TeamDynamix did not accept the changes. See the log for the response.", isError: true);
@@ -178,7 +181,9 @@ public partial class TicketsPage
             // A new group brings new members to the People section and the notify list.
             if (patch?.ContainsKey(TicketDetailFields.Group) == true && _selectedTicket?.Id == ticket.Id)
                 _ = LoadTicketPeopleAsync(updated);
-            ShowActionMessage(patch == null ? $"#{ticket.Id} already had these values" : $"Saved #{ticket.Id}");
+            ShowActionMessage(patch == null ? $"#{ticket.Id} already had these values"
+                : notify ? $"Saved #{ticket.Id} and notified the new responsible"
+                : $"Saved #{ticket.Id}");
         }
         catch (Exception ex)
         {

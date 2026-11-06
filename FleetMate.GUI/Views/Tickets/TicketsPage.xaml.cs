@@ -453,6 +453,8 @@ private bool _isInitialLoadDone;
 
         _ticketRows.Clear();
         foreach (var row in rows) _ticketRows.Add(new TicketRowViewModel { Row = row });
+        // Columns follow what the rows hold: a child's indented ID, a long name.
+        MeasureTicketColumnContent();
 
         if (selectedId is { } id)
         {
@@ -1345,7 +1347,7 @@ private bool _isInitialLoadDone;
         DetailTitleText.Text = ticket.Title ?? "Untitled";
         SyncPendingEdits(ticket);
         ShowRequestor(ticket);
-        DetailResponsibleText.Text = ticket.ResponsibleFullName ?? "-";
+        ShowResponsible(ticket);
         DetailCreatedText.Text = FormatDate(ticket.CreatedDate);
         DetailModifiedText.Text = FormatDate(ticket.ModifiedDate as DateTime?);
 
@@ -1403,6 +1405,8 @@ private bool _isInitialLoadDone;
                 {
                     if (picker.Tag is string field && edits.IsEdited(field)) picker.SelectedValue = edits.Value(field);
                 }
+                // A group Reassign chose may not be in the picker's own list.
+                ShowPendingGroup();
             }
         }
         finally
@@ -1712,8 +1716,9 @@ private bool _isInitialLoadDone;
 
     // ── Responsible actions ───────────────────────────────────────
     // Assign to me, Reassign (anchored people picker) and Unassign, as in
-    // the macOS detail pane. Each one PATCHes ResponsibleUid and refreshes the
-    // ticket in place.
+    // the macOS detail pane. Each one is held with the other field picks and
+    // goes in Save's one PATCH; Discard puts the responsible back. The ticket
+    // menu's Assign to Me and Unassign still save at once, as the Mac's do.
 
     private CancellationTokenSource? _reassignSearchCts;
 
@@ -1723,19 +1728,95 @@ private bool _isInitialLoadDone;
     private async void OnAssignToMeClicked(object sender, RoutedEventArgs e)
     {
         if (_selectedTicket == null || _tdxService == null) return;
-        var me = await _tdxService.GetMeAsync();
-        if (me?.Uid is not { } uid)
+        var me = _me ?? await _tdxService.GetMeAsync();
+        if (me?.Uid is not { } uid || uid == Guid.Empty)
         {
             ShowActionMessage("Could not resolve your TeamDynamix person. Sign in to TDX first.", isError: true);
             return;
         }
-        await SetResponsibleAsync(_selectedTicket.Id, uid, me.DisplayName);
+        _me ??= me;
+        ReassignPopup.IsOpen = false;
+        HoldResponsible(uid, me.FullName ?? me.DisplayName);
     }
 
-    private async void OnUnassignClicked(object sender, RoutedEventArgs e)
+    private void OnUnassignClicked(object sender, RoutedEventArgs e)
     {
         if (_selectedTicket == null) return;
-        await SetResponsibleAsync(_selectedTicket.Id, null, null);
+        ReassignPopup.IsOpen = false;
+        HoldResponsible(null, null);
+    }
+
+    /// <summary>Hold a responsible person, or none, for Save.</summary>
+    private void HoldResponsible(Guid? uid, string? name)
+    {
+        if (_selectedTicket is not { } ticket) return;
+        if (_pendingEdits?.TicketId != ticket.Id) _pendingEdits = new TicketPendingEdits(ticket);
+        _pendingEdits.SetResponsible(uid, name);
+        ShowResponsible(ticket);
+        UpdateEditButtons();
+    }
+
+    /// <summary>Hold a group picked in Reassign: it becomes responsible and the person is cleared.</summary>
+    private void HoldGroupAssignment(int groupId, string? name)
+    {
+        if (_selectedTicket is not { } ticket) return;
+        if (_pendingEdits?.TicketId != ticket.Id) _pendingEdits = new TicketPendingEdits(ticket);
+        _pendingEdits.AssignToGroup(groupId, name);
+        ShowPendingGroup();
+        ShowResponsible(ticket);
+        UpdateEditButtons();
+    }
+
+    /// <summary>
+    /// Show the Group picker on the pending group, adding it as a choice when
+    /// the picker's list does not offer it, so it never reads blank.
+    /// </summary>
+    private void ShowPendingGroup()
+    {
+        if (_pendingEdits is not { } edits || !edits.IsEdited(TicketDetailFields.Group)) return;
+        if (edits.Value(TicketDetailFields.Group) is not int groupId) return;
+        var choices = DetailGroupCombo.ItemsSource as IEnumerable<KeyValuePair<int, string>> ?? Array.Empty<KeyValuePair<int, string>>();
+        _populatingEditors = true;
+        try
+        {
+            if (!choices.Any(c => c.Key == groupId))
+            {
+                var all = choices.ToDictionary(c => c.Key, c => c.Value);
+                DetailGroupCombo.ItemsSource = TicketDetailFields.Choices(all, groupId, edits.GroupName, "Group");
+            }
+            DetailGroupCombo.SelectedValue = groupId;
+        }
+        finally
+        {
+            _populatingEditors = false;
+        }
+    }
+
+    /// <summary>
+    /// Show the responsible person as Save will leave it, and enable Assign to
+    /// me and Unassign against that, as the Mac does.
+    /// </summary>
+    private void ShowResponsible(TdxTicket ticket)
+    {
+        var edits = _pendingEdits?.TicketId == ticket.Id ? _pendingEdits : null;
+        var uid = edits != null ? edits.ResponsibleUid : (ticket.ResponsibleUid is { } u && u != Guid.Empty ? (Guid?)u : null);
+        var name = edits != null ? edits.ResponsibleName : ticket.ResponsibleFullName;
+        var pending = edits?.IsResponsibleEdited == true;
+
+        DetailResponsibleText.Text = uid == null ? "-" : name ?? "-";
+        DetailResponsibleText.FontStyle = pending ? FontStyles.Italic : FontStyles.Normal;
+        DetailResponsibleText.ToolTip = pending ? "Not saved yet. Save sends it with the other changes." : null;
+        System.Windows.Automation.AutomationProperties.SetHelpText(DetailResponsibleText, pending ? "Not saved yet" : "");
+
+        var myUid = _me?.Uid is { } me && me != Guid.Empty ? me : (Guid?)null;
+        AssignToMeButton.IsEnabled = myUid == null || myUid != uid;
+        UnassignButton.IsEnabled = uid != null;
+    }
+
+    private void OnReassignNotifyChanged(object sender, RoutedEventArgs e)
+    {
+        if (_selectedTicket is { } ticket && _pendingEdits?.TicketId == ticket.Id)
+            _pendingEdits.NotifyNewResponsible = ReassignNotifyCheckBox.IsChecked == true;
     }
 
     private void OnReassignClicked(object sender, RoutedEventArgs e)
@@ -1754,7 +1835,10 @@ private bool _isInitialLoadDone;
         ReassignProgress.IsActive = false;
         ReassignProgress.Visibility = Visibility.Collapsed;
         ReassignStatusText.Text = $"Type at least {ReassignMinimumQuery} letters of a name, email or group.";
-        ReassignNotifyCheckBox.IsChecked = true;
+        // The box keeps this ticket's choice until Save or Discard, as on the Mac.
+        ReassignNotifyCheckBox.IsChecked = _pendingEdits is { } edits && edits.TicketId == _selectedTicket?.Id
+            ? edits.NotifyNewResponsible
+            : true;
         Dispatcher.BeginInvoke(() => Keyboard.Focus(ReassignSearchBox), System.Windows.Threading.DispatcherPriority.Input);
     }
 
@@ -1786,10 +1870,14 @@ private bool _isInitialLoadDone;
             var found = await _tdxService.SearchEligibleResponsiblesAsync(query, cts.Token);
             if (cts.IsCancellationRequested) return;
 
+            // The check mark follows the responsible as Save will leave it.
             var ticket = _selectedTicket;
+            var edits = ticket != null && _pendingEdits?.TicketId == ticket.Id ? _pendingEdits : null;
+            var currentUid = edits != null ? edits.ResponsibleUid : ticket?.ResponsibleUid;
+            var currentGroup = edits?.Value(TicketDetailFields.Group) as int? ?? ticket?.ResponsibleGroupId;
             var rows = TdxEligibleAssignment.Ordered(found)
                 .Where(a => a.ResponsibleUpdates() != null)
-                .Select(a => new ReassignCandidateRow(a, a.IsCurrent(ticket?.ResponsibleUid, ticket?.ResponsibleGroupId)))
+                .Select(a => new ReassignCandidateRow(a, a.IsCurrent(currentUid, currentGroup)))
                 .ToList();
             ReassignResultsList.ItemsSource = rows;
             if (rows.Count > 0) ReassignResultsList.SelectedIndex = 0;
@@ -1869,29 +1957,20 @@ private bool _isInitialLoadDone;
     /// <summary>
     /// Make the chosen candidate responsible. A group takes the ticket on its
     /// own, as TDX's picker does: the group becomes responsible and the
-    /// responsible person is cleared.
+    /// responsible person is cleared. Held for Save, as on the Mac, with the
+    /// popover's Notify choice.
     /// </summary>
-    private async Task PickReassignAsync(TdxEligibleAssignment candidate)
+    private Task PickReassignAsync(TdxEligibleAssignment candidate)
     {
         ReassignPopup.IsOpen = false;
-        if (_selectedTicket == null || _tdxService == null || _app == null) return;
-        if (candidate.ResponsibleUpdates() is not { } updates) return;
+        ReassignButton.Focus();
+        if (_selectedTicket is not { } ticket) return Task.CompletedTask;
 
-        var notify = ReassignNotifyCheckBox.IsChecked == true;
-        var ticketId = _selectedTicket.Id;
-        ShowActionMessage($"Reassigning to {candidate.DisplayName}…", isLoading: true);
-        var updated = await _tdxService.UpdateTicketAsync(ticketId, updates, notifyNewResponsible: notify);
-        if (updated == null)
-        {
-            ShowActionMessage("TeamDynamix did not accept the change. See the log for the response.", isError: true);
-            return;
-        }
-
-        ReplaceCachedTicket(updated);
-        var who = candidate.IsUser
-            ? updated.ResponsibleFullName ?? candidate.DisplayName
-            : updated.ResponsibleGroupName ?? candidate.DisplayName;
-        ShowActionMessage(notify ? $"Reassigned to {who} and notified" : $"Reassigned to {who}");
+        if (_pendingEdits?.TicketId != ticket.Id) _pendingEdits = new TicketPendingEdits(ticket);
+        _pendingEdits.NotifyNewResponsible = ReassignNotifyCheckBox.IsChecked == true;
+        if (candidate.Uid is { } uid) HoldResponsible(uid, candidate.DisplayName);
+        else if (candidate.GroupId is { } groupId) HoldGroupAssignment(groupId, candidate.DisplayName);
+        return Task.CompletedTask;
     }
 
     /// <summary>

@@ -44,6 +44,15 @@ public partial class TicketsPage
     /// <summary>Set while fitting sets widths, so a fit is not read as a drag.</summary>
     private bool _fittingColumns;
 
+    /// <summary>
+    /// Columns a person dragged to a width of their own. The rest are as wide
+    /// as what they hold, as on the Mac.
+    /// </summary>
+    private readonly HashSet<TicketListColumn> _draggedColumns = new();
+
+    /// <summary>What each column's widest value and header need, cell padding included.</summary>
+    private readonly Dictionary<TicketListColumn, double> _contentColumnWidths = new();
+
     /// <summary>Refits once a Title drag settles; Title always fills, so its drag snaps back.</summary>
     private DispatcherTimer? _columnFitTimer;
 
@@ -170,6 +179,7 @@ public partial class TicketsPage
                 var current = columns.IndexOf(gridColumn);
                 if (current != index) columns.Move(current, index);
                 _desiredColumnWidths[column] = layout.WidthOf(column);
+                if (layout.IsDragged(column)) _draggedColumns.Add(column);
                 gridColumn.Width = _desiredColumnWidths[column];
                 index++;
             }
@@ -204,7 +214,10 @@ public partial class TicketsPage
         }
 
         if (double.IsFinite(gridColumn.Width) && gridColumn.Width > 0)
+        {
             _desiredColumnWidths[header.Column] = Math.Max(TicketListColumns.MinWidth, gridColumn.Width);
+            _draggedColumns.Add(header.Column);
+        }
         FitTicketColumns(held: header.Column);
         ScheduleColumnSave();
     }
@@ -225,15 +238,23 @@ public partial class TicketsPage
     }
 
     /// <summary>
-    /// Show the columns at the widths that fit the pane: Title fills what the
-    /// others leave, and they give way when the pane is narrow. See
-    /// <see cref="TicketListColumnFit"/>.
+    /// Show the columns at the widths that fit the pane: the others as wide as
+    /// what they hold, unless a person dragged them, and Title fills what they
+    /// leave. They give way when the pane is narrow, the ID column never below
+    /// what its IDs need. See <see cref="TicketListColumnFit"/>.
     /// </summary>
     private void FitTicketColumns(TicketListColumn? held = null)
     {
         if (_columnHeaders.Count == 0 || _desiredColumnWidths.Count == 0) return;
 
-        var fit = TicketListColumnFit.Fit(_desiredColumnWidths, TicketListViewportWidth() - TicketRowChromeWidth, held);
+        var natural = _desiredColumnWidths.ToDictionary(p => p.Key, p => TicketListColumnFit.Natural(
+            p.Key,
+            _draggedColumns.Contains(p.Key) ? p.Value : null,
+            _contentColumnWidths.TryGetValue(p.Key, out var content) ? content : null));
+        var minimums = _contentColumnWidths.TryGetValue(TicketListColumn.Id, out var idWidth)
+            ? new Dictionary<TicketListColumn, double> { [TicketListColumn.Id] = idWidth }
+            : null;
+        var fit = TicketListColumnFit.Fit(natural, TicketListViewportWidth() - TicketRowChromeWidth, held, minimums);
         _fittingColumns = true;
         try
         {
@@ -248,6 +269,60 @@ public partial class TicketsPage
         {
             _fittingColumns = false;
         }
+    }
+
+    /// <summary>
+    /// Measure what each column holds in the rows shown, then refit. Each
+    /// distinct value is measured once, in the font its cell uses, and the
+    /// header's name and sort chevron count too, so a short column never cuts
+    /// its own header.
+    /// </summary>
+    private void MeasureTicketColumnContent()
+    {
+        _contentColumnWidths.Clear();
+        if (_ticketRows.Count == 0)
+        {
+            FitTicketColumns();
+            return;
+        }
+
+        var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        var size = TicketsListView.FontSize;
+        var body = new Typeface(TicketsListView.FontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+        var mono = new Typeface(new FontFamily("Cascadia Mono, Consolas"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+        var headerFace = new Typeface(TicketsListView.FontFamily, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+
+        double Widest(IEnumerable<string?> values, Typeface face, double fontSize) => values
+            .Select(v => string.IsNullOrEmpty(v) ? "-" : v)
+            .Distinct(StringComparer.Ordinal)
+            .Select(v => new FormattedText(v, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                face, fontSize, Brushes.Black, dpi).WidthIncludingTrailingWhitespace)
+            .DefaultIfEmpty(0)
+            .Max();
+
+        // The header's name, plus room for the sort chevron beside it.
+        double Header(TicketListColumn column) =>
+            Widest(new[] { TicketListColumns.Header(column) }, headerFace, size) + 18 + TicketListColumnFit.CellPadding;
+
+        void Set(TicketListColumn column, double text) =>
+            _contentColumnWidths[column] = Math.Max(Header(column), text + TicketListColumnFit.CellPadding);
+
+        // The status dot and its gap sit before the name.
+        Set(TicketListColumn.Status, Widest(_ticketRows.Select(r => r.StatusName), body, size) + 13);
+        Set(TicketListColumn.Priority, Widest(_ticketRows.Select(r => r.PriorityName), body, size));
+        Set(TicketListColumn.Requestor, Widest(_ticketRows.Select(r => r.RequestorName), body, size));
+        Set(TicketListColumn.Responsible, Widest(_ticketRows.Select(r => r.ResponsibleFullName), body, size));
+        Set(TicketListColumn.Age, Widest(_ticketRows.Select(r => r.AgeLabel), mono, size));
+        Set(TicketListColumn.Modified, Widest(_ticketRows.Select(r => r.ModifiedLabel), body, 11));
+        Set(TicketListColumn.Created, Widest(_ticketRows.Select(r => r.CreatedLabel), body, 11));
+
+        // The deepest child's indent and the triangle's slot come before its ID.
+        var idText = Widest(_ticketRows.Select(r => r.IdLabel), mono, size);
+        var deepest = _ticketRows.Max(r => r.Row.Depth);
+        _contentColumnWidths[TicketListColumn.Id] = Math.Max(Header(TicketListColumn.Id),
+            TicketListColumnFit.IdWidth(deepest, idText));
+
+        FitTicketColumns();
     }
 
     /// <summary>The width rows are laid out in: the list less its vertical scroll bar, when shown.</summary>

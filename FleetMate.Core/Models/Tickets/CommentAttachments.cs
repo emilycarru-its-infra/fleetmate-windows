@@ -67,11 +67,15 @@ public static class CommentAttachments
         return failed;
     }
 
-    /// <summary>The status line after an upload pass had failures.</summary>
-    public static string FailureMessage(IReadOnlyList<(PendingCommentAttachment File, string Error)> failed, bool hasText)
+    /// <summary>
+    /// The status line after an upload pass had failures. <paramref name="post"/>
+    /// names what the files came with, "comment" or "reply".
+    /// </summary>
+    public static string FailureMessage(IReadOnlyList<(PendingCommentAttachment File, string Error)> failed, bool hasText,
+        string post = "comment")
     {
         var lead = failed.Count == 1 ? "A file was not attached" : $"{failed.Count} files were not attached";
-        var tail = hasText ? ", so the comment was not posted. Post again to retry." : ". Post again to retry.";
+        var tail = hasText ? $", so the {post} was not posted. Post again to retry." : ". Post again to retry.";
         return lead + tail + " " + string.Join(" ", failed.Select(f => f.Error.TrimEnd('.') + "."));
     }
 }

@@ -19,6 +19,12 @@ public static class TicketDetailFields
     public const string Requestor = "RequestorUid";
     public const string Description = "Description";
 
+    /// <summary>
+    /// The responsible person. Not a picker field: Assign to me, Reassign and
+    /// Unassign set it, and clearing it is a real change.
+    /// </summary>
+    public const string Responsible = "ResponsibleUid";
+
     /// <summary>The single-value fields a picker in the detail pane changes.</summary>
     public static readonly IReadOnlyList<string> Pickable = new[]
     {
@@ -37,6 +43,7 @@ public static class TicketDetailFields
         Group => "group",
         Requestor => "requestor",
         Description => "description",
+        Responsible => "responsible",
         _ => field,
     };
 
