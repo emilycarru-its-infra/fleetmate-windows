@@ -13,6 +13,7 @@ namespace FleetMate.Tests;
 /// task-template page reading, and the controller that guards every change
 /// for the UI. Every fixture is synthetic, and nothing here reaches a server.
 /// </summary>
+[Collection(WpfCollection.Name)]
 public class TicketTaskTests
 {
     private const string Token = "synthetic-bearer-token-value";
@@ -1191,32 +1192,9 @@ public class TicketTaskTests
 
     // ── The panel, built and driven without a window ───────────────────
 
-    private static void OnSta(Action action)
-    {
-        Exception? failure = null;
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                SynchronizationContext.SetSynchronizationContext(
-                    new System.Windows.Threading.DispatcherSynchronizationContext(System.Windows.Threading.Dispatcher.CurrentDispatcher));
-                action();
-            }
-            catch (Exception ex) { failure = ex; }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
-    }
+    private static void OnSta(Action action) => WpfFixture.Run(action);
 
-    private static void Pump(Task task)
-    {
-        var frame = new System.Windows.Threading.DispatcherFrame();
-        task.ContinueWith(_ => frame.Continue = false, TaskScheduler.Default);
-        System.Windows.Threading.Dispatcher.PushFrame(frame);
-        task.GetAwaiter().GetResult();
-    }
+    private static void Pump(Task task) => WpfFixture.Pump(task);
 
     [Fact]
     public void ThePanelShowsTasksAndOffersEditAndDeleteOnlyForStandardTasks() => OnSta(() =>

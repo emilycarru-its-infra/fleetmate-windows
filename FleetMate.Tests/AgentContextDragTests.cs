@@ -12,6 +12,7 @@ namespace FleetMate.Tests;
 /// the terminal takes only the block of a drag FleetMate started, once, and
 /// a row's element resolves to the block the menu and the drag share.
 /// </summary>
+[Collection(WpfCollection.Name)]
 public class AgentContextDragTests
 {
     private static readonly DateTime Now = new(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
@@ -94,17 +95,5 @@ public class AgentContextDragTests
         Assert.Equal("Copy this ticket for an agent", AgentContextButton.ToolTipFor(AgentContext.ContextKind.Ticket, copyOnly: true));
     }
 
-    private static void RunSta(Action action)
-    {
-        Exception? failure = null;
-        var thread = new Thread(() =>
-        {
-            try { action(); }
-            catch (Exception ex) { failure = ex; }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
-    }
+    private static void RunSta(Action action) => WpfFixture.Run(action);
 }

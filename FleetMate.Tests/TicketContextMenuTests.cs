@@ -10,6 +10,7 @@ namespace FleetMate.Tests;
 /// The right-click menu of ticket rows and board cards: its order, when the
 /// immediate-save items are offered, and that TicketsMate shows no agent items.
 /// </summary>
+[Collection(WpfCollection.Name)]
 public class TicketContextMenuTests
 {
     private static readonly Guid Me = Guid.Parse("11111111-1111-1111-1111-111111111111");
@@ -163,17 +164,5 @@ public class TicketContextMenuTests
         RunSta(() => Assert.Equal(2, AgentContextMenu.Items(None, ticketsOnly: false).Count()));
     }
 
-    private static void RunSta(Action action)
-    {
-        Exception? failure = null;
-        var thread = new Thread(() =>
-        {
-            try { action(); }
-            catch (Exception ex) { failure = ex; }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
-    }
+    private static void RunSta(Action action) => WpfFixture.Run(action);
 }

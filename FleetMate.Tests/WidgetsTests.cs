@@ -5,6 +5,7 @@ using Xunit;
 namespace FleetMate.Tests;
 
 /// <summary>The per-tab Widgets section: row layout, treemap geometry, and which tabs get which data.</summary>
+[Collection(WpfCollection.Name)]
 public class WidgetsTests
 {
     [Fact]
@@ -107,19 +108,7 @@ public class WidgetsTests
         });
     }
 
-    private static void RunSta(Action action)
-    {
-        Exception? failure = null;
-        var thread = new Thread(() =>
-        {
-            try { action(); }
-            catch (Exception ex) { failure = ex; }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
-    }
+    private static void RunSta(Action action) => WpfFixture.Run(action);
 
     [Fact]
     public void Rows_NarrowWindowGivesOneCardPerRow()
