@@ -89,6 +89,8 @@ public enum TeamsSearchFailure
     Unauthorized,
     /// <summary>403: signed in, but the account lacks the API's Teams search role.</summary>
     Forbidden,
+    /// <summary>403 <c>purpose_not_granted</c>: the declared purpose is not one the API grants.</summary>
+    PurposeNotGranted,
     /// <summary>404: no such thread or channel.</summary>
     NotFound,
     /// <summary>503: the search index has not been built yet.</summary>
@@ -118,6 +120,8 @@ public sealed class TeamsSearchException : Exception
     {
         401 => new(TeamsSearchFailure.Unauthorized,
             "The Teams search API rejected the sign-in token. Run `fleetmate login --check` and try again.", status),
+        403 when detail.Contains("purpose_not_granted", StringComparison.Ordinal) => new(TeamsSearchFailure.PurposeNotGranted,
+            "The Teams search API does not grant the configured purpose. Check teams_api_purpose.", status),
         403 => new(TeamsSearchFailure.Forbidden,
             "Your account is not authorized for Teams search. Ask your IT administrator for Teams search access.", status),
         404 => new(TeamsSearchFailure.NotFound, "No such Teams thread or channel in the search index.", status),
@@ -142,6 +146,11 @@ public sealed class TeamsSearchService : IDisposable
 {
     private readonly string _baseUrl;
     private readonly string _scope;
+    private readonly string _purpose;
+
+    /// <summary>Sent as <see cref="PurposeHeader"/> on every request unless configured otherwise.</summary>
+    public const string DefaultPurpose = "purpose.its_teams_channel_search";
+    public const string PurposeHeader = "X-Vantage-Purpose";
     private readonly HttpClient? _client;
 
     internal static readonly JsonSerializerOptions Json = new()
@@ -152,13 +161,15 @@ public sealed class TeamsSearchService : IDisposable
 
     public bool IsConfigured => _baseUrl.Length > 0 && _scope.Length > 0;
 
-    public static TeamsSearchService FromConfig(FleetMateConfig config) => new(config.TeamsApiUrl, config.TeamsApiScope);
+    public static TeamsSearchService FromConfig(FleetMateConfig config) =>
+        new(config.TeamsApiUrl, config.TeamsApiScope, purpose: config.TeamsApiPurpose);
 
     /// <param name="httpHandler">Replaces the HTTP transport under the bearer handler, so a test can stub the API.</param>
     /// <param name="tokenSource">Replaces the shared token source, so a test can stand in for the broker.</param>
     public TeamsSearchService(string? baseUrl, string? scope,
-        HttpMessageHandler? httpHandler = null, Func<EntraTokenSource?>? tokenSource = null)
+        HttpMessageHandler? httpHandler = null, Func<EntraTokenSource?>? tokenSource = null, string? purpose = null)
     {
+        _purpose = string.IsNullOrWhiteSpace(purpose) ? DefaultPurpose : purpose.Trim();
         _baseUrl = (baseUrl ?? string.Empty).Trim().TrimEnd('/');
         _scope = (scope ?? string.Empty).Trim();
         if (!IsConfigured) return;
@@ -245,6 +256,7 @@ public sealed class TeamsSearchService : IDisposable
         if (_client == null) throw TeamsSearchException.NotConfigured();
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.TryAddWithoutValidation(PurposeHeader, _purpose);
         using var response = await _client.SendAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
         var status = (int)response.StatusCode;

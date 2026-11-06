@@ -124,6 +124,21 @@ public class FleetMateConfig
     /// </summary>
     public string? TeamsApiScope { get; set; }
 
+    /// <summary>
+    /// Declared purpose sent with every Teams search request as
+    /// <c>X-Vantage-Purpose</c>. config.yaml <c>teams_api_purpose</c>, registry or
+    /// policy <c>TeamsApiPurpose</c>, or <c>FLEETMATE_TEAMS_API_PURPOSE</c>; unset
+    /// uses the service's default.
+    /// </summary>
+    public string? TeamsApiPurpose { get; set; }
+
+    [YamlMember(Alias = "teams_api_purpose", ApplyNamingConventions = false)]
+    public string? TeamsApiPurposeSetting
+    {
+        get => null;
+        set { if (!string.IsNullOrWhiteSpace(value)) TeamsApiPurpose = value; }
+    }
+
     [YamlMember(Alias = "teams_api_url", ApplyNamingConventions = false)]
     public string? TeamsApiUrlSetting
     {
@@ -394,6 +409,10 @@ public class FleetMateConfig
         if (!string.IsNullOrWhiteSpace(teamsApiScope))
             config.TeamsApiScope = teamsApiScope;
 
+        var teamsApiPurpose = Environment.GetEnvironmentVariable("FLEETMATE_TEAMS_API_PURPOSE");
+        if (!string.IsNullOrWhiteSpace(teamsApiPurpose))
+            config.TeamsApiPurpose = teamsApiPurpose;
+
         var devOpsBaseUrlEnv = Environment.GetEnvironmentVariable("AZDEVOPS_URL");
         if (!string.IsNullOrWhiteSpace(devOpsBaseUrlEnv))
         {
@@ -458,6 +477,7 @@ public class FleetMateConfig
         ReportMateOidcAudience = null;
         TeamsApiUrl = null;
         TeamsApiScope = null;
+        TeamsApiPurpose = null;
 #pragma warning disable CS0618 // the retired secrets go too
         SnipeApiKey = null;
         ReportMatePassphrase = null;
@@ -634,6 +654,10 @@ public class FleetMateConfig
             var teamsApiScope = key.GetValue("TeamsApiScope") as string;
             if (!string.IsNullOrEmpty(teamsApiScope))
                 config.TeamsApiScope = teamsApiScope;
+
+            var teamsApiPurpose = key.GetValue("TeamsApiPurpose") as string;
+            if (!string.IsNullOrEmpty(teamsApiPurpose))
+                config.TeamsApiPurpose = teamsApiPurpose;
 
             var entraClientId = key.GetValue("EntraClientId") as string;
             if (!string.IsNullOrEmpty(entraClientId))
@@ -834,7 +858,7 @@ public class FleetMateConfig
             "GraphTenantId", "GraphClientId", "SnipeUrl", "SnipeOidcAudience",
             "TdxBaseUrl", "TdxTicketingAppId", "DevOpsBaseUrl", "DevOpsOrganization", "DevOpsProject",
             "ReportMateUrl", "HandbookRepoUrl", "HandbookSiteUrl", "AgentsHubRepoUrl",
-            "TeamsApiUrl", "TeamsApiScope",
+            "TeamsApiUrl", "TeamsApiScope", "TeamsApiPurpose",
             "ManageRosterPath", "ManageRosterRepoProject", "ManageRosterRepo", "ManageRosterRepoPath",
             "ManageCommandsPath", "ManageTerminalProfile", "ManageRdpUser",
             "ManageIncludeRetired", "ManageIncludeProvisioning", "SecureShellKeyPath", "SecureShellUser"

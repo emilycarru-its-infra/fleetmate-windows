@@ -20,11 +20,13 @@ public class TeamsSearchServiceTests
     {
         public List<HttpRequestMessage> Requests { get; } = new();
         public List<string?> Authorizations { get; } = new();
+        public List<string?> Purposes { get; } = new();
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Requests.Add(request);
             Authorizations.Add(request.Headers.Authorization?.ToString());
+            Purposes.Add(request.Headers.TryGetValues("X-Vantage-Purpose", out var p) ? string.Join(",", p) : null);
             return Task.FromResult(new HttpResponseMessage(status)
             {
                 RequestMessage = request,
@@ -80,11 +82,12 @@ public class TeamsSearchServiceTests
     [Fact]
     public void RegistryAndPolicyValuesSetTheTeamsKeys()
     {
-        var values = new Dictionary<string, object?> { ["TeamsApiUrl"] = "https://search.example.org", ["TeamsApiScope"] = Scope };
+        var values = new Dictionary<string, object?> { ["TeamsApiUrl"] = "https://search.example.org", ["TeamsApiScope"] = Scope, ["TeamsApiPurpose"] = "purpose.other" };
         var config = new FleetMateConfig();
         FleetMateConfig.ApplyRegistryValues(name => values.GetValueOrDefault(name), config, fromPolicy: true);
         Assert.Equal("https://search.example.org", config.TeamsApiUrl);
         Assert.Equal(Scope, config.TeamsApiScope);
+        Assert.Equal("purpose.other", config.TeamsApiPurpose);
     }
 
     [Fact]
@@ -160,6 +163,7 @@ public class TeamsSearchServiceTests
         Assert.Equal("/api/v1/teams/search", request.RequestUri!.AbsolutePath);
         Assert.Equal("Bearer token-1", stub.Authorizations[0]);
         Assert.Equal(new[] { Scope }, scopes);
+        Assert.Equal("purpose.its_teams_channel_search", stub.Purposes[0]);
 
         var response = payload.Value;
         Assert.Equal(42, response.Total);
@@ -247,6 +251,26 @@ public class TeamsSearchServiceTests
         Assert.Equal(expected, ex.Failure);
         Assert.Single(stub.Requests);
         if (expected == TeamsSearchFailure.Forbidden) Assert.Contains("not authorized", ex.Message);
+    }
+
+    [Fact]
+    public async Task ConfiguredPurposeIsSentOnEveryRequestIncludingTheRetry()
+    {
+        var stub = new Stub(HttpStatusCode.Unauthorized, "{}");
+        var source = Tokens(new List<string>());
+        using var service = new TeamsSearchService(Base, Scope, stub, () => source, purpose: "purpose.other");
+        await Assert.ThrowsAsync<TeamsSearchException>(() => service.GetChannelsAsync());
+        Assert.Equal(new[] { "purpose.other", "purpose.other" }, stub.Purposes);
+    }
+
+    [Theory]
+    [InlineData("purpose_not_granted", TeamsSearchFailure.PurposeNotGranted)]
+    [InlineData("access_denied", TeamsSearchFailure.Forbidden)]
+    public async Task ForbiddenDistinguishesPurposeFromAccess(string detail, TeamsSearchFailure expected)
+    {
+        using var service = Service(new Stub(HttpStatusCode.Forbidden, $"{{\"detail\":\"{detail}\"}}"));
+        var ex = await Assert.ThrowsAsync<TeamsSearchException>(() => service.GetChannelsAsync());
+        Assert.Equal(expected, ex.Failure);
     }
 
     [Fact]

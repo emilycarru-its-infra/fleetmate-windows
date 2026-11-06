@@ -397,6 +397,7 @@ Log saved to: quality\fleetmate\logs\system-check-ASSET-000-20260118-234126.log
 | `SECURE_SHELL_USERNAME` | SSH username | `administrator` |
 | `FLEETMATE_TEAMS_API_URL` | Teams channel-search API base URL | `https://search.example.com` |
 | `FLEETMATE_TEAMS_API_SCOPE` | Token scope for that API | `api://<app-id>/.default` |
+| `FLEETMATE_TEAMS_API_PURPOSE` | Purpose sent as `X-Vantage-Purpose` (optional; has a default) | `purpose.its_teams_channel_search` |
 
 ### Windows Registry
 
@@ -407,7 +408,7 @@ Registry keys under `HKEY_CURRENT_USER\SOFTWARE\FleetMate`:
 - `TdxBeid` / `TdxWebServicesKey` (string)
 - `SnipeUrl` / `SnipeApiKey` (string)
 - `ReportMateUrl` / `ReportMatePassphrase` (string)
-- `TeamsApiUrl` / `TeamsApiScope` (string)
+- `TeamsApiUrl` / `TeamsApiScope` / `TeamsApiPurpose` (string)
 
 ### Config File (config.yaml)
 
