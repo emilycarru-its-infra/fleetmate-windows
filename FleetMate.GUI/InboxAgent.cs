@@ -15,10 +15,13 @@ namespace FleetMate.GUI;
 /// It has no window or tray icon and never takes the single-instance lock, so
 /// opening the app while it runs opens a normal window. It signs in the way
 /// the app does, silently and never with a sign-in window, finds the signed-in
-/// person, and runs the inbox scan on the app's schedule. It renews the
-/// sign-in every 12 hours, which keeps the saved session fresh for the
-/// window's next launch. With TeamDynamix not configured it waits an hour and
-/// exits, so the next start reads the configuration again.
+/// person, and runs the inbox scan on the app's schedule. Its sign-in is kept
+/// alive exactly as the window's is, by the session keeper and
+/// <see cref="TdxSessionPolicy"/>: renewed two hours before expiry, retried
+/// after 1, 5 and 15 minutes, then every 15, and replaced by a fresher session
+/// the window or the other edition saved. The renewal lock keeps it from
+/// signing in at the same moment as either. With TeamDynamix not configured
+/// it waits an hour and exits, so the next start reads the configuration again.
 /// </summary>
 internal sealed class InboxAgent
 {
@@ -28,7 +31,6 @@ internal sealed class InboxAgent
     public const int AnotherRunningExitCode = 3;
 
     private static readonly TimeSpan PassInterval = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan RenewInterval = TimeSpan.FromHours(12);
     private static readonly TimeSpan SignInRetry = TimeSpan.FromHours(1);
     private static readonly TimeSpan NotConfiguredWait = TimeSpan.FromHours(1);
 
@@ -63,36 +65,36 @@ internal sealed class InboxAgent
         }
 
         Log.Information("[inbox-agent] Started (pid {Pid})", Environment.ProcessId);
-        var renew = false;
+        try
+        {
+            // The first sign-in may reuse the window's saved session. Renewal
+            // after that is the session keeper's, on the window's schedule.
+            await _app.AttemptSilentTdxSsoAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[inbox-agent] Sign-in failed");
+        }
+
+        TicketInboxPerson? person = null;
         while (true)
         {
-            try
+            if (person == null)
             {
-                // The first sign-in may reuse the window's saved session; each
-                // later one is fresh, which renews the saved session.
-                await _app.AttemptSilentTdxSsoAsync(renew);
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "[inbox-agent] Sign-in failed");
-            }
-            renew = true;
-
-            var me = await ResolveMeAsync(tdx);
-            if (me?.Uid is not { } uid || uid == Guid.Empty)
-            {
-                Log.Warning("[inbox-agent] Could not sign in or find the signed-in person; retrying in an hour");
-                await Task.Delay(SignInRetry);
-                continue;
+                var me = await ResolveMeAsync(tdx);
+                if (me?.Uid is not { } uid || uid == Guid.Empty)
+                {
+                    // The keeper goes on renewing on its backoff meanwhile.
+                    Log.Warning("[inbox-agent] Could not sign in or find the signed-in person; trying again in an hour");
+                    await Task.Delay(SignInRetry);
+                    continue;
+                }
+                person = new TicketInboxPerson(uid, me.FullName ?? me.DisplayName, me.PrimaryEmail);
             }
 
-            var person = new TicketInboxPerson(uid, me.FullName ?? me.DisplayName, me.PrimaryEmail);
-            var renewAt = DateTime.UtcNow + RenewInterval;
-            while (DateTime.UtcNow < renewAt && tdx.IsSsoAuthenticated)
-            {
-                await RunPassAsync(tdx, person);
-                await Task.Delay(PassInterval);
-            }
+            // While signed out, the keeper renews; the pass waits for it.
+            if (tdx.IsSsoAuthenticated) await RunPassAsync(tdx, person);
+            await Task.Delay(PassInterval);
         }
     }
 

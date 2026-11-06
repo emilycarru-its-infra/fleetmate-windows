@@ -127,11 +127,17 @@ branch or local `main`. A missing remote ref is an error; do not silently fall b
 
 ## TeamDynamix sign-in
 
-Sign-in is silent first and the window is a last resort. The window renews its TeamDynamix token
-two hours before expiry: first a fresher session another process saved (the inbox helper or the
-other edition), then HTTP Negotiate, then the hidden WebView2. Failures are retried after 1, 5 and
-15 minutes, then every 15, and at once on wake, unlock and network changes. The sign-in window
-opens by itself only when every silent path has just failed and the token is gone or under 10
-minutes from it, at most once per 30 minutes. It never blocks the UI, fills in the account, closes
-when a token arrives and times out on its own. The rules live in `TdxSessionPolicy`, so change
-them there, with its tests, rather than in the GUI.
+Sign-in is silent, and the window opens only when someone clicks Sign In, as on FleetMate for
+Mac. The window and the background inbox helper keep the TeamDynamix token alive the same way:
+they renew it two hours before expiry, first by taking a fresher session another process saved
+(the other of the two, or the other edition), then by HTTP Negotiate, then by the hidden WebView2.
+Failures are retried after 1, 5 and 15 minutes, then every 15, and at once on wake, unlock and
+network changes. Every run of the sign-in chain holds the renewal lock (`TdxRenewalLock`, a file
+in FleetMate's local data folder shared by both editions), so no two processes sign in at once.
+One that finds the lock held waits for it and adopts the session the winner saved instead of
+signing in itself. Saves replace the session file in one step and never replace a session for
+the same account and tenant that lasts longer. When renewal keeps failing with no usable token,
+Tickets shows a Sign In banner. The sign-in window never blocks the UI, fills in the account,
+closes when a token arrives and times out after three minutes. The rules live in
+`TdxSessionPolicy`, `TdxRenewalLock` and `TdxSessionCache`, so change them there, with their
+tests, rather than in the GUI.

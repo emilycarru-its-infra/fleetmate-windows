@@ -10,19 +10,19 @@ using Serilog;
 namespace FleetMate.GUI;
 
 /// <summary>
-/// Keeps the window's TeamDynamix sign-in alive. The rules (when to renew,
-/// the backoff, adopting a saved session, opening the sign-in window, what
-/// to show) are <see cref="TdxSessionPolicy"/>'s; this is the wiring.
+/// Keeps the TeamDynamix sign-in alive, in the window and in the background
+/// inbox helper alike. The rules (when to renew, the backoff, adopting a
+/// saved session, what to show) are <see cref="TdxSessionPolicy"/>'s; this is
+/// the wiring.
 ///
-/// Every 15 seconds, and at the moment the token expires, the window picks
+/// Every 15 seconds, and at the moment the token expires, the process picks
 /// up a session another process saved, brings the Authentication panel and
 /// Tickets in line with the token actually held, and renews when the policy
-/// says so. Renewal is always silent first: the saved session, then HTTP
-/// Negotiate with the device sign-in, then the hidden WebView2. Waking from
-/// sleep, unlocking the session and the network changing retry straight
-/// away. Only when all of that has failed with the token gone or nearly gone
-/// does the sign-in window open by itself, and never more than once per
-/// cool-down.
+/// says so. Renewal is always silent: the saved session, then HTTP Negotiate
+/// with the device sign-in, then the hidden WebView2, under the renewal lock
+/// (<see cref="TdxRenewalLock"/>) so no two processes sign in at once. Waking
+/// from sleep, unlocking the session and the network changing retry straight
+/// away. The sign-in window is never opened from here; only Sign In opens it.
 /// </summary>
 public partial class App
 {
@@ -35,7 +35,6 @@ public partial class App
     private bool _tdxTickRunning;
     private bool _tdxSystemHooks;
     private bool _tdxLastSignedIn;
-    private volatile bool _tdxSessionLocked;
     private TdxService? _tdxWiredService;
     private CancellationTokenSource? _tdxWindowCts;
     private Task<bool>? _tdxWindow;
@@ -58,22 +57,12 @@ public partial class App
     public event Action? TdxSessionStatusChanged;
 
     /// <summary>
-    /// Start keeping the sign-in alive in this window, or re-wire it after
-    /// the services were rebuilt. Safe to call more than once.
+    /// Start keeping the sign-in alive in this process, the window or the
+    /// inbox helper, or re-wire it after the services were rebuilt. Safe to
+    /// call more than once.
     /// </summary>
     private void StartTdxSessionKeeper()
     {
-        if (_isInboxAgent)
-        {
-            // The helper renews on its own schedule, but still takes a newer
-            // session the window or the other edition saved.
-            if (TdxService is { } helperTdx && Config.Tdx is { SsoEnabled: true })
-            {
-                helperTdx.SharedSession = TdxSessionStore;
-                helperTdx.PeerSessions = new[] { TdxSessionCache.OtherEdition() };
-            }
-            return;
-        }
         WireTdxService();
         if (TdxService == null || Config.Tdx is not { SsoEnabled: true }) return;
 
@@ -120,7 +109,7 @@ public partial class App
         UnwireTdxService();
     }
 
-    /// <summary>Point the current TeamDynamix service at the saved sessions and this window's sign-in chain.</summary>
+    /// <summary>Point the current TeamDynamix service at the saved sessions and this process's sign-in chain.</summary>
     private void WireTdxService()
     {
         if (ReferenceEquals(_tdxWiredService, TdxService)) return;
@@ -200,9 +189,10 @@ public partial class App
 
     /// <summary>
     /// One silent renewal, in order: a fresher saved session, then the chain
-    /// (HTTP Negotiate, then the hidden WebView2). A failure while the token is
-    /// still valid keeps it. When everything failed and the token is gone or
-    /// nearly gone, the sign-in window may open by itself.
+    /// (HTTP Negotiate, then the hidden WebView2) under the renewal lock. A
+    /// failure while the token is still valid keeps it. A failure never opens
+    /// the sign-in window: the backoff tries again, and the banner asks for a
+    /// Sign In click once it keeps failing.
     /// </summary>
     private async Task RenewTdxSilentlyAsync()
     {
@@ -211,19 +201,6 @@ public partial class App
 
         _lastSilentTdxResult = null;
         await AttemptSilentTdxSsoAsync(renew: IsTdxSsoAuthenticated);
-        if (_tdxPolicy.IsUsable(HeldTdxExpiry) && _tdxPolicy.Failures == 0) return;
-
-        var silentFailed = _lastSilentTdxResult is { Success: false } last && TdxSsoResult.ShouldOfferWindow(last);
-        // Nobody can answer a window on a locked session, and with no network
-        // it would only show an error page; the next kick tries again.
-        if (_tdxSessionLocked || !NetworkInterface.GetIsNetworkAvailable()) return;
-        if (_tdxPolicy.ShouldAutoOpenWindow(HeldTdxExpiry, silentFailed,
-                identityRefused: _lastSilentTdxResult is { IdentityRefused: true },
-                windowOpen: _tdxWindow is { IsCompleted: false }))
-        {
-            Log.Information("[tdx-sso] Every silent sign-in failed and the token is gone; opening the sign-in window");
-            _ = OpenTdxSignInWindowAsync(automatic: true);
-        }
     }
 
     /// <summary>
@@ -331,8 +308,6 @@ public partial class App
 
     private void OnTdxSessionSwitch(object? sender, SessionSwitchEventArgs e)
     {
-        if (e.Reason is SessionSwitchReason.SessionLock) _tdxSessionLocked = true;
-        else if (e.Reason is SessionSwitchReason.SessionUnlock) _tdxSessionLocked = false;
         if (e.Reason is SessionSwitchReason.SessionUnlock or SessionSwitchReason.SessionLogon
             or SessionSwitchReason.ConsoleConnect or SessionSwitchReason.RemoteConnect)
             KickTdxRenewal("session unlock");
@@ -363,18 +338,19 @@ public partial class App
     // MARK: - The sign-in window
 
     /// <summary>
-    /// Show the sign-in window, or the one already open. It never blocks the
-    /// UI or silent renewal, closes itself when a token arrives by any route,
-    /// and times out on its own. <paramref name="automatic"/> opens it without
-    /// taking focus.
+    /// Show the sign-in window, or the one already open. Only a Sign In click
+    /// gets here (<see cref="RetryTdxSsoAsync"/>), as on the Mac; the inbox
+    /// helper never shows it. It never blocks the UI or silent renewal, closes
+    /// itself when a token arrives by any route, and times out on its own.
     /// </summary>
-    private Task<bool> OpenTdxSignInWindowAsync(bool automatic)
+    private Task<bool> OpenTdxSignInWindowAsync()
     {
+        if (_isInboxAgent) return Task.FromResult(false);
         if (_tdxWindow is { IsCompleted: false } open) return open;
-        return _tdxWindow = RunTdxSignInWindowAsync(automatic);
+        return _tdxWindow = RunTdxSignInWindowAsync();
     }
 
-    private async Task<bool> RunTdxSignInWindowAsync(bool automatic)
+    private async Task<bool> RunTdxSignInWindowAsync()
     {
         if (Config.Tdx is not { SsoEnabled: true } tdx || string.IsNullOrEmpty(tdx.BaseUrl)) return false;
 
@@ -384,8 +360,7 @@ public partial class App
         try
         {
             var owner = Current.Windows.OfType<Views.Shared.MainWindow>().FirstOrDefault();
-            result = await TdxSignInWindow.SignInAsync(tdx.BaseUrl, owner, TdxSessionPolicy.WindowTimeout,
-                activate: !automatic, cts.Token);
+            result = await TdxSignInWindow.SignInAsync(tdx.BaseUrl, owner, TdxSessionPolicy.WindowTimeout, cts.Token);
         }
         catch (Exception ex)
         {
@@ -400,7 +375,7 @@ public partial class App
         if (result is { Success: true, Token: not null })
         {
             HandleSilentSsoSuccess(result);
-            _tdxPolicy.RecordWindowClosed(signedIn: true);
+            _tdxPolicy.RecordSuccess();
             RefreshTdxSessionStatus();
             return true;
         }
@@ -408,7 +383,7 @@ public partial class App
         // A silent renewal or another process may have signed in meanwhile;
         // a late failure from the window must not overwrite that.
         var signedIn = IsTdxSsoAuthenticated;
-        _tdxPolicy.RecordWindowClosed(signedIn);
+        if (signedIn) _tdxPolicy.RecordSuccess();
         if (!signedIn && result != null)
         {
             if (result.IdentityRefused)
