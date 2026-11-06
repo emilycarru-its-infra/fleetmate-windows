@@ -1445,6 +1445,11 @@
                                                         <MenuItem Header="Quote in New Comment" Tag="{Binding}" Click="OnQuoteFeedEntry" />
                                                         <Separator />
                                                         <MenuItem Header="Copy" Tag="{Binding}" Click="OnCopyFeedEntryClicked" />
+                                                        <!-- Only on the signed-in person's own replies, as on the Mac. -->
+                                                        <Separator Visibility="{Binding DeleteReplyVisibility}" />
+                                                        <MenuItem Header="Delete Reply…" Tag="{Binding}" Click="OnDeleteReplyClicked"
+                                                                  Visibility="{Binding DeleteReplyVisibility}"
+                                                                  AutomationProperties.Name="Delete Reply" />
                                                     </ContextMenu>
                                                 </Border.ContextMenu>
                                                 <StackPanel>
@@ -1495,24 +1500,68 @@
                                                         <ItemsControl ItemsSource="{Binding Replies}" ItemTemplate="{StaticResource FeedCardTemplate}"
                                                                       Focusable="False" AutomationProperties.Name="Replies" />
                                                         <!-- The reply composer, where the next reply will land.
-                                                             The API takes only a body, so no Private or Notify. -->
+                                                             The API takes only a body, so no Private or Notify.
+                                                             Files dropped on it, pasted into it or picked with
+                                                             Attach… go to the ticket's Attachments first, as a
+                                                             comment's do and as on the Mac. -->
                                                         <Border Visibility="{Binding ComposerVisibility}" Padding="10" CornerRadius="6" BorderThickness="1"
                                                                 BorderBrush="{DynamicResource SystemControlForegroundAccentBrush}"
                                                                 Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                                                                AutomationProperties.Name="{Binding ReplyLabel}">
+                                                                AutomationProperties.Name="{Binding ReplyLabel}"
+                                                                Tag="{Binding}" AllowDrop="True" DragOver="OnReplyDragOver" Drop="OnReplyDrop">
                                                             <StackPanel>
                                                                 <TextBox Tag="{Binding}" Text="{Binding ReplyDraft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                                          AcceptsReturn="True" TextWrapping="Wrap" Height="64" FontSize="13"
                                                                          VerticalScrollBarVisibility="Auto" SpellCheck.IsEnabled="True"
                                                                          ui:ControlHelper.PlaceholderText="{Binding ReplyLabel}"
                                                                          AutomationProperties.Name="{Binding ReplyLabel}"
+                                                                         AllowDrop="True" PreviewDragOver="OnReplyDragOver" PreviewDragEnter="OnReplyDragOver" PreviewDrop="OnReplyDrop"
+                                                                         CommandManager.PreviewExecuted="OnReplyPreviewExecuted" CommandManager.PreviewCanExecute="OnReplyPreviewCanExecute"
                                                                          PreviewKeyDown="OnReplyKeyDown" />
+                                                                <!-- Files waiting to go up with the reply. -->
+                                                                <ItemsControl ItemsSource="{Binding ReplyAttachments}" Visibility="{Binding ReplyAttachmentsVisibility}"
+                                                                              Margin="0,6,0,0" Focusable="False" AutomationProperties.Name="Files to attach to the reply">
+                                                                    <ItemsControl.ItemsPanel>
+                                                                        <ItemsPanelTemplate>
+                                                                            <WrapPanel />
+                                                                        </ItemsPanelTemplate>
+                                                                    </ItemsControl.ItemsPanel>
+                                                                    <ItemsControl.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <Border Padding="8,3,4,3" Margin="0,0,6,6" CornerRadius="12" BorderThickness="1"
+                                                                                    BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                                                                                    Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                                                                                    ToolTip="{Binding Path}" AutomationProperties.Name="{Binding Name}">
+                                                                                <StackPanel Orientation="Horizontal">
+                                                                                    <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE723;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                                                                    <TextBlock Text="{Binding Name}" FontSize="12" MaxWidth="220" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                                                    <TextBlock Text="{Binding SizeLabel}" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                                                    <Button Tag="{Binding}" Click="OnRemoveReplyAttachmentClicked" Padding="4,1" Margin="4,0,0,0"
+                                                                                            MinHeight="0" MinWidth="0" Background="Transparent" BorderThickness="0"
+                                                                                            ToolTip="Remove" AutomationProperties.Name="{Binding Name, StringFormat='Remove {0}'}">
+                                                                                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE711;" FontSize="10" />
+                                                                                    </Button>
+                                                                                </StackPanel>
+                                                                            </Border>
+                                                                        </DataTemplate>
+                                                                    </ItemsControl.ItemTemplate>
+                                                                </ItemsControl>
                                                                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                                                    <Button Content="Post Reply" Tag="{Binding}" Click="OnPostReplyClicked"
+                                                                    <Button Content="{Binding PostReplyLabel}" Tag="{Binding}" Click="OnPostReplyClicked"
                                                                             IsEnabled="{Binding CanPostReply}" Style="{DynamicResource AccentButtonStyle}"
-                                                                            ToolTip="Post this reply in the thread (Ctrl+Enter)" />
+                                                                            ToolTip="{Binding PostReplyToolTip}" />
                                                                     <Button Content="Cancel" Tag="{Binding}" Click="OnCancelReplyClicked" Margin="8,0,0,0"
                                                                             ToolTip="Close the reply; the draft is kept (Esc)" />
+                                                                    <Button Tag="{Binding}" Click="OnAttachReplyFilesClicked" Margin="8,0,0,0"
+                                                                            IsEnabled="{Binding CanAttachReply}"
+                                                                            ToolTip="Attach files to the ticket with this reply. You can also drop files here or paste them."
+                                                                            AutomationProperties.Name="Attach files to the reply">
+                                                                        <StackPanel Orientation="Horizontal">
+                                                                            <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE723;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                                                            <TextBlock Text="Attach…" VerticalAlignment="Center" />
+                                                                        </StackPanel>
+                                                                    </Button>
                                                                     <ui:ProgressRing IsActive="{Binding IsPostingReply}" Visibility="{Binding PostingVisibility}"
                                                                                      Width="14" Height="14" Margin="10,0,0,0" VerticalAlignment="Center" />
                                                                 </StackPanel>

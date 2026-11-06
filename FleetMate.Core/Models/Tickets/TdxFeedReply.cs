@@ -19,6 +19,16 @@ public sealed class TdxFeedReplyRequest
     /// <summary>A reply typed as plain text, escaped so it posts exactly as typed.</summary>
     public static TdxFeedReplyRequest FromPlainText(string text) => new() { Body = Html(text) };
 
+    /// <summary>The Web API path that deletes one reply in a comment's thread, as the Mac sends it.</summary>
+    public static string DeletePath(int entryId, int replyId) => $"feed/{entryId}/replies/{replyId}";
+
+    /// <summary>
+    /// Whether the signed-in person may delete a reply: only their own, as on
+    /// the Mac. Unknown on either side is no.
+    /// </summary>
+    public static bool CanDelete(Guid? replyAuthor, Guid? me) =>
+        replyAuthor is { } author && author != Guid.Empty && me is { } self && author == self;
+
     /// <summary>
     /// Plain text as the HTML TDX expects: the markup characters escaped and
     /// each line break as <c>&lt;br /&gt;</c>, as FleetMate for Mac sends it.
@@ -65,6 +75,16 @@ public sealed class TdxFeedReplyException : Exception
         403 => "You don't have permission to reply to this comment.",
         404 => "That comment is no longer on the ticket, or this TeamDynamix site predates threaded replies (12.3). Refresh the ticket.",
         var code => $"TeamDynamix couldn't post the reply (HTTP {code}). Refresh and try again.",
+    };
+
+    /// <summary>Why deleting a reply failed, in words.</summary>
+    public static string DescribeDelete(HttpStatusCode? status) => (int?)status switch
+    {
+        null => "TeamDynamix could not be reached. Check the connection and try again.",
+        401 => "Your TeamDynamix session has expired. Sign in again.",
+        403 => "You don't have permission to delete this reply.",
+        404 => "That reply is no longer on the ticket, or this TeamDynamix site predates threaded replies (12.3). Refresh the ticket.",
+        var code => $"TeamDynamix couldn't delete the reply (HTTP {code}). Refresh and try again.",
     };
 }
 

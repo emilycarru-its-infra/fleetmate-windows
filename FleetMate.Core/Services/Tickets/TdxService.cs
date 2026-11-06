@@ -914,6 +914,42 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
     }
 
     /// <summary>
+    /// Delete a threaded reply: <c>DELETE /api/feed/{id}/replies/{replyId}</c>,
+    /// the route FleetMate for Mac uses (TeamDynamix 12.3 and later).
+    /// TeamDynamix replaces the reply's text with a deletion notice, and it
+    /// cannot be restored. It needs one of the Delete feed-entry permissions.
+    /// </summary>
+    /// <exception cref="TdxFeedReplyException">The reply was not deleted.</exception>
+    public async Task DeleteFeedReplyAsync(int entryId, int replyId)
+    {
+        if (!await SetAuthorizationAsync())
+            throw new TdxFeedReplyException(entryId, 401, TdxFeedReplyException.DescribeDelete(System.Net.HttpStatusCode.Unauthorized));
+
+        var url = _config.GetApiUrl(TdxFeedReplyRequest.DeletePath(entryId, replyId));
+        HttpResponseMessage response;
+        try
+        {
+            response = await _client.DeleteAsync(url);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to delete reply {ReplyId} on feed entry {Id}", replyId, entryId);
+            throw new TdxFeedReplyException(entryId, null, TdxFeedReplyException.DescribeDelete(null), ex);
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Log.Warning("Failed to delete reply {ReplyId} on feed entry {Id}: {Status} - {Error}", replyId, entryId, response.StatusCode, error);
+                throw new TdxFeedReplyException(entryId, (int)response.StatusCode, TdxFeedReplyException.DescribeDelete(response.StatusCode));
+            }
+            Log.Debug("Deleted reply {ReplyId} on feed entry {Id}", replyId, entryId);
+        }
+    }
+
+    /// <summary>
     /// Post a top-level comment on a ticket, returning the created feed entry.
     ///
     /// Throws rather than reporting failure as a <c>false</c> return: a
