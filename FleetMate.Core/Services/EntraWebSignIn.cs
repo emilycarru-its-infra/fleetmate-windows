@@ -35,6 +35,38 @@ public static partial class EntraWebSignIn
         Uri.TryCreate(url, UriKind.Absolute, out var uri)
         && EntraHosts.Any(h => uri.Host.Equals(h, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// <paramref name="url"/> with <c>login_hint</c> set to <paramref name="upn"/>,
+    /// so Entra fills in the account; null when it should be left as it is.
+    /// Only a sign-in request that arrives as a GET is rewritten: a SAML
+    /// redirect-binding request (<c>SAMLRequest</c> in the query) or an OAuth
+    /// authorize request, either of which can be navigated to again. One that
+    /// already names an account (<c>login_hint</c> or <c>username</c>) is left alone.
+    /// </summary>
+    public static string? WithLoginHint(string? url, string? upn)
+    {
+        if (string.IsNullOrWhiteSpace(upn) || !IsEntraPage(url)) return null;
+        var uri = new Uri(url!);
+        var query = uri.Query.TrimStart('?');
+        var names = query.Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(p => Uri.UnescapeDataString(p.Split('=', 2)[0]))
+            .ToList();
+        if (names.Any(n => n.Equals("login_hint", StringComparison.OrdinalIgnoreCase)
+                           || n.Equals("username", StringComparison.OrdinalIgnoreCase)))
+            return null;
+
+        var saml = uri.AbsolutePath.Contains("/saml2", StringComparison.OrdinalIgnoreCase)
+                   && names.Contains("SAMLRequest", StringComparer.Ordinal);
+        var authorize = uri.AbsolutePath.Contains("/oauth2/", StringComparison.OrdinalIgnoreCase)
+                        && uri.AbsolutePath.EndsWith("/authorize", StringComparison.OrdinalIgnoreCase)
+                        && names.Contains("client_id", StringComparer.Ordinal);
+        if (!saml && !authorize) return null;
+
+        var hint = "login_hint=" + Uri.EscapeDataString(upn.Trim());
+        var builder = new UriBuilder(uri) { Query = query.Length == 0 ? hint : query + "&" + hint };
+        return builder.Uri.AbsoluteUri;
+    }
+
     [GeneratedRegex(@"[a-z0-9._%+\-]+@[a-z0-9.\-]+", RegexOptions.IgnoreCase)]
     private static partial Regex EmailPattern();
 

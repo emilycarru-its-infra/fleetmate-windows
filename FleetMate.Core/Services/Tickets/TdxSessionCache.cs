@@ -83,6 +83,24 @@ public sealed class TdxSessionCache
         _path = Path.Combine(directory ?? AppEdition.Current.LocalAppDataDirectory, "tdx-session.bin");
     }
 
+    /// <summary>
+    /// The other edition's saved session: TicketsMate's for FleetMate, and
+    /// FleetMate's for TicketsMate. Read, never written or cleared from here;
+    /// the same user's DPAPI key opens it.
+    /// </summary>
+    public static TdxSessionCache OtherEdition() => new(
+        (AppEdition.Current.IsTicketsOnly ? AppEdition.FleetMate : AppEdition.TicketsMate).LocalAppDataDirectory);
+
+    /// <summary>When the file was last written, or null when there is none. Cheap enough to poll.</summary>
+    public DateTime? LastWriteUtc
+    {
+        get
+        {
+            try { return File.Exists(_path) ? File.GetLastWriteTimeUtc(_path) : null; }
+            catch (Exception) { return null; }
+        }
+    }
+
     public TdxSession? Load()
     {
         try

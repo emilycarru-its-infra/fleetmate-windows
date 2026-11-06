@@ -82,6 +82,7 @@ public class AuthTokenState
     public static AuthTokenState Configured() => new() { Kind = AuthStateKind.Configured };
     public static AuthTokenState Authenticating() => new() { Kind = AuthStateKind.Authenticating };
     public static AuthTokenState Valid(string? user = null, DateTime? expiry = null) => new() { Kind = AuthStateKind.Valid, User = user, Expiry = expiry };
+    public static AuthTokenState Expired(string? user = null) => new() { Kind = AuthStateKind.Expired, User = user };
     public static AuthTokenState Failed(string message) => new() { Kind = AuthStateKind.Failed, Message = message };
     public static AuthTokenState SP(string name) => new() { Kind = AuthStateKind.ServicePrincipal, ServicePrincipalName = name };
 }

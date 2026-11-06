@@ -77,6 +77,60 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
     /// </summary>
     public TdxSessionCache? SharedSession { get; set; }
 
+    /// <summary>
+    /// Sessions another app saves that this service may adopt but never clears:
+    /// the other edition's. See <see cref="ReloadSharedSessionAsync"/>.
+    /// </summary>
+    public IReadOnlyList<TdxSessionCache> PeerSessions { get; set; } = Array.Empty<TdxSessionCache>();
+
+    /// <summary>
+    /// The window's sign-in chain, when this service runs in one: called with
+    /// <c>urgent</c> false when a request finds no usable token, and true after
+    /// a 401. It runs one silent attempt (or joins the one running) when its
+    /// policy allows, and reports whether a usable token is now held. Without
+    /// it, the command line's HTTP Negotiate sign-in is tried instead.
+    /// </summary>
+    public Func<bool, Task<bool>>? Renewer { get; set; }
+
+    /// <summary>
+    /// Raised, on whatever thread found it, when a session another process
+    /// saved replaced the token held.
+    /// </summary>
+    public event Action<TdxSession>? SharedSessionAdopted;
+
+    /// <summary>Raised, on whatever thread saw it, when TeamDynamix refused the token held.</summary>
+    public event Action? TokenRejected;
+
+    /// <summary>The Windows account a saved session must belong to; tests replace it.</summary>
+    internal Func<CancellationToken, Task<string?>> ExpectedAddressResolver { get; set; } =
+        ct => TdxSsoIdentity.ResolveWindowsUpnAsync(ct);
+
+    /// <summary>The clock adoption decisions read; tests replace it.</summary>
+    internal Func<DateTime> UtcNow { get; set; } = () => DateTime.UtcNow;
+
+    private readonly SemaphoreSlim _reloadGate = new(1, 1);
+    private readonly SemaphoreSlim _recoverGate = new(1, 1);
+    private readonly Dictionary<TdxSessionCache, DateTime?> _seenWrites = new();
+    private readonly HashSet<string> _rejectedTokens = new(StringComparer.Ordinal);
+    private static readonly AsyncLocal<bool> InsideSignIn = new();
+
+    /// <summary>
+    /// Marks the code that runs inside a sign-in attempt, until disposed. A
+    /// request made there that finds no token, or gets a 401, does not start
+    /// another attempt, which would wait on the one it is part of.
+    /// </summary>
+    public static IDisposable BeginSignIn()
+    {
+        var previous = InsideSignIn.Value;
+        InsideSignIn.Value = true;
+        return new SignInScope(previous);
+    }
+
+    private sealed class SignInScope(bool previous) : IDisposable
+    {
+        public void Dispose() => InsideSignIn.Value = previous;
+    }
+
     /// <summary>Tests pass a handler that answers in place of TeamDynamix.</summary>
     internal TdxService(TdxConfig config, HttpMessageHandler? handler)
     {
@@ -86,7 +140,12 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
         var baseUrl = ServiceUri.Normalize(config.BaseUrl);
         if (!baseUrl.EndsWith("/TDWebApi", StringComparison.OrdinalIgnoreCase))
             baseUrl += "/TDWebApi";
-        _client = new HttpClient(new ActivityLogHandler("Tickets", handler))
+        // A 401 marks the token bad, recovers once and re-sends the request
+        // once (see RecoverFromUnauthorizedAsync).
+        _client = new HttpClient(new TdxReauthHandler(RecoverFromUnauthorizedAsync)
+        {
+            InnerHandler = new ActivityLogHandler("Tickets", handler),
+        })
         {
             BaseAddress = new Uri(baseUrl + "/"),
             Timeout = TimeSpan.FromSeconds(60)
@@ -134,68 +193,176 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
         // like it came from one shared identity, which is exactly what an audit
         // trail must not do. It also silently masked SSO failures: a broken
         // sign-in still "worked", so nobody noticed until attribution mattered.
+        //
+        // Another process (the inbox helper, or the other edition) may have
+        // saved a newer session than the one held here; take it first. Only a
+        // changed file is read, so this costs two timestamp checks per call.
+        await ReloadSharedSessionAsync();
         if (!string.IsNullOrEmpty(_ssoToken) && DateTime.UtcNow < _ssoTokenExpiry)
         {
             return _ssoToken;
         }
 
-        if (await TryUseSharedSessionAsync()) return _ssoToken;
+        // In the window, its own chain renews: one attempt at a time, on its
+        // backoff, with the hidden browser after HTTP Negotiate.
+        if (Renewer is { } renew)
+        {
+            if (!InsideSignIn.Value && await renew(false) && CurrentSsoToken is { } renewed) return renewed;
+            Log.Warning("[tdx] No TDX credential — sign in to TeamDynamix");
+            return null;
+        }
 
         // Try the silent SSO chain — Negotiate/Kerberos into loginsso — before
         // giving up. On a domain-joined machine this needs no interaction.
-        if (!string.IsNullOrEmpty(_config.BaseUrl))
-        {
-            try
-            {
-                var sso = new TdxSsoService(_config.BaseUrl);
-                var result = await sso.TrySilentSsoAsync();
-                if (result.Success && !string.IsNullOrEmpty(result.Token))
-                {
-                    SetSsoToken(result.Token, result.Expiry, result.UserEmail, result.UserName);
-                    Log.Information("[tdx] Acquired a TDX token via silent SSO as {User}",
-                        result.UserName ?? "(unknown)");
-                    return _ssoToken;
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "[tdx] Silent SSO failed");
-            }
-        }
+        if (await TrySilentHttpSignInAsync()) return _ssoToken;
 
         Log.Warning("[tdx] No TDX credential — sign in to TeamDynamix. " +
                     "There is no service account to fall back to by design.");
         return null;
     }
 
-    /// <summary>
-    /// Use the saved session when it passes the same identity check a live
-    /// sign-in makes: this Windows account, this tenant, and a token that still
-    /// carries that address.
-    /// </summary>
-    private async Task<bool> TryUseSharedSessionAsync()
+    /// <summary>The command line's own sign-in: HTTP Negotiate into loginsso, with the identity check.</summary>
+    private async Task<bool> TrySilentHttpSignInAsync()
     {
-        if (SharedSession is not { } store || store.Load() is not { } session) return false;
-
-        var expected = await TdxSsoIdentity.ResolveWindowsUpnAsync();
-        var verified = TdxSsoIdentity.Verify(session.Token, expected);
-        if (!session.ReusableBy(expected, _config.BaseUrl, DateTime.UtcNow) || !verified.Success)
+        if (string.IsNullOrEmpty(_config.BaseUrl)) return false;
+        try
         {
-            // Removed only when it is known to be someone else's or another
-            // tenant's. An address that cannot be resolved, or a session that has
-            // merely run low, is left for the window to deal with.
-            if (expected != null && (!session.BelongsTo(expected, _config.BaseUrl) || !verified.Success))
+            var sso = new TdxSsoService(_config.BaseUrl);
+            var result = await sso.TrySilentSsoAsync();
+            if (result.Success && !string.IsNullOrEmpty(result.Token) && !IsRejected(result.Token))
             {
-                Log.Information("[tdx] Saved session is not this account's or tenant's; removing it");
-                store.Clear();
+                SetSsoToken(result.Token, result.Expiry, result.UserEmail, result.UserName);
+                Log.Information("[tdx] Acquired a TDX token via silent SSO as {User}",
+                    result.UserName ?? "(unknown)");
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[tdx] Silent SSO failed");
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Adopt a session another process saved, when it passes the same identity
+    /// check a live sign-in makes (this Windows account, this tenant, and a
+    /// token that still carries that address) and outlasts the token held; see
+    /// <see cref="TdxSessionPolicy.ShouldAdopt"/>. Only files written since the
+    /// last look are read, unless <paramref name="force"/>. A session known to
+    /// be another account's or tenant's is removed from this edition's own
+    /// file; the other edition's file is only ever read.
+    /// </summary>
+    /// <returns>True when the token held was replaced.</returns>
+    public async Task<bool> ReloadSharedSessionAsync(bool force = false, CancellationToken ct = default)
+    {
+        var stores = new List<TdxSessionCache>();
+        if (SharedSession is { } own) stores.Add(own);
+        stores.AddRange(PeerSessions);
+        if (stores.Count == 0) return false;
+        // Requests arriving together leave the read to the first.
+        if (!await _reloadGate.WaitAsync(0, ct)) return false;
+        try
+        {
+            var candidates = new List<(TdxSessionCache Store, TdxSession Session)>();
+            foreach (var store in stores)
+            {
+                var written = store.LastWriteUtc;
+                if (!force && _seenWrites.TryGetValue(store, out var seen) && seen == written) continue;
+                _seenWrites[store] = written;
+                if (written == null || store.Load() is not { } session || string.IsNullOrEmpty(session.Token)) continue;
+                if (IsRejected(session.Token)) continue;
+                candidates.Add((store, session));
+            }
+            if (candidates.Count == 0) return false;
+
+            var expected = await ExpectedAddressResolver(ct);
+            var policy = new TdxSessionPolicy(UtcNow);
+            foreach (var (store, session) in candidates.OrderByDescending(c => c.Session.ExpiryUtc))
+            {
+                var verified = TdxSsoIdentity.Verify(session.Token, expected);
+                // Removed only when it is known to be someone else's or another
+                // tenant's. An address that cannot be resolved, or a session that
+                // has merely run low, is left alone.
+                if (ReferenceEquals(store, SharedSession) && expected != null
+                    && (!session.BelongsTo(expected, _config.BaseUrl) || !verified.Success))
+                {
+                    Log.Information("[tdx] Saved session is not this account's or tenant's; removing it");
+                    store.Clear();
+                    continue;
+                }
+
+                var held = _ssoSession;
+                if (!policy.ShouldAdopt(session, expected, _config.BaseUrl, verified.Success, held?.Token, held?.ExpiryUtc))
+                    continue;
+
+                SetSsoToken(session.Token, session.ExpiryUtc, verified.UserEmail, session.UserName ?? verified.UserName);
+                if (session.VerifiedMe is { } me) RememberMe(me);
+                Log.Information("[tdx] Adopted a saved session for {User}, expiring {Expiry:u}",
+                    session.UserName ?? "(unknown)", session.ExpiryUtc);
+                SharedSessionAdopted?.Invoke(session);
+                return true;
             }
             return false;
         }
+        finally
+        {
+            _reloadGate.Release();
+        }
+    }
 
-        SetSsoToken(session.Token, session.ExpiryUtc, verified.UserEmail, session.UserName ?? verified.UserName);
-        if (session.VerifiedMe is { } me) RememberMe(me);
-        Log.Information("[tdx] Using FleetMate's saved session for {User}", session.UserName ?? "(unknown)");
-        return true;
+    private bool IsRejected(string token)
+    {
+        lock (_rejectedTokens) return _rejectedTokens.Contains(token);
+    }
+
+    /// <summary>
+    /// TeamDynamix answered 401 to <paramref name="rejectedToken"/>. The token
+    /// is marked bad and dropped, and when <paramref name="retry"/> a fresher
+    /// saved session or one silent sign-in is tried, once. Returns the token to
+    /// re-send the request with, or null to leave the 401 standing.
+    /// </summary>
+    internal async Task<string?> RecoverFromUnauthorizedAsync(string rejectedToken, bool retry, CancellationToken ct)
+    {
+        MarkRejected(rejectedToken);
+        if (!retry || InsideSignIn.Value) return null;
+
+        await _recoverGate.WaitAsync(ct);
+        try
+        {
+            // Another request may have recovered while this one waited.
+            if (CurrentSsoToken is { } current && current != rejectedToken) return current;
+            if (await ReloadSharedSessionAsync(force: true, ct) && CurrentSsoToken is { } adopted) return adopted;
+            if (Renewer is { } renew) return await renew(true) ? CurrentSsoToken : null;
+            return await TrySilentHttpSignInAsync() ? CurrentSsoToken : null;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[tdx] Recovering from a refused token failed");
+            return null;
+        }
+        finally
+        {
+            _recoverGate.Release();
+        }
+    }
+
+    /// <summary>Drop a token TeamDynamix refused, so neither this process nor its saved session offers it again.</summary>
+    private void MarkRejected(string token)
+    {
+        lock (_rejectedTokens) _rejectedTokens.Add(token);
+        if (SharedSession is { } own && own.Load() is { } saved && saved.Token == token) own.Clear();
+        if (_ssoSession?.Token != token) return;
+
+        _ssoToken = null;
+        _ssoTokenExpiry = DateTime.MinValue;
+        _ssoSession = null;
+        Log.Warning("[tdx] TeamDynamix refused the signed-in token; dropping it");
+        TokenRejected?.Invoke();
     }
 
     private async Task<bool> SetAuthorizationAsync()
@@ -1271,6 +1438,8 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
         // Per request, so the client's default header — whatever set it last —
         // is never what authorizes a workflow call.
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        // A 401 marks the token bad, but a workflow call is never re-sent with another one.
+        request.Options.Set(TdxReauthHandler.NoRetry, true);
 
         HttpResponseMessage response;
         try
@@ -1633,6 +1802,8 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
     public void Dispose()
     {
         _client.Dispose();
+        _reloadGate.Dispose();
+        _recoverGate.Dispose();
     }
 }
 
