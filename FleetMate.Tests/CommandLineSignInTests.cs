@@ -209,4 +209,37 @@ public class WorkingDirectoryEnvTests
             File.Delete(file);
         }
     }
+
+    [Theory]
+    [InlineData("graph_tenant_id")]
+    [InlineData(" Graph_Tenant_Id ")]
+    [InlineData("GRAPH_TENANT_\u0130D")]
+    [InlineData("GRAPH\u2010TENANT_ID")]
+    [InlineData("REPORTMATE_URL")]
+    [InlineData("TEAMS_API_SCOPE")]
+    public void NoCasingOrLookAlikeGetsATenantOrHostPastTheAllowlist(string key)
+    {
+        var file = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(file, key + "=11111111-1111-1111-1111-111111111111\n");
+            var config = new FleetMate.Core.Config.FleetMateConfig();
+            FleetMate.Core.Config.FleetMateConfig.LoadEnvFile(file, config, fromWorkingDirectory: true);
+            Assert.Null(config.Graph?.TenantId);
+            Assert.NotEqual("11111111-1111-1111-1111-111111111111", config.ReportMateUrl);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Theory]
+    [InlineData("snipe_api_key", "SNIPE_API_KEY")]
+    [InlineData("  TDX_BEID ", "TDX_BEID")]
+    [InlineData("GRAPH_TENANT_\u0130D", null)]
+    [InlineData("K\u212AY", null)]
+    [InlineData("A-B", null)]
+    public void KeysAreNormalizedOnceOrRejected(string raw, string? expected) =>
+        Assert.Equal(expected, FleetMate.Core.Config.FleetMateConfig.NormalizeEnvKey(raw));
 }
