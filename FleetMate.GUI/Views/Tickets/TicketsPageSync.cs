@@ -77,4 +77,11 @@ internal static class TicketsPageSync
     /// TeamDynamix is not signed in yet; once it is, the failure is real.
     /// </summary>
     public static bool HoldLinkForSignIn(bool ssoEnabled, bool signedIn) => ssoEnabled && !signedIn;
+
+    /// <summary>
+    /// The list selected the ticket already open in the detail pane, as it does
+    /// after every row rebuild. The pane is left as it is rather than reloaded.
+    /// </summary>
+    public static bool IsSameOpenTicket(int selectedId, int? openId, bool detailVisible) =>
+        detailVisible && openId == selectedId;
 }
