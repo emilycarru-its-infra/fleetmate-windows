@@ -30,7 +30,7 @@ public partial class TicketsPage
 
         foreach (var category in FilterCategories)
         {
-            var button = new Button { Margin = new Thickness(0, 0, 8, 4), Padding = new Thickness(10, 0, 10, 0), Height = 32, MinHeight = 0 };
+            var button = new Button { Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(10, 0, 10, 0), Height = 32, MinHeight = 0 };
             button.Click += (_, _) => OpenFilterMenu(category, button);
             _filterButtons[category] = button;
             FilterButtonsPanel.Children.Add(button);
@@ -38,7 +38,7 @@ public partial class TicketsPage
 
         _clearFiltersButton = new Button
         {
-            Content = "Clear Filters", Margin = new Thickness(0, 0, 8, 4), Padding = new Thickness(10, 0, 10, 0), Height = 32, MinHeight = 0,
+            Content = "Clear Filters", Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(10, 0, 10, 0), Height = 32, MinHeight = 0,
             ToolTip = "Clear every filter",
         };
         _clearFiltersButton.Click += (_, _) => _filters.ClearAll();
@@ -54,12 +54,8 @@ public partial class TicketsPage
         {
             var picked = _filters.Selected(category);
             var title = TicketFilters.Title(category);
-            button.Content = picked.Count switch
-            {
-                0 => $"{title}: All ▾",
-                1 => $"{title}: {picked.First()} ▾",
-                _ => $"{title}: {picked.Count} selected ▾",
-            };
+            button.Content = TicketsToolbarRules.FilterButtonText(title, picked, _compactToolbar) + " ▾";
+            System.Windows.Automation.AutomationProperties.SetName(button, TicketsToolbarRules.FilterButtonName(title, picked));
             button.FontWeight = picked.Count > 0 ? FontWeights.SemiBold : FontWeights.Normal;
             button.ToolTip = picked.Count > 1 ? string.Join(", ", picked.OrderBy(p => p)) : $"Filter by {title.ToLowerInvariant()}";
         }
@@ -117,7 +113,9 @@ public partial class TicketsPage
         UserPreferences.SetTicketsAssignedToMe(on);
         // My tickets read best as a list, so turning the filter on switches to
         // it, as the Mac app does. Switching back to Board stays possible.
-        if (on && ListViewRadio.IsChecked != true) ListViewRadio.IsChecked = true;
+        if (TicketsToolbarRules.ViewAfterAssignedToMe(CurrentViewMode, on) == TicketsViewMode.List
+            && ListViewRadio.IsChecked != true)
+            ListViewRadio.IsChecked = true;
         ApplyFiltersAndSort();
     }
 

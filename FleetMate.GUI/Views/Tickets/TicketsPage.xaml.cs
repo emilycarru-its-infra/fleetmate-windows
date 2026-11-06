@@ -156,6 +156,7 @@ private bool _isInitialLoadDone;
 
         // Trackpad horizontal swipes and Shift+wheel scroll the board.
         Shared.HorizontalWheel.Attach(BoardViewPanel);
+        Shared.HorizontalWheel.Attach(FilterStripScroller);
 
         // The Board radio is checked in XAML, but its Checked event fires while
         // the page is still parsing, where OnViewModeChanged deliberately bails.
@@ -564,8 +565,7 @@ private bool _isInitialLoadDone;
         InboxViewPanel.Visibility = _isInboxView ? Visibility.Visible : Visibility.Collapsed;
         OnInboxVisibilityChanged();
         UpdateEmptyState();
-        // The column picker only means something on the board, as on Mac.
-        BoardGroupComboBox.Visibility = _isBoardView ? Visibility.Visible : Visibility.Collapsed;
+        UpdateToolbarForView();
 
         if (_isBoardView)
         {
@@ -861,6 +861,7 @@ private bool _isInitialLoadDone;
 
     private void OnSortChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_syncingSortControls) return;
         if (SortComboBox.SelectedItem is ComboBoxItem item)
         {
             _sortField = item.Content?.ToString() ?? "Created";
@@ -871,7 +872,7 @@ private bool _isInitialLoadDone;
     private void OnSortDirectionClicked(object sender, RoutedEventArgs e)
     {
         _sortAscending = !_sortAscending;
-        SortDirectionButton.Content = _sortAscending ? "↑" : "↓";
+        UpdateSortDirectionButton();
         ApplyFiltersAndSort();
     }
 
