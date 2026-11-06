@@ -96,6 +96,10 @@ public static partial class CliSignIn
         text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .FirstOrDefault(l => !l.StartsWith("WARNING", StringComparison.OrdinalIgnoreCase)) ?? "";
 
+    /// <summary>A tenant that may be put on an az command line: a GUID or a DNS name.</summary>
+    internal static bool IsTenant(string? tenant) =>
+        !string.IsNullOrEmpty(tenant) && TenantPattern().IsMatch(tenant);
+
     [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9.\-]{0,252}$")]
     private static partial Regex TenantPattern();
 }

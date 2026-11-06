@@ -122,4 +122,91 @@ public class CommandLineSignInTests
 
     /// <summary>An Entra error code as az prints it, such as the multi-factor-expired one.</summary>
     private static string Entra(string number) => "AADSTS" + number;
+
+    [Theory]
+    [InlineData("api://x/.default & calc")]
+    [InlineData("api://x/.default\" --debug")]
+    [InlineData("api://x/.default|whoami")]
+    [InlineData("api://x/%PATH%")]
+    [InlineData("")]
+    public async Task AScopeOutsideTheAllowlistNeverReachesAz(string scope)
+    {
+        var az = new Az();
+        var source = new AzCliTokenSource(az.Run, () => true);
+        await Assert.ThrowsAsync<ArgumentException>(() => source.AcquireAsync(scope, Tenant));
+        Assert.Empty(az.Calls);
+    }
+
+    [Theory]
+    [InlineData("contoso.onmicrosoft.com & calc")]
+    [InlineData("-contoso.example")]
+    [InlineData("tenant;whoami")]
+    public async Task ATenantOutsideTheAllowlistNeverReachesAz(string tenant)
+    {
+        var az = new Az();
+        var source = new AzCliTokenSource(az.Run, () => true);
+        await Assert.ThrowsAsync<ArgumentException>(() => source.AcquireAsync(Scope, tenant));
+        Assert.Empty(az.Calls);
+    }
+
+    [Theory]
+    [InlineData(Tenant, true)]
+    [InlineData("contoso.onmicrosoft.com", true)]
+    [InlineData("organizations", true)]
+    [InlineData("a b", false)]
+    [InlineData("x\"y", false)]
+    public void TenantsFollowTheSignInRule(string tenant, bool expected) =>
+        Assert.Equal(expected, AzCliTokenSource.IsValidTenant(tenant));
+
+    [Fact]
+    public void AzIsNeverTakenFromARelativeOrEmptyPathEntry()
+    {
+        var root = OperatingSystem.IsWindows() ? @"C:\Tools" : "/opt/tools";
+        var seen = new List<string>();
+        var path = string.Join(Path.PathSeparator, "", ".", "relative" + Path.DirectorySeparatorChar + "bin", root);
+        var found = AzCliTokenSource.FindAz(path, candidate => { seen.Add(candidate); return candidate.StartsWith(root); }, Array.Empty<string>());
+
+        Assert.NotNull(found);
+        Assert.True(Path.IsPathFullyQualified(found!));
+        Assert.StartsWith(root, found);
+        Assert.All(seen, candidate => Assert.True(Path.IsPathFullyQualified(candidate), candidate));
+    }
+
+    [Fact]
+    public void NoAzOnAFullyQualifiedPathMeansNone() =>
+        Assert.Null(AzCliTokenSource.FindAz(string.Join(Path.PathSeparator, ".", ""), _ => true, Array.Empty<string>()));
+}
+
+public class WorkingDirectoryEnvTests
+{
+    [Fact]
+    public void AWorkingDirectoryEnvCannotChooseTheTenantOrWhereTokensGo()
+    {
+        var file = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllLines(file, new[]
+            {
+                "GRAPH_TENANT_ID=11111111-1111-1111-1111-111111111111",
+                "GRAPH_CLIENT_ID=22222222-2222-2222-2222-222222222222",
+                "REPORTMATE_URL=https://collector.example.test",
+                "SNIPE_URL=https://collector.example.test",
+                "TDX_BASE_URL=collector.example.test",
+            });
+            var config = new FleetMate.Core.Config.FleetMateConfig();
+            FleetMate.Core.Config.FleetMateConfig.LoadEnvFile(file, config, fromWorkingDirectory: true);
+            Assert.NotEqual("11111111-1111-1111-1111-111111111111", config.Graph?.TenantId);
+            Assert.NotEqual("22222222-2222-2222-2222-222222222222", config.Graph?.ClientId);
+            Assert.NotEqual("https://collector.example.test", config.ReportMateUrl);
+            Assert.NotEqual("https://collector.example.test", config.SnipeUrl);
+
+            var trusted = new FleetMate.Core.Config.FleetMateConfig();
+            FleetMate.Core.Config.FleetMateConfig.LoadEnvFile(file, trusted);
+            Assert.Equal("https://collector.example.test", trusted.ReportMateUrl);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
 }

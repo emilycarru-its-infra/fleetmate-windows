@@ -28,6 +28,18 @@ public sealed class AzCliTokenSource
         @"AADSTS(5007[689]|70043|50173|700082|65001)\b|interaction_required|Interactive authentication is needed|az login",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+    // az.cmd runs through cmd.exe, so nothing reaches its command line unless it is one of these.
+    private static readonly Regex ScopePattern = new(@"^[A-Za-z0-9:/._-]+$", RegexOptions.CultureInvariant);
+    /// <summary>A scope az may be asked for: letters, digits and <c>:/._-</c> only.</summary>
+    public static bool IsValidScope(string? scope) =>
+        !string.IsNullOrEmpty(scope) && scope.Length <= 512 && ScopePattern.IsMatch(scope);
+
+    /// <summary>
+    /// A tenant az may be pointed at: a GUID or a DNS name, by the same rule
+    /// <see cref="CliSignIn"/> applies before it puts a tenant on an az command line.
+    /// </summary>
+    public static bool IsValidTenant(string? tenant) => CliSignIn.IsTenant(tenant);
+
     private readonly AzRunner _run;
     private readonly Func<bool> _isInteractive;
 
@@ -41,9 +53,12 @@ public sealed class AzCliTokenSource
     public async Task<(string Token, DateTimeOffset ExpiresOn)> AcquireAsync(
         string scope, string tenant, CancellationToken ct = default)
     {
-        var tenantArgs = string.IsNullOrWhiteSpace(tenant) || tenant == "organizations"
-            ? Array.Empty<string>()
-            : new[] { "--tenant", tenant };
+        if (!IsValidScope(scope))
+            throw new ArgumentException("the scope has characters az may not be given", nameof(scope));
+        var useTenant = !string.IsNullOrWhiteSpace(tenant) && tenant != "organizations";
+        if (useTenant && !IsValidTenant(tenant))
+            throw new ArgumentException("the tenant is neither a GUID nor a DNS name", nameof(tenant));
+        var tenantArgs = useTenant ? new[] { "--tenant", tenant } : Array.Empty<string>();
         var get = new List<string> { "account", "get-access-token", "--scope", scope, "--output", "json" };
         get.AddRange(tenantArgs);
 
@@ -122,22 +137,31 @@ public sealed class AzCliTokenSource
         return new AzResult(process.ExitCode, await stdout, await stderr);
     }
 
-    private static string? FindAz()
-    {
-        var candidates = new[]
+    private static string? FindAz() =>
+        FindAz(Environment.GetEnvironmentVariable("PATH"), File.Exists, new[]
         {
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft SDKs", "Azure", "CLI2", "wbin", "az.cmd"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft SDKs", "Azure", "CLI2", "wbin", "az.cmd"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Microsoft SDKs", "Azure", "CLI2", "wbin", "az.cmd"),
-        };
-        foreach (var candidate in candidates)
-            if (File.Exists(candidate)) return candidate;
-        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(Path.PathSeparator))
+        });
+
+    /// <summary>
+    /// The az to run: an installed location first, then PATH. A PATH entry that is empty or not
+    /// fully qualified (such as <c>.</c> or a relative folder) is skipped, so az is never taken
+    /// from the current directory, and only a fully qualified result is returned.
+    /// </summary>
+    internal static string? FindAz(string? pathEnv, Func<string, bool> exists, IEnumerable<string> installed)
+    {
+        foreach (var candidate in installed)
+            if (Path.IsPathFullyQualified(candidate) && exists(candidate)) return candidate;
+        foreach (var raw in (pathEnv ?? string.Empty).Split(Path.PathSeparator))
         {
+            var dir = raw.Trim().Trim('"');
+            if (dir.Length == 0 || !Path.IsPathFullyQualified(dir)) continue;
             foreach (var name in new[] { "az.cmd", "az.exe", "az" })
             {
                 var path = Path.Combine(dir, name);
-                if (File.Exists(path)) return path;
+                if (Path.IsPathFullyQualified(path) && exists(path)) return path;
             }
         }
         return null;

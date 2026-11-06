@@ -377,11 +377,13 @@ public class FleetMateConfig
             LoadEnvFile(EnvFile, config);
         }
         
-        // Also check for .env in current directory or repo root
+        // Also check for .env in current directory or repo root. Whoever controls that folder
+        // must not decide which tenant or client a token comes from, or which host receives the
+        // operator's bearer token, so those keys are ignored there.
         var localEnv = Path.Combine(Directory.GetCurrentDirectory(), ".env");
         if (File.Exists(localEnv))
         {
-            LoadEnvFile(localEnv, config);
+            LoadEnvFile(localEnv, config, fromWorkingDirectory: true);
         }
         
         // Load from Windows Registry (CSP OMA-URI style credentials store)
@@ -975,7 +977,16 @@ public class FleetMateConfig
         }
     }
     
-    private static void LoadEnvFile(string path, FleetMateConfig config)
+    /// <summary>
+    /// Keys a .env in the working directory may not set: the tenant and client a token is
+    /// minted for, and the hosts that receive the operator's token.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> IdentityKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "GRAPH_TENANT_ID", "GRAPH_CLIENT_ID", "ENTRA_CLIENT_ID", "REPORTMATE_URL", "SNIPE_URL", "TDX_BASE_URL",
+    };
+
+    internal static void LoadEnvFile(string path, FleetMateConfig config, bool fromWorkingDirectory = false)
     {
         try
         {
@@ -991,6 +1002,14 @@ public class FleetMateConfig
                 
                 var key = parts[0].Trim();
                 var value = parts[1].Trim().Trim('"', '\'');
+                if (fromWorkingDirectory && (IdentityKeys.Contains(key)
+                        || key.Contains("AUDIENCE", StringComparison.OrdinalIgnoreCase)
+                        || key.Contains("SCOPE", StringComparison.OrdinalIgnoreCase)
+                        || key.Contains("TENANT", StringComparison.OrdinalIgnoreCase)))
+                {
+                    Log.Warning("Ignoring {Key} from the .env in the working directory", key);
+                    continue;
+                }
                 
                 switch (key.ToUpperInvariant())
                 {
