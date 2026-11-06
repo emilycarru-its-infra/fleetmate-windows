@@ -1055,6 +1055,16 @@ private bool _isInitialLoadDone;
     {
         if (TicketsListView.SelectedItem is TicketRowViewModel { Ticket: { } ticket })
         {
+            // Folding, sorting, filtering and Refresh rebuild the rows and select
+            // the open ticket again. That is not a new pick: reloading here reset
+            // the detail pane and closed the comment box, so the table's toolbar
+            // seemed to act on the ticket details.
+            if (TicketsPageSync.IsSameOpenTicket(ticket.Id, _selectedTicket?.Id, _detailPanelVisible))
+            {
+                _selectedTicket = ticket;
+                return;
+            }
+
             // A draft belongs to the ticket it was written on. The box used to
             // persist across selections, so half-written text followed you to
             // the next ticket and Post sent it there — the worst kind of bug,
