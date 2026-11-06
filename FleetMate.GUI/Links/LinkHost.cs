@@ -44,6 +44,9 @@ public static class LinkHost
         _mutex = null;
         try
         {
+            // This launch was just started by the user and may take the
+            // foreground; pass that right on so the running one can come forward.
+            AllowSetForegroundWindow(AsfwAny);
             using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.Out, PipeOptions.CurrentUserOnly);
             pipe.Connect(3000);
             using var writer = new StreamWriter(pipe) { AutoFlush = true };
@@ -58,6 +61,12 @@ public static class LinkHost
         }
         return false;
     }
+
+    private const int AsfwAny = -1;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool AllowSetForegroundWindow(int processId);
 
     /// <summary>Listen for links from later launches; each arrives on the caller's dispatcher.</summary>
     public static void Listen(Action<string> onMessage)

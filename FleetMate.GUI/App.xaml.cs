@@ -842,6 +842,12 @@ public partial class App : Application
         // Before the window, whose launch session reads the brief.
         Agent.Start();
         var mainWindow = new MainWindow();
+        Shell = mainWindow;
+        MainWindow = mainWindow;
+        // Closing the main window ends the app. Waiting for the last window
+        // instead would keep a windowless process alive while a hidden sign-in
+        // host is open, and a later launch would then hand over to it and show nothing.
+        mainWindow.Closed += (_, _) => Shutdown();
         mainWindow.Show();
         // A first launch with nothing set up opens the setup wizard over the window.
         if (FleetMate.GUI.Views.Shared.SetupWizardWindow.NeededAtLaunch(Config))
