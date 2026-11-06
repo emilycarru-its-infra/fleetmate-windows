@@ -39,6 +39,7 @@ public partial class TicketsPage
 
         AttachmentsList.ItemsSource = rows;
         AttachmentsHeaderText.Text = $"Attachments · {rows.Count}";
+        System.Windows.Automation.AutomationProperties.SetName(AttachmentsExpander, $"Attachments, {rows.Count}");
         AttachmentsSection.Visibility = rows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 

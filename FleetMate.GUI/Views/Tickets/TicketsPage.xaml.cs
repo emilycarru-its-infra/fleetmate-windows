@@ -115,6 +115,7 @@ private bool _isInitialLoadDone;
             // can fill the cache after the page drew it empty; follow both.
             app.CacheChanged += OnAppCacheChanged;
             app.TdxSignInChanged += OnTdxSignInChanged;
+            app.TdxSessionStatusChanged += OnTdxSessionStatusChanged;
             app.TdxLaunchStepChanged += UpdateLoadingPanel;
             // A reload rebuilds the page, so this one stops listening.
             app.ServicesReloaded += DetachFromApp;
@@ -194,6 +195,23 @@ private bool _isInitialLoadDone;
         SsoLoginButton.Visibility = _tdxService.ShouldAttemptSso && !_tdxService.IsSsoAuthenticated
             ? Visibility.Visible
             : Visibility.Collapsed;
+
+        // The banner says so when renewal keeps failing, even over cached tickets.
+        SignInBanner.Visibility = _tdxService.ShouldAttemptSso && _app.TdxNeedsAttention
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        SignInBannerDetail.Text = _app.TdxAttentionReason
+            ?? "Your TeamDynamix session has expired and signing in again in the background did not work. Tickets will not update until you sign in.";
+    }
+
+    /// <summary>
+    /// The token lapsed or came back, or sign-in started or stopped needing
+    /// attention: redraw Sign In, the banner and the empty state.
+    /// </summary>
+    private void OnTdxSessionStatusChanged()
+    {
+        UpdateSsoState();
+        UpdateEmptyState();
     }
 
     private async void OnSsoLoginClicked(object sender, RoutedEventArgs e)
@@ -248,6 +266,7 @@ private bool _isInitialLoadDone;
         if (_app == null) return;
         _app.CacheChanged -= OnAppCacheChanged;
         _app.TdxSignInChanged -= OnTdxSignInChanged;
+        _app.TdxSessionStatusChanged -= OnTdxSessionStatusChanged;
         _app.TdxLaunchStepChanged -= UpdateLoadingPanel;
         _app.ServicesReloaded -= DetachFromApp;
         StopInbox();

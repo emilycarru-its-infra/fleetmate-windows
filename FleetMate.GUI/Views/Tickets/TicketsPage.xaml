@@ -9,6 +9,28 @@
 
     <!-- Widgets sit above the page; the DockPanel keeps the page's own grid untouched. -->
     <DockPanel>
+    <!-- Sign-in needs attention: silent renewal keeps failing and no usable
+         token is left. Shown over the page even while tickets are listed
+         from the cache, so it is clear they are not current. -->
+    <Border x:Name="SignInBanner" DockPanel.Dock="Top" Visibility="Collapsed" Margin="16,14,16,0"
+            Padding="12,8" CornerRadius="6" BorderThickness="1"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+            Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+            AutomationProperties.Name="TeamDynamix sign-in needs attention">
+        <DockPanel>
+            <Button x:Name="SignInBannerButton" DockPanel.Dock="Right" Content="Sign In" Margin="12,0,0,0"
+                    VerticalAlignment="Center" Style="{DynamicResource AccentButtonStyle}" Click="OnSsoLoginClicked"
+                    ToolTip="Sign in again. A sign-in window opens only if the automatic sign-in cannot finish." />
+            <ui:FontIcon DockPanel.Dock="Left" FontFamily="Segoe Fluent Icons" Glyph="&#xE7BA;" FontSize="18"
+                         Margin="0,0,10,0" VerticalAlignment="Center" Foreground="Orange" />
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="TeamDynamix sign-in needs attention" FontWeight="SemiBold" FontSize="13" />
+                <TextBlock x:Name="SignInBannerDetail" FontSize="12" TextWrapping="Wrap"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                           Text="Your TeamDynamix session has expired and signing in again in the background did not work. Tickets will not update until you sign in." />
+            </StackPanel>
+        </DockPanel>
+    </Border>
     <widgets:WidgetsSection x:Name="TicketWidgetsSection" DockPanel.Dock="Top" Tab="Tickets" Margin="16,14,16,0" />
     <Grid Margin="16,14,16,16">
         <Grid.RowDefinitions>
@@ -1205,6 +1227,50 @@
                                          AutomationProperties.Name="Description" PreviewKeyDown="OnDescriptionEditorKeyDown" />
                             </StackPanel>
 
+                            <!-- Attachments: open the viewable ones, save any. The first accordion, as
+                                 on the Mac: Attachments, People, Workflow, Tasks, then Activity. -->
+                            <StackPanel x:Name="AttachmentsSection" Visibility="Collapsed" Margin="0,12,0,0">
+                                <Separator Margin="0,0,0,8" />
+                                <Expander x:Name="AttachmentsExpander" IsExpanded="False" AutomationProperties.Name="Attachments">
+                                    <Expander.Header>
+                                        <TextBlock x:Name="AttachmentsHeaderText" Text="Attachments" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+                                    </Expander.Header>
+                                    <StackPanel Margin="0,6,0,0">
+                                    <ItemsControl x:Name="AttachmentsList">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Padding="8" Margin="0,0,0,6" CornerRadius="6" BorderThickness="1"
+                                                        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                                                    <DockPanel>
+                                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <Button Tag="{Binding}" Click="OnOpenAttachmentClicked" Padding="6,2" Margin="4,0,0,0"
+                                                                    Visibility="{Binding OpenVisibility}"
+                                                                    ToolTip="{Binding OpenTooltip}"
+                                                                    AutomationProperties.Name="{Binding OpenTooltip}">
+                                                                <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8A7;" FontSize="12" />
+                                                            </Button>
+                                                            <Button Tag="{Binding}" Click="OnSaveAttachmentClicked" Padding="6,2" Margin="4,0,0,0"
+                                                                    ToolTip="{Binding SaveTooltip}"
+                                                                    AutomationProperties.Name="{Binding SaveTooltip}">
+                                                                <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE896;" FontSize="12" />
+                                                            </Button>
+                                                        </StackPanel>
+                                                        <ui:FontIcon DockPanel.Dock="Left" FontFamily="Segoe Fluent Icons" Glyph="&#xE723;" FontSize="14"
+                                                                     Margin="0,0,8,0" VerticalAlignment="Center" />
+                                                        <StackPanel VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Name}" FontSize="13" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding Subtitle}" FontSize="11"
+                                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                        </StackPanel>
+                                                    </DockPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    </StackPanel>
+                                </Expander>
+                            </StackPanel>
+
                             <!-- People: contacts with add and remove, and the responsible
                                  group. Folded by default, with the same header as Tasks and
                                  Workflow; contacts added here are offered as notify
@@ -1283,55 +1349,11 @@
                                 </Expander>
                             </StackPanel>
 
-                            <!-- Attachments: open the viewable ones, save any. Folded by
-                                 default like the Mac, with the same header as the others. -->
-                            <StackPanel x:Name="AttachmentsSection" Visibility="Collapsed" Margin="0,12,0,0">
-                                <Separator Margin="0,0,0,8" />
-                                <Expander x:Name="AttachmentsExpander" IsExpanded="False" AutomationProperties.Name="Attachments">
-                                    <Expander.Header>
-                                        <TextBlock x:Name="AttachmentsHeaderText" Text="Attachments" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
-                                    </Expander.Header>
-                                    <StackPanel Margin="0,6,0,0">
-                                    <ItemsControl x:Name="AttachmentsList">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Border Padding="8" Margin="0,0,0,6" CornerRadius="6" BorderThickness="1"
-                                                        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
-                                                    <DockPanel>
-                                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                                                            <Button Tag="{Binding}" Click="OnOpenAttachmentClicked" Padding="6,2" Margin="4,0,0,0"
-                                                                    Visibility="{Binding OpenVisibility}"
-                                                                    ToolTip="{Binding OpenTooltip}"
-                                                                    AutomationProperties.Name="{Binding OpenTooltip}">
-                                                                <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE8A7;" FontSize="12" />
-                                                            </Button>
-                                                            <Button Tag="{Binding}" Click="OnSaveAttachmentClicked" Padding="6,2" Margin="4,0,0,0"
-                                                                    ToolTip="{Binding SaveTooltip}"
-                                                                    AutomationProperties.Name="{Binding SaveTooltip}">
-                                                                <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE896;" FontSize="12" />
-                                                            </Button>
-                                                        </StackPanel>
-                                                        <ui:FontIcon DockPanel.Dock="Left" FontFamily="Segoe Fluent Icons" Glyph="&#xE723;" FontSize="14"
-                                                                     Margin="0,0,8,0" VerticalAlignment="Center" />
-                                                        <StackPanel VerticalAlignment="Center">
-                                                            <TextBlock Text="{Binding Name}" FontSize="13" TextTrimming="CharacterEllipsis" />
-                                                            <TextBlock Text="{Binding Subtitle}" FontSize="11"
-                                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                                        </StackPanel>
-                                                    </DockPanel>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                    </StackPanel>
-                                </Expander>
-                            </StackPanel>
+                            <!-- Workflow: active steps and the actions the signed-in user may take -->
+                            <tickets:TicketWorkflowPanel x:Name="WorkflowPanel" />
 
                             <!-- Tasks: progress, updates and standard-task management -->
                             <tickets:TicketTasksPanel x:Name="TasksPanel" />
-
-                            <!-- Workflow: active steps and the actions the signed-in user may take -->
-                            <tickets:TicketWorkflowPanel x:Name="WorkflowPanel" />
 
                             <!-- Action Message -->
                             <Border x:Name="ActionMessageBorder" Visibility="Collapsed" Padding="8" Margin="0,8,0,0" CornerRadius="4">

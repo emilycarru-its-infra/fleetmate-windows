@@ -245,6 +245,8 @@ public sealed class TdxTicketTaskService : ITicketTaskApi
         // Per request, so whatever set the client's default header last is
         // never what authorizes a task call.
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        // A 401 marks the token bad, but the call is never re-sent with another one.
+        request.Options.Set(TdxReauthHandler.NoRetry, true);
 
         HttpResponseMessage response;
         try
