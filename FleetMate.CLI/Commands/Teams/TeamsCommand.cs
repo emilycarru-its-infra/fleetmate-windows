@@ -72,7 +72,7 @@ public static class TeamsCommand
                 Console.WriteLine(line);
                 if (hit.Subject != null) Console.WriteLine($"  {Safe(hit.Snippet)}");
                 Console.WriteLine($"  thread {Safe(hit.ThreadId)} --channel {Safe(hit.ChannelId)}");
-                if (!string.IsNullOrEmpty(hit.WebUrl)) Console.WriteLine($"  {Safe(hit.WebUrl)}");
+                if (SafeLink(config, hit.WebUrl) is { } hitLink) Console.WriteLine($"  {hitLink}");
             }
         });
         return cmd;
@@ -95,7 +95,7 @@ public static class TeamsCommand
             var thread = payload.Value;
             AnsiConsole.MarkupLine($"[bold]{Markup.Escape(Safe(thread.Subject ?? thread.Messages.FirstOrDefault()?.Text))}[/]");
             Console.WriteLine($"{Safe(thread.TeamName)} › {Safe(thread.ChannelName)}");
-            if (!string.IsNullOrEmpty(thread.WebUrl)) Console.WriteLine(Safe(thread.WebUrl));
+            if (SafeLink(config, thread.WebUrl) is { } threadLink) Console.WriteLine(threadLink);
             foreach (var message in thread.Messages)
             {
                 Console.WriteLine();
@@ -106,7 +106,7 @@ public static class TeamsCommand
                 foreach (var line in TeamsText.TerminalSafe(message.Text).Trim().Split('\n'))
                     Console.WriteLine($"  {line}");
                 foreach (var attachment in message.Attachments ?? Array.Empty<TeamsAttachment>())
-                    Console.WriteLine($"  [attachment] {Safe(attachment.Name)}{(attachment.Url != null ? "  " + Safe(attachment.Url) : "")}");
+                    Console.WriteLine($"  [attachment] {Safe(attachment.Name)}{(SafeLink(config, attachment.Url) is { } attachmentLink ? "  " + attachmentLink : "")}");
             }
         });
         return cmd;
@@ -157,6 +157,11 @@ public static class TeamsCommand
 
     private static string Safe(string? value) =>
         string.IsNullOrEmpty(value) ? "-" : TeamsText.OneLine(value);
+
+    /// <summary>A link from message content, printed only when TeamsLinkPolicy allows it, so
+    /// the console never turns an untrusted address into something clickable.</summary>
+    private static string? SafeLink(FleetMateConfig config, string? value) =>
+        TeamsLinkPolicy.SafeUri(value, TeamsLinkPolicy.Hosts(config.TeamsLinkHosts))?.AbsoluteUri;
 
     /// <summary>Runs a request, printing a failure as one line on stderr and setting the exit code.</summary>
     private static async Task<TeamsPayload<T>?> Call<T>(FleetMateConfig config, Func<TeamsSearchService, Task<TeamsPayload<T>>> body)
