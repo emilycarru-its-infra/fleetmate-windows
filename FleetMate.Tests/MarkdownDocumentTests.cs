@@ -8,23 +8,10 @@ namespace FleetMate.Tests;
 /// never in a browser: markup becomes formatting, raw HTML stays text, and
 /// only web links can be followed. WPF documents need an STA thread.
 /// </summary>
+[Collection(WpfCollection.Name)]
 public class MarkdownDocumentTests
 {
-    private static T OnSta<T>(Func<T> work)
-    {
-        T result = default!;
-        Exception? failure = null;
-        var thread = new Thread(() =>
-        {
-            try { result = work(); }
-            catch (Exception ex) { failure = ex; }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure != null) throw failure;
-        return result;
-    }
+    private static T OnSta<T>(Func<T> work) => WpfFixture.Run(work);
 
     [Fact]
     public void MarkupBecomesFormattingNotText()

@@ -1,6 +1,5 @@
 using System.Text;
 using System.Windows;
-using System.Windows.Threading;
 using FleetMate.Core.Services.Repos;
 using FleetMate.GUI.Views.Development.Repos;
 using Microsoft.Win32;
@@ -15,32 +14,19 @@ namespace FleetMate.Tests;
 /// through the same model the views use. Preferences go to a throwaway
 /// registry key, so the person's own choices are never touched.
 /// </summary>
+[Collection(WpfCollection.Name)]
 public class RepoWorkspaceGuiTests
 {
     [Fact]
-    public void Workspace_LoadsAChecksOutRepository_AndNothingDestructiveRunsWithoutConsent()
-    {
-        Exception? failure = null;
-        var thread = new Thread(() =>
-        {
-            try { Run(); }
-            catch (Exception ex) { failure = ex; }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-        if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
-    }
+    public void Workspace_LoadsAChecksOutRepository_AndNothingDestructiveRunsWithoutConsent() => WpfFixture.Run(Run);
 
     [Fact]
     public void InsightsReadsOriginMainWhenHeadAndLocalMainAreStale()
     {
-        Exception? failure = null;
-        var thread = new Thread(() => {
+        WpfFixture.Run(() => {
             var key = $@"SOFTWARE\FleetMate.Tests.{Guid.NewGuid():N}";
             var parent = Path.Combine(Path.GetTempPath(), "fleetmate-insights-" + Guid.NewGuid().ToString("N"));
             try {
-                SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
                 RepoWorkspacePreferences.KeyPathOverride = key;
                 var root = Path.Combine(parent, "repo");
                 Directory.CreateDirectory(root);
@@ -92,7 +78,7 @@ public class RepoWorkspaceGuiTests
                 Assert.Equal(0, model.Summary!.Combined.Total.Commits);
                 Assert.Contains("origin/main", Assert.Single(model.Summary.Rows).Error);
                 Assert.Null(Assert.Single(model.Summary.Rows).LastCommit);
-            } catch (Exception ex) { failure = ex; }
+            }
             finally {
                 RepoWorkspacePreferences.KeyPathOverride = null;
                 Registry.CurrentUser.DeleteSubKeyTree(key, throwOnMissingSubKey: false);
@@ -102,35 +88,16 @@ public class RepoWorkspaceGuiTests
                 }
             }
         });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start(); thread.Join();
-        if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
     }
 
-    private static void Pump(Task task)
-    {
-        var frame = new DispatcherFrame();
-        task.ContinueWith(_ => frame.Continue = false, TaskScheduler.Default);
-        Dispatcher.PushFrame(frame);
-        task.GetAwaiter().GetResult();
-    }
+    private static void Pump(Task task) => WpfFixture.Pump(task);
 
     /// <summary>Lets queued dispatcher work (fire-and-forget loads, layout) run until <paramref name="done"/> or a timeout.</summary>
-    private static void PumpUntil(Func<bool> done, int milliseconds = 15000)
-    {
-        var deadline = DateTime.UtcNow.AddMilliseconds(milliseconds);
-        while (!done() && DateTime.UtcNow < deadline)
-        {
-            Pump(Task.Delay(25));
-        }
-        Assert.True(done(), "timed out waiting for the workspace");
-    }
+    private static void PumpUntil(Func<bool> done, int milliseconds = 15000) =>
+        WpfFixture.PumpUntil(done, "timed out waiting for the workspace", milliseconds);
 
     private static void Run()
     {
-        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
-        PrepareResources();
-
         var key = $@"SOFTWARE\FleetMate.Tests.{Guid.NewGuid():N}";
         RepoWorkspacePreferences.KeyPathOverride = key;
         var parent = Path.Combine(Path.GetTempPath(), "fleetmate-gui-" + Guid.NewGuid().ToString("N"));
@@ -260,32 +227,6 @@ public class RepoWorkspaceGuiTests
             }
             catch (IOException) { }
         }
-    }
-
-    /// <summary>
-    /// The app's theme and the keys the Repos views look up, without the app
-    /// itself: an App instance would start FleetMate. Plain stand-in styles
-    /// are enough for the views to build and lay out.
-    /// </summary>
-    private static void PrepareResources()
-    {
-        var app = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-        var resources = app.Resources;
-        if (resources.Contains("CardStyle")) return;
-        resources.MergedDictionaries.Add(new ModernWpf.ThemeResources());
-        resources.MergedDictionaries.Add(new ModernWpf.Controls.XamlControlsResources());
-        resources.MergedDictionaries.Add(new ResourceDictionary
-        {
-            Source = new Uri("pack://application:,,,/fleetmate-gui;component/Views/Shared/DiffTemplates.xaml"),
-        });
-        resources["CardStyle"] = new Style(typeof(System.Windows.Controls.Border));
-        resources["NavigationTabStyle"] = new Style(typeof(System.Windows.Controls.RadioButton));
-        resources["FleetListViewItemStyle"] = new Style(typeof(System.Windows.Controls.ListViewItem));
-        resources["SectionHeaderStyle"] = new Style(typeof(System.Windows.Controls.TextBlock));
-        resources["SubtitleTextStyle"] = new Style(typeof(System.Windows.Controls.TextBlock));
-        resources["AppBackgroundBrush"] = System.Windows.Media.Brushes.White;
-        resources["SubtleFillBrush"] = System.Windows.Media.Brushes.LightGray;
-        resources["CardBorderBrush"] = System.Windows.Media.Brushes.Gray;
     }
 
     /// <summary>Lays out and renders the element, so every OnRender and template runs.</summary>
