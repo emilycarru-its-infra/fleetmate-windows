@@ -1212,6 +1212,7 @@ private bool _isInitialLoadDone;
         DetailContent.Visibility = Visibility.Visible;
         
         DetailTicketIdText.Text = $"#{ticketId}";
+        DetailTitleText.Text = (_selectedTicket?.Id == ticketId ? _selectedTicket : _allTickets.FirstOrDefault(t => t.Id == ticketId))?.Title ?? "";
 
         // The previous ticket's activity goes at once, and only this request's
         // answers may paint: A, then B, then A again ignores the first A.
@@ -1321,36 +1322,13 @@ private bool _isInitialLoadDone;
     private void UpdateDetailPanel(TdxTicket ticket)
     {
         DetailTitleText.Text = ticket.Title ?? "Untitled";
-        DetailStatusText.Text = ticket.StatusName ?? "Unknown";
-        DetailPriorityText.Text = ticket.PriorityName ?? "-";
         DetailRequestorText.Text = ticket.RequestorName ?? "-";
         DetailEmailText.Text = ticket.RequestorEmail ?? "-";
-        DetailGroupText.Text = ticket.ResponsibleGroupName ?? "-";
         DetailResponsibleText.Text = ticket.ResponsibleFullName ?? "-";
         DetailCreatedText.Text = FormatDate(ticket.CreatedDate);
         DetailModifiedText.Text = FormatDate(ticket.ModifiedDate as DateTime?);
 
-        // Status badge color
-        var statusBrush = ticket.StatusName?.ToLower() switch
-        {
-            "new" or "open" => new SolidColorBrush(Color.FromRgb(0x40, 0x80, 0xFF)),
-            "in progress" or "in process" => new SolidColorBrush(Color.FromRgb(0xFF, 0xA0, 0x40)),
-            "resolved" or "closed" => new SolidColorBrush(Color.FromRgb(0x40, 0xC0, 0x40)),
-            _ => new SolidColorBrush(Color.FromRgb(0xA0, 0xA0, 0xA0))
-        };
-        DetailStatusBadge.Background = statusBrush;
-
-        // Description with proper HTML decoding
-        if (!string.IsNullOrEmpty(ticket.Description))
-        {
-            DetailDescriptionText.Text = DecodeHtml(ticket.Description);
-            DescriptionSection.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            DescriptionSection.Visibility = Visibility.Collapsed;
-        }
-        
+        ShowDescription(ticket);
         ShowAttachments(ticket);
 
         // Update notify options
@@ -1360,37 +1338,53 @@ private bool _isInitialLoadDone;
     }
 
     /// <summary>
-    /// Fill Status, Priority and Classification with TDX's choices and select
-    /// the ticket's values. The ticket's own value is kept as a choice even
-    /// when TDX's list does not offer it, so the editor never reads blank.
+    /// Fill the field pickers with TDX's choices and select the ticket's
+    /// values. The ticket's own value is kept as a choice even when TDX's list
+    /// does not offer it, so a picker never reads blank; a list that cannot be
+    /// read leaves only that value, which makes the picker read-only in effect.
     /// </summary>
     private async Task PopulateEditorsAsync(TdxTicket ticket)
     {
         if (_tdxService == null) return;
-        var statuses = new Dictionary<int, string>(await _tdxService.GetStatusesAsync());
-        var priorities = new Dictionary<int, string>(await _tdxService.GetPrioritiesAsync());
+        var statusesLoad = _tdxService.GetStatusesAsync();
+        var prioritiesLoad = _tdxService.GetPrioritiesAsync();
+        var typesLoad = _tdxService.GetTypesAsync();
+        var formsLoad = _tdxService.GetFormsAsync();
+        var servicesLoad = _tdxService.GetServicesAsync();
+        var groupsLoad = _tdxService.GetGroupsAsync();
+        await Task.WhenAll(statusesLoad, prioritiesLoad, typesLoad, formsLoad, servicesLoad, groupsLoad);
+
+        var statuses = new Dictionary<int, string>(statusesLoad.Result);
+        var priorities = new Dictionary<int, string>(prioritiesLoad.Result);
         _statusChoices = new Dictionary<int, string>(statuses);
         _priorityChoices = new Dictionary<int, string>(priorities);
         if (_selectedTicket?.Id != ticket.Id) return;
 
-        if (ticket.StatusId > 0) statuses.TryAdd(ticket.StatusId, ticket.StatusName ?? $"Status {ticket.StatusId}");
-        if (ticket.PriorityId is int pid && pid > 0) priorities.TryAdd(pid, ticket.PriorityName ?? $"Priority {pid}");
         var classes = TdxClassification.All.ToDictionary(c => c.Key, c => c.Value);
-        if (ticket.Classification > 0) classes.TryAdd(ticket.Classification, ticket.ClassificationName ?? TdxClassification.Name(ticket.Classification));
 
         _populatingEditors = true;
         try
         {
-            DetailStatusCombo.ItemsSource = statuses.OrderBy(s => s.Value).ToList();
-            DetailStatusCombo.SelectedValue = ticket.StatusId;
-            DetailPriorityCombo.ItemsSource = priorities.OrderBy(p => p.Value).ToList();
-            DetailPriorityCombo.SelectedValue = ticket.PriorityId;
-            DetailClassificationCombo.ItemsSource = classes.OrderBy(c => c.Value).ToList();
-            DetailClassificationCombo.SelectedValue = ticket.Classification;
+            Fill(DetailStatusCombo, statuses, ticket.StatusId, ticket.StatusName, "Status");
+            Fill(DetailPriorityCombo, priorities, ticket.PriorityId, ticket.PriorityName, "Priority");
+            Fill(DetailClassificationCombo, classes, ticket.Classification,
+                ticket.ClassificationName ?? TdxClassification.Name(ticket.Classification), "Classification");
+            Fill(DetailFormCombo, formsLoad.Result, ticket.FormId, ticket.FormName, "Form");
+            Fill(DetailServiceCombo, servicesLoad.Result, ticket.ServiceId, ticket.ServiceName, "Service");
+            Fill(DetailTypeCombo, typesLoad.Result, ticket.TypeId, ticket.TypeName, "Type");
+            Fill(DetailGroupCombo, groupsLoad.Result, ticket.ResponsibleGroupId, ticket.ResponsibleGroupName, "Group");
         }
         finally
         {
             _populatingEditors = false;
+        }
+
+        static void Fill(ComboBox combo, IReadOnlyDictionary<int, string> options, int? current, string? currentName, string label)
+        {
+            var choices = TicketDetailFields.Choices(options, current, currentName, label);
+            combo.ItemsSource = choices;
+            combo.SelectedValue = current is int id && id > 0 ? id : null;
+            combo.IsEnabled = choices.Count > 0;
         }
     }
 
@@ -1399,36 +1393,26 @@ private bool _isInitialLoadDone;
         if (_populatingEditors || _selectedTicket == null || _tdxService == null || _app == null) return;
         if (sender is not ComboBox combo || combo.SelectedValue is not int value) return;
         var field = (string)combo.Tag;
-        var current = field switch
-        {
-            "StatusID" => (int?)_selectedTicket.StatusId,
-            "PriorityID" => _selectedTicket.PriorityId,
-            _ => _selectedTicket.Classification,
-        };
-        if (current == value) return;
+        if (TicketDetailFields.Change(_selectedTicket, field, value) == null) return;
         await UpdateTicketFieldAsync(_selectedTicket.Id, field, value);
     }
 
     /// <summary>
-    /// Save one of Status, Priority or Classification on a ticket at once, from
-    /// the detail editors or the ticket menu, then redraw the list and, when it
-    /// is open there, the detail pane.
+    /// Save one field of a ticket at once — Status, Priority, Classification,
+    /// Form, Service, Type, Group or Requestor — from the detail pane or the
+    /// ticket menu, then redraw the list and, when it is open there, the
+    /// detail pane. Nothing is sent when the ticket already holds the value.
     /// </summary>
-    private async Task UpdateTicketFieldAsync(int ticketId, string field, int value)
+    private async Task UpdateTicketFieldAsync(int ticketId, string field, object value)
     {
         if (_tdxService == null || _app == null) return;
-        var cached = _allTickets.FirstOrDefault(t => t.Id == ticketId);
-        var current = field switch
-        {
-            "StatusID" => (int?)cached?.StatusId,
-            "PriorityID" => cached?.PriorityId,
-            _ => cached?.Classification,
-        };
-        if (cached != null && current == value) return;
+        var basis = _selectedTicket?.Id == ticketId ? _selectedTicket : _allTickets.FirstOrDefault(t => t.Id == ticketId);
+        var update = TicketDetailFields.Change(basis, field, value);
+        if (update == null) return;
 
-        var label = field switch { "StatusID" => "status", "PriorityID" => "priority", _ => "classification" };
+        var label = TicketDetailFields.Label(field);
         ShowActionMessage($"Changing the {label} of #{ticketId}…", isLoading: true);
-        var updated = await _tdxService.UpdateTicketAsync(ticketId, new Dictionary<string, object?> { [field] = value });
+        var updated = await _tdxService.UpdateTicketAsync(ticketId, update);
         if (updated == null)
         {
             ShowActionMessage($"TeamDynamix did not accept the {label}. See the log for the response.", isError: true);
@@ -1437,6 +1421,8 @@ private bool _isInitialLoadDone;
             return;
         }
         ReplaceCachedTicket(updated);
+        // A new group brings new members to the People section and the notify list.
+        if (field == TicketDetailFields.Group && _selectedTicket?.Id == ticketId) _ = LoadTicketPeopleAsync(updated);
         ShowActionMessage($"Changed the {label} of #{ticketId}");
     }
 
