@@ -20,8 +20,8 @@ internal static class TicketsToolbarRules
     /// Mac's toolbar does in a narrow window. The board needs more room,
     /// since it adds the column picker and the sort controls.
     /// </summary>
-    public const double CompactBelowOnBoard = 1750;
-    public const double CompactBelowOnList = 1450;
+    public const double CompactBelowOnBoard = 1200;
+    public const double CompactBelowOnList = 960;
 
     public static TicketsViewMode ModeOf(bool board, bool inbox) =>
         inbox ? TicketsViewMode.Inbox : board ? TicketsViewMode.Board : TicketsViewMode.List;
@@ -35,7 +35,7 @@ internal static class TicketsToolbarRules
     /// </summary>
     public static bool ShowsSortControls(TicketsViewMode mode) => mode == TicketsViewMode.Board;
 
-    /// <summary>Expand All and Collapse All fold the list and the board; the Inbox has no outline.</summary>
+    /// <summary>Expand All and Collapse All (row menu, Alt-click) fold the list and the board; the Inbox has no outline.</summary>
     public static bool ShowsFoldControls(TicketsViewMode mode) => mode != TicketsViewMode.Inbox;
 
     /// <summary>True when the toolbar is too narrow for the button labels.</summary>

@@ -54,8 +54,9 @@ public class TicketsToolbarRulesTests
     {
         Assert.False(TicketsToolbarRules.UsesCompactLabels(0, TicketsViewMode.Board)); // not laid out yet
         Assert.False(TicketsToolbarRules.UsesCompactLabels(2000, TicketsViewMode.Board));
-        Assert.True(TicketsToolbarRules.UsesCompactLabels(1200, TicketsViewMode.Board));
-        Assert.True(TicketsToolbarRules.UsesCompactLabels(1200, TicketsViewMode.List));
+        Assert.True(TicketsToolbarRules.UsesCompactLabels(1100, TicketsViewMode.Board));
+        Assert.True(TicketsToolbarRules.UsesCompactLabels(900, TicketsViewMode.List));
+        Assert.False(TicketsToolbarRules.UsesCompactLabels(1280, TicketsViewMode.List)); // a normal window keeps its labels
     }
 
     [Fact]

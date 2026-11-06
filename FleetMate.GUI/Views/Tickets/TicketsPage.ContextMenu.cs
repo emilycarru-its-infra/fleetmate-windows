@@ -79,8 +79,29 @@ public partial class TicketsPage
         };
         AutomationProperties.SetAutomationId(menu, "TicketContextMenu");
         foreach (var entry in plan) menu.Items.Add(ToMenuItem(entry, ticket));
+        AddFoldItems(menu);
         menu.IsOpen = true;
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// Expand All and Collapse All live in the row menu, as on the Mac, rather
+    /// than on the toolbar; Alt-click on a disclosure does the same.
+    /// </summary>
+    private void AddFoldItems(ContextMenu menu)
+    {
+        if (!TicketsToolbarRules.ShowsFoldControls(CurrentViewMode)) return;
+
+        menu.Items.Add(new Separator());
+        var expand = new MenuItem { Header = "Expand All", InputGestureText = "Alt+Click" };
+        AutomationProperties.SetAutomationId(expand, "TicketMenu_ExpandAll");
+        expand.Click += (_, _) => ExpandAllTickets();
+        menu.Items.Add(expand);
+
+        var collapse = new MenuItem { Header = "Collapse All", InputGestureText = "Alt+Click" };
+        AutomationProperties.SetAutomationId(collapse, "TicketMenu_CollapseAll");
+        collapse.Click += (_, _) => CollapseAllTickets();
+        menu.Items.Add(collapse);
     }
 
     /// <summary>

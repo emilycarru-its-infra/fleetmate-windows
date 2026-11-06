@@ -164,20 +164,6 @@
                     </Button>
                 </StackPanel>
 
-                <!-- Fold controls change how rows are drawn, not which rows are there. -->
-                <StackPanel x:Name="FoldControls" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
-                    <Button x:Name="ExpandAllButton" Width="32" Padding="0" Margin="0,0,4,0" Click="OnExpandAllClicked"
-                            ToolTip="Expand all: show every parent ticket's children"
-                            AutomationProperties.Name="Expand all">
-                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xECCD;" FontSize="14" />
-                    </Button>
-                    <Button x:Name="CollapseAllButton" Width="32" Padding="0" Click="OnCollapseAllClicked"
-                            ToolTip="Collapse all: fold child tickets under their parents"
-                            AutomationProperties.Name="Collapse all">
-                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xF165;" FontSize="14" />
-                    </Button>
-                </StackPanel>
-
                 <!-- Assigned to Me narrows the list to tickets the signed-in TDX
                      person is responsible for; the choice is remembered. As on
                      Mac, on reads as a filled person in the accent colour over a
