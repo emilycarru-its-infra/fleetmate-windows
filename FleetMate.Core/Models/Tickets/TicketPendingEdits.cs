@@ -3,7 +3,8 @@ namespace FleetMate.Core.Models.Tickets;
 /// <summary>
 /// The detail pane's unsaved field picks for one ticket, as FleetMate for Mac
 /// holds them: Status, Priority, Classification, Form, Service, Type, Group
-/// and Requestor wait here until Save sends them as one PATCH, or Discard
+/// and Requestor, and the responsible person that Assign to me, Reassign and
+/// Unassign choose, wait here until Save sends them as one PATCH, or Discard
 /// drops them. A pick that puts a field back to the ticket's own value is no
 /// longer an edit, so Save and Discard go away again.
 /// </summary>
@@ -11,6 +12,13 @@ public sealed class TicketPendingEdits
 {
     private readonly Dictionary<string, object> _values = new(StringComparer.Ordinal);
     private TdxTicket _baseline;
+
+    // Assign to me, Reassign and Unassign. Held apart from the pickable
+    // fields because clearing the responsible is a real change, where a blank
+    // pick in a picker is not.
+    private bool _responsibleHeld;
+    private Guid? _responsibleUid;
+    private string? _responsibleName;
 
     public TicketPendingEdits(TdxTicket ticket)
     {
@@ -21,11 +29,45 @@ public sealed class TicketPendingEdits
     public int TicketId => _baseline.Id;
 
     /// <summary>True while at least one field differs from the ticket as loaded.</summary>
-    public bool HasEdits => _values.Count > 0;
+    public bool HasEdits => _values.Count > 0 || _responsibleHeld;
 
-    /// <summary>The fields with an unsaved value, in the order TDX names them.</summary>
-    public IReadOnlyList<string> Fields =>
-        TicketDetailFields.Pickable.Where(_values.ContainsKey).ToList();
+    /// <summary>
+    /// The fields with an unsaved value, in the order TDX names them, with the
+    /// responsible person last.
+    /// </summary>
+    public IReadOnlyList<string> Fields
+    {
+        get
+        {
+            var fields = TicketDetailFields.Pickable.Where(_values.ContainsKey).ToList();
+            if (_responsibleHeld) fields.Add(TicketDetailFields.Responsible);
+            return fields;
+        }
+    }
+
+    /// <summary>True while Assign to me, Reassign or Unassign holds an unsaved responsible.</summary>
+    public bool IsResponsibleEdited => _responsibleHeld;
+
+    /// <summary>The responsible person as the pane should show it: the pending one, else the ticket's own.</summary>
+    public Guid? ResponsibleUid => _responsibleHeld ? _responsibleUid : Person(_baseline.ResponsibleUid);
+
+    /// <summary>The responsible person's name as the pane should show it; null when nobody is responsible.</summary>
+    public string? ResponsibleName => _responsibleHeld
+        ? _responsibleName
+        : Person(_baseline.ResponsibleUid) == null ? null : _baseline.ResponsibleFullName;
+
+    /// <summary>
+    /// The name of a group Reassign chose, for the Group picker to show when
+    /// its own list does not offer that group.
+    /// </summary>
+    public string? GroupName { get; private set; }
+
+    /// <summary>
+    /// Whether Save asks TeamDynamix to email the new responsible person. As on
+    /// the Mac it starts ticked for every ticket, and only matters when Save
+    /// changes the responsible person.
+    /// </summary>
+    public bool NotifyNewResponsible { get; set; } = true;
 
     /// <summary>
     /// The requestor's name for a pending Requestor pick, so the pane can
@@ -48,6 +90,7 @@ public sealed class TicketPendingEdits
         {
             if (IsBlank(value)) return false;
             if (field == TicketDetailFields.Requestor) RequestorName = null;
+            if (field == TicketDetailFields.Group) GroupName = null;
             return _values.Remove(field);
         }
 
@@ -56,6 +99,51 @@ public sealed class TicketPendingEdits
         if (field == TicketDetailFields.Requestor) RequestorName = requestorName;
         return changed;
     }
+
+    /// <summary>
+    /// Hold <paramref name="uid"/> as the responsible person: Assign to me or a
+    /// person picked in Reassign, or null for Unassign. Choosing the ticket's
+    /// own responsible again clears the edit.
+    /// </summary>
+    /// <returns>True when the set of pending edits changed.</returns>
+    public bool SetResponsible(Guid? uid, string? name)
+    {
+        var person = Person(uid);
+        if (person == Person(_baseline.ResponsibleUid))
+        {
+            var was = _responsibleHeld;
+            ForgetResponsible();
+            return was;
+        }
+
+        var changed = !_responsibleHeld || _responsibleUid != person;
+        _responsibleHeld = true;
+        _responsibleUid = person;
+        _responsibleName = person == null ? null : name;
+        return changed;
+    }
+
+    /// <summary>
+    /// Hold a group picked in Reassign. As TDX's own picker does, the group
+    /// takes the ticket on its own: it becomes the responsible group and the
+    /// responsible person is cleared.
+    /// </summary>
+    /// <returns>True when the set of pending edits changed.</returns>
+    public bool AssignToGroup(int groupId, string? groupName)
+    {
+        if (groupId <= 0) return false;
+        var changed = Set(TicketDetailFields.Group, groupId);
+        GroupName = IsEdited(TicketDetailFields.Group) ? groupName : null;
+        return SetResponsible(null, null) | changed;
+    }
+
+    /// <summary>
+    /// Whether Save should pass notifyNewResponsible: the box is ticked and the
+    /// PATCH gives the ticket a different responsible person than
+    /// <paramref name="latest"/> holds, as the Mac decides it.
+    /// </summary>
+    public bool ShouldNotify(TdxTicket? latest = null) =>
+        NotifyNewResponsible && _responsibleHeld && _responsibleUid != Person((latest ?? _baseline).ResponsibleUid);
 
     /// <summary>The field's value as the pane should show it: the pick, else the ticket's own.</summary>
     public object? Value(string field) =>
@@ -76,11 +164,14 @@ public sealed class TicketPendingEdits
             throw new ArgumentException("The ticket is not the one these edits were made on.", nameof(latest));
 
         var patch = new Dictionary<string, object?>(StringComparer.Ordinal);
-        foreach (var field in Fields)
+        foreach (var field in TicketDetailFields.Pickable.Where(_values.ContainsKey))
         {
             if (TicketDetailFields.Change(basis, field, _values[field]) is { } change)
                 foreach (var (key, value) in change) patch[key] = value;
         }
+        // TDX clears the responsible on an empty UID, as the board drop does.
+        if (_responsibleHeld && _responsibleUid != Person(basis.ResponsibleUid))
+            patch[TicketDetailFields.Responsible] = _responsibleUid?.ToString() ?? "";
         return patch.Count == 0 ? null : patch;
     }
 
@@ -100,8 +191,10 @@ public sealed class TicketPendingEdits
             {
                 _values.Remove(field);
                 if (field == TicketDetailFields.Requestor) RequestorName = null;
+                if (field == TicketDetailFields.Group) GroupName = null;
             }
         }
+        if (_responsibleHeld && _responsibleUid == Person(ticket.ResponsibleUid)) ForgetResponsible();
     }
 
     /// <summary>Drop every pick: Discard, a successful Save, or another ticket opened.</summary>
@@ -109,7 +202,20 @@ public sealed class TicketPendingEdits
     {
         _values.Clear();
         RequestorName = null;
+        GroupName = null;
+        ForgetResponsible();
+        NotifyNewResponsible = true;
     }
+
+    private void ForgetResponsible()
+    {
+        _responsibleHeld = false;
+        _responsibleUid = null;
+        _responsibleName = null;
+    }
+
+    // An empty UID is how TDX says nobody is responsible.
+    private static Guid? Person(Guid? uid) => uid is { } u && u != Guid.Empty ? u : null;
 
     private static bool IsBlank(object? value) => value switch
     {

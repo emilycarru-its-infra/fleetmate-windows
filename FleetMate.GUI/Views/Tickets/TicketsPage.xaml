@@ -944,6 +944,7 @@
                                     </ListBox>
                                     <Separator Margin="0,8,0,6" />
                                     <CheckBox x:Name="ReassignNotifyCheckBox" Content="Notify new responsible" IsChecked="True" FontSize="13"
+                                              Checked="OnReassignNotifyChanged" Unchecked="OnReassignNotifyChanged"
                                               ToolTip="Email the new responsible when the change is saved" />
                                     <TextBlock FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
                                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
