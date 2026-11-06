@@ -60,22 +60,6 @@ internal static class TicketsToolbarRules
     public static double[] SortBarWidths(bool ascending) =>
         ascending ? new[] { 4.0, 6.5, 9.0 } : new[] { 9.0, 6.5, 4.0 };
 
-    /// <summary>
-    /// A filter button's words, before its dropdown arrow. In a narrow toolbar
-    /// an unfiltered category shows only its name and a count drops "selected",
-    /// so the filters shrink before they scroll.
-    /// </summary>
-    public static string FilterButtonText(string title, IReadOnlyCollection<string> picked, bool compact) => picked.Count switch
-    {
-        0 => compact ? title : $"{title}: All",
-        1 => $"{title}: {picked.First()}",
-        _ => compact ? $"{title}: {picked.Count}" : $"{title}: {picked.Count} selected",
-    };
-
-    /// <summary>The filter button's accessible name: always the full words, never the arrow.</summary>
-    public static string FilterButtonName(string title, IReadOnlyCollection<string> picked) =>
-        FilterButtonText(title, picked, compact: false);
-
     /// <summary>The Inbox button's tooltip, with the unread count as the Mac's help text has it.</summary>
     public static string InboxToolTip(int unread) => unread > 0
         ? $"Inbox: {unread} unread (Ctrl+Alt+3)"

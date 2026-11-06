@@ -86,27 +86,6 @@ public class TicketsToolbarRulesTests
     }
 
     [Fact]
-    public void FilterButtonsShrinkWhenCompact()
-    {
-        var none = new HashSet<string>();
-        var one = new HashSet<string> { "New" };
-        var two = new HashSet<string> { "New", "Open" };
-
-        Assert.Equal("Status: All", TicketsToolbarRules.FilterButtonText("Status", none, compact: false));
-        Assert.Equal("Status", TicketsToolbarRules.FilterButtonText("Status", none, compact: true));
-        Assert.Equal("Status: New", TicketsToolbarRules.FilterButtonText("Status", one, compact: true));
-        Assert.Equal("Status: 2 selected", TicketsToolbarRules.FilterButtonText("Status", two, compact: false));
-        Assert.Equal("Status: 2", TicketsToolbarRules.FilterButtonText("Status", two, compact: true));
-    }
-
-    [Fact]
-    public void AFilterButtonsAccessibleNameKeepsTheWords()
-    {
-        Assert.Equal("Status: All", TicketsToolbarRules.FilterButtonName("Status", new HashSet<string>()));
-        Assert.DoesNotContain("▾", TicketsToolbarRules.FilterButtonName("Status", new HashSet<string> { "New" }));
-    }
-
-    [Fact]
     public void TheInboxTooltipCountsUnread()
     {
         Assert.Contains("3 unread", TicketsToolbarRules.InboxToolTip(3));

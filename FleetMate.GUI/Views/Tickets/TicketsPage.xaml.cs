@@ -156,7 +156,6 @@ private bool _isInitialLoadDone;
 
         // Trackpad horizontal swipes and Shift+wheel scroll the board.
         Shared.HorizontalWheel.Attach(BoardViewPanel);
-        Shared.HorizontalWheel.Attach(FilterStripScroller);
 
         // The Board radio is checked in XAML, but its Checked event fires while
         // the page is still parsing, where OnViewModeChanged deliberately bails.
@@ -348,8 +347,8 @@ private bool _isInitialLoadDone;
     }
 
     /// <summary>
-    /// Selections stay across a reload, as on macOS; the filter row shows
-    /// them, so one that no longer matches anything is easy to clear.
+    /// Selections stay across a reload, as on macOS; the Filters popover
+    /// lists them, so one that no longer matches anything is easy to clear.
     /// </summary>
     private void UpdateFilterOptions() => UpdateFilterButtons();
 
@@ -888,6 +887,7 @@ private bool _isInitialLoadDone;
         if (sender is CheckBox checkbox)
         {
             _showClosed = checkbox.IsChecked == true;
+            UpdateFilterButtons();
             ApplyFiltersAndSort();
         }
     }
@@ -898,6 +898,7 @@ private bool _isInitialLoadDone;
         if (option.Preset == _app.TicketDatePreset && _isInitialLoadDone && _app.CachedTickets.Count > 0) return;
 
         _app.TicketDatePreset = option.Preset;
+        UpdateFilterButtons();
         if (!_isInitialLoadDone) return;
 
         _app.CachedTickets.Clear();

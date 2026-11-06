@@ -13,7 +13,6 @@ namespace FleetMate.GUI.Views.Tickets;
 public partial class TicketsPage
 {
     private bool _syncingSortControls;
-    private bool _compactToolbar;
 
     private TicketsViewMode CurrentViewMode => TicketsToolbarRules.ModeOf(_isBoardView, _isInboxView);
 
@@ -37,22 +36,10 @@ public partial class TicketsPage
         var compact = TicketsToolbarRules.UsesCompactLabels(TicketsToolbar.ActualWidth, CurrentViewMode);
         var labels = VisibleIf(!compact);
         AssignedToMeLabel.Visibility = labels;
+        FiltersLabel.Visibility = labels;
         DetailPanelLabel.Visibility = labels;
         NewTicketLabel.Visibility = labels;
         RefreshLabel.Visibility = labels;
-        if (compact == _compactToolbar) return;
-        _compactToolbar = compact;
-        UpdateFilterButtons();
-    }
-
-    /// <summary>A vertical wheel over the filter strip scrolls it sideways once it overflows.</summary>
-    private void OnFilterStripMouseWheel(object sender, MouseWheelEventArgs e)
-    {
-        // A dropdown's open list routes its wheel through here too; leave it be.
-        if (e.OriginalSource is not DependencyObject source || !FilterStripScroller.IsAncestorOf(source)) return;
-        if (FilterStripScroller.ScrollableWidth <= 0) return;
-        FilterStripScroller.ScrollToHorizontalOffset(FilterStripScroller.HorizontalOffset - e.Delta);
-        e.Handled = true;
     }
 
     /// <summary>
