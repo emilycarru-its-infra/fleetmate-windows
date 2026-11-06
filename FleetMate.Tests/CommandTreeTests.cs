@@ -7,6 +7,7 @@ using FleetMate.Commands.Inventory;
 using FleetMate.Commands.Projects;
 using FleetMate.Commands.Reporting;
 using FleetMate.Commands.Shared;
+using FleetMate.Commands.Teams;
 using FleetMate.Commands.Tickets;
 using FleetMate.Core.Config;
 using FleetMate.Core.Services.Devices;
@@ -58,6 +59,7 @@ public class CommandTreeTests
         root.AddCommand(TasksCommand.Create(config));
         root.AddCommand(ProjectsCommand.Create(config));
         root.AddCommand(ReportMateCommand.Create(reportMate));
+        root.AddCommand(TeamsCommand.Create(config));
 
         return root;
     }
@@ -66,7 +68,7 @@ public class CommandTreeTests
     {
         "errors", "troubleshoot", "device", "test", "lint", "validate", "qa",
         "status", "configure", "snipe", "ssh", "manage", "deadline", "devops", "cimian",
-        "intune", "autopilot", "entra", "tdx", "tasks", "projects", "reportmate",
+        "intune", "autopilot", "entra", "tdx", "tasks", "projects", "reportmate", "teams",
     };
 
     [Fact]
@@ -79,9 +81,9 @@ public class CommandTreeTests
     }
 
     [Fact]
-    public void Root_HasTwentyTwoCommands()
+    public void Root_HasTwentyThreeCommands()
     {
-        Assert.Equal(22, BuildRoot().Subcommands.Count);
+        Assert.Equal(23, BuildRoot().Subcommands.Count);
     }
 
     [Theory]

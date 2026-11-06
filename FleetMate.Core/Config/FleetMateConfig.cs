@@ -107,6 +107,52 @@ public class FleetMateConfig
     /// <summary>True when ReportMate is set up to authenticate via Entra SSO.</summary>
     public bool ReportMateUsesOidc => !string.IsNullOrWhiteSpace(ReportMateOidcAudience);
 
+    // --- Teams channel-message search ----------------------------------------
+
+    /// <summary>
+    /// Base URL of the Teams channel-message search API (<c>fleetmate teams</c>).
+    /// Unset turns Teams search off. config.yaml <c>teams_api_url</c>, registry or
+    /// policy <c>TeamsApiUrl</c>, or <c>FLEETMATE_TEAMS_API_URL</c>.
+    /// </summary>
+    public string? TeamsApiUrl { get; set; }
+
+    /// <summary>
+    /// Scope (or audience) the operator's Entra token is minted for when calling
+    /// that API, such as <c>&lt;application id URI&gt;/.default</c>. config.yaml
+    /// <c>teams_api_scope</c>, registry or policy <c>TeamsApiScope</c>, or
+    /// <c>FLEETMATE_TEAMS_API_SCOPE</c>.
+    /// </summary>
+    public string? TeamsApiScope { get; set; }
+
+    /// <summary>
+    /// Declared purpose sent with every Teams search request as
+    /// <c>X-Vantage-Purpose</c>. config.yaml <c>teams_api_purpose</c>, registry or
+    /// policy <c>TeamsApiPurpose</c>, or <c>FLEETMATE_TEAMS_API_PURPOSE</c>; unset
+    /// uses the service's default.
+    /// </summary>
+    public string? TeamsApiPurpose { get; set; }
+
+    [YamlMember(Alias = "teams_api_purpose", ApplyNamingConventions = false)]
+    public string? TeamsApiPurposeSetting
+    {
+        get => null;
+        set { if (!string.IsNullOrWhiteSpace(value)) TeamsApiPurpose = value; }
+    }
+
+    [YamlMember(Alias = "teams_api_url", ApplyNamingConventions = false)]
+    public string? TeamsApiUrlSetting
+    {
+        get => null;
+        set { if (!string.IsNullOrWhiteSpace(value)) TeamsApiUrl = value; }
+    }
+
+    [YamlMember(Alias = "teams_api_scope", ApplyNamingConventions = false)]
+    public string? TeamsApiScopeSetting
+    {
+        get => null;
+        set { if (!string.IsNullOrWhiteSpace(value)) TeamsApiScope = value; }
+    }
+
 
     // Deployment repo paths (relative to repo root or absolute)
     public string DeploymentPath { get; set; } = "deployment";
@@ -355,6 +401,18 @@ public class FleetMateConfig
         if (!string.IsNullOrEmpty(snipeAudience))
             config.SnipeOidcAudience = snipeAudience;
 
+        var teamsApiUrl = Environment.GetEnvironmentVariable("FLEETMATE_TEAMS_API_URL");
+        if (!string.IsNullOrWhiteSpace(teamsApiUrl))
+            config.TeamsApiUrl = teamsApiUrl;
+
+        var teamsApiScope = Environment.GetEnvironmentVariable("FLEETMATE_TEAMS_API_SCOPE");
+        if (!string.IsNullOrWhiteSpace(teamsApiScope))
+            config.TeamsApiScope = teamsApiScope;
+
+        var teamsApiPurpose = Environment.GetEnvironmentVariable("FLEETMATE_TEAMS_API_PURPOSE");
+        if (!string.IsNullOrWhiteSpace(teamsApiPurpose))
+            config.TeamsApiPurpose = teamsApiPurpose;
+
         var devOpsBaseUrlEnv = Environment.GetEnvironmentVariable("AZDEVOPS_URL");
         if (!string.IsNullOrWhiteSpace(devOpsBaseUrlEnv))
         {
@@ -417,6 +475,9 @@ public class FleetMateConfig
         SnipeOidcAudience = null;
         ReportMateUrl = null;
         ReportMateOidcAudience = null;
+        TeamsApiUrl = null;
+        TeamsApiScope = null;
+        TeamsApiPurpose = null;
 #pragma warning disable CS0618 // the retired secrets go too
         SnipeApiKey = null;
         ReportMatePassphrase = null;
@@ -584,6 +645,19 @@ public class FleetMateConfig
             var snipeAudience = key.GetValue("SnipeOidcAudience") as string;
             if (!string.IsNullOrEmpty(snipeAudience))
                 config.SnipeOidcAudience = snipeAudience;
+
+            // Teams search: an address and a scope, not secrets, so policy may set them.
+            var teamsApiUrl = key.GetValue("TeamsApiUrl") as string;
+            if (!string.IsNullOrEmpty(teamsApiUrl))
+                config.TeamsApiUrl = teamsApiUrl;
+
+            var teamsApiScope = key.GetValue("TeamsApiScope") as string;
+            if (!string.IsNullOrEmpty(teamsApiScope))
+                config.TeamsApiScope = teamsApiScope;
+
+            var teamsApiPurpose = key.GetValue("TeamsApiPurpose") as string;
+            if (!string.IsNullOrEmpty(teamsApiPurpose))
+                config.TeamsApiPurpose = teamsApiPurpose;
 
             var entraClientId = key.GetValue("EntraClientId") as string;
             if (!string.IsNullOrEmpty(entraClientId))
@@ -784,6 +858,7 @@ public class FleetMateConfig
             "GraphTenantId", "GraphClientId", "SnipeUrl", "SnipeOidcAudience",
             "TdxBaseUrl", "TdxTicketingAppId", "DevOpsBaseUrl", "DevOpsOrganization", "DevOpsProject",
             "ReportMateUrl", "HandbookRepoUrl", "HandbookSiteUrl", "AgentsHubRepoUrl",
+            "TeamsApiUrl", "TeamsApiScope", "TeamsApiPurpose",
             "ManageRosterPath", "ManageRosterRepoProject", "ManageRosterRepo", "ManageRosterRepoPath",
             "ManageCommandsPath", "ManageTerminalProfile", "ManageRdpUser",
             "ManageIncludeRetired", "ManageIncludeProvisioning", "SecureShellKeyPath", "SecureShellUser"

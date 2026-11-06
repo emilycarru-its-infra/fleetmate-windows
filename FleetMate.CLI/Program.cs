@@ -211,6 +211,9 @@ class Program
             // ReportMate fleet reporting
             rootCommand.AddCommand(ReportMateCommand.Create(reportMate));
 
+            // Teams channel-message search
+            rootCommand.AddCommand(FleetMate.Commands.Teams.TeamsCommand.Create(config));
+
             // Agent CLIs FleetMate's terminal runs
             rootCommand.AddCommand(AgentCommand.Create());
 
