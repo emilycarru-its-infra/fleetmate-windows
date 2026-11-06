@@ -226,90 +226,166 @@
                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                                VerticalAlignment="Center" HorizontalAlignment="Center" TextWrapping="Wrap" />
 
-                    <!-- Tickets ListView -->
+                    <!-- Tickets table: the macOS app's columns, widths and
+                         order. Headers sort (the toolbar's sort state is the
+                         one source of truth), columns resize and reorder, and
+                         the layout is kept between launches; see
+                         TicketsPage.ListTable.cs. Rows stay virtualized so a
+                         queue of thousands scrolls freely. -->
                     <ListView x:Name="TicketsListView"
                               AlternationCount="2"
-                              ItemContainerStyle="{StaticResource FleetListViewItemStyle}"
+                              BorderThickness="0"
                               SelectionMode="Single"
+                              AutomationProperties.Name="Tickets"
+                              VirtualizingPanel.IsVirtualizing="True"
+                              VirtualizingPanel.VirtualizationMode="Recycling"
+                              ScrollViewer.CanContentScroll="True"
                               SelectionChanged="OnTicketSelectionChanged">
-                        <ListView.ItemTemplate>
-                            <DataTemplate>
-                                <!-- Indent the content, not the row: an indented
-                                     selection highlight reads as a rendering bug. -->
-                                <Grid Margin="{Binding IndentMargin}">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
+                        <ListView.Resources>
+                            <!-- A faint stripe, light enough for either theme, as on Mac. -->
+                            <SolidColorBrush x:Key="TicketRowStripeBrush" Color="#14808080" />
+                        </ListView.Resources>
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem" BasedOn="{StaticResource FleetListViewItemStyle}">
+                                <Setter Property="MinHeight" Value="28" />
+                                <Setter Property="AutomationProperties.Name" Value="{Binding SpokenName}" />
+                                <Style.Triggers>
+                                    <Trigger Property="ItemsControl.AlternationIndex" Value="1">
+                                        <Setter Property="Background" Value="{StaticResource TicketRowStripeBrush}" />
+                                    </Trigger>
+                                    <!-- Restated after the stripe so a selected odd row
+                                         still shows the selection. The accent tint keeps
+                                         the text and the orange age readable. -->
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListAccentLowBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.View>
+                            <GridView AllowsColumnReorder="True">
+                                <!-- Header content is a TicketColumnHeader: its title
+                                     and, on the sorted column, a chevron. -->
+                                <GridView.ColumnHeaderTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding SortGlyph}" Margin="4,0,0,0" VerticalAlignment="Center"
+                                                       FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="10"
+                                                       Foreground="{DynamicResource SystemControlHighlightAccentBrush}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </GridView.ColumnHeaderTemplate>
 
-                                    <!-- Title and Status -->
-                                    <DockPanel Grid.Row="0">
-                                        <!-- Disclosure triangle. Hidden rather than
-                                             collapsed on leaves so titles stay in
-                                             one visual column. -->
-                                        <Button DockPanel.Dock="Left" Content="{Binding TriangleGlyph}"
-                                                Visibility="{Binding TriangleVisibility}"
-                                                ToolTip="{Binding ChildCountTooltip}"
-                                                Tag="{Binding}" Click="OnToggleTicketFold"
-                                                FontFamily="Segoe UI Symbol" FontSize="9"
-                                                Width="16" Height="16" Padding="0" Margin="0,0,4,0"
-                                                VerticalAlignment="Center"
-                                                Background="Transparent" BorderThickness="0" />
-                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                            <Ellipse Width="8" Height="8" Margin="0,0,4,0">
-                                                <Ellipse.Style>
-                                                    <Style TargetType="Ellipse">
-                                                        <Setter Property="Fill" Value="Gray" />
+                                <GridViewColumn Header="ID" Width="130">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <!-- Children indent under their parent; leaves keep
+                                                 the triangle's space so the numbers line up. -->
+                                            <StackPanel Orientation="Horizontal" Margin="{Binding TableIndent}">
+                                                <Button Content="{Binding TriangleGlyph}"
+                                                        Visibility="{Binding TriangleVisibility}"
+                                                        ToolTip="{Binding DisclosureName}"
+                                                        AutomationProperties.Name="{Binding DisclosureName}"
+                                                        Tag="{Binding}" Click="OnToggleTicketFold"
+                                                        Focusable="False"
+                                                        FontFamily="Segoe UI Symbol" FontSize="9"
+                                                        Width="14" Height="16" MinWidth="0" MinHeight="0" Padding="0" Margin="0,0,2,0"
+                                                        VerticalAlignment="Center"
+                                                        Background="Transparent" BorderThickness="0" />
+                                                <TextBlock Text="{Binding IdLabel}" FontFamily="Cascadia Mono, Consolas" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+
+                                <GridViewColumn Header="Title" Width="500">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <DockPanel LastChildFill="False">
+                                                <TextBlock DockPanel.Dock="Left" Text="{Binding Title, TargetNullValue=-}"
+                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                <!-- Child-count badge on a parent, as on Mac. -->
+                                                <Border DockPanel.Dock="Left" Visibility="{Binding ChildBadgeVisibility}"
+                                                        Margin="6,0,0,0" Padding="5,0" CornerRadius="7" MinWidth="16" Height="15"
+                                                        VerticalAlignment="Center"
+                                                        Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                                                        ToolTip="{Binding ChildCountTooltip}">
+                                                    <TextBlock Text="{Binding ChildCountLabel}" FontSize="10" HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                                </Border>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+
+                                <GridViewColumn Header="Status" Width="110">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse Width="8" Height="8" Margin="0,0,5,0" Fill="{Binding StatusBrush}" VerticalAlignment="Center" />
+                                                <TextBlock Text="{Binding StatusName, TargetNullValue=-}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+
+                                <GridViewColumn Header="Priority" Width="90">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding PriorityName, TargetNullValue=-}" TextTrimming="CharacterEllipsis" />
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+
+                                <GridViewColumn Header="Requestor" Width="130">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding RequestorName, TargetNullValue=-}" TextTrimming="CharacterEllipsis" />
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+
+                                <GridViewColumn Header="Responsible" Width="130">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding ResponsibleFullName, TargetNullValue=-}" TextTrimming="CharacterEllipsis" />
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+
+                                <GridViewColumn Header="Age" Width="70">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding AgeLabel}" FontFamily="Cascadia Mono, Consolas" ToolTip="Days since opened">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                                         <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding StatusName}" Value="New">
-                                                                <Setter Property="Fill" Value="Blue" />
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding StatusName}" Value="Open">
-                                                                <Setter Property="Fill" Value="Blue" />
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding StatusName}" Value="In Progress">
-                                                                <Setter Property="Fill" Value="Orange" />
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding StatusName}" Value="In Process">
-                                                                <Setter Property="Fill" Value="Orange" />
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding StatusName}" Value="Resolved">
-                                                                <Setter Property="Fill" Value="Green" />
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding StatusName}" Value="Closed">
-                                                                <Setter Property="Fill" Value="Green" />
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding StatusName}" Value="On Hold">
-                                                                <Setter Property="Fill" Value="Gray" />
+                                                            <!-- Two weeks or older reads as waiting, as on Mac. -->
+                                                            <DataTrigger Binding="{Binding IsAgeHighlighted}" Value="True">
+                                                                <Setter Property="Foreground" Value="#FFFFA040" />
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
-                                                </Ellipse.Style>
-                                            </Ellipse>
-                                            <TextBlock Text="{Binding StatusName}" FontSize="12" />
-                                        </StackPanel>
-                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                    </DockPanel>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
 
-                                    <!-- Secondary Info -->
-                                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,4,0,0">
-                                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE77B;" FontSize="10" Margin="0,0,3,0" VerticalAlignment="Center" />
-                                        <TextBlock Text="{Binding RequestorName}" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,12,0" />
-                                        <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE716;" FontSize="10" Margin="0,0,3,0" VerticalAlignment="Center" />
-                                        <TextBlock Text="{Binding ResponsibleGroupName}" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,12,0" />
-                                        <TextBlock Text="→" FontSize="11" Margin="0,0,2,0" />
-                                        <TextBlock Text="{Binding ResponsibleFullName}" FontSize="11" Foreground="{DynamicResource SystemControlForegroundAccentBrush}" Margin="0,0,12,0" />
-                                        <TextBlock Text="{Binding PriorityName}" FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,12,0" />
-                                        <!-- Age and idle time answer different
-                                             questions, so both are shown. -->
-                                        <TextBlock Text="{Binding AgeLabel}" FontSize="11" ToolTip="Days since opened"
-                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" Margin="0,0,6,0" />
-                                        <TextBlock Text="{Binding LastActivityLabel}" FontSize="11" ToolTip="Days since last activity"
-                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                    </StackPanel>
-                                </Grid>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
+                                <GridViewColumn Header="Modified" Width="120">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding ModifiedLabel}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                            </GridView>
+                        </ListView.View>
                     </ListView>
                 </Grid>
             </Border>
