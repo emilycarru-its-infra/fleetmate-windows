@@ -116,21 +116,60 @@ public sealed class TdxSessionCache
         }
     }
 
-    public void Save(TdxSession session)
+    /// <summary>
+    /// Save <paramref name="session"/>, replacing the file in one step, so a
+    /// reader in another process sees the old session or the new one, never
+    /// half of either. A session for the same account and tenant that lasts
+    /// longer is never replaced: the window and the inbox helper both save
+    /// here, and a late save must not undo a newer renewal.
+    /// </summary>
+    /// <returns>False when the saved session was kept, or the save failed.</returns>
+    public bool Save(TdxSession session)
     {
+        string? temp = null;
         try
         {
+            if (Load() is { } existing && Outlasts(existing, session))
+            {
+                Log.Information("[tdx-session] Kept the saved session; it lasts longer than the one offered");
+                return false;
+            }
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
             var bytes = ProtectedData.Protect(JsonSerializer.SerializeToUtf8Bytes(session), Entropy, DataProtectionScope.CurrentUser);
-            var temp = _path + ".tmp";
+            // A name of its own, so two processes saving at once never share a temp file.
+            temp = $"{_path}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
             File.WriteAllBytes(temp, bytes);
             File.Move(temp, _path, overwrite: true);
+            temp = null;
+            return true;
         }
         catch (Exception ex)
         {
             Log.Warning(ex, "[tdx-session] Session could not be saved");
+            return false;
+        }
+        finally
+        {
+            if (temp != null)
+            {
+                try { File.Delete(temp); } catch (Exception) { }
+            }
         }
     }
+
+    /// <summary>
+    /// Whether <paramref name="saved"/> should stay in place of
+    /// <paramref name="offered"/>: another token for the same account and
+    /// tenant, expiring later. A different account or tenant is always
+    /// replaced, and the same token can always be saved again (its person added).
+    /// </summary>
+    public static bool Outlasts(TdxSession saved, TdxSession offered) =>
+        !string.IsNullOrEmpty(saved.Token)
+        && !string.Equals(saved.Token, offered.Token, StringComparison.Ordinal)
+        && TdxSession.NormalizeAddress(saved.VerifiedAddress) is { } address
+        && address == TdxSession.NormalizeAddress(offered.VerifiedAddress)
+        && TdxSession.NormalizeBaseUrl(saved.BaseUrl) == TdxSession.NormalizeBaseUrl(offered.BaseUrl)
+        && saved.ExpiryUtc.ToUniversalTime() > offered.ExpiryUtc.ToUniversalTime();
 
     /// <summary>Save <paramref name="me"/> into the stored session, when it is the same sign-in.</summary>
     public void SaveMe(string token, TdxPerson me)

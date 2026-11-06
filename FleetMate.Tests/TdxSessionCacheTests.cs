@@ -46,6 +46,53 @@ public sealed class TdxSessionCacheTests : IDisposable
         Assert.Null(cache.Load());
     }
 
+    [Fact]
+    public void ALaterSaveNeverReplacesASessionThatLastsLonger()
+    {
+        var cache = new TdxSessionCache(_dir);
+        Assert.True(cache.Save(Session(Now.AddHours(20))));
+
+        var shorter = Session(Now.AddHours(4));
+        shorter.Token = "a-shorter-token";
+        Assert.False(cache.Save(shorter));
+        Assert.Equal("synthetic-token-value", cache.Load()!.Token);
+
+        var longer = Session(Now.AddHours(22));
+        longer.Token = "a-longer-token";
+        Assert.True(cache.Save(longer));
+        Assert.Equal("a-longer-token", cache.Load()!.Token);
+        Assert.Empty(Directory.GetFiles(_dir, "*.tmp"));
+    }
+
+    [Fact]
+    public void ASaveForAnotherAccountOrTenantAlwaysReplaces()
+    {
+        var cache = new TdxSessionCache(_dir);
+        cache.Save(Session(Now.AddHours(20)));
+
+        var other = Session(Now.AddHours(1));
+        other.Token = "another-accounts-token";
+        other.VerifiedAddress = "other@example.invalid";
+        Assert.True(cache.Save(other));
+
+        var tenant = Session(Now.AddHours(1));
+        tenant.Token = "another-tenants-token";
+        tenant.BaseUrl = "https://other.example.com";
+        Assert.True(cache.Save(tenant));
+        Assert.Equal("another-tenants-token", cache.Load()!.Token);
+    }
+
+    [Fact]
+    public void TheSameSignInCanAlwaysBeSavedAgain()
+    {
+        var cache = new TdxSessionCache(_dir);
+        cache.Save(Session());
+        var again = Session();
+        again.Me = new TdxPerson { PrimaryEmail = Address };
+        Assert.True(cache.Save(again));
+        Assert.NotNull(cache.Load()!.Me);
+    }
+
     [Theory]
     [InlineData(8, true)]
     [InlineData(1.5, true)]
