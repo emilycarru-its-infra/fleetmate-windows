@@ -40,7 +40,7 @@ public partial class SettingsPage
                 if (!signedIn) panel.Children.Add(Action("Retry SSO", () => CurrentApp?.AttemptSilentDevOpsSsoAsync() ?? Task.CompletedTask, accent: true));
                 break;
             case AuthSystemId.Tdx:
-                if (!signedIn) panel.Children.Add(Action("Retry SSO", () => CurrentApp?.AttemptSilentTdxSsoAsync() ?? Task.CompletedTask, accent: true));
+                if (!signedIn) panel.Children.Add(Action("Sign In", () => CurrentApp?.RetryTdxSsoAsync() ?? Task.CompletedTask, accent: true));
                 break;
             case AuthSystemId.Snipe:
             case AuthSystemId.Intune or AuthSystemId.Graph or AuthSystemId.Entra when !elevated:

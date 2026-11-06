@@ -384,9 +384,11 @@ public partial class App : Application
     /// <summary>
     /// Sign in to TeamDynamix as the Windows user with nothing on screen: HTTP
     /// Negotiate first, then a never-shown WebView2 (see <see cref="TdxHeadlessSso"/>).
-    /// Runs on startup and from every Sign In / Retry SSO button. There is no
-    /// interactive fallback: when it cannot finish silently, TeamDynamix is
-    /// marked failed with the reason. Concurrent callers share one attempt.
+    /// Runs on startup and inside every Sign In / Retry SSO button. On its own
+    /// it never shows anything: when it cannot finish silently, TeamDynamix is
+    /// marked failed with the reason, and only <see cref="RetryTdxSsoAsync"/>,
+    /// a person's click, goes on to the sign-in window. Concurrent callers
+    /// share one attempt.
     /// </summary>
     public Task AttemptSilentTdxSsoAsync() => AttemptSilentTdxSsoAsync(renew: false);
 
@@ -460,6 +462,7 @@ public partial class App : Application
         Log.Information("[tdx-sso] Starting silent SSO for {BaseUrl}", Config.Tdx.BaseUrl);
 
         var result = await TdxHeadlessSso.SignInAsync(Config.Tdx.BaseUrl, step: step);
+        _lastSilentTdxResult = result;
         if (result is { Success: true, Token: not null })
         {
             HandleSilentSsoSuccess(result);
@@ -570,15 +573,52 @@ public partial class App : Application
         }
     }
 
+    /// <summary>The last silent attempt's result, so Sign In knows whether a window can help.</summary>
+    private TdxSsoResult? _lastSilentTdxResult;
+
+    private Task<bool>? _tdxWindowSignIn;
+
     /// <summary>
-    /// The Sign In buttons' action: retry the silent sign-in and report whether
-    /// TeamDynamix is now signed in. It never opens a window.
+    /// The Sign In buttons' action: retry the silent sign-in, and when that
+    /// cannot finish (Entra wants multi-factor authentication, or the chain
+    /// stopped) open the visible sign-in window. A window sign-in is saved like
+    /// a silent one, so later launches sign in silently. Reports whether
+    /// TeamDynamix is now signed in. A second click while the window is open
+    /// waits for that window instead of opening another.
     /// </summary>
-    public async Task<bool> RetryTdxSsoAsync()
+    public Task<bool> RetryTdxSsoAsync()
     {
+        if (_tdxWindowSignIn is { IsCompleted: false } running) return running;
+        return _tdxWindowSignIn = RetryTdxSsoCoreAsync();
+    }
+
+    private async Task<bool> RetryTdxSsoCoreAsync()
+    {
+        _lastSilentTdxResult = null;
         try { await AttemptSilentTdxSsoAsync(); }
         catch (Exception ex) { Log.Warning(ex, "[tdx-sso] Silent SSO retry failed"); }
-        return IsTdxSsoAuthenticated;
+        if (IsTdxSsoAuthenticated) return true;
+
+        if (Config.Tdx is not { SsoEnabled: true } tdx || string.IsNullOrEmpty(tdx.BaseUrl)) return false;
+        if (!TdxSsoResult.ShouldOfferWindow(_lastSilentTdxResult))
+        {
+            Log.Information("[tdx-sso] Not opening the sign-in window: {Reason}", _lastSilentTdxResult?.Error);
+            return false;
+        }
+
+        var owner = Current.Windows.OfType<MainWindow>().FirstOrDefault();
+        var result = await TdxSignInWindow.SignInAsync(tdx.BaseUrl, owner);
+        if (result is { Success: true, Token: not null })
+        {
+            HandleSilentSsoSuccess(result);
+            return true;
+        }
+        if (result != null)
+        {
+            if (result.IdentityRefused) TdxSessionStore.Clear();
+            AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Failed(result.Error ?? "TeamDynamix sign-in did not finish"));
+        }
+        return false;
     }
 
     // MARK: - DevOps SSO Authentication
