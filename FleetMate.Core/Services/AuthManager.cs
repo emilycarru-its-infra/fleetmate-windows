@@ -397,8 +397,11 @@ public class AuthManager : INotifyPropertyChanged
 
         try
         {
-            await tdxService.SearchTicketsAsync(
-                new FleetMate.Core.Models.Tickets.TicketSearchRequest { MaxResults = 1 }, 1);
+            // The throwing search: SearchTicketsAsync answers a refusal, or no
+            // sign-in at all, with an empty list, which read as Valid while
+            // the ticket list said Not Signed In.
+            await tdxService.SearchTicketsOrThrowAsync(
+                new FleetMate.Core.Models.Tickets.TicketSearchRequest { MaxResults = 1 });
             Update(AuthSystemId.Tdx, AuthTokenState.Valid(tdxService.AuthenticatedUserName ?? "SSO"));
         }
         catch (Exception ex)
