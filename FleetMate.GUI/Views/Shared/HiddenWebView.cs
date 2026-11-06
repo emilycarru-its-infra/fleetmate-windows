@@ -41,6 +41,9 @@ internal sealed class HiddenWebView : IDisposable
             Width = 1024,
             Height = 768,
         };
+        // Created while no main window is set, WPF would make this host the
+        // main window, and a later launch would bring forward a window that is never shown.
+        App.NeverMainWindow(host);
         try
         {
             // A handle without Show(): the window exists but never appears.
