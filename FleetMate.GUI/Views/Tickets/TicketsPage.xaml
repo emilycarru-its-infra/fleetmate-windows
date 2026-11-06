@@ -766,18 +766,26 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <!-- Panel Header, laid out like the macOS detail header. One row:
-                         on the left a chevron that closes the pane, the ticket number
-                         (click to copy), copy-link and open-in-browser; on the right
-                         the ticket actions. The actions never wrap: when the row is
-                         too narrow for their labels they drop to icons, as on the Mac.
+                    <!-- Panel Header, laid out like the macOS detail header: on the
+                         left a chevron that closes the pane, the ticket number (click
+                         to copy), copy-link and open-in-browser; on the right Discard
+                         and Save while fields hold unsaved picks, then the ticket
+                         actions. The actions keep their labels: when the number row
+                         is too narrow for them they move to their own row under it,
+                         and drop to icons only when even that row is too narrow.
                          The title sits on the line below, then a divider. -->
                     <StackPanel Grid.Row="0" Margin="12,12,12,0">
                         <Grid x:Name="DetailHeaderRow" SizeChanged="OnDetailHeaderSizeChanged">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
                             <StackPanel x:Name="DetailIdentityPanel" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0"
                                         SizeChanged="OnDetailHeaderSizeChanged">
                                 <Button x:Name="CloseDetailButton" Click="OnCloseDetailPanel" ToolTip="Close the ticket (Esc)"
@@ -805,8 +813,29 @@
                                 <shared:AgentContextButton x:Name="AgentButton" Style="{StaticResource ChromeIconButtonStyle}" />
                             </StackPanel>
 
-                            <StackPanel x:Name="DetailActionsPanel" Grid.Column="1" Orientation="Horizontal"
-                                        HorizontalAlignment="Right" VerticalAlignment="Center" ClipToBounds="True">
+                            <!-- Unsaved field picks: Discard and Save, as on the Mac. -->
+                            <StackPanel x:Name="DetailEditButtonsPanel" Grid.Column="2" Orientation="Horizontal"
+                                        VerticalAlignment="Center" Visibility="Collapsed" Margin="0,0,4,0"
+                                        AutomationProperties.Name="Unsaved changes">
+                                <ui:ProgressRing x:Name="DetailSaveProgress" IsActive="False" Visibility="Collapsed"
+                                                 Width="14" Height="14" Margin="0,0,6,0" />
+                                <Button x:Name="DiscardEditsButton" Click="OnDiscardEditsClicked" Content="Discard"
+                                        Height="30" MinHeight="0" MinWidth="0" Padding="10,0" Margin="6,2,0,2" FontSize="12"
+                                        ToolTip="Discard changes" AutomationProperties.Name="Discard changes" />
+                                <Button x:Name="SaveEditsButton" Click="OnSaveEditsClicked"
+                                        Style="{DynamicResource AccentButtonStyle}"
+                                        Height="30" MinHeight="0" MinWidth="0" Padding="10,0" Margin="6,2,0,2" FontSize="12"
+                                        ToolTip="Save changes (Ctrl+Enter)" AutomationProperties.Name="Save changes">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:FontIcon Glyph="&#xE73E;" FontFamily="Segoe Fluent Icons" FontSize="12" Margin="0,0,6,0" />
+                                        <TextBlock Text="Save" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+
+                            <StackPanel x:Name="DetailActionsPanel" Grid.Column="3" Orientation="Horizontal"
+                                        HorizontalAlignment="Right" VerticalAlignment="Center" ClipToBounds="True"
+                                        AutomationProperties.Name="Ticket actions">
                                 <StackPanel.Resources>
                                     <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
                                         <Setter Property="Padding" Value="10,0" />

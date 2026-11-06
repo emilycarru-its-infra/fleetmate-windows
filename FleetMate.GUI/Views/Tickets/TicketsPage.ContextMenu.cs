@@ -124,7 +124,11 @@ public partial class TicketsPage
     {
         if (entry.IsSeparator) return new Separator();
 
-        var item = new MenuItem { Header = entry.Header, IsEnabled = entry.IsEnabled };
+        // As on the Mac, the open ticket's unsaved picks hold off the menu's
+        // immediate saves, so neither change overwrites the other.
+        var heldBack = HasPendingEdits(ticket.Id) && entry.Command is TicketMenuCommand.Status
+            or TicketMenuCommand.Priority or TicketMenuCommand.AssignToMe or TicketMenuCommand.Unassign;
+        var item = new MenuItem { Header = entry.Header, IsEnabled = entry.IsEnabled && !heldBack };
         AutomationProperties.SetAutomationId(item, entry.AutomationId);
         if (Glyph(entry.Command) is { } glyph) item.Icon = new FontIcon { Glyph = glyph };
 

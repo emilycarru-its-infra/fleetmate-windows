@@ -6,32 +6,58 @@ using FleetMate.Core.Models.Tickets;
 
 namespace FleetMate.GUI.Views.Tickets;
 
-// The detail pane's header and fields, as on macOS: the actions row that drops
-// its labels instead of wrapping, the Requestor picker and the Description
-// editor. Every change goes through the same sparse PATCH as Status.
+// The detail pane's header and fields, as on macOS: the actions that keep
+// their labels, field picks held for Save, the Requestor picker and the
+// Description editor.
 public partial class TicketsPage
 {
     // ── Header actions ────────────────────────────────────────────
 
     private bool _detailActionsIconOnly;
+    private bool _detailActionsOwnRow;
     private double _detailActionsFullWidth;
 
     private void OnDetailHeaderSizeChanged(object sender, SizeChangedEventArgs e) => FitDetailActions();
 
     /// <summary>
-    /// Keep the ticket actions on one row. With labels they need the width
-    /// recorded the last time they were shown; when the row is narrower than
-    /// that they show icons only (their names stay in the tooltip and for
-    /// screen readers), and the labels come back once there is room.
+    /// Place the ticket actions so they keep their labels. They sit on the
+    /// number row when it has room, as on the Mac; otherwise they move to
+    /// their own row under it, and drop to icons (their names stay in the
+    /// tooltip and for screen readers) only when even that row is too narrow.
     /// </summary>
     private void FitDetailActions()
     {
-        var available = DetailHeaderRow.ActualWidth - DetailIdentityPanel.ActualWidth
-            - DetailIdentityPanel.Margin.Left - DetailIdentityPanel.Margin.Right;
-        if (available <= 0) return;
-        if (!_detailActionsIconOnly) _detailActionsFullWidth = DetailActionsWidth();
-        var iconOnly = _detailActionsFullWidth > available;
+        var rowWidth = DetailHeaderRow.ActualWidth;
+        if (rowWidth <= 0) return;
+        if (!_detailActionsIconOnly)
+        {
+            var measured = DetailActionsWidth();
+            if (measured > 0) _detailActionsFullWidth = measured;
+        }
+        if (_detailActionsFullWidth <= 0) return;
+
+        var editWidth = DetailEditButtonsPanel.Visibility == Visibility.Visible
+            ? DetailEditButtonsPanel.DesiredSize.Width
+            : 0;
+        var inlineRoom = rowWidth - DetailIdentityPanel.ActualWidth
+            - DetailIdentityPanel.Margin.Left - DetailIdentityPanel.Margin.Right - editWidth;
+
+        var placement = TicketDetailActionsFit.Place(_detailActionsFullWidth, inlineRoom, rowWidth);
+        PlaceDetailActions(ownRow: placement != DetailActionsFit.Inline);
+        var iconOnly = placement == DetailActionsFit.OwnRowIconsOnly;
         if (iconOnly != _detailActionsIconOnly) ShowDetailActionLabels(!iconOnly);
+    }
+
+    private void PlaceDetailActions(bool ownRow)
+    {
+        if (ownRow == _detailActionsOwnRow) return;
+        _detailActionsOwnRow = ownRow;
+        Grid.SetRow(DetailActionsPanel, ownRow ? 1 : 0);
+        Grid.SetColumn(DetailActionsPanel, ownRow ? 0 : 3);
+        Grid.SetColumnSpan(DetailActionsPanel, ownRow ? 4 : 1);
+        DetailActionsPanel.HorizontalAlignment = ownRow ? HorizontalAlignment.Left : HorizontalAlignment.Right;
+        // The first button's leading gap lines up with the number row's edge.
+        DetailActionsPanel.Margin = ownRow ? new Thickness(-6, 4, 0, 0) : new Thickness(0);
     }
 
     private double DetailActionsWidth() => DetailActionsPanel.Children.OfType<FrameworkElement>()
@@ -49,6 +75,119 @@ public partial class TicketsPage
             if (content.Children.OfType<ModernWpf.Controls.FontIcon>().FirstOrDefault() is { } icon)
                 icon.Margin = show ? new Thickness(0, 0, 6, 0) : new Thickness(0);
             button.Padding = show ? new Thickness(10, 0, 10, 0) : new Thickness(8, 0, 8, 0);
+        }
+    }
+
+    // ── Pending field edits ───────────────────────────────────────
+    // Status, Priority, Classification, Form, Service, Type, Group and
+    // Requestor picks wait here until Save sends them as one PATCH, as on the
+    // Mac. They belong to one ticket: opening another drops them unasked, as
+    // the Mac does, while a redraw of the same ticket keeps them.
+
+    private TicketPendingEdits? _pendingEdits;
+    private bool _savingEdits;
+
+    /// <summary>True while ticket <paramref name="ticketId"/> holds unsaved picks.</summary>
+    private bool HasPendingEdits(int ticketId) => _pendingEdits is { HasEdits: true } p && p.TicketId == ticketId;
+
+    /// <summary>
+    /// Follow a newer copy of the ticket on screen. The same ticket keeps its
+    /// picks; another one starts with none.
+    /// </summary>
+    private void SyncPendingEdits(TdxTicket ticket)
+    {
+        if (_pendingEdits?.TicketId == ticket.Id) _pendingEdits.Rebase(ticket);
+        else _pendingEdits = new TicketPendingEdits(ticket);
+        UpdateEditButtons();
+    }
+
+    /// <summary>Drop the picks when a different ticket, or none, takes the pane.</summary>
+    private void DropPendingEditsUnlessFor(int? ticketId)
+    {
+        if (_pendingEdits == null || _pendingEdits.TicketId == ticketId) return;
+        _pendingEdits = null;
+        UpdateEditButtons();
+    }
+
+    private void HoldEdit(string field, object value, string? requestorName = null)
+    {
+        if (_selectedTicket is not { } ticket) return;
+        if (_pendingEdits?.TicketId != ticket.Id) _pendingEdits = new TicketPendingEdits(ticket);
+        _pendingEdits.Set(field, value, requestorName);
+        if (field == TicketDetailFields.Requestor) ShowRequestor(ticket);
+        UpdateEditButtons();
+    }
+
+    private void ShowRequestor(TdxTicket ticket)
+    {
+        var picked = _pendingEdits?.TicketId == ticket.Id && _pendingEdits.IsEdited(TicketDetailFields.Requestor);
+        DetailRequestorText.Text = picked ? _pendingEdits!.RequestorName ?? "-" : ticket.RequestorName ?? "-";
+        DetailEmailText.Text = picked ? "-" : ticket.RequestorEmail ?? "-";
+    }
+
+    private void UpdateEditButtons()
+    {
+        var show = _selectedTicket is { } ticket && HasPendingEdits(ticket.Id);
+        DetailEditButtonsPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        SaveEditsButton.IsEnabled = !_savingEdits;
+        DiscardEditsButton.IsEnabled = !_savingEdits;
+        DetailSaveProgress.IsActive = _savingEdits;
+        DetailSaveProgress.Visibility = _savingEdits ? Visibility.Visible : Visibility.Collapsed;
+        // Save and Discard take room on the number row; place the actions again.
+        Dispatcher.BeginInvoke(FitDetailActions, DispatcherPriority.Loaded);
+    }
+
+    private void OnDiscardEditsClicked(object sender, RoutedEventArgs e) => DiscardEdits();
+
+    private void DiscardEdits()
+    {
+        if (_selectedTicket is not { } ticket || _savingEdits) return;
+        _pendingEdits?.Clear();
+        UpdateDetailPanel(ticket);
+        DetailStatusCombo.Focus();
+    }
+
+    private async void OnSaveEditsClicked(object sender, RoutedEventArgs e) => await SaveEditsAsync();
+
+    /// <summary>
+    /// Send every unsaved pick as one PATCH. The ticket is read again first,
+    /// as on the Mac, so only fields that still differ from TeamDynamix are
+    /// sent. The picks stay when TeamDynamix refuses them, so nothing is lost.
+    /// </summary>
+    private async Task SaveEditsAsync()
+    {
+        if (_savingEdits || _tdxService == null || _selectedTicket is not { } ticket) return;
+        if (_pendingEdits is not { HasEdits: true } edits || edits.TicketId != ticket.Id) return;
+
+        _savingEdits = true;
+        UpdateEditButtons();
+        try
+        {
+            ShowActionMessage($"Saving #{ticket.Id}…", isLoading: true);
+            var latest = await _tdxService.GetTicketAsync(ticket.Id) ?? ticket;
+            var patch = edits.Patch(latest);
+            var updated = patch == null ? latest : await _tdxService.UpdateTicketAsync(ticket.Id, patch);
+            if (updated == null)
+            {
+                ShowActionMessage("TeamDynamix did not accept the changes. See the log for the response.", isError: true);
+                return;
+            }
+            // Picks made while the save ran are newer work and stay.
+            if (edits.Patch(updated) == null) edits.Clear();
+            ReplaceCachedTicket(updated);
+            // A new group brings new members to the People section and the notify list.
+            if (patch?.ContainsKey(TicketDetailFields.Group) == true && _selectedTicket?.Id == ticket.Id)
+                _ = LoadTicketPeopleAsync(updated);
+            ShowActionMessage(patch == null ? $"#{ticket.Id} already had these values" : $"Saved #{ticket.Id}");
+        }
+        catch (Exception ex)
+        {
+            ShowActionMessage($"Could not save #{ticket.Id}: {ex.Message}", isError: true);
+        }
+        finally
+        {
+            _savingEdits = false;
+            UpdateEditButtons();
         }
     }
 
@@ -150,11 +289,13 @@ public partial class TicketsPage
         if (RequestorResultsList.SelectedItem is TdxPerson person) await ChangeRequestorAsync(person);
     }
 
-    private async Task ChangeRequestorAsync(TdxPerson person)
+    private Task ChangeRequestorAsync(TdxPerson person)
     {
         RequestorPopup.IsOpen = false;
-        if (_selectedTicket is not { } ticket || person.Uid is not { } uid) return;
-        await UpdateTicketFieldAsync(ticket.Id, TicketDetailFields.Requestor, uid);
+        ChangeRequestorButton.Focus();
+        // Held for Save with the other fields, as on the Mac.
+        if (person.Uid is { } uid) HoldEdit(TicketDetailFields.Requestor, uid, person.DisplayName);
+        return Task.CompletedTask;
     }
 
     // ── Description ───────────────────────────────────────────────
