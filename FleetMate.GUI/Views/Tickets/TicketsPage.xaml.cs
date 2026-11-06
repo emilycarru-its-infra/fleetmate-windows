@@ -453,6 +453,8 @@ private bool _isInitialLoadDone;
 
         _ticketRows.Clear();
         foreach (var row in rows) _ticketRows.Add(new TicketRowViewModel { Row = row });
+        // Columns follow what the rows hold: a child's indented ID, a long name.
+        MeasureTicketColumnContent();
 
         if (selectedId is { } id)
         {
