@@ -41,7 +41,16 @@
            Text="Edition must be FleetMate or TicketsMate, not '$(Edition)'." />
   </Target>
 
+  <!-- Signs our own exe and DLLs after every build when a code-signing
+       certificate is installed, so the dev build runs where unsigned
+       executables are blocked. No certificate: it skips and the build
+       succeeds. Opt out with -p:SignDevBuild=false. -->
+  <Target Name="SignDevBuild" AfterTargets="Build" Condition="'$(SignDevBuild)' != 'false' And '$(OS)' == 'Windows_NT'">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\Sign-DevBuild.ps1&quot; -Directory &quot;$(TargetDir.TrimEnd('\'))&quot; -Files $(TargetName).exe,$(TargetName).dll,FleetMate.Core.dll" />
+  </Target>
+
   <ItemGroup>
+    <None Remove="Sign-DevBuild.ps1" />
     <Content Include="Assets\**\*.*" CopyToOutputDirectory="PreserveNewest" />
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
