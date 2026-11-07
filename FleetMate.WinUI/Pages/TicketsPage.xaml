@@ -1,0 +1,563 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="FleetMate.WinUI.Pages.TicketsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:data="using:FleetMate.WinUI.Data"
+    xmlns:local="using:FleetMate.WinUI.Pages"
+    NavigationCacheMode="Required">
+
+    <Page.Resources>
+        <!-- A small tile: one headline count. -->
+        <Style x:Key="StatTileStyle" TargetType="Border" BasedOn="{StaticResource CardStyle}">
+            <Setter Property="Padding" Value="12,10" />
+            <Setter Property="MinWidth" Value="108" />
+        </Style>
+        <Style x:Key="StatValueStyle" TargetType="TextBlock" BasedOn="{StaticResource SubtitleTextBlockStyle}">
+            <Setter Property="FontSize" Value="24" />
+            <Setter Property="LineHeight" Value="28" />
+        </Style>
+        <Style x:Key="ChartCardStyle" TargetType="Border" BasedOn="{StaticResource CardStyle}">
+            <Setter Property="Padding" Value="12,10" />
+        </Style>
+
+        <DataTemplate x:Key="TicketRowTemplate" x:DataType="local:TicketRow">
+            <Grid Padding="0,8" ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="64" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="128" />
+                    <ColumnDefinition Width="80" />
+                    <ColumnDefinition Width="132" />
+                    <ColumnDefinition Width="40" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="{x:Bind IdText}" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon
+                            FontSize="12"
+                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                            Glyph="&#xE7BA;"
+                            ToolTipService.ToolTip="SLA violated"
+                            Visibility="{x:Bind SlaVisibility}" />
+                        <TextBlock
+                            MaxLines="1"
+                            Style="{StaticResource BodyStrongTextBlockStyle}"
+                            Text="{x:Bind Title}"
+                            TextTrimming="CharacterEllipsis"
+                            ToolTipService.ToolTip="{x:Bind Title}" />
+                    </StackPanel>
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        MaxLines="1"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="{x:Bind Subtitle}"
+                        TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
+                    <Ellipse Width="8" Height="8" Fill="{x:Bind StatusBrush}" />
+                    <TextBlock Style="{StaticResource BodyTextBlockStyle}" Text="{x:Bind Status}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <TextBlock
+                    Grid.Column="3"
+                    VerticalAlignment="Center"
+                    Foreground="{x:Bind PriorityForeground}"
+                    Style="{StaticResource BodyTextBlockStyle}"
+                    Text="{x:Bind Priority}" />
+                <TextBlock
+                    Grid.Column="4"
+                    VerticalAlignment="Center"
+                    Foreground="{x:Bind ResponsibleForeground}"
+                    Style="{StaticResource BodyTextBlockStyle}"
+                    Text="{x:Bind Responsible}"
+                    TextTrimming="CharacterEllipsis" />
+                <TextBlock
+                    Grid.Column="5"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource BodyTextBlockStyle}"
+                    Text="{x:Bind Age}" />
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="BoardCardTemplate" x:DataType="local:TicketRow">
+            <Border
+                Margin="0,0,0,8"
+                Padding="12,10"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="{ThemeResource ControlCornerRadius}">
+                <StackPanel Spacing="4">
+                    <Grid>
+                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind IdText}" />
+                        <TextBlock HorizontalAlignment="Right" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Age}" />
+                    </Grid>
+                    <TextBlock MaxLines="2" Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon FontSize="12" Foreground="{ThemeResource SystemFillColorCriticalBrush}" Glyph="&#xE7BA;" Visibility="{x:Bind SlaVisibility}" />
+                        <TextBlock Foreground="{x:Bind PriorityForeground}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Priority}" />
+                        <TextBlock Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="·" />
+                        <TextBlock Foreground="{x:Bind ResponsibleForeground}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Responsible}" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </Page.Resources>
+
+    <Grid Padding="20,16,20,20" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Heading and filters, one row above the charts. -->
+        <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Tickets" />
+                <TextBlock
+                    x:Name="ShowingText"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource BodyTextBlockStyle}" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                <ComboBox x:Name="QueueBox" MinWidth="168" AutomationProperties.Name="Queue" SelectedIndex="0" SelectionChanged="Filter_Changed">
+                    <x:String>All my groups</x:String>
+                    <x:String>Assigned to me</x:String>
+                    <x:String>Unassigned</x:String>
+                </ComboBox>
+                <ComboBox x:Name="StateBox" MinWidth="128" AutomationProperties.Name="State" SelectedIndex="0" SelectionChanged="Filter_Changed">
+                    <x:String>Active</x:String>
+                    <x:String>All</x:String>
+                </ComboBox>
+            </StackPanel>
+        </Grid>
+
+        <!-- Stats strip. Every figure follows the current filters and search. -->
+        <Grid Grid.Row="1" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="1.25*" MinWidth="200" />
+                <ColumnDefinition Width="*" MinWidth="150" />
+                <ColumnDefinition Width="*" MinWidth="150" />
+                <ColumnDefinition Width="*" MinWidth="170" />
+                <ColumnDefinition Width="*" MinWidth="170" />
+            </Grid.ColumnDefinitions>
+
+            <Grid ColumnSpacing="8" RowSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Border Style="{StaticResource StatTileStyle}">
+                    <StackPanel>
+                        <TextBlock x:Name="ShowingValue" Style="{StaticResource StatValueStyle}" />
+                        <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Showing" />
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Style="{StaticResource StatTileStyle}">
+                    <StackPanel>
+                        <TextBlock x:Name="OpenValue" Style="{StaticResource StatValueStyle}" />
+                        <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Open" />
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="2" Style="{StaticResource StatTileStyle}">
+                    <StackPanel>
+                        <TextBlock x:Name="OnHoldValue" Style="{StaticResource StatValueStyle}" />
+                        <TextBlock Style="{StaticResource FieldLabelStyle}" Text="On Hold" />
+                    </StackPanel>
+                </Border>
+                <Border Grid.Row="1" Style="{StaticResource StatTileStyle}">
+                    <StackPanel>
+                        <TextBlock x:Name="UnassignedValue" Style="{StaticResource StatValueStyle}" />
+                        <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Unassigned" />
+                    </StackPanel>
+                </Border>
+                <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource StatTileStyle}">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock x:Name="SlaValue" Style="{StaticResource StatValueStyle}" />
+                            <FontIcon
+                                VerticalAlignment="Center"
+                                FontSize="14"
+                                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                Glyph="&#xE7BA;" />
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource FieldLabelStyle}" Text="SLA Violated" />
+                    </StackPanel>
+                </Border>
+                <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource StatTileStyle}">
+                    <StackPanel>
+                        <TextBlock x:Name="AgingValue" Style="{StaticResource StatValueStyle}" />
+                        <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Over 30 days" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Border Grid.Column="1" Style="{StaticResource ChartCardStyle}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource CardHeaderTextStyle}" Text="By Status" />
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid Width="104" Height="104">
+                            <Canvas x:Name="DonutCanvas" Width="104" Height="104" />
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock x:Name="DonutTotal" HorizontalAlignment="Center" Style="{StaticResource BodyStrongTextBlockStyle}" FontSize="18" />
+                                <TextBlock HorizontalAlignment="Center" Style="{StaticResource FieldLabelStyle}" Text="tickets" />
+                            </StackPanel>
+                        </Grid>
+                        <StackPanel x:Name="StatusLegend" Grid.Column="1" VerticalAlignment="Center" Spacing="3" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="2" Style="{StaticResource ChartCardStyle}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource CardHeaderTextStyle}" Text="By Priority" />
+                    <StackPanel x:Name="PriorityBars" Spacing="3" />
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="3" Style="{StaticResource ChartCardStyle}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource CardHeaderTextStyle}" Text="By Age" />
+                    <StackPanel x:Name="AgeBars" Spacing="3" />
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="4" Style="{StaticResource ChartCardStyle}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource CardHeaderTextStyle}" Text="By Responsible" />
+                    <StackPanel x:Name="ResponsibleBars" Spacing="3" />
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="5" Style="{StaticResource ChartCardStyle}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource CardHeaderTextStyle}" Text="By Group" />
+                    <StackPanel x:Name="GroupBars" Spacing="3" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- List (flexible) and detail (stable width). -->
+        <Grid Grid.Row="2" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="540" />
+            </Grid.ColumnDefinitions>
+
+            <Border x:Name="ListCard" Padding="0" Style="{StaticResource CardStyle}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <!-- Column header; widths match TicketRowTemplate plus the ListViewItem's padding. -->
+                    <Grid
+                        Padding="16,10,16,8"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="0,0,0,1"
+                        ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="64" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="128" />
+                            <ColumnDefinition Width="80" />
+                            <ColumnDefinition Width="132" />
+                            <ColumnDefinition Width="40" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Style="{StaticResource CardHeaderTextStyle}" Margin="0" Text="ID" />
+                        <TextBlock Grid.Column="1" Style="{StaticResource CardHeaderTextStyle}" Margin="0" Text="Title" />
+                        <TextBlock Grid.Column="2" Style="{StaticResource CardHeaderTextStyle}" Margin="0" Text="Status" />
+                        <TextBlock Grid.Column="3" Style="{StaticResource CardHeaderTextStyle}" Margin="0" Text="Priority" />
+                        <TextBlock Grid.Column="4" Style="{StaticResource CardHeaderTextStyle}" Margin="0" Text="Responsible" />
+                        <TextBlock Grid.Column="5" HorizontalAlignment="Right" Style="{StaticResource CardHeaderTextStyle}" Margin="0" Text="Age" />
+                    </Grid>
+                    <ListView
+                        x:Name="TicketList"
+                        Grid.Row="1"
+                        Padding="0,4"
+                        AutomationProperties.Name="Tickets"
+                        ItemTemplate="{StaticResource TicketRowTemplate}"
+                        ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                        ScrollViewer.HorizontalScrollMode="Disabled"
+                        SelectionChanged="TicketList_SelectionChanged"
+                        SelectionMode="Single">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Padding" Value="12,0" />
+                                <Setter Property="Margin" Value="4,0" />
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                    </ListView>
+                </Grid>
+            </Border>
+
+            <Grid x:Name="BoardGrid" ColumnSpacing="12" Visibility="Collapsed" />
+
+            <!-- Detail pane. -->
+            <Border Grid.Column="1" Padding="0" Style="{StaticResource CardStyle}">
+                <ScrollViewer HorizontalScrollMode="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Padding="20,16,20,20" Spacing="16">
+                        <StackPanel Spacing="4">
+                            <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Selected.Eyebrow, Mode=OneWay}" />
+                            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="{x:Bind Selected.Title, Mode=OneWay}" TextWrapping="Wrap" />
+                        </StackPanel>
+
+                        <!-- Compact actions. -->
+                        <CommandBar HorizontalAlignment="Left" Margin="-8,-8,0,-4" DefaultLabelPosition="Right" IsDynamicOverflowEnabled="True">
+                            <AppBarButton Label="Reply">
+                                <AppBarButton.Icon><FontIcon Glyph="&#xE97A;" /></AppBarButton.Icon>
+                            </AppBarButton>
+                            <AppBarButton Label="Assign">
+                                <AppBarButton.Icon><FontIcon Glyph="&#xE8FA;" /></AppBarButton.Icon>
+                            </AppBarButton>
+                            <AppBarButton Label="Status">
+                                <AppBarButton.Icon><FontIcon Glyph="&#xE8AB;" /></AppBarButton.Icon>
+                            </AppBarButton>
+                            <AppBarButton Label="Edit">
+                                <AppBarButton.Icon><FontIcon Glyph="&#xE70F;" /></AppBarButton.Icon>
+                            </AppBarButton>
+                            <CommandBar.SecondaryCommands>
+                                <AppBarButton Label="Open in browser">
+                                    <AppBarButton.Icon><FontIcon Glyph="&#xE774;" /></AppBarButton.Icon>
+                                </AppBarButton>
+                                <AppBarButton Label="Copy link">
+                                    <AppBarButton.Icon><FontIcon Glyph="&#xE71B;" /></AppBarButton.Icon>
+                                </AppBarButton>
+                                <AppBarButton Label="Add task">
+                                    <AppBarButton.Icon><FontIcon Glyph="&#xE9D5;" /></AppBarButton.Icon>
+                                </AppBarButton>
+                            </CommandBar.SecondaryCommands>
+                        </CommandBar>
+
+                        <!-- Two-column field grid. -->
+                        <Grid ColumnSpacing="24" RowSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <StackPanel>
+                                <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Status" />
+                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,0">
+                                    <Ellipse Width="8" Height="8" Fill="{x:Bind Selected.StatusBrush, Mode=OneWay}" />
+                                    <TextBlock Style="{StaticResource BodyTextBlockStyle}" Text="{x:Bind Selected.Status, Mode=OneWay}" />
+                                </StackPanel>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Priority" />
+                                <TextBlock Style="{StaticResource FieldValueStyle}" Text="{x:Bind Selected.Priority, Mode=OneWay}" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="1">
+                                <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Responsible" />
+                                <TextBlock Style="{StaticResource FieldValueStyle}" Foreground="{x:Bind Selected.ResponsibleForeground, Mode=OneWay}" Text="{x:Bind Selected.Responsible, Mode=OneWay}" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="1" Grid.Column="1">
+                                <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Group" />
+                                <TextBlock Style="{StaticResource FieldValueStyle}" Text="{x:Bind Selected.Group, Mode=OneWay}" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="2">
+                                <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Requestor" />
+                                <TextBlock Style="{StaticResource FieldValueStyle}" Text="{x:Bind Selected.Requestor, Mode=OneWay}" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="2" Grid.Column="1">
+                                <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Service" />
+                                <TextBlock Style="{StaticResource FieldValueStyle}" Text="{x:Bind Selected.Service, Mode=OneWay}" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="3">
+                                <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Created" />
+                                <TextBlock Style="{StaticResource FieldValueStyle}" Text="{x:Bind Selected.Created, Mode=OneWay}" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="3" Grid.Column="1">
+                                <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Modified" />
+                                <TextBlock Style="{StaticResource FieldValueStyle}" Text="{x:Bind Selected.Modified, Mode=OneWay}" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="4">
+                                <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Resolve by" />
+                                <TextBlock Style="{StaticResource FieldValueStyle}" Text="{x:Bind Selected.ResolveBy, Mode=OneWay}" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="4" Grid.Column="1">
+                                <TextBlock Style="{StaticResource FieldLabelStyle}" Text="SLA" />
+                                <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2,0,0">
+                                    <FontIcon FontSize="12" Foreground="{ThemeResource SystemFillColorCriticalBrush}" Glyph="&#xE7BA;" Visibility="{x:Bind Selected.SlaVisibility, Mode=OneWay}" />
+                                    <TextBlock Style="{StaticResource BodyTextBlockStyle}" Text="{x:Bind Selected.Sla, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Description in a card. -->
+                        <Border
+                            Padding="14,12"
+                            Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="{ThemeResource ControlCornerRadius}">
+                            <StackPanel Spacing="6">
+                                <TextBlock Style="{StaticResource CardHeaderTextStyle}" Margin="0" Text="Description" />
+                                <TextBlock IsTextSelectionEnabled="True" Style="{StaticResource BodyTextBlockStyle}" Text="{x:Bind Selected.Description, Mode=OneWay}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Collapsible sections. -->
+                        <StackPanel Spacing="4">
+                            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="People" IsExpanded="True">
+                                <ItemsRepeater ItemsSource="{x:Bind Selected.People, Mode=OneWay}">
+                                    <ItemsRepeater.Layout>
+                                        <StackLayout Spacing="10" />
+                                    </ItemsRepeater.Layout>
+                                    <ItemsRepeater.ItemTemplate>
+                                        <DataTemplate x:DataType="local:PersonLine">
+                                            <Grid ColumnSpacing="12">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <PersonPicture Width="28" Height="28" Initials="{x:Bind Initials}" />
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Style="{StaticResource BodyTextBlockStyle}" Text="{x:Bind Name}" />
+                                                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Detail}" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="2" VerticalAlignment="Center" Style="{StaticResource FieldLabelStyle}" Text="{x:Bind Role}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsRepeater.ItemTemplate>
+                                </ItemsRepeater>
+                            </Expander>
+                            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="Workflow">
+                                <StackPanel Spacing="8">
+                                    <Grid>
+                                        <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Incident triage" />
+                                        <TextBlock HorizontalAlignment="Right" Style="{StaticResource FieldLabelStyle}" Text="Step 2 of 3" />
+                                    </Grid>
+                                    <ProgressBar Maximum="3" Value="2" />
+                                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="Diagnose · waiting on the responsible technician" />
+                                </StackPanel>
+                            </Expander>
+                            <Expander x:Name="TasksExpander" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Header="Tasks">
+                                <ItemsRepeater x:Name="TaskRepeater">
+                                    <ItemsRepeater.Layout>
+                                        <StackLayout Spacing="2" />
+                                    </ItemsRepeater.Layout>
+                                    <ItemsRepeater.ItemTemplate>
+                                        <DataTemplate x:DataType="data:SampleTask">
+                                            <Grid ColumnSpacing="8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <CheckBox Content="{x:Bind Title}" IsChecked="{x:Bind Done}" />
+                                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource FieldLabelStyle}" Text="{x:Bind Due}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsRepeater.ItemTemplate>
+                                </ItemsRepeater>
+                            </Expander>
+                        </StackPanel>
+
+                        <!-- Activity feed. -->
+                        <StackPanel Spacing="8">
+                            <Grid>
+                                <TextBlock VerticalAlignment="Center" Style="{StaticResource BodyStrongTextBlockStyle}" Text="Activity" />
+                                <SelectorBar x:Name="FeedFilter" HorizontalAlignment="Right" SelectionChanged="FeedFilter_SelectionChanged">
+                                    <SelectorBarItem IsSelected="True" Tag="Comment" Text="Comments" />
+                                    <SelectorBarItem Tag="Edit" Text="Edits" />
+                                    <SelectorBarItem Tag="Status" Text="Status" />
+                                    <SelectorBarItem Tag="All" Text="All" />
+                                </SelectorBar>
+                            </Grid>
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox AutomationProperties.Name="Comment" PlaceholderText="Add a comment" />
+                                <Button Grid.Column="1" AutomationProperties.Name="Send comment" Style="{StaticResource AccentButtonStyle}">
+                                    <FontIcon FontSize="14" Glyph="&#xE724;" />
+                                </Button>
+                            </Grid>
+                            <ItemsRepeater x:Name="FeedRepeater">
+                                <ItemsRepeater.Layout>
+                                    <StackLayout Spacing="8" />
+                                </ItemsRepeater.Layout>
+                                <ItemsRepeater.ItemTemplate>
+                                    <DataTemplate x:DataType="local:FeedItem">
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border
+                                                Width="28"
+                                                Height="28"
+                                                VerticalAlignment="Top"
+                                                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                                CornerRadius="14">
+                                                <FontIcon FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="{x:Bind Glyph}" />
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Spacing="2">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Author}" />
+                                                    <TextBlock VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind When}" />
+                                                    <Border
+                                                        Padding="6,0"
+                                                        VerticalAlignment="Center"
+                                                        Background="{ThemeResource SystemFillColorCautionBackgroundBrush}"
+                                                        CornerRadius="4"
+                                                        Visibility="{x:Bind PrivateVisibility}">
+                                                        <TextBlock Style="{StaticResource CaptionTextBlockStyle}" Text="Private" />
+                                                    </Border>
+                                                </StackPanel>
+                                                <Border
+                                                    Padding="12,8"
+                                                    Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="{ThemeResource ControlCornerRadius}"
+                                                    Visibility="{x:Bind CommentVisibility}">
+                                                    <TextBlock IsTextSelectionEnabled="True" Style="{StaticResource BodyTextBlockStyle}" Text="{x:Bind Body}" TextWrapping="Wrap" />
+                                                </Border>
+                                                <TextBlock
+                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                    Style="{StaticResource BodyTextBlockStyle}"
+                                                    Text="{x:Bind Body}"
+                                                    TextWrapping="Wrap"
+                                                    Visibility="{x:Bind EventVisibility}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsRepeater.ItemTemplate>
+                            </ItemsRepeater>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+    </Grid>
+</Page>
