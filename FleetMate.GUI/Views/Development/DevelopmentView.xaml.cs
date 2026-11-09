@@ -33,8 +33,6 @@ public partial class DevelopmentView : UserControl
     private string? _repository = UserPreferences.PullsRepository;
     private bool _pullsOldestFirst = UserPreferences.PullsOldestFirst;
     private bool _pullsGrouped = UserPreferences.PullsGroupedByRepository;
-    private bool _loading;
-    private bool _inboxHooked;
     private GitHubNotification? _selectedNotification;
 
     public DevelopmentView()
@@ -50,105 +48,34 @@ public partial class DevelopmentView : UserControl
         AgentContextMenu.Attach(CommitsList);
         AgentContextMenu.Attach(PipelinesList);
         Loaded += OnLoaded;
-        DetailView.StateChanged += async (_, _) => await RefreshAsync();
+        DetailView.StateChanged += async (_, _) => await LoadPullRequestsAsync();
         RunView.RunChanged += async (_, _) => await LoadRunsAsync();
-        StartTimers();
+        Unloaded += OnFreshnessUnloaded;
         HookLinks();
     }
 
     private static App? AppInstance => Application.Current as App;
 
-    private async void OnLoaded(object sender, RoutedEventArgs e)
+    private void OnLoaded(object sender, RoutedEventArgs e)
     {
         if (AppInstance is not { } app) return;
-
-        if (!_inboxHooked)
-        {
-            _inboxHooked = true;
-            app.Inbox.Changed += (_, _) => Dispatcher.Invoke(RenderInbox);
-        }
-
+        HookFreshness(app);
         RenderInbox();
-
-        if (app.DevelopmentPullRequests is { } cached)
-        {
-            RenderPullRequests(cached);
-        }
-        else
-        {
-            await LoadPullRequestsAsync();
-        }
-
-        // The overview's pipeline tiles read the run summary, so it loads with
-        // the tab rather than waiting for the Pipelines segment to be opened.
-        if (app.DevelopmentRuns is null) _ = LoadRunsAsync();
+        if (app.DevelopmentPullRequests is { } pulls) RenderPullRequests(pulls);
+        RenderCommits();
+        RenderRuns();
+        UpdateFreshnessStatus();
     }
 
-    /// <summary>
-    /// Refetch everything already loaded — the page toolbar's Refresh, the
-    /// 15-minute cycle, and after a PR action.
-    /// </summary>
-    public async Task RefreshAsync()
+    /// <summary>Explicit Refresh revalidates the current segment through the shared session worker.</summary>
+    public Task RefreshAsync() => RefreshAreaAsync(CurrentSegment switch
     {
-        if (AppInstance is not { } app) return;
-        _ = app.Inbox.RefreshAsync();
+        DevelopmentSegment.Commits => DevelopmentRefreshArea.Commits,
+        DevelopmentSegment.Pipelines => DevelopmentRefreshArea.Pipelines,
+        _ => DevelopmentRefreshArea.PullRequests,
+    });
 
-        var work = new List<Task> { LoadPullRequestsAsync() };
-        if (app.DevelopmentCommits != null) work.Add(LoadCommitsAsync());
-        if (app.DevelopmentRuns != null) work.Add(LoadRunsAsync());
-        await Task.WhenAll(work);
-    }
-
-    // MARK: - Pull requests
-
-    private async Task LoadPullRequestsAsync()
-    {
-        if (_loading || AppInstance is not { } app) return;
-        _loading = true;
-        using var tracking = app.TrackCacheLoad("PullRequests");
-        LoadingRing.Visibility = Visibility.Visible;
-
-        try
-        {
-            var config = app.Config;
-            var tasks = new List<Task<PullRequestQueue>>();
-
-            if (!string.IsNullOrWhiteSpace(config.AzureDevOps?.Organization))
-            {
-                tasks.Add(Task.Run(async () =>
-                {
-                    using var devops = new AzureDevOpsService(config.AzureDevOps!);
-                    return await devops.GetDevelopmentPullRequestsAsync();
-                }));
-            }
-
-            // GitHub always runs: the gh CLI token needs no config, and a
-            // signed-out GitHub comes back as a soft error, not an exception.
-            var gh = config.GitHubProviderOrDefault();
-            var owners = new[] { gh.Organization, gh.Owner }.Where(o => !string.IsNullOrWhiteSpace(o)).Cast<string>();
-            tasks.Add(Task.Run(async () =>
-            {
-                using var github = new GitHubPullRequestService(gh);
-                return await github.GetDevelopmentPullRequestsAsync(owners);
-            }));
-
-            var queue = new PullRequestQueue();
-            foreach (var result in await Task.WhenAll(tasks)) queue.Merge(result);
-
-            app.DevelopmentPullRequests = queue;
-            RenderPullRequests(queue);
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "[development] Failed to load pull requests");
-            PullRequestCount.Text = $"Could not load pull requests — {ex.Message}";
-        }
-        finally
-        {
-            _loading = false;
-            LoadingRing.Visibility = Visibility.Collapsed;
-        }
-    }
+    private Task LoadPullRequestsAsync() => RefreshAreaAsync(DevelopmentRefreshArea.PullRequests);
 
     private void RenderPullRequests(PullRequestQueue queue)
     {
@@ -191,8 +118,9 @@ public partial class DevelopmentView : UserControl
             .Select(e => $"{e.Source.ShortName()} unavailable");
         var errorText = string.Join(" · ", errors);
 
-        PullRequestCount.Text = $"{rows.Count} open across {rows.Select(r => r.RepositoryKey).Distinct().Count()} repositories"
-                                + (errorText.Length > 0 ? $" · {errorText}" : "");
+        _pullCountSummary = $"{rows.Count} open across {rows.Select(r => r.RepositoryKey).Distinct().Count()} repositories"
+                            + (errorText.Length > 0 ? $" · {errorText}" : "");
+        UpdateFreshnessStatus();
 
         if (PullRequestsSegment.IsChecked == true)
         {
@@ -439,7 +367,7 @@ public partial class DevelopmentView : UserControl
         : SkillsSegment.IsChecked == true ? DevelopmentSegment.Skills
         : DevelopmentSegment.Pulls;
 
-    private async void OnSegmentChanged(object sender, RoutedEventArgs e)
+    private void OnSegmentChanged(object sender, RoutedEventArgs e)
     {
         if (!IsInitialized) return;
 
@@ -464,17 +392,12 @@ public partial class DevelopmentView : UserControl
             pulls ? "Pulls" : commits ? "Commits" : pipelines ? "Pipelines" : skills ? "Skills" : null);
 
         if (pulls) Rerender();
-        else if (commits)
-        {
-            if (AppInstance?.DevelopmentCommits is null) await LoadCommitsAsync();
-            else RenderCommits();
-        }
-        else if (pipelines)
-        {
-            if (AppInstance?.DevelopmentRuns is null) await LoadRunsAsync();
-            else RenderRuns();
-        }
+        else if (commits) RenderCommits();
+        else if (pipelines) RenderRuns();
         else if (skills) RenderSkills();
+        if (!pipelines) RunView.CancelPendingLog();
+        UpdateFreshnessContext();
+
     }
 
     // MARK: - Inbox

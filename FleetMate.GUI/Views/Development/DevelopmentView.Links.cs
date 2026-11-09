@@ -15,7 +15,7 @@ namespace FleetMate.GUI.Views.Development;
 /// </summary>
 public partial class DevelopmentView
 {
-    private bool _linksHooked;
+    private App? _linksApp;
 
     /// <summary>
     /// An Azure DevOps link that failed before Azure DevOps sign-in finished,
@@ -28,15 +28,25 @@ public partial class DevelopmentView
     {
         Loaded += async (_, _) =>
         {
-            if (!_linksHooked && AppInstance is { } app)
+            if (_linksApp == null && AppInstance is { } app)
             {
-                _linksHooked = true;
-                app.DevelopmentLinkRequested += async (_, _) => { if (IsLoaded) await TakePendingLinkAsync(); };
-                app.DevOpsSignedIn += async () => await OnDevOpsSignedInAsync();
+                _linksApp = app;
+                app.DevelopmentLinkRequested += OnPendingDevelopmentLink;
+                app.DevOpsSignedIn += OnLinkSignIn;
             }
             await TakePendingLinkAsync();
         };
+        Unloaded += (_, _) =>
+        {
+            if (_linksApp == null) return;
+            _linksApp.DevelopmentLinkRequested -= OnPendingDevelopmentLink;
+            _linksApp.DevOpsSignedIn -= OnLinkSignIn;
+            _linksApp = null;
+        };
     }
+
+    private async void OnPendingDevelopmentLink(object? sender, EventArgs e) { if (IsLoaded) await TakePendingLinkAsync(); }
+    private async void OnLinkSignIn() { if (IsLoaded) await OnDevOpsSignedInAsync(); }
 
     private async Task TakePendingLinkAsync()
     {
@@ -59,11 +69,10 @@ public partial class DevelopmentView
     private async Task OnDevOpsSignedInAsync()
     {
         if (AppInstance is not { } app) return;
-        var reloads = new List<Task>();
-        if (app.DevelopmentPullRequests != null) reloads.Add(LoadPullRequestsAsync());
-        if (app.DevelopmentCommits != null) reloads.Add(LoadCommitsAsync());
-        if (app.DevelopmentRuns != null) reloads.Add(LoadRunsAsync());
-        await Task.WhenAll(reloads);
+        UpdateFreshnessContext();
+        if (CurrentSegment == FleetMate.GUI.Views.Shared.Widgets.DevelopmentSegment.Pulls && app.DevelopmentPullRequests != null) await LoadPullRequestsAsync();
+        else if (CurrentSegment == FleetMate.GUI.Views.Shared.Widgets.DevelopmentSegment.Commits && app.DevelopmentCommits != null) await LoadCommitsAsync();
+        else if (app.DevelopmentRuns != null) await LoadRunsAsync();
 
         if (_linkAwaitingSignIn is not { } link) return;
         _linkAwaitingSignIn = null;
@@ -270,6 +279,7 @@ public partial class DevelopmentView
             await LinkFailedAsync(app, link, startedSignedIn);
             return;
         }
+        UpdateFreshnessContext(run);
         ShowDetail(RunView);
         await RunView.ShowAsync(run);
     }

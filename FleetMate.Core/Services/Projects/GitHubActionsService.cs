@@ -55,14 +55,40 @@ public sealed class GitHubActionsService : IDisposable
         return runs;
     }
 
+    /// <summary>One conditional metadata request, not a commit or workflow fanout.</summary>
+    public async Task<List<(string Owner, string Repository)>> GetPipelineRepositoriesAsync(CancellationToken ct = default)
+    {
+        var raw = await _client.ExecuteRestAsync("/user/repos?sort=pushed&direction=desc&per_page=100&affiliation=owner,collaborator,organization_member", ct: ct);
+        using var json = JsonDocument.Parse(raw);
+        if (json.RootElement.ValueKind != JsonValueKind.Array) throw new InvalidDataException("GitHub repository directory was not a list.");
+        return json.RootElement.EnumerateArray().Select(repo =>
+            (Owner: repo.TryGetProperty("owner", out var owner) ? Str(owner, "login") : null, Repository: Str(repo, "name")))
+            .Where(repo => !string.IsNullOrEmpty(repo.Owner) && !string.IsNullOrEmpty(repo.Repository))
+            .Select(repo => (repo.Owner!, repo.Repository!)).Distinct().Take(100).ToList();
+    }
+
+    public async Task<List<PipelineRun>> GetRepositoryPipelineRunsAsync(string owner, string repo, DateTime since, CancellationToken ct = default)
+    {
+        var day = since.ToUniversalTime().ToString("yyyy-MM-dd");
+        var raw = await _client.ExecuteRestAsync($"{RepoPath(owner, repo)}/actions/runs?per_page=15&created=%3E%3D{day}", ct: ct);
+        using var json = JsonDocument.Parse(raw);
+        if (!json.RootElement.TryGetProperty("workflow_runs", out var runs) || runs.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException("GitHub pipeline summary was not a list.");
+        return ParseRuns(json.RootElement, owner, repo);
+    }
+
+    public async Task<PipelineRun> ReadPipelineRunAsync(string owner, string repo, long runId, CancellationToken ct = default)
+    {
+        var raw = await _client.ExecuteRestAsync($"{RepoPath(owner, repo)}/actions/runs/{runId}", ct: ct);
+        return ParseRunResponse(raw, owner, repo);
+    }
+
     /// <summary>One workflow run by id, for a fleetmate: link to a run not already loaded.</summary>
     public async Task<PipelineRun?> GetPipelineRunAsync(string owner, string repo, long runId, CancellationToken ct = default)
     {
         try
         {
-            var raw = await _client.ExecuteRestAsync($"{RepoPath(owner, repo)}/actions/runs/{runId}", ct: ct);
-            using var doc = JsonDocument.Parse($"{{\"workflow_runs\":[{raw}]}}");
-            return ParseRuns(doc.RootElement, owner, repo).FirstOrDefault();
+            return await ReadPipelineRunAsync(owner, repo, runId, ct);
         }
         catch (Exception ex)
         {
@@ -71,12 +97,23 @@ public sealed class GitHubActionsService : IDisposable
         }
     }
 
+    internal static PipelineRun ParseRunResponse(byte[] raw, string owner, string repository)
+    {
+        using var json = JsonDocument.Parse(raw);
+        return ParseRuns(json.RootElement, owner, repository).SingleOrDefault()
+            ?? throw new InvalidDataException("GitHub run response had no run.");
+    }
+
     internal static List<PipelineRun> ParseRuns(JsonElement root, string owner, string repository)
     {
         var result = new List<PipelineRun>();
-        if (!root.TryGetProperty("workflow_runs", out var runs) || runs.ValueKind != JsonValueKind.Array) return result;
+        if (root.ValueKind != JsonValueKind.Object) return result;
+        IEnumerable<JsonElement> runs;
+        if (root.TryGetProperty("workflow_runs", out var list) && list.ValueKind == JsonValueKind.Array) runs = list.EnumerateArray();
+        else if (root.TryGetProperty("id", out _)) runs = new[] { root };
+        else return result;
 
-        foreach (var run in runs.EnumerateArray())
+        foreach (var run in runs)
         {
             if (!run.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.Number) continue;
 

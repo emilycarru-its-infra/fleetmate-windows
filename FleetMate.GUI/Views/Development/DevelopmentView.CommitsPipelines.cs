@@ -22,95 +22,9 @@ public partial class DevelopmentView
     private PipelineStatusFilter _runsStatus = PipelineStatusFilter.All;
     private string? _commitsRepository;
     private string? _runsRepository;
-    private bool _loadingCommits;
-    private bool _loadingRuns;
-    private DispatcherTimer? _cycleTimer;
-    private DispatcherTimer? _activeRunsTimer;
-
-    // MARK: - Refresh cadence
-
-    /// <summary>
-    /// Everything loaded refreshes every 15 minutes — 12 refreshes an hour of a
-    /// dozen GraphQL searches is what blows GitHub's hourly budget. While
-    /// Pipelines is showing and a run is still going, runs also refresh every
-    /// 5 minutes so its status moves.
-    /// </summary>
-    private void StartTimers()
-    {
-        _cycleTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(15) };
-        _cycleTimer.Tick += async (_, _) => { if (IsVisible) await RefreshAsync(); };
-        _cycleTimer.Start();
-
-        _activeRunsTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(5) };
-        _activeRunsTimer.Tick += async (_, _) =>
-        {
-            if (IsVisible && PipelinesSegment.IsChecked == true
-                && AppInstance?.DevelopmentRuns?.Any(r => r.Status.IsActive()) == true)
-            {
-                await LoadRunsAsync();
-            }
-        };
-        _activeRunsTimer.Start();
-    }
-
-    // MARK: - Commits
-
-    private async Task LoadCommitsAsync()
-    {
-        if (_loadingCommits || AppInstance is not { } app) return;
-        _loadingCommits = true;
-        using var tracking = app.TrackCacheLoad("Commits");
-        LoadingRing.Visibility = Visibility.Visible;
-
-        try
-        {
-            var since = DateTime.UtcNow - CommitsWindow;
-            var config = app.Config;
-            var tasks = new List<Task<List<RepositoryCommits>>>();
-
-            if (!string.IsNullOrWhiteSpace(config.AzureDevOps?.Organization))
-            {
-                tasks.Add(Task.Run(async () =>
-                {
-                    using var devops = new AzureDevOpsService(config.AzureDevOps!);
-                    return await devops.GetRecentCommitsAsync(since);
-                }));
-            }
-
-            tasks.Add(Task.Run(async () =>
-            {
-                var gh = config.GitHubProviderOrDefault();
-                using var github = new GitHubPullRequestService(gh);
-                var owners = new List<string?> { gh.Organization, gh.Owner };
-                try
-                {
-                    var (login, orgs) = await github.GetViewerAsync();
-                    owners.Add(login);
-                    owners.AddRange(orgs);
-                }
-                catch (Exception ex)
-                {
-                    Log.Debug(ex, "[development] viewer lookup failed for commits");
-                }
-
-                return await github.GetRecentCommitsAsync(owners.Where(o => !string.IsNullOrWhiteSpace(o)).Cast<string>(), since);
-            }));
-
-            var results = await Task.WhenAll(tasks);
-            app.DevelopmentCommits = results.SelectMany(r => r).OrderByDescending(r => r.LatestDate).ToList();
-            RenderCommits();
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "[development] Failed to load commits");
-            CommitsCount.Text = $"Could not load commits — {ex.Message}";
-        }
-        finally
-        {
-            _loadingCommits = false;
-            LoadingRing.Visibility = _loading || _loadingRuns ? Visibility.Visible : Visibility.Collapsed;
-        }
-    }
+    private bool _renderingRuns;
+    private Task LoadCommitsAsync() => RefreshAreaAsync(DevelopmentRefreshArea.Commits);
+    private Task LoadRunsAsync() => RefreshAreaAsync(DevelopmentRefreshArea.Pipelines);
 
     private void RenderCommits()
     {
@@ -121,7 +35,8 @@ public partial class DevelopmentView
 
         var repos = CommitsAndPipelinesFilter.Commits(all, _commitsSource, CommitsSearchBox.Text, _commitsRepository);
         CommitsList.ItemsSource = repos.Select(r => new RepositoryCommitsViewModel { Repository = r }).ToList();
-        CommitsCount.Text = $"{repos.Sum(r => r.Commits.Count)} commits across {repos.Count} repositories · last 14 days";
+        _commitCountSummary = $"{repos.Sum(r => r.Commits.Count)} commits across {repos.Count} repositories · last 14 days";
+        UpdateFreshnessStatus();
 
         if (CommitsSegment.IsChecked == true)
         {
@@ -170,77 +85,31 @@ public partial class DevelopmentView
 
     // MARK: - Pipelines
 
-    private async Task LoadRunsAsync()
-    {
-        if (_loadingRuns || AppInstance is not { } app) return;
-        _loadingRuns = true;
-        LoadingRing.Visibility = Visibility.Visible;
-        using var tracking = app.TrackCacheLoad("Runs");
-
-        try
-        {
-            var since = DateTime.UtcNow - RunsWindow;
-            var config = app.Config;
-            var tasks = new List<Task<List<PipelineRun>>>();
-
-            if (!string.IsNullOrWhiteSpace(config.AzureDevOps?.Organization))
-            {
-                tasks.Add(Task.Run(async () =>
-                {
-                    using var devops = new AzureDevOpsService(config.AzureDevOps!);
-                    return await devops.GetRecentPipelineRunsAsync(since);
-                }));
-            }
-
-            // GitHub has no cross-repository run list: the repositories with
-            // recent commits are the scope, so Commits loads first if needed.
-            if (app.DevelopmentCommits is null) await LoadCommitsAsync();
-            var repos = (app.DevelopmentCommits ?? new())
-                .Where(r => r.Source == PullRequestSource.GitHub)
-                .Select(r => (r.Container, r.Repository))
-                .ToList();
-
-            if (repos.Count > 0)
-            {
-                tasks.Add(Task.Run(async () =>
-                {
-                    using var actions = new GitHubActionsService(config.GitHubProviderOrDefault());
-                    return await actions.GetRecentPipelineRunsAsync(repos, since);
-                }));
-            }
-
-            var results = await Task.WhenAll(tasks);
-            app.DevelopmentRuns = results.SelectMany(r => r).OrderByDescending(r => r.SortDate).ToList();
-            RenderRuns();
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "[development] Failed to load pipeline runs");
-            PipelinesCount.Text = $"Could not load pipeline runs — {ex.Message}";
-        }
-        finally
-        {
-            _loadingRuns = false;
-            LoadingRing.Visibility = _loading || _loadingCommits ? Visibility.Visible : Visibility.Collapsed;
-        }
-    }
-
     private void RenderRuns()
     {
         if (AppInstance?.DevelopmentRuns is not { } all) return;
 
-        var selectedId = (PipelinesList.SelectedItem as PipelineRunRowViewModel)?.Run.Id;
+        var selectedRun = (PipelinesList.SelectedItem as PipelineRunRowViewModel)?.Run;
+        var selectedId = selectedRun == null ? null : PipelineRunCache.Key(selectedRun);
         _runsRepository = RepoFilterMenu.Fill(PipelinesRepoCombo,
             CommitsAndPipelinesFilter.RunRepositoryCounts(all, _runsSource), _runsRepository);
 
         var runs = CommitsAndPipelinesFilter.Runs(all, _runsSource, _runsStatus, PipelinesSearchBox.Text, _runsRepository);
         var rows = runs.Select(r => new PipelineRunRowViewModel { Run = r }).ToList();
-        PipelinesList.ItemsSource = rows;
-        if (selectedId != null) PipelinesList.SelectedItem = rows.FirstOrDefault(r => r.Run.Id == selectedId);
+        _renderingRuns = true;
+        try
+        {
+            PipelinesList.ItemsSource = rows;
+            if (selectedId != null) PipelinesList.SelectedItem = rows.FirstOrDefault(row => PipelineRunCache.Key(row.Run) == selectedId);
+        }
+        finally { _renderingRuns = false; }
+        if (RunView.CurrentRun is { } shown && all.FirstOrDefault(run => PipelineRunCache.Key(run) == PipelineRunCache.Key(shown)) is { } current)
+            RunView.UpdateSummary(current);
 
         var running = all.Count(r => r.Status.IsActive());
         var failed = CommitsAndPipelinesFilter.FailingCount(all);
-        PipelinesCount.Text = $"{rows.Count} runs · {running} running · {failed} failed · last 7 days";
+        _pipelineCountSummary = $"{rows.Count} runs · {running} running · {failed} failed · last 7 days";
+        UpdateFreshnessStatus();
 
         if (PipelinesSegment.IsChecked == true)
         {
@@ -265,6 +134,7 @@ public partial class DevelopmentView
         RunsSourceDevOps.IsChecked = _runsSource == DevelopmentSourceFilter.DevOps;
         RunsSourceGitHub.IsChecked = _runsSource == DevelopmentSourceFilter.GitHub;
         RenderRuns();
+        UpdateFreshnessContext();
     }
 
     private void OnPipelinesRepoChanged(object sender, SelectionChangedEventArgs e)
@@ -273,6 +143,7 @@ public partial class DevelopmentView
         if (!changed || repo == _runsRepository) return;
         _runsRepository = repo;
         RenderRuns();
+        UpdateFreshnessContext();
     }
 
     /// <summary>Status chips toggle: clicking the active one clears it back to all.</summary>
@@ -307,6 +178,7 @@ public partial class DevelopmentView
         _runsRepository = repository;
         PipelinesSegment.IsChecked = true;
         RenderRuns();
+        UpdateFreshnessContext();
     }
 
     /// <summary>Open Pipelines filtered to one status — the Failing and Running figures' click.</summary>
@@ -318,11 +190,14 @@ public partial class DevelopmentView
         RunsStatusSucceeded.IsChecked = status == PipelineStatusFilter.Succeeded;
         PipelinesSegment.IsChecked = true;
         RenderRuns();
+        UpdateFreshnessContext();
     }
 
     private async void OnRunSelected(object sender, SelectionChangedEventArgs e)
     {
-        if (PipelinesList.SelectedItem is not PipelineRunRowViewModel row) return;
+        if (_renderingRuns || PipelinesList.SelectedItem is not PipelineRunRowViewModel row) return;
+        UpdateFreshnessContext(row.Run);
+        if (RunView.IsShowing(row.Run)) { RunView.UpdateSummary(row.Run); return; }
         ShowDetail(RunView);
         await RunView.ShowAsync(row.Run);
     }

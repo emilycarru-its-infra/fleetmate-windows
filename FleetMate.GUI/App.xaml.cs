@@ -178,6 +178,10 @@ public partial class App : Application
     }
     private List<FleetMate.Core.Models.Projects.PipelineRun>? _developmentRuns;
 
+    private FleetMate.GUI.Views.Development.DevelopmentDataSync? _developmentSync;
+    public FleetMate.GUI.Views.Development.DevelopmentDataSync DevelopmentSync =>
+        _developmentSync ??= new FleetMate.GUI.Views.Development.DevelopmentDataSync(this);
+
     /// <summary>GitHub notifications, polled from startup so the Development tab count is live.</summary>
     public FleetMate.GUI.Views.Development.DevelopmentInbox Inbox { get; }
 
@@ -358,6 +362,11 @@ public partial class App : Application
     /// <summary>Invalidate all caches</summary>
     public void InvalidateAllCaches()
     {
+        _developmentSync?.Dispose();
+        _developmentSync = null;
+        DevelopmentPullRequests = null;
+        DevelopmentCommits = null;
+        DevelopmentRuns = null;
         // Refresh means fresh: GitHub data is rebuilt in full, not incrementally.
         FleetMate.Core.Services.Projects.GitHubSync.RequestFullResync();
         _devicesCacheTime = null;
@@ -1321,6 +1330,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _developmentSync?.Dispose();
         StopTdxSessionKeeper();
         Links.LinkHost.Stop();
         GraphService?.Dispose();

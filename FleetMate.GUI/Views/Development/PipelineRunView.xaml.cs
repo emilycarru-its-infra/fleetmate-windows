@@ -18,6 +18,8 @@ public partial class PipelineRunView : UserControl
 {
     private PipelineRun? _run;
     private int _generation;
+    private CancellationTokenSource? _logRequest;
+    public PipelineRun? CurrentRun => _run;
 
     /// <summary>Raised after a rerun or cancel, so the list can refresh.</summary>
     public event EventHandler? RunChanged;
@@ -25,10 +27,51 @@ public partial class PipelineRunView : UserControl
     public PipelineRunView()
     {
         InitializeComponent();
+        Unloaded += (_, _) => CancelPendingLog();
+        IsVisibleChanged += (_, _) => { if (!IsVisible) CancelPendingLog(); };
+    }
+
+    public bool IsShowing(PipelineRun run) => _run != null && PipelineRunCache.Key(_run) == PipelineRunCache.Key(run);
+
+    public void UpdateSummary(PipelineRun run)
+    {
+        if (!IsShowing(run)) return;
+        _run = run;
+        RenderHeader(run);
+    }
+
+    public void CancelPendingLog()
+    {
+        var pending = _logRequest != null;
+        _logRequest?.Cancel();
+        _logRequest = null;
+        _generation++;
+        if (pending)
+        {
+            LoadingPanel.Visibility = Visibility.Collapsed;
+            ContentScroller.Visibility = SectionsList.ItemsSource != null ? Visibility.Visible : Visibility.Collapsed;
+            ErrorText.Text = "Log loading paused. Reload to fetch the latest log.";
+            ErrorText.Visibility = Visibility.Visible;
+        }
+    }
+
+    public void Clear()
+    {
+        CancelPendingLog();
+        _run = null;
+        SectionsList.ItemsSource = null;
+        LoadingPanel.Visibility = ContentScroller.Visibility = ErrorText.Visibility = Visibility.Collapsed;
+        TitleText.Text = WhereText.Text = DetailsText.Text = StatusText.Text = "";
     }
 
     public async Task ShowAsync(PipelineRun run)
     {
+        if (!IsShowing(run))
+        {
+            CancelPendingLog();
+            SectionsList.ItemsSource = null;
+            ContentScroller.Visibility = Visibility.Collapsed;
+        }
         _run = run;
         AgentButton.Context = AgentContexts.PipelineRun(run);
         ActionStatus.Visibility = Visibility.Collapsed;
@@ -66,7 +109,9 @@ public partial class PipelineRunView : UserControl
 
     private async Task LoadLogAsync()
     {
-        if (_run is not { } run) return;
+        if (!IsVisible || _run is not { } run) return;
+        CancelPendingLog();
+        var request = _logRequest = new CancellationTokenSource();
         var generation = ++_generation;
 
         LoadingPanel.Visibility = Visibility.Visible;
@@ -75,8 +120,8 @@ public partial class PipelineRunView : UserControl
 
         try
         {
-            var log = await FetchLogAsync(run);
-            if (generation != _generation) return;
+            var log = await FetchLogAsync(run, request.Token);
+            if (generation != _generation || request.IsCancellationRequested) return;
 
             LoadingPanel.Visibility = Visibility.Collapsed;
             ContentScroller.Visibility = Visibility.Visible;
@@ -91,29 +136,35 @@ public partial class PipelineRunView : UserControl
                 ErrorText.Text = run.Status.IsActive() ? "No log yet — the run has not started a job." : "This run has no log.";
             }
         }
+        catch (OperationCanceledException) when (request.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            if (generation != _generation) return;
+            if (generation != _generation || request.IsCancellationRequested) return;
             Log.Error(ex, "[pipelines] Failed to load the log for {Run}", run.Id);
             LoadingPanel.Visibility = Visibility.Collapsed;
             ErrorText.Visibility = Visibility.Visible;
             ErrorText.Text = $"Could not load this run's log.\n\n{ex.Message}";
         }
+        finally
+        {
+            if (ReferenceEquals(_logRequest, request)) _logRequest = null;
+            request.Dispose();
+        }
     }
 
-    private static async Task<PipelineRunLog> FetchLogAsync(PipelineRun run)
+    private static async Task<PipelineRunLog> FetchLogAsync(PipelineRun run, CancellationToken ct)
     {
         var app = Application.Current as App ?? throw new InvalidOperationException("Application is not available");
 
         if (run.Source == PullRequestSource.AzureDevOps)
         {
             if (app.Config.AzureDevOps is not { } ado) throw new InvalidOperationException("Azure DevOps is not configured");
-            using var devops = new AzureDevOpsService(ado);
+            using var devops = new AzureDevOpsService(ado, ct);
             return await devops.GetPipelineRunLogAsync(run.Container, run.RunId);
         }
 
         using var actions = new GitHubActionsService(app.Config.GitHubProviderOrDefault());
-        return await actions.GetPipelineRunLogAsync(run.Container, run.Repository ?? "", run.RunId);
+        return await actions.GetPipelineRunLogAsync(run.Container, run.Repository ?? "", run.RunId, ct);
     }
 
     private async void OnReloadClicked(object sender, RoutedEventArgs e) => await LoadLogAsync();

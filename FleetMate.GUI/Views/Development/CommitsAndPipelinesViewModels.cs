@@ -75,7 +75,7 @@ public static class CommitsAndPipelinesFilter
     public static string RunRepositoryKey(PipelineRun run) =>
         string.IsNullOrEmpty(run.Repository) ? run.Container : $"{run.Container}/{run.Repository}";
 
-    private static bool MatchesSource(PullRequestSource value, DevelopmentSourceFilter source) => source switch
+    internal static bool MatchesSource(PullRequestSource value, DevelopmentSourceFilter source) => source switch
     {
         DevelopmentSourceFilter.DevOps => value == PullRequestSource.AzureDevOps,
         DevelopmentSourceFilter.GitHub => value == PullRequestSource.GitHub,
@@ -148,8 +148,12 @@ public sealed class CommitRowViewModel
 }
 
 /// <summary>One row in the Pipelines list.</summary>
-public sealed class PipelineRunRowViewModel
+public sealed class PipelineRunRowViewModel : INotifyPropertyChanged
 {
+    private static readonly PropertyChangedEventArgs TimingChanged = new(nameof(Byline));
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public void RefreshTiming() => PropertyChanged?.Invoke(this, TimingChanged);
+
     public required PipelineRun Run { get; init; }
 
     public string Title => $"{Run.PipelineName} #{Run.RunNumber}";

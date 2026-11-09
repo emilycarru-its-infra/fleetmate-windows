@@ -39,6 +39,8 @@ public partial class AzureDevOpsService
             }
             catch (Exception ex)
             {
+                _operationToken.ThrowIfCancellationRequested();
+                if (_requireComplete) throw;
                 Log.Debug(ex, "[azdo] repositories unavailable for {Project}", project);
                 return new List<(string Project, string Id, string Name, string? Branch, string Web)>();
             }
@@ -67,6 +69,8 @@ public partial class AzureDevOpsService
             }
             catch (Exception ex)
             {
+                _operationToken.ThrowIfCancellationRequested();
+                if (_requireComplete) throw;
                 Log.Debug(ex, "[azdo] commits unavailable for {Project}/{Repo}", r.Project, r.Name);
                 return null;
             }
@@ -207,6 +211,40 @@ public partial class AzureDevOpsService
         var runs = perProject.SelectMany(x => x).OrderByDescending(r => r.SortDate).ToList();
         Log.Information("[azdo] pipeline runs → {Count}", runs.Count);
         return runs;
+    }
+
+    /// <summary>Small cached directory for rotating pipeline discovery, independent of commit scans.</summary>
+    public async Task<List<string>> GetPipelineProjectsAsync()
+    {
+        if (!await SetAuthorizationAsync()) throw new InvalidOperationException("Azure DevOps sign-in is unavailable.");
+        var json = await GetJsonAsync("_apis/projects?$top=100&api-version=7.0");
+        _operationToken.ThrowIfCancellationRequested();
+        if (!json.TryGetProperty("value", out var values) || values.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException("Azure DevOps project directory was not a list.");
+        return values.EnumerateArray().Select(value => Str(value, "name")).Where(name => !string.IsNullOrWhiteSpace(name)).Cast<string>().Distinct().Take(100).ToList();
+    }
+
+    /// <summary>One project summary, or one batch of known run IDs. Failures never masquerade as an empty successful page.</summary>
+    public async Task<List<PipelineRun>> GetProjectPipelineRunsAsync(string project, DateTime since, IReadOnlyList<long>? buildIds = null)
+    {
+        if (!await SetAuthorizationAsync()) throw new InvalidOperationException("Azure DevOps sign-in is unavailable.");
+        var path = BuildPipelineSummaryPath(project, since, buildIds);
+        var json = await GetJsonAsync(path);
+        _operationToken.ThrowIfCancellationRequested();
+        if (!json.TryGetProperty("value", out var values) || values.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException("Azure DevOps pipeline summary was not a list.");
+        return ParseBuilds(json, project, Root);
+    }
+
+    internal static string BuildPipelineSummaryPath(string project, DateTime since, IReadOnlyList<long>? buildIds = null)
+    {
+        if (string.IsNullOrWhiteSpace(project)) throw new ArgumentException("A project is required.", nameof(project));
+        var ids = buildIds?.Distinct().ToArray();
+        if (ids is { Length: > 50 } || ids?.Any(id => id <= 0 || id > int.MaxValue) == true)
+            throw new ArgumentException("A pipeline batch accepts up to 50 valid build IDs.", nameof(buildIds));
+        var filter = ids is { Length: > 0 } ? "&buildIds=" + string.Join(",", ids)
+            : "&minTime=" + Uri.EscapeDataString(since.ToUniversalTime().Date.ToString("yyyy-MM-ddTHH:mm:ssZ"));
+        return $"{Uri.EscapeDataString(project)}/_apis/build/builds?statusFilter=all&queryOrder=queueTimeDescending&$top=50{filter}&api-version=7.0";
     }
 
     internal static List<PipelineRun> ParseBuilds(JsonElement json, string project, string root)
