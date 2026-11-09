@@ -14,13 +14,15 @@ public partial class AzureDevOpsService
         var requested = items.Select(w => w.Id).ToHashSet();
         var frontier = items.ToList();
         var ancestors = new List<WorkItem>();
-        for (var depth = 0; depth < 16; depth++)
+        var queried = 0;
+        for (var depth = 0; depth < WorkItemStats.InitiativeMaxDepth; depth++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var ids = frontier.Where(w => !w.WorkItemType.Equals("Initiative", StringComparison.OrdinalIgnoreCase))
                 .Select(w => w.HierarchyParentId).OfType<int>().Distinct().Except(requested).Order()
-                .Take(Math.Max(0, 2000 - ancestors.Count)).ToList();
+                .Take(Math.Max(0, 2000 - queried)).ToList();
             if (ids.Count == 0) break;
+            queried += ids.Count;
             requested.UnionWith(ids);
             frontier = new();
             foreach (var chunk in ids.Chunk(200))

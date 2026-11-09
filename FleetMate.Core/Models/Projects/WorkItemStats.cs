@@ -8,6 +8,7 @@ namespace FleetMate.Core.Models.Projects;
 public sealed record WorkItemStats
 {
     public const int StaleDays = 30;
+    public const int InitiativeMaxDepth = 16;
 
     private static readonly HashSet<string> NotStarted = new(StringComparer.OrdinalIgnoreCase) { "New", "To Do", "Proposed" };
 
@@ -78,7 +79,7 @@ public sealed record WorkItemStats
         {
             var current = item;
             var seen = new HashSet<int>();
-            while (seen.Add(current.Id))
+            for (var depth = 0; depth <= InitiativeMaxDepth && seen.Add(current.Id); depth++)
             {
                 if (current.WorkItemType.Equals("Initiative", StringComparison.OrdinalIgnoreCase))
                 {
@@ -86,7 +87,7 @@ public sealed record WorkItemStats
                     return title.Length == 0 ? $"Initiative #{current.Id}" : $"{title} (#{current.Id})";
                 }
                 if (current.HierarchyParentId is not { } parent) return "Unassigned";
-                if (!index.TryGetValue(parent, out var next)) return "Unavailable";
+                if (depth == InitiativeMaxDepth || !index.TryGetValue(parent, out var next)) return "Unavailable";
                 current = next;
             }
             return "Unavailable";

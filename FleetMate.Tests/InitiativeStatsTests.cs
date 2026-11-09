@@ -35,6 +35,18 @@ public class InitiativeStatsTests
     }
 
     [Fact]
+    public void TraversalBoundAppliesToAlreadyLoadedItems()
+    {
+        var chain = Enumerable.Range(1, 18).Select(id => Item(id, parent: id < 18 ? id + 1 : null)).ToArray();
+        chain[16] = Item(17, "Initiative", "Boundary", 18);
+        chain[17] = Item(18, "Initiative", "Beyond boundary");
+        Assert.Equal(new[] { ("Boundary (#17)", 1) }, WorkItemStats.Initiatives(new[] { chain[0] }, chain.Skip(1)));
+        chain[16] = Item(17, parent: 18);
+        Assert.Equal(new[] { ("Unavailable", 1) }, WorkItemStats.Initiatives(new[] { chain[0] }, chain.Skip(1)));
+        Assert.Contains(("Unavailable", 1), WorkItemStats.Initiatives(chain, Array.Empty<WorkItem>()));
+    }
+
+    [Fact]
     public void ParentFieldAndExistingParentRelationsDecode()
     {
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
