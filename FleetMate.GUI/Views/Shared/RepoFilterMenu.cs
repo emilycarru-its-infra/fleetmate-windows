@@ -32,34 +32,12 @@ public static class RepoFilterMenu
         return counts.Count > 1 ? counts : new();
     }
 
-    /// <summary>
-    /// Fill <paramref name="combo"/> and select <paramref name="selection"/>.
-    /// Returns the selection that is still valid — a repository that vanished
-    /// (refresh, source change) must not keep filtering.
-    /// </summary>
-    public static string? Fill(ComboBox combo, List<(string Repository, int Count)> counts, string? selection)
+    public static string? Fill(RepositoryFilterButton button, List<FleetMate.Core.Models.Projects.RepositoryFilterEntry> entries, string? selection) =>
+        button.SetEntries(entries, selection);
+
+    public static string? Picked(RepositoryFilterButton button, out bool changed)
     {
-        if (selection != null && counts.All(c => c.Repository != selection)) selection = null;
-
-        var items = new List<Item> { new(null, AllLabel) };
-        items.AddRange(counts.Select(c => new Item(c.Repository, $"{c.Repository}  {c.Count}")));
-
-        combo.Tag = "filling";
-        combo.ItemsSource = items;
-        combo.SelectedItem = items.First(i => i.Repository == selection);
-        combo.Tag = null;
-        combo.Visibility = counts.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-
-        return selection;
-    }
-
-    /// <summary>
-    /// The repository picked by the user, or <c>false</c> in <paramref name="changed"/>
-    /// when the change came from <see cref="Fill"/> rather than a person.
-    /// </summary>
-    public static string? Picked(ComboBox combo, out bool changed)
-    {
-        changed = combo.Tag as string != "filling" && combo.SelectedItem is Item;
-        return (combo.SelectedItem as Item)?.Repository;
+        changed = true;
+        return button.Selection;
     }
 }

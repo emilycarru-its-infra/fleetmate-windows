@@ -27,7 +27,7 @@ public sealed class PipelineRefreshPlan
         var targets = new List<PipelineRefreshTarget>();
         if (selected?.Source == PullRequestSource.GitHub && !string.IsNullOrEmpty(selected.Repository))
             targets.Add(new(selected.Source, selected.Container, selected.Repository, selected.RunId));
-        else if (repositories.FirstOrDefault(repo => repo.Key == selectedRepository) is { } scope)
+        else if (selectedRepository != null && repositories.FirstOrDefault(repo => new RepositoryFilterScope(PullRequestSource.GitHub, repo.Owner, repo.Repository).Matches(selectedRepository)) is { } scope)
             targets.Add(new(PullRequestSource.GitHub, scope.Owner, scope.Repository));
         var active = runs.Where(run => run.Source == PullRequestSource.GitHub && run.Status.IsActive() && !string.IsNullOrEmpty(run.Repository))
             .OrderBy(PipelineRunCache.Key).ToArray();
@@ -65,8 +65,9 @@ public sealed class PipelineRefreshPlan
             if (selectedId is { } id) batch.Insert(0, id);
             return new PipelineRefreshTarget(PullRequestSource.AzureDevOps, group.Key, BuildIds: batch);
         }).ToList();
+        var qualified = RepositoryFilterScope.FromKey(selectedRepository);
         var selectedProject = selected?.Source == PullRequestSource.AzureDevOps ? selected.Container
-            : projects.FirstOrDefault(project => selectedRepository == project || selectedRepository?.StartsWith(project + "/", StringComparison.Ordinal) == true);
+            : qualified?.Source == PullRequestSource.AzureDevOps ? projects.FirstOrDefault(project => project.Equals(qualified.Container, StringComparison.OrdinalIgnoreCase)) ?? qualified.Container : projects.FirstOrDefault(project => selectedRepository == project || selectedRepository?.StartsWith(project + "/", StringComparison.Ordinal) == true);
         var discovery = selectedProject != null && _azureDiscoveryRound++ % 2 == 0 ? selectedProject
             : Rotate(projects, ref _azureProjects, 1).FirstOrDefault();
         if (discovery != null) result.Add(new(PullRequestSource.AzureDevOps, discovery));

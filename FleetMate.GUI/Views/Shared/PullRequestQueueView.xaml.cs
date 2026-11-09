@@ -173,7 +173,7 @@ public partial class PullRequestQueueView : UserControl
     };
 
     private bool Matches(UnifiedPullRequest pr) =>
-        MatchesSource(pr) && (_repoFilter == null || pr.Repository == _repoFilter);
+        MatchesSource(pr) && new RepositoryFilterScope(pr.Source, pr.Container, pr.Repository).Matches(_repoFilter, allowRepositoryOnly: true);
 
     /// <summary>
     /// The repository dropdown for the current source scope, busiest first
@@ -187,7 +187,7 @@ public partial class PullRequestQueueView : UserControl
             .Where(MatchesSource)
             .Distinct();
 
-        _repoFilter = RepoFilterMenu.Fill(RepoCombo, RepoFilterMenu.Counts(sourcePrs, pr => pr.Repository), _repoFilter);
+        _repoFilter = RepoFilterMenu.Fill(RepoCombo, RepositoryFilterHierarchy.Count(sourcePrs, pr => new RepositoryFilterScope(pr.Source, pr.Container, pr.Repository)), _repoFilter);
     }
 
     private void OnRepoChanged(object sender, SelectionChangedEventArgs e)

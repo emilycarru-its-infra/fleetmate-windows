@@ -84,7 +84,7 @@ public partial class DevelopmentView : UserControl
             .ToList();
 
         _repository = RepoFilterMenu.Fill(PullsRepoCombo,
-            RepoFilterMenu.Counts(scoped, DevelopmentFilter.RepositoryKey), _repository);
+            RepositoryFilterHierarchy.Count(scoped, pr => new RepositoryFilterScope(pr.Source, pr.Container, pr.Repository)), _repository);
 
         var visible = DevelopmentFilter.Apply(queue.PullRequests, _source, _scope, _repository, SearchBox.Text, _pullsOldestFirst);
         var selectedId = (PullRequestList.SelectedItem as DevelopmentPullRequestRowViewModel)?.PullRequest.Id;

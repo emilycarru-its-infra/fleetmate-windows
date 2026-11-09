@@ -55,9 +55,9 @@ public partial class DevelopmentView
         PullRequestList.ItemsSource = null;
         CommitsList.ItemsSource = null;
         PipelinesList.ItemsSource = null;
-        PullsRepoCombo.ItemsSource = null;
-        CommitsRepoCombo.ItemsSource = null;
-        PipelinesRepoCombo.ItemsSource = null;
+        PullsRepoCombo.Reset();
+        CommitsRepoCombo.Reset();
+        PipelinesRepoCombo.Reset();
         _repository = _commitsRepository = _runsRepository = null;
         _pullCountSummary = "Pull requests";
         _commitCountSummary = "Commits";
