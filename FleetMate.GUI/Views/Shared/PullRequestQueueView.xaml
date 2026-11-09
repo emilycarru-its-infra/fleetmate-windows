@@ -2,7 +2,8 @@
       Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:ui="http://schemas.modernwpf.com/2019">
+             xmlns:ui="http://schemas.modernwpf.com/2019"
+             xmlns:shared="clr-namespace:FleetMate.GUI.Views.Shared">
 
     <UserControl.Resources>
         <!-- One template for both sections; the section header supplies the context. -->
@@ -123,7 +124,7 @@
 
         <!-- Secondary filter: one repository dropdown in the current source
              scope, busiest first. Only shown when there's a real choice. -->
-        <ComboBox Grid.Row="2" x:Name="RepoCombo" Margin="0,0,0,6" MinWidth="80" MaxWidth="360"
+        <shared:RepositoryFilterButton Grid.Row="2" x:Name="RepoCombo" Margin="0,0,0,6" MinWidth="80" MaxWidth="360"
                   HorizontalAlignment="Left" SelectionChanged="OnRepoChanged"
                   ToolTip="Filter by repository" Visibility="Collapsed" />
 

@@ -31,7 +31,7 @@ public partial class DevelopmentView
         if (AppInstance?.DevelopmentCommits is not { } all) return;
 
         _commitsRepository = RepoFilterMenu.Fill(CommitsRepoCombo,
-            CommitsAndPipelinesFilter.CommitRepositoryCounts(all, _commitsSource), _commitsRepository);
+            RepositoryFilterHierarchy.Count(all.Where(repo => CommitsAndPipelinesFilter.MatchesSource(repo.Source, _commitsSource)), repo => new RepositoryFilterScope(repo.Source, repo.Container, repo.Repository), repo => repo.Commits.Count), _commitsRepository);
 
         var repos = CommitsAndPipelinesFilter.Commits(all, _commitsSource, CommitsSearchBox.Text, _commitsRepository);
         CommitsList.ItemsSource = repos.Select(r => new RepositoryCommitsViewModel { Repository = r }).ToList();
@@ -92,7 +92,7 @@ public partial class DevelopmentView
         var selectedRun = (PipelinesList.SelectedItem as PipelineRunRowViewModel)?.Run;
         var selectedId = selectedRun == null ? null : PipelineRunCache.Key(selectedRun);
         _runsRepository = RepoFilterMenu.Fill(PipelinesRepoCombo,
-            CommitsAndPipelinesFilter.RunRepositoryCounts(all, _runsSource), _runsRepository);
+            RepositoryFilterHierarchy.Count(all.Where(run => CommitsAndPipelinesFilter.MatchesSource(run.Source, _runsSource)), run => new RepositoryFilterScope(run.Source, run.Container, run.Repository)), _runsRepository);
 
         var runs = CommitsAndPipelinesFilter.Runs(all, _runsSource, _runsStatus, PipelinesSearchBox.Text, _runsRepository);
         var rows = runs.Select(r => new PipelineRunRowViewModel { Run = r }).ToList();

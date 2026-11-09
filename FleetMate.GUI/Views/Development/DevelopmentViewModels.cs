@@ -48,7 +48,7 @@ public static class DevelopmentFilter
         SortByModified(
             prs.Where(pr => MatchesSource(pr, source)
                             && MatchesScope(pr, scope)
-                            && (repository == null || RepositoryKey(pr) == repository)
+                            && new RepositoryFilterScope(pr.Source, pr.Container, pr.Repository).Matches(repository)
                             && MatchesSearch(pr, search)),
             oldestFirst);
 

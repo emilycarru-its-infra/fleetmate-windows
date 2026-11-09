@@ -20,7 +20,7 @@ public static class CommitsAndPipelinesFilter
 
         return repos
             .Where(r => MatchesSource(r.Source, source))
-            .Where(r => repository == null || r.DisplayName == repository)
+            .Where(r => new RepositoryFilterScope(r.Source, r.Container, r.Repository).Matches(repository))
             .Where(r => needle.Length == 0
                         || Has(r.DisplayName, needle)
                         || r.Commits.Any(c => Has(c.Subject, needle) || Has(c.AuthorName, needle) || c.Id.StartsWith(needle, StringComparison.OrdinalIgnoreCase)))
@@ -44,7 +44,7 @@ public static class CommitsAndPipelinesFilter
 
         return all
             .Where(r => MatchesSource(r.Source, source))
-            .Where(r => repository == null || RunRepositoryKey(r) == repository)
+            .Where(r => new RepositoryFilterScope(r.Source, r.Container, r.Repository).Matches(repository))
             .Where(r => status switch
             {
                 PipelineStatusFilter.Running => r.Status.IsActive(),

@@ -56,7 +56,7 @@ public sealed class DevelopmentDataSync : IDisposable
         _coordinator = new DevelopmentRefreshCoordinator(
             (request, ct) => app.Dispatcher.InvokeAsync(() => RefreshAsync(request, ct)).Task.Unwrap(),
             () => app.DevelopmentRuns?.Any(run => run.Status.IsActive()
-                && (_repository == null || CommitsAndPipelinesFilter.RunRepositoryKey(run) == _repository)
+                && new RepositoryFilterScope(run.Source, run.Container, run.Repository).Matches(_repository)
                 && CommitsAndPipelinesFilter.MatchesSource(run.Source, _source)) == true);
         if (_window != null)
         {
