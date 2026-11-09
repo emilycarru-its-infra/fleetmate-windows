@@ -67,7 +67,7 @@ public sealed class PipelineRefreshPlan
         }).ToList();
         var qualified = RepositoryFilterScope.FromKey(selectedRepository);
         var selectedProject = selected?.Source == PullRequestSource.AzureDevOps ? selected.Container
-            : qualified?.Source == PullRequestSource.AzureDevOps ? qualified.Container : projects.FirstOrDefault(project => selectedRepository == project || selectedRepository?.StartsWith(project + "/", StringComparison.Ordinal) == true);
+            : qualified?.Source == PullRequestSource.AzureDevOps ? projects.FirstOrDefault(project => project.Equals(qualified.Container, StringComparison.OrdinalIgnoreCase)) ?? qualified.Container : projects.FirstOrDefault(project => selectedRepository == project || selectedRepository?.StartsWith(project + "/", StringComparison.Ordinal) == true);
         var discovery = selectedProject != null && _azureDiscoveryRound++ % 2 == 0 ? selectedProject
             : Rotate(projects, ref _azureProjects, 1).FirstOrDefault();
         if (discovery != null) result.Add(new(PullRequestSource.AzureDevOps, discovery));
