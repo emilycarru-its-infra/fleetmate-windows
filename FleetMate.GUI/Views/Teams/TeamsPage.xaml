@@ -12,6 +12,9 @@
         <DockPanel x:Name="Sidebar" Margin="12">
             <Button DockPanel.Dock="Bottom" Content="Refresh channels" Click="OnRefreshChannels" Margin="0,10,0,0" />
             <TextBlock DockPanel.Dock="Top" Text="Channels" FontWeight="SemiBold" Margin="4,0,0,10" />
+            <TextBox x:Name="ChannelFilterBox" DockPanel.Dock="Top" TextChanged="OnChannelFilterChanged" Margin="0,0,0,10"
+                     ui:ControlHelper.PlaceholderText="Filter teams and channels" AutomationProperties.Name="Filter teams and channels" />
+            <TextBlock x:Name="ChannelFilterSummary" DockPanel.Dock="Bottom" TextWrapping="Wrap" Opacity="0.7" FontSize="11" Margin="0,8,0,0" />
             <TreeView x:Name="ChannelTree" SelectedItemChanged="OnChannelChanged"
                       AutomationProperties.Name="Teams channels" BorderThickness="0" />
         </DockPanel>
@@ -23,7 +26,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
-            <TextBox x:Name="QueryBox" Visibility="Collapsed" />
+            <TextBox x:Name="QueryBox" Visibility="Collapsed" TextChanged="OnQueryChanged" />
             <WrapPanel Grid.Row="0" Margin="0,0,0,10">
                 <Button x:Name="SidebarToggle" Content="Channels" Click="OnToggleChannels" Margin="0,0,12,6" />
                 <TextBlock Text="Period" VerticalAlignment="Center" Margin="0,0,6,6" />
@@ -39,6 +42,7 @@
             </WrapPanel>
             <TextBlock x:Name="ScopeText" Grid.Row="1" Text="All channels" FontWeight="SemiBold" Margin="0,0,0,8" />
             <DockPanel Grid.Row="2" LastChildFill="True" Margin="0,0,0,8">
+                <Button x:Name="LoadMoreButton" DockPanel.Dock="Right" Content="Load more" Click="OnLoadMore" Visibility="Collapsed" Margin="8,0,0,0" />
                 <Button x:Name="RetryButton" DockPanel.Dock="Right" Content="Retry" Click="OnRetry" Visibility="Collapsed" Margin="8,0,0,0" />
                 <TextBlock x:Name="StatusText" Text="Loading channels…" TextWrapping="Wrap" />
             </DockPanel>
@@ -52,12 +56,13 @@
                     <Border x:Name="Welcome" Padding="24" VerticalAlignment="Top">
                         <StackPanel>
                             <TextBlock Text="Search Teams channels" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,12" />
-                            <TextBlock Text="Choose a channel on the left, or search all channels. Type in the search field (Ctrl+F) and press Enter to find a conversation." TextWrapping="Wrap" Margin="0,0,0,16" />
+                            <TextBlock Text="Choose a channel to browse conversations, or search across channels (Ctrl+F). Save useful threads into collections and copy message text without switching apps." TextWrapping="Wrap" Margin="0,0,0,16" />
                             <TextBlock x:Name="ChannelSummary" TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
-                    <ListBox x:Name="ResultsList" Visibility="Collapsed" SelectionChanged="OnResultChanged"
+                    <ListBox x:Name="ResultsList" Visibility="Collapsed" SelectionChanged="OnResultChanged" ContextMenuOpening="OnResultContextMenuOpening"
                              HorizontalContentAlignment="Stretch" AutomationProperties.Name="Teams search results">
+                        <ListBox.ContextMenu><ContextMenu /></ListBox.ContextMenu>
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="6,8">
@@ -76,9 +81,14 @@
                         <Button Content="Back to results" Click="OnCloseThread" Margin="0,0,8,4" />
                         <Button x:Name="OpenButton" Content="Open in Teams" Click="OnOpen" IsEnabled="False" Margin="0,0,8,4" />
                         <Button x:Name="CopyButton" Content="Copy link" Click="OnCopy" IsEnabled="False" Margin="0,0,8,4" />
+                        <Button x:Name="CopyThreadButton" Content="Copy thread" Click="OnCopyThread" IsEnabled="False" Margin="0,0,8,4" />
+                        <Button x:Name="CopyMarkdownButton" Content="Copy Markdown" Click="OnCopyMarkdown" IsEnabled="False" Margin="0,0,8,4" />
+                        <Button x:Name="SaveButton" Content="Save thread" Click="OnSaveThread" IsEnabled="False" Margin="0,0,8,4" />
+                        <TextBox x:Name="CollectionBox" Width="140" Margin="0,0,8,4" ui:ControlHelper.PlaceholderText="Collection (optional)" AutomationProperties.Name="Saved thread collection" />
                     </WrapPanel>
-                    <TextBox x:Name="ThreadText" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
-                             BorderThickness="0" Background="Transparent" AutomationProperties.Name="Teams thread" />
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="Teams thread">
+                        <StackPanel x:Name="ThreadCards" />
+                    </ScrollViewer>
                 </DockPanel>
             </Grid>
         </Grid>

@@ -102,6 +102,31 @@ public class TeamsSearchServiceTests
         Assert.Equal("api://example-search", config.TeamsApiScope);
     }
 
+    [Fact]
+    public async Task BrowseUsesTheSameIdentityAndPurposeAndDecodesPagination()
+    {
+        var stub = new Stub(HttpStatusCode.OK, """
+            {"as_of":"2026-11-01T00:00:00Z","index_version":"snapshot-1","total":0,"results":[],"next_offset":null}
+            """);
+        using var service = Service(stub);
+        var response = (await service.BrowseAsync(new TeamsBrowseQuery(Channel: "channel-1"))).Value;
+        Assert.Equal("snapshot-1", response.IndexVersion);
+        Assert.Null(response.NextOffset);
+        Assert.Equal("/api/v1/teams/threads", stub.Requests.Single().RequestUri!.AbsolutePath);
+        Assert.Equal("Bearer token-1", stub.Authorizations.Single());
+        Assert.Equal(TeamsSearchService.DefaultPurpose, stub.Purposes.Single());
+    }
+
+    [Fact]
+    public async Task BrowseRefusesAnUnversionedResponse()
+    {
+        using var service = Service(new Stub(HttpStatusCode.OK, """
+            {"total":0,"results":[]}
+            """));
+        var error = await Assert.ThrowsAsync<TeamsSearchException>(() => service.BrowseAsync(new TeamsBrowseQuery(Team: "team-1")));
+        Assert.Equal(TeamsSearchFailure.InvalidResponse, error.Failure);
+    }
+
     // ── URL building ──
 
     [Fact]

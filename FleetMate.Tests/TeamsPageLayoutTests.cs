@@ -43,4 +43,24 @@ public class TeamsPageLayoutTests
         page.UpdateLayout();
         Assert.Equal(310, column.Width.Value);
     });
+    [Fact]
+    public void ThreadCardsKeepRootAndRepliesSeparateAndCopyLiteralMessageText() => WpfFixture.Run(() =>
+    {
+        var root = new FleetMate.Core.Services.Teams.TeamsMessage("root", null, "Example author", "2026-11-01T12:00:00Z", null,
+            "<b>Literal message text</b>", Array.Empty<FleetMate.Core.Services.Teams.TeamsAttachment>(), null);
+        var reply = root with { MessageId = "reply", ReplyToId = "root", Text = "Reply text" };
+        var thread = new FleetMate.Core.Services.Teams.TeamsThread("root", "team", "Example Team", "channel", "General", "Topic", null, new[] { root, reply });
+        var host = new StackPanel();
+        string? copied = null;
+        TeamsThreadCards.Show(host, thread, FleetMate.Core.Services.Teams.TeamsLinkPolicy.DefaultHosts, text => copied = text, _ => { });
+        var card = Assert.IsType<Border>(host.Children[1]);
+        var body = Assert.IsType<StackPanel>(card.Child);
+        Assert.Equal(root.Text, Assert.IsType<TextBox>(body.Children[1]).Text);
+        var header = Assert.IsType<DockPanel>(body.Children[0]);
+        Assert.IsType<Button>(header.Children[0]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert.Contains(root.Text, copied!);
+        var replies = Assert.IsType<Expander>(host.Children[2]);
+        Assert.False(replies.IsExpanded);
+        Assert.Single(Assert.IsType<StackPanel>(replies.Content).Children.Cast<object>());
+    });
 }

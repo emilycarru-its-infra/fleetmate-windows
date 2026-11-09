@@ -29,6 +29,12 @@ public sealed record TeamsSearchHit(
 
 public sealed record TeamsSearchResponse(string Query, string? AsOf, int Total, IReadOnlyList<TeamsSearchHit> Results);
 
+public sealed record TeamsBrowseResponse(string? AsOf, string IndexVersion, int Total,
+    IReadOnlyList<TeamsSearchHit> Results, int? NextOffset);
+
+public sealed record TeamsBrowseQuery(string? Team = null, string? Channel = null, string? Author = null,
+    string? Since = null, string? Until = null, int Limit = 20, int Offset = 0);
+
 public sealed record TeamsAttachment(string Name, string? Url);
 
 public sealed record TeamsMessage(
@@ -189,6 +195,34 @@ public sealed class TeamsSearchService : IDisposable
 
     public Task<TeamsPayload<TeamsChannelsResponse>> GetChannelsAsync(CancellationToken ct = default) =>
         GetAsync<TeamsChannelsResponse>(BuildChannelsUri(), ct);
+
+    public async Task<TeamsPayload<TeamsBrowseResponse>> BrowseAsync(TeamsBrowseQuery query, CancellationToken ct = default)
+    {
+        var payload = await GetAsync<TeamsBrowseResponse>(BuildBrowseUri(query), ct);
+        if (string.IsNullOrWhiteSpace(payload.Value.IndexVersion) || payload.Value.Results == null)
+            throw new TeamsSearchException(TeamsSearchFailure.InvalidResponse, "The channel browse response has no index version or results.");
+        return payload;
+    }
+
+    public Uri BuildBrowseUri(TeamsBrowseQuery query)
+    {
+        if (string.IsNullOrWhiteSpace(query.Team) && string.IsNullOrWhiteSpace(query.Channel))
+            throw TeamsSearchException.Invalid("Choose a team or channel to browse.");
+        if (query.Limit is < 1 or > 100 || query.Offset < 0)
+            throw TeamsSearchException.Invalid("Browse limit must be between 1 and 100 and offset must not be negative.");
+        foreach (var value in new[] { query.Since, query.Until })
+            if (value != null && !IsDay(value)) throw TeamsSearchException.Invalid("Browse dates must use YYYY-MM-DD.");
+        var items = new List<(string, string)>();
+        void Add(string name, string? value) { if (!string.IsNullOrWhiteSpace(value)) items.Add((name, value.Trim())); }
+        Add("team", query.Team);
+        Add("channel", query.Channel);
+        Add("author", query.Author);
+        Add("since", query.Since);
+        Add("until", query.Until);
+        items.Add(("limit", query.Limit.ToString(CultureInfo.InvariantCulture)));
+        items.Add(("offset", query.Offset.ToString(CultureInfo.InvariantCulture)));
+        return BuildUri("/v1/teams/threads", items);
+    }
 
     // ── URL building ──
 
