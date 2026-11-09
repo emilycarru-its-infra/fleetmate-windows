@@ -17,6 +17,7 @@ public sealed class PipelineRefreshPlan
     private int _azureActive;
     private int _azureProjects;
     private int _azureDiscoveryRound;
+    private readonly Dictionary<string, int> _azureBuildCursors = new();
 
     public void PrioritizeSelection() => _azureDiscoveryRound = 0;
 
@@ -54,9 +55,16 @@ public sealed class PipelineRefreshPlan
         var priority = selected?.Source == PullRequestSource.AzureDevOps ? selected.Container : null;
         var groups = candidates.Where(group => group.Key == priority)
             .Concat(Rotate(candidates.Where(group => group.Key != priority).ToArray(), ref _azureActive, priority != null ? 1 : 2)).Take(2);
-        var result = groups.Select(group => new PipelineRefreshTarget(PullRequestSource.AzureDevOps, group.Key,
-            BuildIds: group.OrderByDescending(run => selected != null && PipelineRunCache.Key(run) == PipelineRunCache.Key(selected))
-                .Select(run => run.RunId).Distinct().Take(50).ToArray())).ToList();
+        var result = groups.Select(group =>
+        {
+            var selectedId = selected?.Source == PullRequestSource.AzureDevOps && selected.Container == group.Key ? selected.RunId : (long?)null;
+            var ids = group.Select(run => run.RunId).Distinct().Order().Where(id => id != selectedId).ToArray();
+            var cursor = _azureBuildCursors.GetValueOrDefault(group.Key);
+            var batch = Rotate(ids, ref cursor, selectedId != null ? 49 : 50).ToList();
+            _azureBuildCursors[group.Key] = cursor;
+            if (selectedId is { } id) batch.Insert(0, id);
+            return new PipelineRefreshTarget(PullRequestSource.AzureDevOps, group.Key, BuildIds: batch);
+        }).ToList();
         var selectedProject = selected?.Source == PullRequestSource.AzureDevOps ? selected.Container
             : projects.FirstOrDefault(project => selectedRepository == project || selectedRepository?.StartsWith(project + "/", StringComparison.Ordinal) == true);
         var discovery = selectedProject != null && _azureDiscoveryRound++ % 2 == 0 ? selectedProject
@@ -64,6 +72,12 @@ public sealed class PipelineRefreshPlan
         if (discovery != null) result.Add(new(PullRequestSource.AzureDevOps, discovery));
         return result;
     }
+
+    public static List<PipelineRefreshTarget> GitHubHistory(IEnumerable<PipelineRepositoryScope> repositories) => repositories
+        .Distinct().Take(500).Select(repo => new PipelineRefreshTarget(PullRequestSource.GitHub, repo.Owner, repo.Repository)).ToList();
+
+    public static List<PipelineRefreshTarget> AzureDevOpsHistory(IEnumerable<string> projects) => projects
+        .Distinct().Take(200).Select(project => new PipelineRefreshTarget(PullRequestSource.AzureDevOps, project)).ToList();
 
     private static IEnumerable<T> Rotate<T>(IReadOnlyList<T> items, ref int cursor, int count)
     {

@@ -142,6 +142,32 @@ public sealed class DevelopmentRefreshTests
     }
 
     [Fact]
+    public void HistoryPassVisitsEveryDiscoveredScopeRatherThanTheFastSubset()
+    {
+        var repositories = Enumerable.Range(0, 20).Select(id => new PipelineRepositoryScope("owner", "repo-" + id)).ToArray();
+        var projects = Enumerable.Range(0, 12).Select(id => "Project-" + id).ToArray();
+        Assert.Equal(20, PipelineRefreshPlan.GitHubHistory(repositories).Count);
+        Assert.Equal(12, PipelineRefreshPlan.AzureDevOpsHistory(projects).Count);
+        Assert.All(PipelineRefreshPlan.AzureDevOpsHistory(projects), target => Assert.Null(target.BuildIds));
+    }
+
+    [Fact]
+    public void MoreThanFiftyActiveBuildsInOneProjectRotateWithoutLosingSelection()
+    {
+        var plan = new PipelineRefreshPlan();
+        var runs = Enumerable.Range(1, 130).Select(id => Run(PullRequestSource.AzureDevOps, id, "Example")).ToList();
+        var seen = new HashSet<long>();
+        for (var tick = 0; tick < 4; tick++)
+        {
+            var batch = plan.AzureDevOps(runs, new[] { "Example" }, runs[0], null).Single(target => target.BuildIds != null).BuildIds!;
+            Assert.InRange(batch.Count, 1, 50);
+            Assert.Contains(1L, batch);
+            seen.UnionWith(batch);
+        }
+        Assert.Equal(130, seen.Count);
+    }
+
+    [Fact]
     public void AzureSummaryIncludesQueuedRunsAndKnownIdsAreNotRestrictedToTheHistoryWindow()
     {
         var path = AzureDevOpsService.BuildPipelineSummaryPath("Example Project", DateTime.UtcNow, new long[] { 12, 24, 12 });

@@ -14,6 +14,7 @@ public sealed class DevelopmentDataSync : IDisposable
     {
         public int Failures;
         public DateTimeOffset RetryAfter;
+        public DateTimeOffset HistoryAt;
         public string? Error;
         public void Complete(bool success, DateTimeOffset now)
         {
@@ -126,6 +127,7 @@ public sealed class DevelopmentDataSync : IDisposable
         if (_disposed) return;
         _azure.Failures = 0;
         _azure.RetryAfter = DateTimeOffset.MinValue;
+        _azure.HistoryAt = DateTimeOffset.MinValue;
         _projectDirectoryAt = DateTimeOffset.MinValue;
         _coordinator.InvalidatePipelines();
     });
@@ -227,7 +229,9 @@ public sealed class DevelopmentDataSync : IDisposable
 
         async Task<bool> RefreshGitHubAsync()
         {
+            if (_segment == DevelopmentSegment.Pipelines && _source == DevelopmentSourceFilter.DevOps) return true;
             if (!history && !focusRefresh && now < _github.RetryAfter) return false;
+            var fullHistory = history || now - _github.HistoryAt >= HistoryInterval;
             var succeeded = true;
             using var service = new GitHubActionsService(_app.Config.GitHubProviderOrDefault());
             try
@@ -247,7 +251,8 @@ public sealed class DevelopmentDataSync : IDisposable
                 var scopesFromCommits = (_app.DevelopmentCommits ?? new()).Where(repo => repo.Source == PullRequestSource.GitHub)
                     .Select(repo => new PipelineRepositoryScope(repo.Container, repo.Repository));
                 _repositories = _repositories.Concat(scopesFromCache).Concat(scopesFromCommits).Distinct().Take(500).ToList();
-                var targets = _plan.GitHub(previous, _repositories, _selected, _repository);
+                var targets = fullHistory ? PipelineRefreshPlan.GitHubHistory(_repositories)
+                    : _plan.GitHub(previous, _repositories, _selected, _repository);
                 using var gate = new SemaphoreSlim(2);
                 await Task.WhenAll(targets.Select(async target =>
                 {
@@ -264,6 +269,7 @@ public sealed class DevelopmentDataSync : IDisposable
                 }));
             }
             catch { ct.ThrowIfCancellationRequested(); succeeded = false; }
+            if (fullHistory && succeeded) _github.HistoryAt = DateTimeOffset.UtcNow;
             _github.Error = succeeded ? null : "GitHub unavailable";
             _github.Complete(succeeded, DateTimeOffset.UtcNow);
             return succeeded;
@@ -272,7 +278,9 @@ public sealed class DevelopmentDataSync : IDisposable
         async Task<bool> RefreshAzureAsync()
         {
             if (string.IsNullOrWhiteSpace(_app.Config.AzureDevOps?.Organization)) { _azure.Error = null; return true; }
+            if (_segment == DevelopmentSegment.Pipelines && _source == DevelopmentSourceFilter.GitHub) return true;
             if (!history && !focusRefresh && now < _azure.RetryAfter) return false;
+            var fullHistory = history || now - _azure.HistoryAt >= HistoryInterval;
             var succeeded = true;
             using var service = new AzureDevOpsService(_app.Config.AzureDevOps!, ct, requireComplete: true);
             try
@@ -284,7 +292,8 @@ public sealed class DevelopmentDataSync : IDisposable
                 }
                 _projects = _projects.Concat(previous.Where(run => run.Source == PullRequestSource.AzureDevOps).Select(run => run.Container))
                     .Concat(_selected?.Source == PullRequestSource.AzureDevOps ? new[] { _selected.Container } : Array.Empty<string>()).Distinct().Take(200).ToList();
-                var targets = _plan.AzureDevOps(previous, _projects, _selected, _repository);
+                var targets = fullHistory ? PipelineRefreshPlan.AzureDevOpsHistory(_projects)
+                    : _plan.AzureDevOps(previous, _projects, _selected, _repository);
                 using var gate = new SemaphoreSlim(2);
                 await Task.WhenAll(targets.Select(async target =>
                 {
@@ -295,6 +304,7 @@ public sealed class DevelopmentDataSync : IDisposable
                 }));
             }
             catch { ct.ThrowIfCancellationRequested(); succeeded = false; }
+            if (fullHistory && succeeded) _azure.HistoryAt = DateTimeOffset.UtcNow;
             _azure.Error = succeeded ? null : "Azure DevOps unavailable";
             _azure.Complete(succeeded, DateTimeOffset.UtcNow);
             return succeeded;
