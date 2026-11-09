@@ -1,0 +1,86 @@
+<Page x:Class="FleetMate.GUI.Views.Teams.TeamsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.modernwpf.com/2019"
+      Foreground="{DynamicResource SystemControlForegroundBaseHighBrush}">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition x:Name="SidebarColumn" Width="240" MinWidth="180" />
+            <ColumnDefinition x:Name="SidebarDividerColumn" Width="5" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <DockPanel x:Name="Sidebar" Margin="12">
+            <Button DockPanel.Dock="Bottom" Content="Refresh channels" Click="OnRefreshChannels" Margin="0,10,0,0" />
+            <TextBlock DockPanel.Dock="Top" Text="Channels" FontWeight="SemiBold" Margin="4,0,0,10" />
+            <TreeView x:Name="ChannelTree" SelectedItemChanged="OnChannelChanged"
+                      AutomationProperties.Name="Teams channels" BorderThickness="0" />
+        </DockPanel>
+        <GridSplitter x:Name="SidebarDivider" Grid.Column="1" HorizontalAlignment="Stretch" />
+        <Grid Grid.Column="2" Margin="12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <TextBox x:Name="QueryBox" Visibility="Collapsed" />
+            <WrapPanel Grid.Row="0" Margin="0,0,0,10">
+                <Button x:Name="SidebarToggle" Content="Channels" Click="OnToggleChannels" Margin="0,0,12,6" />
+                <TextBlock Text="Period" VerticalAlignment="Center" Margin="0,0,6,6" />
+                <ComboBox x:Name="PeriodBox" Width="130" SelectedIndex="0" SelectionChanged="OnFilterChanged" Margin="0,0,12,6"
+                          AutomationProperties.Name="Search period">
+                    <ComboBoxItem Content="Any time" />
+                    <ComboBoxItem Content="Last 7 days" />
+                    <ComboBoxItem Content="Last 30 days" />
+                </ComboBox>
+                <TextBox x:Name="PersonBox" Width="180" Margin="0,0,12,6" KeyDown="OnPersonKeyDown"
+                         ui:ControlHelper.PlaceholderText="Person" AutomationProperties.Name="Thread participant" />
+                <Button Content="Search" Click="OnSearch" Margin="0,0,0,6" IsDefault="False" />
+            </WrapPanel>
+            <TextBlock x:Name="ScopeText" Grid.Row="1" Text="All channels" FontWeight="SemiBold" Margin="0,0,0,8" />
+            <DockPanel Grid.Row="2" LastChildFill="True" Margin="0,0,0,8">
+                <Button x:Name="RetryButton" DockPanel.Dock="Right" Content="Retry" Click="OnRetry" Visibility="Collapsed" Margin="8,0,0,0" />
+                <TextBlock x:Name="StatusText" Text="Loading channels…" TextWrapping="Wrap" />
+            </DockPanel>
+            <Grid Grid.Row="3">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="ResultsColumn" Width="*" MinWidth="180" />
+                    <ColumnDefinition x:Name="DetailDividerColumn" Width="0" />
+                    <ColumnDefinition x:Name="DetailColumn" Width="0" />
+                </Grid.ColumnDefinitions>
+                <Grid>
+                    <Border x:Name="Welcome" Padding="24" VerticalAlignment="Top">
+                        <StackPanel>
+                            <TextBlock Text="Search Teams channels" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,12" />
+                            <TextBlock Text="Choose a channel on the left, or search all channels. Type in the search field (Ctrl+F) and press Enter to find a conversation." TextWrapping="Wrap" Margin="0,0,0,16" />
+                            <TextBlock x:Name="ChannelSummary" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                    <ListBox x:Name="ResultsList" Visibility="Collapsed" SelectionChanged="OnResultChanged"
+                             HorizontalContentAlignment="Stretch" AutomationProperties.Name="Teams search results">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="6,8">
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding Location}" Opacity="0.7" Margin="0,4,0,4" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding Snippet}" TextWrapping="Wrap" MaxHeight="60" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Activity}" Opacity="0.7" FontSize="11" Margin="0,4,0,0" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+                <GridSplitter x:Name="DetailDivider" Grid.Column="1" HorizontalAlignment="Stretch" Visibility="Collapsed" />
+                <DockPanel x:Name="ThreadPanel" Grid.Column="2" Margin="12,0,0,0" Visibility="Collapsed">
+                    <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                        <Button Content="Back to results" Click="OnCloseThread" Margin="0,0,8,4" />
+                        <Button x:Name="OpenButton" Content="Open in Teams" Click="OnOpen" IsEnabled="False" Margin="0,0,8,4" />
+                        <Button x:Name="CopyButton" Content="Copy link" Click="OnCopy" IsEnabled="False" Margin="0,0,8,4" />
+                    </WrapPanel>
+                    <TextBox x:Name="ThreadText" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                             BorderThickness="0" Background="Transparent" AutomationProperties.Name="Teams thread" />
+                </DockPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</Page>

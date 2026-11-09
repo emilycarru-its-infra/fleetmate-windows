@@ -192,6 +192,12 @@ fleetmate tdx comment 12345 "Troubleshooting steps taken..."
 
 ### Teams channel search
 
+The Teams tab opens with an indexed channel directory, grouped by team, and a search prompt. Select a team or channel to narrow the toolbar search (Ctrl+F); press Enter to search. Results open beside the list in a wide window and in place of it in a narrow window. Message text stays selectable and links can be opened in Teams or copied.
+
+Set `teams_default_team` (`TeamsDefaultTeam` in registry or policy) to a team ID to select it on first opening. Set `teams_default_channels` (`TeamsDefaultChannels`) to comma or newline separated channel IDs to pin them above the full directory. These defaults only choose and organize the view; they do not grant access or hide other authorized channels. Environment overrides are `FLEETMATE_TEAMS_DEFAULT_TEAM` and `FLEETMATE_TEAMS_DEFAULT_CHANNELS`.
+
+The directory shows indexed thread counts and the last indexed activity. A personal recent-conversation feed requires API support for browsing threads and identifying participants by their signed-in identity; the text-search API does not currently provide that feed.
+
 Search an indexed copy of Teams channel messages through a search API. Set `teams_api_url` (the API base URL) and `teams_api_scope` (the scope or audience your Entra token is minted for, such as `<application id URI>/.default`) in `config.yaml`, as `TeamsApiUrl` and `TeamsApiScope` in the registry or policy key, or as `FLEETMATE_TEAMS_API_URL` / `FLEETMATE_TEAMS_API_SCOPE`. Every call is made as you, with a token from your Windows sign-in; the API decides whether your account has access.
 
 ```powershell
@@ -409,6 +415,7 @@ Registry keys under `HKEY_CURRENT_USER\SOFTWARE\FleetMate`:
 - `SnipeUrl` / `SnipeApiKey` (string)
 - `ReportMateUrl` / `ReportMatePassphrase` (string)
 - `TeamsApiUrl` / `TeamsApiScope` / `TeamsApiPurpose` (string)
+- `TeamsDefaultTeam` / `TeamsDefaultChannels` (string)
 
 ### Config File (config.yaml)
 

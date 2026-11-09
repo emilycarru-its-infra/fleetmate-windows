@@ -163,6 +163,13 @@
                                 <TextBlock Text="Identity" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
+                        <RadioButton x:Name="TabTeams" Tag="Teams" GroupName="FleetMateTabs"
+                                     Click="OnTabClicked" Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:FontIcon Glyph="&#xE8F2;" FontFamily="Segoe Fluent Icons" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Teams" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
                         <RadioButton x:Name="TabTickets" Tag="Tickets" GroupName="FleetMateTabs"
                                      Click="OnTabClicked" Checked="OnTabChecked" Style="{StaticResource NavigationTabStyle}">
                             <StackPanel Orientation="Horizontal">

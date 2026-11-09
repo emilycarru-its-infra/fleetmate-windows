@@ -141,6 +141,26 @@ public class FleetMateConfig
     /// </summary>
     public string? TeamsLinkHosts { get; set; }
 
+    /// <summary>The team ID selected when Teams first opens; unset searches all indexed teams.</summary>
+    public string? TeamsDefaultTeam { get; set; }
+
+    /// <summary>Channel IDs pinned above the full channel list, comma or newline separated.</summary>
+    public string? TeamsDefaultChannels { get; set; }
+
+    [YamlMember(Alias = "teams_default_team", ApplyNamingConventions = false)]
+    public string? TeamsDefaultTeamSetting
+    {
+        get => TeamsDefaultTeam;
+        set => TeamsDefaultTeam = value;
+    }
+
+    [YamlMember(Alias = "teams_default_channels", ApplyNamingConventions = false)]
+    public string? TeamsDefaultChannelsSetting
+    {
+        get => TeamsDefaultChannels;
+        set => TeamsDefaultChannels = value;
+    }
+
     [YamlMember(Alias = "teams_link_hosts", ApplyNamingConventions = false)]
     public string? TeamsLinkHostsSetting
     {
@@ -431,6 +451,11 @@ public class FleetMateConfig
         if (!string.IsNullOrWhiteSpace(teamsApiPurpose))
             config.TeamsApiPurpose = teamsApiPurpose;
 
+        var teamsDefaultTeam = Environment.GetEnvironmentVariable("FLEETMATE_TEAMS_DEFAULT_TEAM");
+        if (teamsDefaultTeam != null) config.TeamsDefaultTeam = teamsDefaultTeam;
+        var teamsDefaultChannels = Environment.GetEnvironmentVariable("FLEETMATE_TEAMS_DEFAULT_CHANNELS");
+        if (teamsDefaultChannels != null) config.TeamsDefaultChannels = teamsDefaultChannels;
+
         var teamsLinkHosts = Environment.GetEnvironmentVariable("FLEETMATE_TEAMS_LINK_HOSTS");
         if (!string.IsNullOrWhiteSpace(teamsLinkHosts))
             config.TeamsLinkHosts = teamsLinkHosts;
@@ -501,6 +526,8 @@ public class FleetMateConfig
         TeamsApiScope = null;
         TeamsApiPurpose = null;
         TeamsLinkHosts = null;
+        TeamsDefaultTeam = null;
+        TeamsDefaultChannels = null;
 #pragma warning disable CS0618 // the retired secrets go too
         SnipeApiKey = null;
         ReportMatePassphrase = null;
@@ -681,6 +708,11 @@ public class FleetMateConfig
             var teamsApiPurpose = key.GetValue("TeamsApiPurpose") as string;
             if (!string.IsNullOrEmpty(teamsApiPurpose))
                 config.TeamsApiPurpose = teamsApiPurpose;
+
+            if (key.GetValue("TeamsDefaultTeam") is string teamsDefaultTeam)
+                config.TeamsDefaultTeam = teamsDefaultTeam;
+            if (key.GetValue("TeamsDefaultChannels") is string teamsDefaultChannels)
+                config.TeamsDefaultChannels = teamsDefaultChannels;
 
             var teamsLinkHosts = key.GetValue("TeamsLinkHosts") as string;
             if (!string.IsNullOrEmpty(teamsLinkHosts))
@@ -885,7 +917,7 @@ public class FleetMateConfig
             "GraphTenantId", "GraphClientId", "SnipeUrl", "SnipeOidcAudience",
             "TdxBaseUrl", "TdxTicketingAppId", "DevOpsBaseUrl", "DevOpsOrganization", "DevOpsProject",
             "ReportMateUrl", "HandbookRepoUrl", "HandbookSiteUrl", "AgentsHubRepoUrl",
-            "TeamsApiUrl", "TeamsApiScope", "TeamsApiPurpose", "TeamsLinkHosts",
+            "TeamsApiUrl", "TeamsApiScope", "TeamsApiPurpose", "TeamsLinkHosts", "TeamsDefaultTeam", "TeamsDefaultChannels",
             "ManageRosterPath", "ManageRosterRepoProject", "ManageRosterRepo", "ManageRosterRepoPath",
             "ManageCommandsPath", "ManageTerminalProfile", "ManageRdpUser",
             "ManageIncludeRetired", "ManageIncludeProvisioning", "SecureShellKeyPath", "SecureShellUser"

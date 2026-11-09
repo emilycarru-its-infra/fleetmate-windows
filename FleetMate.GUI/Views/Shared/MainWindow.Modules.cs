@@ -7,7 +7,7 @@ namespace FleetMate.GUI.Views.Shared;
 
 /// <summary>
 /// Enabled Modules and text size, from Settings. A switched-off module's tab
-/// leaves the tab bar, and Ctrl+1–8 count only the tabs left showing. Text
+/// leaves the tab bar, and Ctrl+1–9 count only the tabs left showing. Text
 /// size scales the page content and the terminal's text; the toolbar keeps its size.
 /// </summary>
 public partial class MainWindow
@@ -60,7 +60,7 @@ public partial class MainWindow
         ContentFrame.LayoutTransform = AppTextScale.IsDefault(scale) ? null : new ScaleTransform(scale, scale);
     }
 
-    /// <summary>Ctrl+1–8 against the tabs showing, so a hidden tab never takes a number.</summary>
+    /// <summary>Ctrl+1–9 against the tabs showing, so a hidden tab never takes a number.</summary>
     private string? VisibleTabShortcut(System.Windows.Input.Key key)
     {
         if (TabShortcut(key) is not { } byPosition) return null;
