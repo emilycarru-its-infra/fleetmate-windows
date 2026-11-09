@@ -36,6 +36,7 @@ public sealed class RepositoryFilterButton : Button
         panel.Children.Add(arrow);
         panel.Children.Add(new TextBlock { Text = label, TextTrimming = TextTrimming.CharacterEllipsis });
         Content = panel;
+        AutomationProperties.SetName(this, $"Filter by repository: {label}");
         ToolTip = selection == null ? "Filter by repository" : label;
         Visibility = entries.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
         ContextMenu = BuildMenu();

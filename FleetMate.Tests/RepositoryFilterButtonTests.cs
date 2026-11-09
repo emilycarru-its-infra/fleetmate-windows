@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Automation;
+using System.Windows.Automation.Peers;
 using FleetMate.Core.Models.Projects;
 using FleetMate.GUI.Views.Shared;
 using Xunit;
@@ -16,12 +17,15 @@ public sealed class RepositoryFilterButtonTests
         var scope = new RepositoryFilterScope(PullRequestSource.GitHub, "Example_Project", "sample__tools");
         var button = new RepositoryFilterButton();
         button.SetEntries(new() { new(scope, 3) }, null);
+        Assert.Equal("Filter by repository: All repositories", new ButtonAutomationPeer(button).GetName());
         var project = button.ContextMenu!.Items.OfType<MenuItem>().Single(item => item.HasItems);
         Assert.Equal("Example_Project  3", Assert.IsType<TextBlock>(project.Header).Text);
         var repository = Assert.IsType<MenuItem>(project.Items[0]);
         Assert.Equal("sample__tools  3", Assert.IsType<TextBlock>(repository.Header).Text);
         Assert.Equal("sample__tools  3", AutomationProperties.GetName(repository));
         Assert.Equal("sample__tools  3", TextSearch.GetText(repository));
+        button.SetEntries(new() { new(scope, 3) }, scope.Key);
+        Assert.Equal("Filter by repository: Example_Project/sample__tools", new ButtonAutomationPeer(button).GetName());
     });
 
     [Fact]
