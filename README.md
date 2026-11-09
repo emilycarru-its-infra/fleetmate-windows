@@ -531,7 +531,7 @@ $env:SNIPE_API_KEY = "your-key"
 
 The desktop Pipelines view stays current through one worker for the app session. It checks targeted run summaries every 15 seconds while Pipelines shows active work, and every 60 seconds elsewhere while FleetMate is active. Checks pause when the app is inactive, minimized or suspended; failures back off up to 5 minutes. Returning to a view or resuming revalidates stale data. GitHub conditional requests and rate-limit gates remain in use.
 
-Automatic pipeline checks read at most 4 GitHub run/repository targets with 2 workers and small project batches on Azure DevOps. Repository/project discovery runs at most every 15 minutes, independently of commit scans; cached history retains up to 500 runs across 7 days. Pull request threads and whole-project commit scans refresh only on stale entry or explicit Refresh. Pipeline selection and status updates preserve the current log; logs load on opening or manual reload and cancel when hidden.
+Fast pipeline checks read at most 4 GitHub run/repository targets with 2 workers and small project batches on Azure DevOps. Initial load, manual Refresh and a history pass due every 15 minutes visit every discovered scope for the selected source, using 2 workers per provider. Failed or cancelled history remains due and retries with backoff. Repository/project discovery has its own 15-minute cache, independently of commit scans; stored history retains up to 500 runs across 7 days. Pull request threads and whole-project commit scans refresh only on stale entry or explicit Refresh. Pipeline selection and status updates preserve the current log; logs load on opening or manual reload and cancel when hidden.
 
 ### Prerequisites
 
