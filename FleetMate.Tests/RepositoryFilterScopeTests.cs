@@ -18,6 +18,9 @@ public sealed class RepositoryFilterScopeTests
         Assert.False(scope.Matches("Tools#One"));
         Assert.True(scope.Matches("Tools#One", allowRepositoryOnly: true));
         Assert.Null(RepositoryFilterScope.FromKey("example/tools"));
+        var reservedPrefixOwner = new RepositoryFilterScope(PullRequestSource.GitHub, "repository", "docs");
+        Assert.True(reservedPrefixOwner.Matches("repository/docs"));
+        Assert.Null(RepositoryFilterScope.FromKey("repository/docs"));
     }
 
     [Fact]
