@@ -55,7 +55,7 @@ public partial class TicketsPage
     {
         if (!IsInitialized || EmptyStatePanel == null) return;
 
-        var reason = _tdxService == null || _app == null || _isInboxView
+        var reason = _tdxService == null || _app == null
             ? TicketsEmptyReason.None
             : TicketsPageSync.EmptyReason(
                 loadingShown: LoadingPanel.Visibility == Visibility.Visible,

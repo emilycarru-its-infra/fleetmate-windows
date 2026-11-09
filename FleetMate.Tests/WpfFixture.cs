@@ -194,6 +194,7 @@ public sealed class WpfFixture : IDisposable
         {
             Source = new Uri("pack://application:,,,/fleetmate-gui;component/Views/Shared/DiffTemplates.xaml"),
         });
+        resources["ChromeIconButtonStyle"] = new Style(typeof(System.Windows.Controls.Button));
         resources["CardStyle"] = new Style(typeof(System.Windows.Controls.Border));
         resources["NavigationTabStyle"] = new Style(typeof(System.Windows.Controls.RadioButton));
         resources["FleetListViewItemStyle"] = new Style(typeof(System.Windows.Controls.ListViewItem));

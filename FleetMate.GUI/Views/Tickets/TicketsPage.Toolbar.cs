@@ -14,7 +14,7 @@ public partial class TicketsPage
 {
     private bool _syncingSortControls;
 
-    private TicketsViewMode CurrentViewMode => TicketsToolbarRules.ModeOf(_isBoardView, _isInboxView);
+    private TicketsViewMode CurrentViewMode => TicketsToolbarRules.ModeOf(_isBoardView, false);
 
     /// <summary>Show the controls that mean something in the current view.</summary>
     private void UpdateToolbarForView()

@@ -84,22 +84,15 @@
                 <!-- Inbox, then List | Board, as on Mac (ViewModePill): lifted together
                      into the window's title bar after Back and Forward (IChromeToolbar). -->
                 <StackPanel x:Name="ViewModeChrome" Orientation="Horizontal" VerticalAlignment="Center">
-                    <!-- Inbox: every recent comment that notified you, on any ticket.
-                         A mail icon ahead of List | Board, with the unread count as a
-                         red badge on its corner. Hidden until the first full scan
-                         finishes, as on Mac, so nobody reads a partial inbox. Same
-                         group as List and Board, so picking it leaves either of them.
-                         A square as tall as the List | Board segment. ModernWPF's
-                         RadioButton style sets a MinWidth of 120, which stretched it into a
-                         wide pill with the icon adrift, so the minimums are cleared. -->
+                    <!-- The envelope opens the cached inbox without changing List or Board. -->
                     <Grid x:Name="InboxButtonHost" Visibility="Collapsed" Margin="0,0,10,0" VerticalAlignment="Center">
-                        <RadioButton x:Name="InboxViewRadio" GroupName="ViewMode" Width="32" Height="32"
+                        <ToggleButton x:Name="InboxButton" Width="32" Height="32"
                                      MinWidth="0" MinHeight="0" Padding="0"
-                                     Checked="OnViewModeChanged" Cursor="Hand"
+                                     Click="OnInboxButtonClicked" Cursor="Hand"
                                      ToolTip="Inbox: comments from the last 90 days that notified you (Ctrl+Alt+3)"
                                      AutomationProperties.Name="Inbox">
-                            <RadioButton.Template>
-                                <ControlTemplate TargetType="RadioButton">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
                                     <Border x:Name="Chrome" CornerRadius="8" BorderThickness="1" Background="Transparent"
                                             BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
                                         <ui:FontIcon x:Name="Icon" FontFamily="Segoe Fluent Icons" Glyph="&#xE715;" FontSize="15"
@@ -120,8 +113,8 @@
                                         </Trigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
-                            </RadioButton.Template>
-                        </RadioButton>
+                            </ToggleButton.Template>
+                        </ToggleButton>
                         <!-- The standard red count badge, hidden at zero. -->
                         <Border x:Name="InboxBadge" Visibility="Collapsed" IsHitTestVisible="False"
                                 HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-6,-8,0"
@@ -586,30 +579,41 @@
                 </Grid>
             </Border>
             
-            <!-- Inbox View: comments that notified the signed-in person. Read
-                 state is kept on this PC only; TeamDynamix has none. -->
-            <Border x:Name="InboxViewPanel" Grid.Column="0" Style="{StaticResource CardStyle}" Visibility="Collapsed">
+            <Popup x:Name="InboxPopup" Placement="Bottom" HorizontalOffset="-2" VerticalOffset="6"
+                   StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
+                   Opened="OnInboxPopupOpened" Closed="OnInboxPopupClosed">
+                <Border x:Name="InboxPopover" Width="560" Height="620" Padding="14" CornerRadius="12"
+                        Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                        KeyboardNavigation.TabNavigation="Cycle" PreviewKeyDown="OnInboxPopupKeyDown">
                 <DockPanel>
-                    <DockPanel DockPanel.Dock="Top" Margin="12,10,12,8">
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                             <Button x:Name="InboxMarkAllReadButton" Content="Mark all read" Margin="0,0,8,0" Click="OnInboxMarkAllReadClicked" />
                             <Button x:Name="InboxRefreshButton" Click="OnInboxRefreshClicked" ToolTip="Scan for new comments now">
                                 <StackPanel Orientation="Horizontal"><ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE72C;" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" /><TextBlock Text="Refresh" VerticalAlignment="Center" /></StackPanel>
                             </Button>
+                            <Button Margin="6,0,0,0" Width="28" MinWidth="0" Padding="0" Click="OnInboxCloseClicked"
+                                    ToolTip="Close inbox" AutomationProperties.Name="Close inbox">
+                                <ui:FontIcon FontFamily="Segoe Fluent Icons" Glyph="&#xE711;" FontSize="12" />
+                            </Button>
                         </StackPanel>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <ui:ProgressRing x:Name="InboxProgressRing" IsActive="False" Width="14" Height="14" Margin="0,0,8,0" Visibility="Collapsed" />
-                            <TextBlock x:Name="InboxStatusText" VerticalAlignment="Center" TextWrapping="Wrap"
-                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                        </StackPanel>
+                        <TextBlock Text="Inbox" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
                     </DockPanel>
+                    <Grid DockPanel.Dock="Top" Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <ui:ProgressRing x:Name="InboxProgressRing" IsActive="False" Width="14" Height="14" Margin="0,0,8,0" Visibility="Collapsed" />
+                            <TextBlock Grid.Column="1" x:Name="InboxStatusText" VerticalAlignment="Center" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        </Grid>
                     <Grid>
                         <TextBlock x:Name="InboxEmptyText" Visibility="Collapsed" Margin="24" TextWrapping="Wrap"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   HorizontalAlignment="Center" VerticalAlignment="Top"
                                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                         <ListView x:Name="InboxListView" SelectionMode="Single"
                                   ItemContainerStyle="{StaticResource FleetListViewItemStyle}"
-                                  SelectionChanged="OnInboxItemSelected">
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  PreviewMouseLeftButtonUp="OnInboxItemClicked" KeyDown="OnInboxItemsKeyDown">
                             <ListView.ItemTemplate>
                                 <DataTemplate>
                                     <DockPanel Margin="4,6">
@@ -634,7 +638,8 @@
                         </ListView>
                     </Grid>
                 </DockPanel>
-            </Border>
+                </Border>
+            </Popup>
 
             <!-- Kanban Board View -->
             <ScrollViewer x:Name="BoardViewPanel" Grid.Column="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Visibility="Collapsed">

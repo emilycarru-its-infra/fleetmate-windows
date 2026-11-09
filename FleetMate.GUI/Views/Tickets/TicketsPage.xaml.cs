@@ -61,7 +61,6 @@ public partial class TicketsPage : Page
     private bool _detailPanelVisible = false;
     private bool _showClosed = false;  // Default to hiding closed tickets (Show Closed unchecked)
     private bool _isBoardView = true;   // List vs Board view mode (Board is the default, macOS parity)
-    private bool _isInboxView;          // Inbox: comments that notified the signed-in person
     private string _boardGroupBy = "Responsible"; // Status | Responsible | Priority | Group
     private string _feedFilter = "Comments";  // Comments (default), Activity, All
 private bool _isInitialLoadDone;
@@ -86,6 +85,8 @@ private bool _isInitialLoadDone;
     public TicketsPage()
     {
         InitializeComponent();
+        InboxPopup.PlacementTarget = InboxButton;
+        Unloaded += (_, _) => InboxPopup.IsOpen = false;
         AttachTicketMenus();
         InitListTable();
         AgentButton.Source = () => _selectedTicket is { } ticket ? AgentContextMenu.Resolve(ticket) : null;
@@ -585,12 +586,9 @@ private bool _isInitialLoadDone;
         if (!IsInitialized) return;
 
         _isBoardView = BoardViewRadio.IsChecked == true;
-        _isInboxView = InboxViewRadio.IsChecked == true;
 
-        ListViewPanel.Visibility = !_isBoardView && !_isInboxView ? Visibility.Visible : Visibility.Collapsed;
+        ListViewPanel.Visibility = !_isBoardView ? Visibility.Visible : Visibility.Collapsed;
         BoardViewPanel.Visibility = _isBoardView ? Visibility.Visible : Visibility.Collapsed;
-        InboxViewPanel.Visibility = _isInboxView ? Visibility.Visible : Visibility.Collapsed;
-        OnInboxVisibilityChanged();
         UpdateEmptyState();
         UpdateToolbarForView();
 
