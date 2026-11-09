@@ -47,6 +47,8 @@ public partial class App
     /// </summary>
     public List<WorkItem>? CachedMyWorkItems { get; private set; }
 
+    public List<WorkItem> CachedInitiativeAncestors { get; private set; } = new();
+
     private DateTime? _myWorkItemsTime;
 
     /// <summary>A failed or signed-out load is retried no sooner than this, so a redraw never loops on it.</summary>
@@ -63,7 +65,15 @@ public partial class App
         try
         {
             var items = await Task.Run(() => devOps.GetMyOpenWorkItemsAsync());
-            await Dispatcher.InvokeAsync(() => CachedMyWorkItems = items);
+            List<WorkItem> ancestors;
+            try { ancestors = await devOps.GetInitiativeAncestorsAsync(items); }
+            catch (Exception) { ancestors = new(); Log.Warning("Initiative ancestry unavailable"); }
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (!ReferenceEquals(devOps, DevOpsService)) return;
+                CachedMyWorkItems = items;
+                CachedInitiativeAncestors = ancestors;
+            });
             Log.Information("Loaded {Count} of my open work items", items.Count);
         }
         catch (Exception ex)
@@ -72,7 +82,7 @@ public partial class App
         }
         finally
         {
-            _myWorkItemsTime = DateTime.Now;
+            if (ReferenceEquals(devOps, DevOpsService)) _myWorkItemsTime = DateTime.Now;
         }
     }
 

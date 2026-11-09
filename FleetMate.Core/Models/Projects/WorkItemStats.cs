@@ -8,6 +8,7 @@ namespace FleetMate.Core.Models.Projects;
 public sealed record WorkItemStats
 {
     public const int StaleDays = 30;
+    public const int InitiativeMaxDepth = 16;
 
     private static readonly HashSet<string> NotStarted = new(StringComparer.OrdinalIgnoreCase) { "New", "To Do", "Proposed" };
 
@@ -68,6 +69,30 @@ public sealed record WorkItemStats
         .Select(g => (g.Key, g.Count()))
         .OrderByDescending(x => x.Item2).ThenBy(x => x.Key, StringComparer.Ordinal)
         .ToList();
+
+    /// <summary>Count only the supplied items; ancestors supply labels, never extra work.</summary>
+    public static List<(string Label, int Count)> Initiatives(IEnumerable<WorkItem> items, IEnumerable<WorkItem> ancestors)
+    {
+        var original = items.ToList();
+        var index = ancestors.Concat(original).GroupBy(w => w.Id).ToDictionary(g => g.Key, g => g.Last());
+        return Ranked(original, item =>
+        {
+            var current = item;
+            var seen = new HashSet<int>();
+            for (var depth = 0; depth <= InitiativeMaxDepth && seen.Add(current.Id); depth++)
+            {
+                if (current.WorkItemType.Equals("Initiative", StringComparison.OrdinalIgnoreCase))
+                {
+                    var title = current.Title.Trim();
+                    return title.Length == 0 ? $"Initiative #{current.Id}" : $"{title} (#{current.Id})";
+                }
+                if (current.HierarchyParentId is not { } parent) return "Unassigned";
+                if (depth == InitiativeMaxDepth || !index.TryGetValue(parent, out var next)) return "Unavailable";
+                current = next;
+            }
+            return "Unavailable";
+        });
+    }
 
     private static DateTime? Utc(DateTime? value) => value is not { } v ? null
         : v.Kind == DateTimeKind.Local ? v.ToUniversalTime() : DateTime.SpecifyKind(v, DateTimeKind.Utc);

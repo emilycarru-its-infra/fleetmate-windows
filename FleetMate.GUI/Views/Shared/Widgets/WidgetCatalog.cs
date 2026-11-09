@@ -220,9 +220,16 @@ public static partial class WidgetCatalog
         cards.Add(WidgetCards.Card("By Type", WidgetCards.ChartOr(byType.Count > 0, loading, "No work item data",
             () => WidgetCards.HorizontalBars(byType, _ => P.Indigo)), loading: loading));
 
-        var byProject = WorkItemStats.Ranked(mine, w => w.Fields.TeamProject).Take(8).Select(r => new ChartSlice(r.Label, r.Count)).ToList();
-        cards.Add(WidgetCards.Card("By Project", WidgetCards.ChartOr(byProject.Count > 0, loading, "No work item data",
-            () => WidgetCards.HorizontalBars(byProject, _ => P.Teal)), loading: loading));
+        var byInitiative = WorkItemStats.Initiatives(mine, app.CachedInitiativeAncestors)
+            .Select(r => new ChartSlice(r.Label, r.Count)).ToList();
+        cards.Add(WidgetCards.Card("By Initiative", WidgetCards.ChartOr(byInitiative.Count > 0, loading, "No work item data",
+            () => new System.Windows.Controls.ScrollViewer
+            {
+                Content = WidgetCards.HorizontalBars(byInitiative, _ => P.Teal),
+                VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Disabled,
+                Height = Math.Min(190, byInitiative.Count * 24),
+            }), loading: loading));
 
         var orgRoot = app.Config.AzureDevOps?.BaseUrl?.TrimEnd('/');
         var workRows = mine

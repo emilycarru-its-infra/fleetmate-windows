@@ -367,6 +367,9 @@ public partial class App : Application
         DevelopmentPullRequests = null;
         DevelopmentCommits = null;
         DevelopmentRuns = null;
+        CachedMyWorkItems = null;
+        CachedInitiativeAncestors = new();
+        _myWorkItemsTime = null;
         // Refresh means fresh: GitHub data is rebuilt in full, not incrementally.
         FleetMate.Core.Services.Projects.GitHubSync.RequestFullResync();
         _devicesCacheTime = null;
