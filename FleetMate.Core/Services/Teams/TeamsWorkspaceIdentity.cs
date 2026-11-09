@@ -5,6 +5,8 @@ namespace FleetMate.Core.Services.Teams;
 /// <summary>A GUI account snapshot, used only for token/workspace consistency. The API still authorizes every request.</summary>
 public sealed record TeamsWorkspaceIdentity(string Account, string? Tenant = null);
 
+public sealed record TeamsStorageIdentity(Guid TenantId, Guid ObjectId);
+
 internal sealed class TeamsWorkspaceBinding
 {
     private readonly TeamsWorkspaceIdentity _expected;
@@ -12,6 +14,10 @@ internal sealed class TeamsWorkspaceBinding
     private string? _tenant;
     private string? _objectId;
     internal Func<string?>? CurrentAccount { get; set; }
+    internal TeamsStorageIdentity? StorageIdentity
+    {
+        get { lock (_gate) return Guid.TryParse(_tenant, out var tenant) && Guid.TryParse(_objectId, out var actor) ? new(tenant, actor) : null; }
+    }
 
     internal TeamsWorkspaceBinding(TeamsWorkspaceIdentity expected)
     {

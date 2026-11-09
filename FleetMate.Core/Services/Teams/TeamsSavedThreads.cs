@@ -7,7 +7,7 @@ namespace FleetMate.Core.Services.Teams;
 
 public sealed record TeamsSavedThread(TeamsSearchHit Hit, DateTimeOffset SavedAt, string Collection = "Saved");
 
-/// <summary>Local references and search summaries, partitioned by API and signed-in account. Full messages are fetched again.</summary>
+/// <summary>Local references, partitioned by API and verified tenant/principal. Full messages are fetched again.</summary>
 public sealed class TeamsSavedThreads
 {
     private readonly string _path;
@@ -22,13 +22,13 @@ public sealed class TeamsSavedThreads
         public List<string> Following { get; init; } = new();
     }
 
-    public TeamsSavedThreads(string endpoint, string account, string? directory = null)
+    public TeamsSavedThreads(string endpoint, TeamsStorageIdentity identity, string? directory = null)
     {
-        if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(account))
+        if (string.IsNullOrWhiteSpace(endpoint) || identity == null || identity.TenantId == Guid.Empty || identity.ObjectId == Guid.Empty)
             throw new ArgumentException("A Teams connection and signed-in account are required to save threads.");
         if (!Uri.TryCreate(endpoint.Trim(), UriKind.Absolute, out var connection)
             || connection.Scheme is not ("https" or "http")) throw new ArgumentException("The Teams connection must be an HTTP or HTTPS URL.");
-        var scope = connection.AbsoluteUri.TrimEnd('/') + "\n" + account.Trim().ToLowerInvariant();
+        var scope = connection.AbsoluteUri.TrimEnd('/') + "\n" + identity.TenantId.ToString("D") + "\n" + identity.ObjectId.ToString("D");
         var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(scope))).ToLowerInvariant();
         _path = Path.Combine(directory ?? Path.Combine(AppEdition.Current.LocalAppDataDirectory, "teams"), key + ".json");
     }
@@ -51,7 +51,7 @@ public sealed class TeamsSavedThreads
     {
         var state = Read();
         var items = state.Saved.Where(item => !Same(item.Hit, hit)).ToList();
-        items.Insert(0, new TeamsSavedThread(hit, DateTimeOffset.UtcNow,
+        items.Insert(0, new TeamsSavedThread(Reference(hit), DateTimeOffset.UtcNow,
             string.IsNullOrWhiteSpace(collection) ? "Saved" : TeamsText.OneLine(collection.Trim())));
         Write(state with { Saved = items });
         return items;
@@ -79,7 +79,18 @@ public sealed class TeamsSavedThreads
             || state.Saved.Any(item => item == null || item.Hit == null || string.IsNullOrWhiteSpace(item.Hit.ChannelId) || string.IsNullOrWhiteSpace(item.Hit.ThreadId))
             || state.Following.Any(string.IsNullOrWhiteSpace) || state.Following.Count > 500)
             throw new InvalidDataException("The saved Teams state is invalid or belongs to a newer version.");
-        return state;
+        return state with { Saved = state.Saved.Select(item => item with { Hit = Reference(item.Hit) }).ToList() };
+    }
+
+    private static TeamsSearchHit Reference(TeamsSearchHit hit)
+    {
+        var title = TeamsText.OneLine(hit.Subject ?? "Conversation");
+        return hit with
+        {
+            Subject = title[..Math.Min(160, title.Length)],
+            Snippet = "", AuthorDisplayName = null, CreatedAt = "", LastActivityAt = "",
+            ReplyCount = 0, Participants = Array.Empty<string>(), Score = 0,
+        };
     }
 
     private void Write(State state)
@@ -88,7 +99,15 @@ public sealed class TeamsSavedThreads
         var temporary = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            File.WriteAllText(temporary, JsonSerializer.Serialize(state, Json));
+            File.WriteAllText(temporary, JsonSerializer.Serialize(new
+            {
+                state.Version, state.Following,
+                Saved = state.Saved.Select(item => new
+                {
+                    Hit = new { item.Hit.ThreadId, item.Hit.TeamId, item.Hit.TeamName, item.Hit.ChannelId, item.Hit.ChannelName, item.Hit.Subject, item.Hit.WebUrl },
+                    item.SavedAt, item.Collection,
+                }),
+            }, Json));
             File.Move(temporary, _path, overwrite: true);
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }

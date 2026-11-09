@@ -47,7 +47,7 @@ public partial class TeamsPage : Page, ITabSearch, IDisposable
         public string Title => TeamsText.OneLine(string.IsNullOrWhiteSpace(Hit.Subject) ? Hit.Snippet : Hit.Subject);
         public string Location => TeamsText.OneLine($"{Hit.TeamName} › {Hit.ChannelName}");
         public string Snippet => TeamsText.TerminalSafe(Hit.Snippet);
-        public string Activity => $"{Hit.ReplyCount} replies · {TeamsText.LocalTime(Hit.LastActivityAt)}";
+        public string Activity => string.IsNullOrEmpty(Hit.LastActivityAt) ? "Saved reference" : $"{Hit.ReplyCount} replies · {TeamsText.LocalTime(Hit.LastActivityAt)}";
     }
 
     public TeamsPage() : this((Application.Current as App)?.Config ?? new FleetMateConfig()) { }
@@ -66,9 +66,8 @@ public partial class TeamsPage : Page, ITabSearch, IDisposable
         BuildChannelTree();
         Loaded += async (_, _) =>
         {
-            var savedTask = LoadSavedThreadsAsync();
             if (!_channelsLoaded) await LoadChannelsAsync();
-            await savedTask;
+            await LoadSavedThreadsAsync();
             UpdateLayoutMode();
         };
         SizeChanged += (_, _) => UpdateLayoutMode();
@@ -97,6 +96,7 @@ public partial class TeamsPage : Page, ITabSearch, IDisposable
             _authorizedChannels = _channels.Select(channel => channel.ChannelId).ToHashSet(StringComparer.Ordinal);
             _channelsLoaded = true;
             _channelError = false;
+            await LoadSavedThreadsAsync();
             if ((_scope.Channel != null && !_authorizedChannels.Contains(_scope.Channel))
                 || (_scope.Channel == null && _scope.Team != null && !_channels.Any(channel => channel.TeamId == _scope.Team)))
             {
@@ -465,11 +465,8 @@ public partial class TeamsPage : Page, ITabSearch, IDisposable
         if (_disposed || _savedStore != null || !_service.IsConfigured) return;
         try
         {
-            var account = _service.Workspace?.Account ?? EntraTokenSource.Shared?.WindowsUpn() ?? EntraTokenSource.ResolveWindowsUpn();
-            if (_service.Workspace == null && string.IsNullOrWhiteSpace(account) && EntraTokenSource.Shared is { } tokenSource)
-                account = await tokenSource.ResolveAccountUpnAsync();
-            if (string.IsNullOrWhiteSpace(account)) return;
-            var store = new TeamsSavedThreads(_config.TeamsApiUrl!, account);
+            if (!_channelsLoaded || _service.StorageIdentity is not { } identity) return;
+            var store = new TeamsSavedThreads(_config.TeamsApiUrl!, identity);
             _savedItems = store.Load();
             _following = store.FollowedChannels().ToHashSet(StringComparer.Ordinal);
             _savedStore = store;

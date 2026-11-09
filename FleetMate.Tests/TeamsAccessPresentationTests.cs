@@ -39,7 +39,7 @@ public sealed class TeamsAccessPresentationTests : TempFolder
 
     private TeamsPage Page(Api api, out TeamsSavedThreads store, out TeamsSearchService service)
     {
-        store = new TeamsSavedThreads("https://search.example.org", "member@example.org", Path.Combine(Root, "state"));
+        store = new TeamsSavedThreads("https://search.example.org", new TeamsStorageIdentity(Guid.Parse("11111111-1111-1111-1111-111111111111"), Guid.Parse("22222222-2222-2222-2222-222222222222")), Path.Combine(Root, "state"));
         TeamsSearchHit Hit(string channel) => new("t1", "team", "Example Team", channel, "General", "Topic", "Summary", "Example author",
             "2026-11-01T12:00:00Z", "2026-11-01T12:00:00Z", 0, Array.Empty<string>(), 0, null);
         store.Save(Hit("c1"));

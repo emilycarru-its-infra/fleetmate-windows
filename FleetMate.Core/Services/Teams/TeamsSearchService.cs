@@ -171,6 +171,7 @@ public sealed class TeamsSearchService : IDisposable
     private EntraTokenSource? _ownedSource;
     private readonly TeamsWorkspaceBinding? _workspaceBinding;
     public TeamsWorkspaceIdentity? Workspace { get; }
+    public TeamsStorageIdentity? StorageIdentity => _workspaceBinding?.StorageIdentity;
 
     internal static readonly JsonSerializerOptions Json = new()
     {

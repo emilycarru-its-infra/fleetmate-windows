@@ -20,6 +20,7 @@ public class TeamsWorkspaceIdentityTests
     {
         var binding = new TeamsWorkspaceBinding(new TeamsWorkspaceIdentity("first@example.org", Tenant));
         binding.Check(Token("FIRST@example.org"));
+        Assert.Equal(new TeamsStorageIdentity(Guid.Parse(Tenant), Guid.Parse(ObjectId)), binding.StorageIdentity);
         Assert.Throws<TeamsSearchException>(() => binding.Check(Token("second@example.org")));
         Assert.Throws<TeamsSearchException>(() => binding.Check(Token("first@example.org", objectId: "33333333-3333-3333-3333-333333333333")));
         Assert.Throws<TeamsSearchException>(() => binding.Check(Token("first@example.org", tenant: "44444444-4444-4444-4444-444444444444")));
