@@ -269,6 +269,7 @@ public sealed class DevelopmentDataSync : IDisposable
                 }));
             }
             catch { ct.ThrowIfCancellationRequested(); succeeded = false; }
+            ct.ThrowIfCancellationRequested();
             if (fullHistory && succeeded) _github.HistoryAt = DateTimeOffset.UtcNow;
             _github.Error = succeeded ? null : "GitHub unavailable";
             _github.Complete(succeeded, DateTimeOffset.UtcNow);
@@ -304,6 +305,7 @@ public sealed class DevelopmentDataSync : IDisposable
                 }));
             }
             catch { ct.ThrowIfCancellationRequested(); succeeded = false; }
+            ct.ThrowIfCancellationRequested();
             if (fullHistory && succeeded) _azure.HistoryAt = DateTimeOffset.UtcNow;
             _azure.Error = succeeded ? null : "Azure DevOps unavailable";
             _azure.Complete(succeeded, DateTimeOffset.UtcNow);
