@@ -63,7 +63,7 @@ public partial class SettingsPage : Page
         foreach (var element in new UIElement[]
                  {
                      ModulesCard, ManageTab, EnrollmentTab, TerminalTab,
-                     GraphCard, DevOpsCard, SnipeCard, ReportMateCard, HandbookCard,
+                     GraphCard, DevOpsCard, SnipeCard, ReportMateCard, HandbookCard, TeamsCard,
                  })
             element.Visibility = Visibility.Collapsed;
         Grid.SetColumn(TdxCard, 0);
@@ -98,6 +98,10 @@ public partial class SettingsPage : Page
         TdxAppIdTextBox.Text = config.Tdx?.AppId > 0 ? config.Tdx.AppId.ToString() : "";
 
         ReportMateUrlTextBox.Text = config.ReportMateUrl ?? "";
+        TeamsUrlTextBox.Text = config.TeamsApiUrl ?? "";
+        TeamsScopeTextBox.Text = config.TeamsApiScope ?? "";
+        TeamsDefaultTeamTextBox.Text = config.TeamsDefaultTeam ?? "";
+        TeamsDefaultChannelsTextBox.Text = config.TeamsDefaultChannels ?? "";
 
         HandbookRepoUrlTextBox.Text = config.HandbookRepoUrl ?? "";
         HandbookSiteUrlTextBox.Text = config.HandbookSiteUrl ?? "";
@@ -193,6 +197,11 @@ public partial class SettingsPage : Page
 
             SetReg(key, "ReportMateUrl", ReportMateUrlTextBox.Text);
             key.DeleteValue("ReportMatePassphrase", throwOnMissingValue: false);
+
+            SetOrDeleteReg(key, "TeamsApiUrl", TeamsUrlTextBox.Text);
+            SetOrDeleteReg(key, "TeamsApiScope", TeamsScopeTextBox.Text);
+            SetOrDeleteReg(key, "TeamsDefaultTeam", TeamsDefaultTeamTextBox.Text);
+            SetOrDeleteReg(key, "TeamsDefaultChannels", TeamsDefaultChannelsTextBox.Text);
 
             // Handbook and skills. Empty values are removed so a managed value applies.
             SetOrDeleteReg(key, "HandbookRepoUrl", HandbookRepoUrlTextBox.Text);

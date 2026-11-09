@@ -31,6 +31,7 @@ public static class AppModules
         new AppModule("Manage", "Manage", "Lab operations over SSH and Remote Desktop", "\uE90F"),
         new AppModule("Inventory", "Inventory", "Asset inventory and lifecycle", "\uE7B8"),
         new AppModule("Identity", "Identity", "Users, groups and directory roles", "\uE716"),
+        new AppModule("Teams", "Teams", "Search channel messages and read threads", "\uE8F2"),
         new AppModule("Tickets", "Tickets", "Service desk tickets", "\uE8EC"),
         new AppModule(Enrollment, "Enrollment", "Mac and Windows enrollment records, joined to Devices", "\uE896", IsTab: false),
     };
@@ -114,6 +115,7 @@ public static class AppModules
         "Reporting" => !string.IsNullOrWhiteSpace(config.ReportMateUrl),
         "Inventory" => !string.IsNullOrWhiteSpace(config.SnipeUrl),
         "Tickets" => !string.IsNullOrWhiteSpace(config.Tdx?.BaseUrl),
+        "Teams" => !string.IsNullOrWhiteSpace(config.TeamsApiUrl) && !string.IsNullOrWhiteSpace(config.TeamsApiScope),
         Enrollment => hasEnrollmentOrganizations || !string.IsNullOrWhiteSpace(config.Graph?.TenantId),
         _ => true,
     };

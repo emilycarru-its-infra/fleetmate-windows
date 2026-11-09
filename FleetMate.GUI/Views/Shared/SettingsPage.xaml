@@ -151,6 +151,24 @@
                             </StackPanel>
                         </Border>
 
+                        <Border x:Name="TeamsCard" Style="{StaticResource CardStyle}" Margin="0,0,0,8">
+                            <StackPanel>
+                                <TextBlock Text="Teams search" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
+                                <TextBlock Text="Service URL" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <TextBox x:Name="TeamsUrlTextBox" Margin="0,4,0,0" AutomationProperties.Name="Teams search service URL" />
+                                <TextBlock Text="Sign-in scope" Margin="0,8,0,0" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <TextBox x:Name="TeamsScopeTextBox" Margin="0,4,0,0" AutomationProperties.Name="Teams search sign-in scope" />
+                                <TextBlock Text="Default team ID" Margin="0,8,0,0" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <TextBox x:Name="TeamsDefaultTeamTextBox" Margin="0,4,0,0" AutomationProperties.Name="Default Teams team ID" />
+                                <TextBlock Text="Pinned channel IDs" Margin="0,8,0,0" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <TextBox x:Name="TeamsDefaultChannelsTextBox" Margin="0,4,0,0" MinHeight="70" AcceptsReturn="True" TextWrapping="Wrap"
+                                         AutomationProperties.Name="Pinned Teams channel IDs" />
+                                <TextBlock Text="Use one channel ID per line, or separate IDs with commas. Defaults select and organize the channel list; access follows your signed-in account. Leave a setting empty to use its managed value."
+                                           TextWrapping="Wrap" Margin="0,8,0,0" FontSize="11"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            </StackPanel>
+                        </Border>
+
                         <Border x:Name="HandbookCard" Style="{StaticResource CardStyle}">
                             <StackPanel>
                                 <TextBlock Text="Handbook and Skills" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" />
