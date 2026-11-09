@@ -29,4 +29,18 @@ public class TeamsPageLayoutTests
         Assert.Equal("Search Teams channels", ((ITabSearch)page).SearchScope!.Prompt);
         Assert.NotNull(((ITabSearch)page).SearchScope!.Submit);
     });
+    [Fact]
+    public void ResizingTheWindowPreservesTheAdjustedSidebarWidth() => WpfFixture.Run(() =>
+    {
+        var page = new TeamsPage();
+        page.Measure(new Size(1500, 900));
+        page.Arrange(new Rect(0, 0, 1500, 900));
+        page.UpdateLayout();
+        var column = Assert.IsType<ColumnDefinition>(page.FindName("SidebarColumn"));
+        column.Width = new GridLength(310);
+        page.Measure(new Size(1300, 800));
+        page.Arrange(new Rect(0, 0, 1300, 800));
+        page.UpdateLayout();
+        Assert.Equal(310, column.Width.Value);
+    });
 }

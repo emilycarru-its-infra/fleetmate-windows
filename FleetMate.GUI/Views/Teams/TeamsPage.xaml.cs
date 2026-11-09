@@ -25,6 +25,7 @@ public partial class TeamsPage : Page, ITabSearch
     private bool _defaultsApplied;
     private bool _buildingTree;
     private bool _sidebarShown = true;
+    private double _sidebarWidth = 240;
     private bool _hasSearched;
     private bool _channelError;
 
@@ -101,7 +102,9 @@ public partial class TeamsPage : Page, ITabSearch
                 foreach (var channel in pinned) group.Items.Add(ChannelItem(channel, true));
                 ChannelTree.Items.Add(group);
             }
-            foreach (var team in _channels.GroupBy(c => c.TeamId).OrderBy(g => g.First().TeamName, StringComparer.CurrentCultureIgnoreCase))
+            foreach (var team in _channels.GroupBy(c => c.TeamId)
+                         .OrderBy(g => g.Key == _config.TeamsDefaultTeam?.Trim() ? 0 : 1)
+                         .ThenBy(g => g.First().TeamName, StringComparer.CurrentCultureIgnoreCase))
             {
                 var name = TeamsText.OneLine(team.First().TeamName);
                 var item = new TreeViewItem { Header = name, Tag = new Scope(team.Key, null, name), IsExpanded = true };
@@ -115,6 +118,7 @@ public partial class TeamsPage : Page, ITabSearch
                         if (child.Tag is Scope { Channel: var id } && id == _scope.Channel) initial = child;
             }
             initial.IsSelected = true;
+            initial.Dispatcher.BeginInvoke(new Action(initial.BringIntoView), System.Windows.Threading.DispatcherPriority.Loaded);
             if (initial.Tag is Scope scope) _scope = scope;
             ShowScope();
             _defaultsApplied = true;
@@ -222,8 +226,13 @@ public partial class TeamsPage : Page, ITabSearch
         if (!IsInitialized) return;
         var sidebar = _sidebarShown;
         Sidebar.Visibility = SidebarDivider.Visibility = sidebar ? Visibility.Visible : Visibility.Collapsed;
+        if (!sidebar && SidebarColumn.Width.Value > 0)
+        {
+            _sidebarWidth = Math.Max(SidebarColumn.ActualWidth, 180);
+            SidebarColumn.Width = new GridLength(0);
+        }
         SidebarColumn.MinWidth = sidebar ? 180 : 0;
-        SidebarColumn.Width = new GridLength(sidebar ? 240 : 0);
+        if (sidebar && SidebarColumn.Width.Value <= 0) SidebarColumn.Width = new GridLength(_sidebarWidth);
         SidebarDividerColumn.Width = new GridLength(sidebar ? 5 : 0);
         var detail = _selectedHit != null;
         var beside = detail && ActualWidth >= 1200;
