@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Automation;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using FleetMate.Core.Models.Projects;
@@ -35,6 +36,7 @@ public sealed class RepositoryFilterButton : Button
         panel.Children.Add(arrow);
         panel.Children.Add(new TextBlock { Text = label, TextTrimming = TextTrimming.CharacterEllipsis });
         Content = panel;
+        AutomationProperties.SetName(this, $"Filter by repository: {label}");
         ToolTip = selection == null ? "Filter by repository" : label;
         Visibility = entries.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
         ContextMenu = BuildMenu();
@@ -48,10 +50,13 @@ public sealed class RepositoryFilterButton : Button
         foreach (var provider in _entries.GroupBy(entry => entry.Scope.Source))
         {
             menu.Items.Add(new Separator());
-            menu.Items.Add(new MenuItem { Header = $"{provider.Key.DisplayName()}  {provider.Sum(entry => entry.Count)}", IsEnabled = false, FontWeight = FontWeights.SemiBold });
+            var heading = NamedItem($"{provider.Key.DisplayName()}  {provider.Sum(entry => entry.Count)}");
+            heading.IsEnabled = false;
+            heading.FontWeight = FontWeights.SemiBold;
+            menu.Items.Add(heading);
             foreach (var container in provider.GroupBy(entry => entry.Scope.Container, StringComparer.OrdinalIgnoreCase).OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
             {
-                var submenu = new MenuItem { Header = $"{container.Key}  {container.Sum(entry => entry.Count)}" };
+                var submenu = NamedItem($"{container.Key}  {container.Sum(entry => entry.Count)}");
                 foreach (var entry in container.OrderBy(entry => entry.Scope.Repository, StringComparer.OrdinalIgnoreCase))
                     submenu.Items.Add(Leaf($"{entry.Scope.Repository ?? "Project pipelines"}  {entry.Count}", entry.Scope.Key,
                         Selection != null && entry.Scope.Matches(Selection, allowRepositoryOnly: true)));
@@ -63,7 +68,9 @@ public sealed class RepositoryFilterButton : Button
 
     private MenuItem Leaf(string label, string? key, bool selected)
     {
-        var item = new MenuItem { Header = label, IsCheckable = true, IsChecked = selected };
+        var item = NamedItem(label);
+        item.IsCheckable = true;
+        item.IsChecked = selected;
         item.Click += (_, _) =>
         {
             var previous = Selection;
@@ -71,6 +78,14 @@ public sealed class RepositoryFilterButton : Button
             SelectionChanged?.Invoke(this, new SelectionChangedEventArgs(Selector.SelectionChangedEvent,
                 new object?[] { previous }, new object?[] { key }));
         };
+        return item;
+    }
+
+    private static MenuItem NamedItem(string label)
+    {
+        var item = new MenuItem { Header = new TextBlock { Text = label } };
+        TextSearch.SetText(item, label);
+        AutomationProperties.SetName(item, label);
         return item;
     }
 
