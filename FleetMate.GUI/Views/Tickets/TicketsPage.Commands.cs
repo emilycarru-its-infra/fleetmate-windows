@@ -11,6 +11,13 @@ public partial class TicketsPage : IPageCommands, IChromeToolbar
     /// <summary>Clear Filters clears every filter selection; the search and Assigned to Me stay.</summary>
     bool IPageCommands.Execute(AppShortcut shortcut)
     {
+        if (shortcut == AppShortcut.ShowInbox && InboxButtonHost.Visibility == Visibility.Visible)
+        {
+            var wasOpen = InboxPopup.IsOpen;
+            InboxPopup.IsOpen = !wasOpen;
+            if (wasOpen) System.Windows.Input.Keyboard.Focus(InboxButton);
+            return true;
+        }
         if (shortcut != AppShortcut.ClearFilters) return false;
         _filters.ClearAll();
         return true;

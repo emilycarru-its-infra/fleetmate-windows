@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Threading;
 using FleetMate.Core.Models.Tickets;
 using FleetMate.Core.Services.Tickets;
@@ -28,6 +29,8 @@ public partial class TicketsPage
     private DateTime _inboxLastPassUtc = DateTime.MinValue;
     private string? _inboxError;
     private bool _inboxSelecting;
+    private DateTime _inboxClosedAt;
+    private Window? _inboxHostWindow;
 
     /// <summary>The signed-in person was found, changed or lost: load their saved inbox.</summary>
     private void OnInboxPersonChanged()
@@ -67,7 +70,7 @@ public partial class TicketsPage
     /// <summary>Inbox shown: refresh now if due, and every five minutes while it stays open.</summary>
     private void OnInboxVisibilityChanged()
     {
-        if (!_isInboxView)
+        if (!InboxPopup.IsOpen)
         {
             _inboxTimer?.Stop();
             return;
@@ -85,6 +88,7 @@ public partial class TicketsPage
 
     private void StopInbox()
     {
+        InboxPopup.IsOpen = false;
         _inboxTimer?.Stop();
         _inboxReloadTimer?.Stop();
         CancelInboxPass();
@@ -184,14 +188,11 @@ public partial class TicketsPage
         var unread = state?.UnreadCount ?? 0;
         InboxBadgeText.Text = TicketInboxBadge.Label(unread);
         InboxBadge.Visibility = unread > 0 ? Visibility.Visible : Visibility.Collapsed;
-        System.Windows.Automation.AutomationProperties.SetItemStatus(InboxViewRadio, TicketInboxBadge.AccessibleValue(unread));
-        InboxViewRadio.ToolTip = TicketsToolbarRules.InboxToolTip(unread);
+        System.Windows.Automation.AutomationProperties.SetItemStatus(InboxButton, TicketInboxBadge.AccessibleValue(unread));
+        InboxButton.ToolTip = TicketsToolbarRules.InboxToolTip(unread);
 
-        // Nobody sees a partial inbox: the mode appears once this computer's
-        // first full pass has finished, as the Mac's TicketInboxModel.isReady has it.
-        var ready = state?.ScannedThrough != null;
-        InboxButtonHost.Visibility = ready ? Visibility.Visible : Visibility.Collapsed;
-        if (!ready && InboxViewRadio.IsChecked == true) BoardViewRadio.IsChecked = true;
+        // The envelope remains available while scanning or signed out; status lives inside the popover.
+        InboxButtonHost.Visibility = Visibility.Visible;
         InboxMarkAllReadButton.IsEnabled = unread > 0;
 
         var rows = (state?.Items ?? new List<TicketInboxItem>())
@@ -205,9 +206,15 @@ public partial class TicketsPage
         _inboxSelecting = false;
 
         InboxEmptyText.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        InboxEmptyText.Text = _inboxPerson == null
-            ? "Your inbox appears once you are signed in to TeamDynamix."
-            : "No comments have notified you in the last 90 days.";
+        InboxEmptyText.Text = _tdxService == null
+            ? "TeamDynamix is not configured."
+            : _inboxPerson == null
+                ? "Sign in to TeamDynamix to see comments that notified you."
+                : _inboxError != null
+                    ? "The inbox could not be checked. Refresh to try again."
+                    : state?.ScannedThrough == null
+                        ? "Checking recent comments. Notifications will appear here."
+                        : "No comments have notified you in the last 90 days.";
     }
 
     private void OnInboxRefreshClicked(object sender, RoutedEventArgs e) => StartInboxPass();
@@ -220,9 +227,98 @@ public partial class TicketsPage
         RenderInboxItems();
     }
 
-    private async void OnInboxItemSelected(object sender, SelectionChangedEventArgs e)
+    private void OnInboxButtonClicked(object sender, RoutedEventArgs e)
+    {
+        if ((DateTime.UtcNow - _inboxClosedAt).TotalMilliseconds < 250)
+        {
+            InboxButton.IsChecked = false;
+            return;
+        }
+        InboxPopup.IsOpen = InboxButton.IsChecked == true;
+    }
+
+    private void OnInboxPopupOpened(object? sender, EventArgs e)
+    {
+        InboxButton.IsChecked = true;
+        _inboxHostWindow = Window.GetWindow(this);
+        if (_inboxHostWindow != null)
+        {
+            _inboxHostWindow.SizeChanged += OnInboxHostLayoutChanged;
+            _inboxHostWindow.LocationChanged += OnInboxHostLayoutChanged;
+            _inboxHostWindow.StateChanged += OnInboxHostLayoutChanged;
+        }
+        UpdateInboxPopoverSize();
+        OnInboxVisibilityChanged();
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (InboxPopup.IsOpen) Keyboard.Focus(InboxListView);
+        }, DispatcherPriority.Input);
+    }
+
+    private void OnInboxPopupClosed(object? sender, EventArgs e)
+    {
+        _inboxClosedAt = DateTime.UtcNow;
+        InboxButton.IsChecked = false;
+        if (_inboxHostWindow != null)
+        {
+            _inboxHostWindow.SizeChanged -= OnInboxHostLayoutChanged;
+            _inboxHostWindow.LocationChanged -= OnInboxHostLayoutChanged;
+            _inboxHostWindow.StateChanged -= OnInboxHostLayoutChanged;
+            _inboxHostWindow = null;
+        }
+        OnInboxVisibilityChanged();
+    }
+
+    private void OnInboxHostLayoutChanged(object? sender, EventArgs e)
+    {
+        if (_inboxHostWindow?.WindowState == WindowState.Minimized) { InboxPopup.IsOpen = false; return; }
+        UpdateInboxPopoverSize();
+        var offset = InboxPopup.HorizontalOffset;
+        InboxPopup.HorizontalOffset = offset + 0.5;
+        InboxPopup.HorizontalOffset = offset;
+    }
+
+    private void UpdateInboxPopoverSize()
+    {
+        if ((_inboxHostWindow ?? Window.GetWindow(this)) is not { } window) return;
+        var anchorBottom = InboxButton.TranslatePoint(new Point(0, InboxButton.ActualHeight), window).Y;
+        InboxPopover.Width = Math.Clamp(window.ActualWidth - 32, 280, 560);
+        InboxPopover.Height = Math.Max(180, window.ActualHeight - anchorBottom - InboxPopup.VerticalOffset);
+    }
+
+    private void OnInboxCloseClicked(object sender, RoutedEventArgs e)
+    {
+        InboxPopup.IsOpen = false;
+        Keyboard.Focus(InboxButton);
+    }
+
+    private void OnInboxPopupKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape) return;
+        InboxPopup.IsOpen = false;
+        Keyboard.Focus(InboxButton);
+        e.Handled = true;
+    }
+
+    private async void OnInboxItemClicked(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Left
+            && e.OriginalSource is DependencyObject source
+            && ItemsControl.ContainerFromElement(InboxListView, source) is ListViewItem)
+            await ActivateInboxSelectionAsync();
+    }
+
+    private async void OnInboxItemsKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        e.Handled = true;
+        await ActivateInboxSelectionAsync();
+    }
+
+    internal async Task ActivateInboxSelectionAsync()
     {
         if (_inboxSelecting || InboxListView.SelectedItem is not InboxRow row) return;
+        InboxPopup.IsOpen = false;
         if (_inboxState is { } state && _inboxPerson is { } person && !state.IsRead(row.Item.FeedId))
         {
             state.MarkRead(row.Item.FeedId);
@@ -234,7 +330,7 @@ public partial class TicketsPage
                      ?? (_tdxService == null ? null : await _tdxService.GetTicketAsync(row.Item.TicketId));
         if (ticket == null)
         {
-            InboxStatusText.Text = $"Ticket {row.Item.TicketId} could not be opened.";
+            ShowActionMessage($"Ticket {row.Item.TicketId} could not be opened.");
             return;
         }
         await OpenTicketInDetailAsync(ticket);

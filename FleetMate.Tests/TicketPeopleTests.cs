@@ -174,6 +174,7 @@ public class TicketPeopleTests
     [InlineData("", "")]
     [InlineData("   ", "")]
     [InlineData("Pat Example &lt;pat@example.invalid&gt;", "Notified: Pat Example <pat@example.invalid>")]
+    [InlineData("Pat Example <pat@example.invalid>, Lee Example <lee@example.invalid>", "Notified: Pat Example <pat@example.invalid>, Lee Example <lee@example.invalid>")]
     public void NotifiedLineShowsOnlyWhenTheListHasNames(string? list, string expected)
     {
         var item = new FeedDisplayItem { NotificationRecipients = FeedDisplayItem.NotifiedLine(list) };
