@@ -57,10 +57,14 @@ public sealed class TicketInboxPopoverTests
             var anchorBottom = button.TranslatePoint(new Point(0, button.ActualHeight), window).Y;
             Assert.Equal(window.ActualHeight - anchorBottom - popup.VerticalOffset, popover.Height, 1);
             var originalHeight = popover.Height;
-            window.Height += 80;
+            var resized = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            window.SizeChanged += (_, args) => { if (args.HeightChanged) resized.TrySetResult(); };
+            window.Height = window.ActualHeight - 80;
+            await resized.Task.WaitAsync(TimeSpan.FromSeconds(3));
             window.UpdateLayout();
-            await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-            Assert.True(popover.Height > originalHeight + 50);
+            anchorBottom = button.TranslatePoint(new Point(0, button.ActualHeight), window).Y;
+            Assert.Equal(Math.Max(180, window.ActualHeight - anchorBottom - popup.VerticalOffset), popover.Height, 1);
+            Assert.NotEqual(originalHeight, popover.Height);
             Assert.Equal(boardMode, board.IsChecked);
             Assert.Equal(!boardMode, list.IsChecked);
             Assert.Equal("preserved filter", search.Text);
@@ -72,6 +76,33 @@ public sealed class TicketInboxPopoverTests
             Assert.False(button.IsChecked);
             Assert.Equal(boardMode, board.IsChecked);
             Assert.Equal(!boardMode, list.IsChecked);
+        }
+        finally { popup.IsOpen = false; window.Close(); }
+    });
+
+    [Fact]
+    public Task FirstScanOrUnavailableStateKeepsTheEnvelopeAndPopoverAvailable() => WpfFixture.RunAsync(async () =>
+    {
+        var page = new TicketsPage();
+        var host = Assert.IsType<Grid>(page.FindName("InboxButtonHost"));
+        Assert.Equal(Visibility.Visible, host.Visibility);
+        var window = Host(page);
+        var popup = Assert.IsType<Popup>(page.FindName("InboxPopup"));
+        popup.StaysOpen = true;
+        try
+        {
+            Assert.True(((IPageCommands)page).Execute(AppShortcut.ShowInbox));
+            Assert.True(popup.IsOpen);
+            typeof(TicketsPage).GetField("_inboxState", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(page, new TicketInboxState());
+            typeof(TicketsPage).GetMethod("RenderInboxItems", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(page, null);
+            Assert.True(popup.IsOpen);
+            Assert.Equal(Visibility.Visible, host.Visibility);
+            Assert.False(string.IsNullOrWhiteSpace(Assert.IsType<TextBlock>(page.FindName("InboxEmptyText")).Text));
+            var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            popup.Closed += (_, _) => closed.TrySetResult();
+            popup.IsOpen = false;
+            await closed.Task.WaitAsync(TimeSpan.FromSeconds(3));
         }
         finally { popup.IsOpen = false; window.Close(); }
     });

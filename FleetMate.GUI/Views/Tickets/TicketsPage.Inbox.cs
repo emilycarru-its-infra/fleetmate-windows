@@ -191,11 +191,8 @@ public partial class TicketsPage
         System.Windows.Automation.AutomationProperties.SetItemStatus(InboxButton, TicketInboxBadge.AccessibleValue(unread));
         InboxButton.ToolTip = TicketsToolbarRules.InboxToolTip(unread);
 
-        // Nobody sees a partial inbox: the mode appears once this computer's
-        // first full pass has finished, as the Mac's TicketInboxModel.isReady has it.
-        var ready = state?.ScannedThrough != null;
-        InboxButtonHost.Visibility = ready ? Visibility.Visible : Visibility.Collapsed;
-        if (!ready) InboxPopup.IsOpen = false;
+        // The envelope remains available while scanning or signed out; status lives inside the popover.
+        InboxButtonHost.Visibility = Visibility.Visible;
         InboxMarkAllReadButton.IsEnabled = unread > 0;
 
         var rows = (state?.Items ?? new List<TicketInboxItem>())
@@ -209,9 +206,15 @@ public partial class TicketsPage
         _inboxSelecting = false;
 
         InboxEmptyText.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        InboxEmptyText.Text = _inboxPerson == null
-            ? "Your inbox appears once you are signed in to TeamDynamix."
-            : "No comments have notified you in the last 90 days.";
+        InboxEmptyText.Text = _tdxService == null
+            ? "TeamDynamix is not configured."
+            : _inboxPerson == null
+                ? "Sign in to TeamDynamix to see comments that notified you."
+                : _inboxError != null
+                    ? "The inbox could not be checked. Refresh to try again."
+                    : state?.ScannedThrough == null
+                        ? "Checking recent comments. Notifications will appear here."
+                        : "No comments have notified you in the last 90 days.";
     }
 
     private void OnInboxRefreshClicked(object sender, RoutedEventArgs e) => StartInboxPass();

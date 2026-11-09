@@ -85,7 +85,7 @@
                      into the window's title bar after Back and Forward (IChromeToolbar). -->
                 <StackPanel x:Name="ViewModeChrome" Orientation="Horizontal" VerticalAlignment="Center">
                     <!-- The envelope opens the cached inbox without changing List or Board. -->
-                    <Grid x:Name="InboxButtonHost" Visibility="Collapsed" Margin="0,0,10,0" VerticalAlignment="Center">
+                    <Grid x:Name="InboxButtonHost" Margin="0,0,10,0" VerticalAlignment="Center">
                         <ToggleButton x:Name="InboxButton" Width="32" Height="32"
                                      MinWidth="0" MinHeight="0" Padding="0"
                                      Click="OnInboxButtonClicked" Cursor="Hand"
