@@ -31,6 +31,7 @@ internal sealed class TeamsWorkspaceBinding
             var payload = parts[1].Replace('-', '+').Replace('_', '/');
             payload = payload.PadRight((payload.Length + 3) / 4 * 4, '=');
             using var json = JsonDocument.Parse(Convert.FromBase64String(payload));
+            if (json.RootElement.ValueKind != JsonValueKind.Object) throw Mismatch();
             string? Claim(string name) => json.RootElement.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
             var account = Normalize(Claim("preferred_username") ?? Claim("upn") ?? Claim("unique_name"));
             if (account != expected || !Guid.TryParse(Claim("tid"), out var tenant) || !Guid.TryParse(Claim("oid"), out var objectId)) throw Mismatch();

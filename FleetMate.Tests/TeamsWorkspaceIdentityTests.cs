@@ -24,6 +24,7 @@ public class TeamsWorkspaceIdentityTests
         Assert.Throws<TeamsSearchException>(() => binding.Check(Token("first@example.org", objectId: "33333333-3333-3333-3333-333333333333")));
         Assert.Throws<TeamsSearchException>(() => binding.Check(Token("first@example.org", tenant: "44444444-4444-4444-4444-444444444444")));
         Assert.Throws<TeamsSearchException>(() => binding.Check("not-a-token"));
+        Assert.Throws<TeamsSearchException>(() => binding.Check("header.W10.signature"));
     }
 
     [Fact]
