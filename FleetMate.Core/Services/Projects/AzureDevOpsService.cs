@@ -241,7 +241,7 @@ public partial class AzureDevOpsService : IDisposable
             foreach (var batch in ids.Chunk(200))
             {
                 var idsParam = string.Join(",", batch);
-                var url = $"{_config.Project}/_apis/wit/workitems?ids={idsParam}&api-version=7.0";
+                var url = $"{_config.Project}/_apis/wit/workitems?ids={idsParam}&$expand=relations&api-version=7.0";
 
                 var response = await _client.GetAsync(url);
                 if (!response.IsSuccessStatusCode)
