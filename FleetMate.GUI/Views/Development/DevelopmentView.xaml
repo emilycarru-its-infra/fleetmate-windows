@@ -240,7 +240,7 @@
                 </Popup>
 
                 <Button x:Name="RefreshButton" Click="OnRefreshButtonClicked" Margin="2,0,0,0"
-                        ToolTip="Refresh pull requests, inbox, commits and pipelines (F5)"
+                        ToolTip="Refresh the current Development view (F5)"
                         AutomationProperties.AutomationId="DevelopmentRefreshButton" AutomationProperties.Name="Refresh"
                         Style="{StaticResource ChromeHistoryButtonStyle}">
                     <ui:FontIcon Glyph="&#xE72C;" FontFamily="Segoe Fluent Icons" FontSize="14" />

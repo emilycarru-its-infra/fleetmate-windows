@@ -21,6 +21,9 @@ namespace FleetMate.Core.Services.Projects;
 public partial class AzureDevOpsService : IDisposable
 {
     private readonly HttpClient _client;
+    private readonly CancellationToken _operationToken;
+    private readonly bool _requireComplete;
+    private readonly CancellationTokenRegistration _operationCancellation;
     private readonly AzureDevOpsConfig _config;
     private readonly JsonSerializerOptions _jsonOptions;
     private string? _cachedToken;
@@ -63,9 +66,11 @@ public partial class AzureDevOpsService : IDisposable
         Log.Information("AzureDevOpsService: SSO token set for {UserName}, expires {Expiry}", userName ?? "(unknown)", expiry);
     }
 
-    public AzureDevOpsService(AzureDevOpsConfig config)
+    public AzureDevOpsService(AzureDevOpsConfig config, CancellationToken cancellationToken = default, bool requireComplete = false)
     {
         _config = config;
+        _operationToken = cancellationToken;
+        _requireComplete = requireComplete;
         _cacheDuration = TimeSpan.FromMinutes(config.CacheMinutes);
 
         _client = new HttpClient(new ActivityLogHandler("Azure DevOps"))
@@ -73,6 +78,8 @@ public partial class AzureDevOpsService : IDisposable
             BaseAddress = new Uri($"{config.BaseUrl}/"),
             Timeout = TimeSpan.FromSeconds(60)
         };
+
+        _operationCancellation = cancellationToken.Register(_client.Dispose);
 
         _jsonOptions = new JsonSerializerOptions
         {
@@ -110,7 +117,7 @@ public partial class AzureDevOpsService : IDisposable
                 return null;
             }
 
-            _cachedToken = await source.GetTokenAsync(AdoResourceId);
+            _cachedToken = await source.GetTokenAsync(AdoResourceId, _operationToken);
             _tokenExpiry = DateTime.UtcNow.AddMinutes(55);
             Log.Debug("[azdo] Acquired an Azure DevOps access token via the Entra broker");
             return _cachedToken;
@@ -147,9 +154,12 @@ public partial class AzureDevOpsService : IDisposable
     /// </summary>
     private async Task<bool> SetAuthorizationAsync()
     {
+        _operationToken.ThrowIfCancellationRequested();
         var token = await GetAccessTokenAsync();
+        _operationToken.ThrowIfCancellationRequested();
         if (string.IsNullOrEmpty(token))
         {
+            if (_requireComplete) throw new InvalidOperationException("Azure DevOps sign-in is unavailable.");
             return false;
         }
 
@@ -596,6 +606,7 @@ public partial class AzureDevOpsService : IDisposable
             if (!response.IsSuccessStatusCode)
             {
                 Log.Warning("[azdo] connectionData failed: {Status}", response.StatusCode);
+                if (_requireComplete) response.EnsureSuccessStatusCode();
                 return new DevOpsIdentitySummary();
             }
 
@@ -615,6 +626,8 @@ public partial class AzureDevOpsService : IDisposable
         }
         catch (Exception ex)
         {
+            _operationToken.ThrowIfCancellationRequested();
+            if (_requireComplete) throw;
             Log.Error(ex, "[azdo] Failed to resolve the signed-in identity");
             return new DevOpsIdentitySummary();
         }
@@ -651,6 +664,8 @@ public partial class AzureDevOpsService : IDisposable
         }
         catch (Exception ex)
         {
+            _operationToken.ThrowIfCancellationRequested();
+            if (_requireComplete) throw;
             Log.Error(ex, "[azdo] Failed to build the pull request queue");
             queue.Errors.Add(new PullRequestQueueError
             {
@@ -725,6 +740,7 @@ public partial class AzureDevOpsService : IDisposable
             if (!response.IsSuccessStatusCode)
             {
                 Log.Debug("[azdo] PR query for {Project} returned {Status}", projectName, response.StatusCode);
+                if (_requireComplete) response.EnsureSuccessStatusCode();
                 return new List<GitPullRequest>();
             }
 
@@ -733,6 +749,8 @@ public partial class AzureDevOpsService : IDisposable
         }
         catch (Exception ex)
         {
+            _operationToken.ThrowIfCancellationRequested();
+            if (_requireComplete) throw;
             Log.Debug(ex, "[azdo] PR query failed for {Project}", projectName);
             return new List<GitPullRequest>();
         }
@@ -1160,7 +1178,7 @@ public partial class AzureDevOpsService : IDisposable
 
     private async Task<JsonElement> GetJsonAsync(string url)
     {
-        var response = await _client.GetAsync(url);
+        using var response = await _client.GetAsync(url);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<JsonElement>(_jsonOptions);
     }
@@ -1194,6 +1212,7 @@ public partial class AzureDevOpsService : IDisposable
             if (!response.IsSuccessStatusCode)
             {
                 Log.Warning("Failed to list projects: {Status}", response.StatusCode);
+                if (_requireComplete) response.EnsureSuccessStatusCode();
                 return new List<DevOpsProject>();
             }
 
@@ -1202,6 +1221,8 @@ public partial class AzureDevOpsService : IDisposable
         }
         catch (Exception ex)
         {
+            _operationToken.ThrowIfCancellationRequested();
+            if (_requireComplete) throw;
             Log.Error(ex, "Failed to list projects");
             return new List<DevOpsProject>();
         }
@@ -1257,6 +1278,7 @@ public partial class AzureDevOpsService : IDisposable
 
     public void Dispose()
     {
+        _operationCancellation.Dispose();
         _client.Dispose();
     }
 }

@@ -33,7 +33,7 @@ public sealed partial class GitHubPullRequestService
     /// a failing batch is logged and skipped rather than sinking the list.
     /// </summary>
     public async Task<List<RepositoryCommits>> GetRecentCommitsAsync(
-        IEnumerable<string> owners, DateTime since, int perRepo = 10, int reposPerOwner = 30, CancellationToken ct = default)
+        IEnumerable<string> owners, DateTime since, int perRepo = 10, int reposPerOwner = 30, CancellationToken ct = default, bool requireComplete = false)
     {
         var ownerList = owners
             .Where(o => !string.IsNullOrWhiteSpace(o))
@@ -68,6 +68,9 @@ public sealed partial class GitHubPullRequestService
                 return new List<RepositoryCommits>();
             }
         }));
+
+        ct.ThrowIfCancellationRequested();
+        if (anyFailed && requireComplete) throw new InvalidOperationException("GitHub commit summaries are unavailable.");
 
         // The same repo can surface under two owners (a fork the user owns and
         // the org original); keep the first.

@@ -73,6 +73,8 @@ public partial class AzureDevOpsService
             }
             catch (Exception ex)
             {
+                _operationToken.ThrowIfCancellationRequested();
+                if (_requireComplete) throw;
                 Log.Debug(ex, "[azdo] threads unavailable for {Repository}!{Id}", pr.Repository, pr.Number);
             }
             finally
