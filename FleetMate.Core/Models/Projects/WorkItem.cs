@@ -11,6 +11,11 @@ public class WorkItem
     public int Rev { get; set; }
     public WorkItemFields Fields { get; set; } = new();
     public string Url { get; set; } = string.Empty;
+    public List<WorkItemHierarchyRelation>? Relations { get; set; }
+
+    [JsonIgnore]
+    public int? HierarchyParentId => Fields.ParentId ?? Relations?
+        .FirstOrDefault(r => r.Rel == "System.LinkTypes.Hierarchy-Reverse")?.LinkedId;
 
     // Convenience properties
     [JsonIgnore]
@@ -76,6 +81,9 @@ public class WorkItemFields
 
     [JsonPropertyName("System.Tags")]
     public string? Tags { get; set; }
+
+    [JsonPropertyName("System.Parent")]
+    public int? ParentId { get; set; }
 
     [JsonPropertyName("System.TeamProject")]
     public string? TeamProject { get; set; }
@@ -200,4 +208,13 @@ public class JsonPatchOperation
 
     [JsonPropertyName("value")]
     public object? Value { get; set; }
+}
+
+/// <summary>A parent reference; only its item ID is used against the configured organization.</summary>
+public sealed class WorkItemHierarchyRelation
+{
+    public string? Rel { get; set; }
+    public string? Url { get; set; }
+    [JsonIgnore]
+    public int? LinkedId => int.TryParse(Url?.TrimEnd('/').Split('/').LastOrDefault(), out var id) ? id : null;
 }
