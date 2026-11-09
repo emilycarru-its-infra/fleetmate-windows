@@ -11,11 +11,14 @@ using FleetMate.GUI.Views.Shared;
 namespace FleetMate.GUI.Views.Teams;
 
 /// <summary>Search remains the primary action; the indexed channel directory makes the initial scope visible.</summary>
-public partial class TeamsPage : Page, ITabSearch
+public partial class TeamsPage : Page, ITabSearch, IDisposable
 {
     private readonly FleetMateConfig _config;
     private readonly TeamsSearchService _service;
+    private bool _disposed;
     private IReadOnlyList<TeamsChannel> _channels = Array.Empty<TeamsChannel>();
+    private HashSet<string> _authorizedChannels = new(StringComparer.Ordinal);
+    private readonly HashSet<(string Channel, string Thread)> _unavailableThreads = new();
     private CancellationTokenSource? _channelsRequest;
     private CancellationTokenSource? _searchRequest;
     private CancellationTokenSource? _threadRequest;
@@ -24,6 +27,7 @@ public partial class TeamsPage : Page, ITabSearch
     private TeamsThread? _thread;
     private TeamsSavedThreads? _savedStore;
     private string? _savedError;
+    private HashSet<string> _following = new(StringComparer.Ordinal);
     private IReadOnlyList<TeamsSavedThread> _savedItems = Array.Empty<TeamsSavedThread>();
     private bool _channelsLoaded;
     private bool _defaultsApplied;
@@ -34,7 +38,10 @@ public partial class TeamsPage : Page, ITabSearch
     private TeamsBrowseState _browse = new();
     private bool _channelError;
 
-    private sealed record Scope(string? Team, string? Channel, string Title, string? Collection = null);
+    private IReadOnlyList<TeamsSavedThread> VisibleSaved => !_channelsLoaded ? Array.Empty<TeamsSavedThread>()
+        : _savedItems.Where(item => _authorizedChannels.Contains(item.Hit.ChannelId) && !_unavailableThreads.Contains((item.Hit.ChannelId, item.Hit.ThreadId))).ToList();
+
+    private sealed record Scope(string? Team, string? Channel, string Title, string? Collection = null, bool Following = false);
     private sealed record ResultRow(TeamsSearchHit Hit)
     {
         public string Title => TeamsText.OneLine(string.IsNullOrWhiteSpace(Hit.Subject) ? Hit.Snippet : Hit.Subject);
@@ -43,11 +50,20 @@ public partial class TeamsPage : Page, ITabSearch
         public string Activity => $"{Hit.ReplyCount} replies · {TeamsText.LocalTime(Hit.LastActivityAt)}";
     }
 
-    public TeamsPage()
+    public TeamsPage() : this((Application.Current as App)?.Config ?? new FleetMateConfig()) { }
+
+    internal TeamsPage(FleetMateConfig config, TeamsSearchService? service = null, TeamsSavedThreads? savedStore = null)
     {
         InitializeComponent();
-        _config = (Application.Current as App)?.Config ?? new FleetMateConfig();
-        _service = TeamsSearchService.FromConfig(_config);
+        _config = config;
+        _service = service ?? TeamsSearchService.ForWorkspace(_config, EntraTokenSource.Shared?.WindowsUpn() ?? EntraTokenSource.ResolveWindowsUpn());
+        if (savedStore != null)
+        {
+            _savedStore = savedStore;
+            _savedItems = savedStore.Load();
+            _following = savedStore.FollowedChannels().ToHashSet(StringComparer.Ordinal);
+        }
+        BuildChannelTree();
         Loaded += async (_, _) =>
         {
             var savedTask = LoadSavedThreadsAsync();
@@ -58,11 +74,12 @@ public partial class TeamsPage : Page, ITabSearch
         SizeChanged += (_, _) => UpdateLayoutMode();
     }
 
-    public TabSearchScope? SearchScope => new(QueryBox, _scope.Collection != null ? "Filter saved threads" : "Search Teams channels", () => _ = SearchAsync());
+    public TabSearchScope? SearchScope => new(QueryBox, _scope.Collection != null ? "Filter saved threads" : _scope.Following ? "Search Following" : "Search Teams channels", () => _ = SearchAsync());
     public event EventHandler? SearchScopeChanged;
 
-    private async Task LoadChannelsAsync()
+    internal async Task LoadChannelsAsync()
     {
+        if (_disposed) return;
         if (!_service.IsConfigured)
         {
             StatusText.Text = "Teams search needs a connection. Ask your administrator to configure the Teams search service.";
@@ -77,21 +94,27 @@ public partial class TeamsPage : Page, ITabSearch
             var payload = await _service.GetChannelsAsync(request.Token);
             if (request.IsCancellationRequested) return;
             _channels = payload.Value.Channels;
+            _authorizedChannels = _channels.Select(channel => channel.ChannelId).ToHashSet(StringComparer.Ordinal);
             _channelsLoaded = true;
             _channelError = false;
-            BuildChannelTree();
-            if (_channels.Count == 0) ChannelSummary.Text = "No channels are available in the search index yet. Refresh to check again.";
-            if (!_hasSearched && _scope.Collection == null)
+            if ((_scope.Channel != null && !_authorizedChannels.Contains(_scope.Channel))
+                || (_scope.Channel == null && _scope.Team != null && !_channels.Any(channel => channel.TeamId == _scope.Team)))
             {
-                if (_scope.Team != null || _scope.Channel != null) await SearchAsync();
-                else StatusText.Text = "Choose a channel to browse, search message text, or open Saved threads.";
+                ClearRemoteContent();
+                _scope = new Scope(null, null, "All channels");
             }
+            BuildChannelTree();
+            if (_scope.Collection != null) ShowSavedThreads();
+            else if (_scope.Team != null || _scope.Channel != null || _scope.Following || !string.IsNullOrWhiteSpace(QueryBox.Text)) await SearchAsync();
+            else ShowBrowseGuidance(false);
+            if (_channels.Count == 0) ChannelSummary.Text = "No channels are available for this account in the search index.";
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
             if (request.IsCancellationRequested) return;
             _channelError = true;
+            if (IsAccessDenied(ex)) InvalidateChannelAccess();
             StatusText.Text = "Couldn't load channels. " + TeamsText.TerminalSafe(ex.Message);
             RetryButton.Visibility = Visibility.Visible;
         }
@@ -103,14 +126,30 @@ public partial class TeamsPage : Page, ITabSearch
         try
         {
             ChannelTree.Items.Clear();
-            var saved = new TreeViewItem { Header = $"Saved threads ({_savedItems.Count})", Tag = new Scope(null, null, "Saved threads", ""), IsExpanded = true };
-            foreach (var collection in _savedItems.Select(item => item.Collection).Distinct().OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase))
+            var visibleSaved = VisibleSaved;
+            if (!string.IsNullOrEmpty(_scope.Collection) && !visibleSaved.Any(item => item.Collection == _scope.Collection))
+            {
+                _scope = new Scope(null, null, "Saved threads", "");
+                SearchScopeChanged?.Invoke(this, EventArgs.Empty);
+            }
+            var saved = new TreeViewItem { Header = $"Saved threads ({visibleSaved.Count})", Tag = new Scope(null, null, "Saved threads", ""), IsExpanded = true };
+            foreach (var collection in visibleSaved.Select(item => item.Collection).Distinct().OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase))
                 saved.Items.Add(new TreeViewItem { Header = collection, Tag = new Scope(null, null, collection, collection) });
             ChannelTree.Items.Add(saved);
             var filteredChannels = TeamsChannelScope.Filter(_channels, ChannelFilterBox.Text);
             ChannelFilterSummary.Text = filteredChannels.Count == _channels.Count ? $"{_channels.Count} channels" : $"{filteredChannels.Count} of {_channels.Count} channels";
             var all = new TreeViewItem { Header = "All channels", Tag = new Scope(null, null, "All channels") };
             ChannelTree.Items.Add(all);
+            var following = new TreeViewItem { Header = $"Following ({_following.Count(id => _authorizedChannels.Contains(id))})", Tag = new Scope(null, null, "Following", Following: true), IsExpanded = true };
+            var known = _channels.GroupBy(channel => channel.ChannelId).ToDictionary(group => group.Key, group => group.First());
+            foreach (var id in _following.OrderBy(id => known.TryGetValue(id, out var channel) ? channel.TeamName + channel.ChannelName : id, StringComparer.CurrentCultureIgnoreCase))
+            {
+                if (known.TryGetValue(id, out var channel))
+                {
+                    if (TeamsChannelScope.Filter(new[] { channel }, ChannelFilterBox.Text).Count > 0) following.Items.Add(ChannelItem(channel, true));
+                }
+            }
+            ChannelTree.Items.Add(following);
             TreeViewItem initial = all;
             var pinned = TeamsChannelScope.Pinned(filteredChannels, _config.TeamsDefaultChannels);
             if (pinned.Count > 0)
@@ -134,6 +173,7 @@ public partial class TeamsPage : Page, ITabSearch
                     foreach (TreeViewItem child in item.Items)
                         if (child.Tag is Scope { Channel: var id } && id == _scope.Channel) initial = child;
             }
+            if (_scope.Following) initial = following;
             if (_scope.Collection != null)
             {
                 initial = saved;
@@ -142,7 +182,7 @@ public partial class TeamsPage : Page, ITabSearch
             }
             // Filtering the channel directory must not change the active conversation scope.
             var matchesScope = initial.Tag is Scope candidate && candidate.Team == _scope.Team
-                && candidate.Channel == _scope.Channel && candidate.Collection == _scope.Collection;
+                && candidate.Channel == _scope.Channel && candidate.Collection == _scope.Collection && candidate.Following == _scope.Following;
             if (matchesScope || !_defaultsApplied) initial.IsSelected = true;
             initial.Dispatcher.BeginInvoke(new Action(initial.BringIntoView), System.Windows.Threading.DispatcherPriority.Loaded);
             if (!_defaultsApplied && initial.Tag is Scope scope) _scope = scope;
@@ -152,16 +192,66 @@ public partial class TeamsPage : Page, ITabSearch
         finally { _buildingTree = false; }
     }
 
-    private static TreeViewItem ChannelItem(TeamsChannel channel, bool includeTeam) => new()
+    private TreeViewItem ChannelItem(TeamsChannel channel, bool includeTeam)
     {
-        Header = TeamsText.OneLine(includeTeam ? $"{channel.TeamName} › {channel.ChannelName}" : channel.ChannelName),
-        Tag = new Scope(channel.TeamId, channel.ChannelId, TeamsText.OneLine($"{channel.TeamName} › {channel.ChannelName}")),
-        ToolTip = $"{channel.Threads} indexed threads · latest activity {TeamsText.LocalTime(channel.LastActivityAt)}",
-    };
+        var item = new TreeViewItem
+        {
+            Header = TeamsText.OneLine(includeTeam ? $"{channel.TeamName} › {channel.ChannelName}" : channel.ChannelName),
+            Tag = new Scope(channel.TeamId, channel.ChannelId, TeamsText.OneLine($"{channel.TeamName} › {channel.ChannelName}")),
+            ToolTip = $"{channel.Threads} indexed threads · latest activity {TeamsText.LocalTime(channel.LastActivityAt)}",
+        };
+        AttachFollowMenu(item, channel.ChannelId);
+        return item;
+    }
+
+    private void AttachFollowMenu(TreeViewItem item, string channel)
+    {
+        var menu = new ContextMenu();
+        var action = new MenuItem();
+        menu.Items.Add(action);
+        menu.Opened += (_, _) =>
+        {
+            action.Header = _following.Contains(channel) ? "Unfollow channel" : "Follow channel";
+            action.IsEnabled = _savedStore != null;
+            action.ToolTip = _savedStore == null ? _savedError ?? "Sign in to follow channels for this account." : null;
+        };
+        action.Click += async (_, _) => await ToggleFollowingAsync(channel);
+        item.ContextMenu = menu;
+    }
+
+    private async Task ToggleFollowingAsync(string channel)
+    {
+        if (_savedStore == null) { StatusText.Text = _savedError ?? "Sign in to follow channels for this account."; return; }
+        try
+        {
+            var channels = new HashSet<string>(_following, StringComparer.Ordinal);
+            var removed = !channels.Add(channel);
+            if (removed) channels.Remove(channel);
+            _following = _savedStore.SetFollowedChannels(channels.OrderBy(id => id, StringComparer.Ordinal)).ToHashSet(StringComparer.Ordinal);
+            BuildChannelTree();
+            UpdateFollowingAction();
+            if (_scope.Following) await SearchAsync();
+            else StatusText.Text = removed ? "Channel unfollowed." : "Channel followed.";
+        }
+        catch (Exception ex) { StatusText.Text = "Couldn't update followed channels. " + TeamsText.TerminalSafe(ex.Message); }
+    }
+
+    private void UpdateFollowingAction()
+    {
+        FollowButton.Visibility = _scope.Channel != null && _scope.Collection == null ? Visibility.Visible : Visibility.Collapsed;
+        FollowButton.IsEnabled = _savedStore != null;
+        FollowButton.Content = _scope.Channel != null && _following.Contains(_scope.Channel) ? "Unfollow channel" : "Follow channel";
+        FollowButton.ToolTip = _savedStore == null ? _savedError ?? "Sign in to follow channels for this account." : null;
+    }
+
+    private async void OnFollowChannel(object sender, RoutedEventArgs e)
+    {
+        if (_scope.Channel != null) await ToggleFollowingAsync(_scope.Channel);
+    }
 
     private async void OnChannelChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
-        if (_buildingTree || e.NewValue is not TreeViewItem { Tag: Scope scope }) return;
+        if (_disposed || _buildingTree || e.NewValue is not TreeViewItem { Tag: Scope scope }) return;
         _scope = scope;
         PeriodBox.IsEnabled = PersonBox.IsEnabled = _scope.Collection == null;
         SearchScopeChanged?.Invoke(this, EventArgs.Empty);
@@ -173,7 +263,8 @@ public partial class TeamsPage : Page, ITabSearch
     private void ShowScope()
     {
         ScopeText.Text = _scope.Title;
-        if (_scope.Collection != null) return;
+        UpdateFollowingAction();
+        if (_scope.Collection != null || _scope.Following) return;
         var channels = _channels.Where(c => _scope.Channel != null ? c.ChannelId == _scope.Channel : _scope.Team == null || c.TeamId == _scope.Team).ToList();
         if (channels.Count == 0) return;
         var latest = channels.Select(c => TeamsText.Parse(c.LastActivityAt)).Where(d => d.HasValue).Max();
@@ -184,21 +275,22 @@ public partial class TeamsPage : Page, ITabSearch
 
     private async Task SearchAsync(bool append = false, bool indexRefreshed = false)
     {
+        if (_disposed) return;
         if (_scope.Collection != null) { ShowSavedThreads(); return; }
-        if (!_service.IsConfigured) return;
         var browsing = string.IsNullOrWhiteSpace(QueryBox.Text);
-        if (browsing && _scope.Team == null && _scope.Channel == null)
+        var paged = browsing || _scope.Following;
+        if (_scope.Following && _following.Count == 0)
         {
-            _searchRequest?.Cancel();
-            _threadRequest?.Cancel();
-            ResultsList.ItemsSource = null;
-            ResultsList.Visibility = Visibility.Collapsed;
-            Welcome.Visibility = Visibility.Visible;
-            LoadMoreButton.Visibility = Visibility.Collapsed;
-            StatusText.Text = "Choose a team or channel to browse, or enter search words.";
+            ShowBrowseGuidance(true);
             return;
         }
-        if (append && (!browsing || _browse.NextOffset == null)) return;
+        if (!_service.IsConfigured) return;
+        if (browsing && _scope.Team == null && _scope.Channel == null && !_scope.Following)
+        {
+            ShowBrowseGuidance(false);
+            return;
+        }
+        if (append && (!paged || _browse.NextOffset == null)) return;
         var offset = append ? _browse.NextOffset!.Value : 0;
         if (!append) _browse = new TeamsBrowseState();
         _searchRequest?.Cancel();
@@ -216,17 +308,21 @@ public partial class TeamsPage : Page, ITabSearch
             ResultsList.ItemsSource = null;
             UpdateLayoutMode();
         }
-        StatusText.Text = browsing ? "Loading conversations…" : "Searching…";
+        StatusText.Text = paged ? "Loading conversations…" : "Searching…";
         LoadMoreButton.IsEnabled = false;
         RetryButton.Visibility = Visibility.Collapsed;
         Welcome.Visibility = Visibility.Collapsed;
         ResultsList.Visibility = Visibility.Visible;
         try
         {
-            if (browsing)
+            if (paged)
             {
-                var response = (await _service.BrowseAsync(new TeamsBrowseQuery(query.Team, query.Channel, query.Author,
-                    query.Since, query.Until, Limit: 50, Offset: offset), request.Token)).Value;
+                var response = _scope.Following
+                    ? (await _service.FeedAsync(new TeamsFeedQuery(_following.OrderBy(id => id, StringComparer.Ordinal).ToArray(),
+                        string.IsNullOrWhiteSpace(QueryBox.Text) ? null : QueryBox.Text.Trim(), query.Author,
+                        query.Since, query.Until, Limit: 50, Offset: offset), request.Token)).Value
+                    : (await _service.BrowseAsync(new TeamsBrowseQuery(query.Team, query.Channel, query.Author,
+                        query.Since, query.Until, Limit: 50, Offset: offset), request.Token)).Value;
                 if (request.IsCancellationRequested) return;
                 if (!_browse.Apply(response, append))
                 {
@@ -238,7 +334,7 @@ public partial class TeamsPage : Page, ITabSearch
                 if (append && selected != null)
                     ResultsList.SelectedItem = ResultsList.Items.OfType<ResultRow>().FirstOrDefault(row => TeamsSavedThreads.Same(row.Hit, selected));
                 StatusText.Text = (indexRefreshed ? "Index refreshed; list restarted. " : "")
-                    + (response.Total == 0 ? "No indexed conversations in this scope." : $"{_browse.Results.Count} of {response.Total} conversations · newest activity first");
+                    + (response.Total == 0 ? (browsing ? "No indexed conversations in this scope." : "No conversations match these search words.") : $"{_browse.Results.Count} of {response.Total} conversations · newest activity first");
                 LoadMoreButton.Visibility = response.NextOffset is { } next && next > offset ? Visibility.Visible : Visibility.Collapsed;
                 LoadMoreButton.IsEnabled = true;
             }
@@ -258,11 +354,28 @@ public partial class TeamsPage : Page, ITabSearch
         {
             if (request.IsCancellationRequested) return;
             _channelError = false;
-            StatusText.Text = browsing && ex is TeamsSearchException { Failure: TeamsSearchFailure.NotFound }
-                ? "Channel browsing isn't available on this service yet. Enter search words to find conversations."
-                : (browsing ? "Couldn't load conversations. " : "Search failed. ") + TeamsText.TerminalSafe(ex.Message);
+            if (IsAccessDenied(ex)) { InvalidateChannelAccess(); _channelError = true; }
+            StatusText.Text = paged && ex is TeamsSearchException { Failure: TeamsSearchFailure.NotFound }
+                ? (_scope.Following ? "Following isn't available on this service yet. Browse a channel or search Teams." : "Channel browsing isn't available on this service yet. Enter search words to find conversations.")
+                : (paged ? "Couldn't load conversations. " : "Search failed. ") + TeamsText.TerminalSafe(ex.Message);
             RetryButton.Visibility = Visibility.Visible;
         }
+    }
+
+    private void ShowBrowseGuidance(bool following)
+    {
+        _searchRequest?.Cancel();
+        _threadRequest?.Cancel();
+        ResultsList.ItemsSource = null;
+        ResultsList.Visibility = Visibility.Collapsed;
+        Welcome.Visibility = Visibility.Visible;
+        LoadMoreButton.Visibility = RetryButton.Visibility = Visibility.Collapsed;
+        WelcomeTitle.Text = following ? "Follow channels" : "Browse or search Teams";
+        WelcomeDescription.Text = following
+            ? "Choose a channel and select Follow channel. Following brings those channels together, newest activity first."
+            : "Choose a team or channel to browse, enter search words, or open Saved threads.";
+        ChannelSummary.Text = following ? "No channels followed yet." : ChannelSummary.Text;
+        StatusText.Text = following ? "Follow a channel to start your feed." : "Choose a scope or enter search words.";
     }
 
     private async void OnResultChanged(object sender, SelectionChangedEventArgs e)
@@ -272,6 +385,7 @@ public partial class TeamsPage : Page, ITabSearch
         CollectionBox.Text = _selectedHit == null ? "" : _savedItems.FirstOrDefault(item => TeamsSavedThreads.Same(item.Hit, _selectedHit))?.Collection ?? "";
         UpdateLayoutMode();
         _thread = null;
+        ThreadCards.Children.Clear();
         UpdateThreadActions();
         if (_selectedHit is not { } hit) return;
         var request = _threadRequest = new CancellationTokenSource();
@@ -283,14 +397,61 @@ public partial class TeamsPage : Page, ITabSearch
             var thread = (await _service.GetThreadAsync(hit.ThreadId, hit.ChannelId, request.Token)).Value;
             if (request.IsCancellationRequested) return;
             _thread = thread;
+            _unavailableThreads.Remove((hit.ChannelId, hit.ThreadId));
             TeamsThreadCards.Show(ThreadCards, thread, TeamsLinkPolicy.Hosts(_config.TeamsLinkHosts), CopyText, OpenLink);
             UpdateThreadActions();
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            if (!request.IsCancellationRequested) ShowThreadStatus("Couldn't load thread. " + TeamsText.TerminalSafe(ex.Message));
+            if (!request.IsCancellationRequested)
+            {
+                if (IsAccessDenied(ex))
+                {
+                    InvalidateChannelAccess();
+                    _channelError = true;
+                    StatusText.Text = "Couldn't load thread. " + TeamsText.TerminalSafe(ex.Message);
+                    RetryButton.Visibility = Visibility.Visible;
+                }
+                else if (ex is TeamsSearchException { Failure: TeamsSearchFailure.NotFound })
+                {
+                    _unavailableThreads.Add((hit.ChannelId, hit.ThreadId));
+                    InvalidateChannelAccess();
+                    var recoveryScope = _scope;
+                    await LoadChannelsAsync();
+                    if (!_channelError && _scope == recoveryScope) StatusText.Text = "This thread is no longer available. Its saved reference has been kept but hidden.";
+                }
+                else ShowThreadStatus("Couldn't load thread. " + TeamsText.TerminalSafe(ex.Message));
+            }
         }
+    }
+
+    private static bool IsAccessDenied(Exception error) => error is EntraTokenException || error is TeamsSearchException
+    {
+        Failure: TeamsSearchFailure.Unauthorized or TeamsSearchFailure.Forbidden or TeamsSearchFailure.PurposeNotGranted or TeamsSearchFailure.AccessNotVerified,
+    };
+
+    private void ClearRemoteContent()
+    {
+        _threadRequest?.Cancel();
+        _selectedHit = null;
+        _thread = null;
+        ResultsList.ItemsSource = null;
+        ThreadCards.Children.Clear();
+        LoadMoreButton.Visibility = Visibility.Collapsed;
+        _browse = new TeamsBrowseState();
+        UpdateLayoutMode();
+        UpdateThreadActions();
+    }
+
+    private void InvalidateChannelAccess()
+    {
+        ClearRemoteContent();
+        _channels = Array.Empty<TeamsChannel>();
+        _authorizedChannels.Clear();
+        _channelsLoaded = false;
+        if (_scope.Collection == null && !_scope.Following) _scope = new Scope(null, null, "All channels");
+        BuildChannelTree();
     }
 
     private void ShowThreadStatus(string message)
@@ -301,25 +462,29 @@ public partial class TeamsPage : Page, ITabSearch
 
     private async Task LoadSavedThreadsAsync()
     {
-        if (_savedStore != null || !_service.IsConfigured) return;
+        if (_disposed || _savedStore != null || !_service.IsConfigured) return;
         try
         {
-            var account = EntraTokenSource.Shared?.WindowsUpn() ?? EntraTokenSource.ResolveWindowsUpn();
-            if (string.IsNullOrWhiteSpace(account) && EntraTokenSource.Shared is { } tokenSource)
+            var account = _service.Workspace?.Account ?? EntraTokenSource.Shared?.WindowsUpn() ?? EntraTokenSource.ResolveWindowsUpn();
+            if (_service.Workspace == null && string.IsNullOrWhiteSpace(account) && EntraTokenSource.Shared is { } tokenSource)
                 account = await tokenSource.ResolveAccountUpnAsync();
             if (string.IsNullOrWhiteSpace(account)) return;
             var store = new TeamsSavedThreads(_config.TeamsApiUrl!, account);
             _savedItems = store.Load();
+            _following = store.FollowedChannels().ToHashSet(StringComparer.Ordinal);
             _savedStore = store;
             _savedError = null;
             BuildChannelTree();
             if (_scope.Collection != null) ShowSavedThreads();
+            else if (_scope.Following) await SearchAsync();
+            UpdateFollowingAction();
             UpdateThreadActions();
         }
         catch (Exception ex)
         {
             _savedError = "Couldn't read saved threads. " + TeamsText.TerminalSafe(ex.Message);
             StatusText.Text = _savedError;
+            UpdateFollowingAction();
             UpdateThreadActions();
         }
     }
@@ -328,8 +493,18 @@ public partial class TeamsPage : Page, ITabSearch
     {
         _searchRequest?.Cancel();
         _threadRequest?.Cancel();
+        if (!_channelsLoaded)
+        {
+            ClearRemoteContent();
+            Welcome.Visibility = Visibility.Collapsed;
+            ResultsList.Visibility = Visibility.Visible;
+            StatusText.Text = "Load channels to check access before showing saved threads.";
+            _channelError = true;
+            RetryButton.Visibility = Visibility.Visible;
+            return;
+        }
         var query = QueryBox.Text.Trim();
-        var items = _savedItems.Where(item => string.IsNullOrEmpty(_scope.Collection) || item.Collection == _scope.Collection)
+        var items = VisibleSaved.Where(item => string.IsNullOrEmpty(_scope.Collection) || item.Collection == _scope.Collection)
             .Where(item => query.Length == 0 || $"{item.Hit.Subject} {item.Hit.Snippet} {item.Hit.TeamName} {item.Hit.ChannelName}".Contains(query, StringComparison.CurrentCultureIgnoreCase))
             .Select(item => new ResultRow(item.Hit)).ToList();
         ResultsList.ItemsSource = items;
@@ -431,6 +606,25 @@ public partial class TeamsPage : Page, ITabSearch
         if (IsInitialized && _config != null) BuildChannelTree();
     }
 
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _channelsRequest?.Cancel();
+        _searchRequest?.Cancel();
+        _threadRequest?.Cancel();
+        _service.Dispose();
+        ClearRemoteContent();
+        _channels = Array.Empty<TeamsChannel>();
+        _authorizedChannels.Clear();
+        _savedItems = Array.Empty<TeamsSavedThread>();
+        _following.Clear();
+        _savedStore = null;
+        ChannelTree.Items.Clear();
+        UpdateFollowingAction();
+        UpdateThreadActions();
+    }
+
     private void UpdateLayoutMode()
     {
         if (!IsInitialized) return;
@@ -468,7 +662,11 @@ public partial class TeamsPage : Page, ITabSearch
     private void OnCloseThread(object sender, RoutedEventArgs e) { ResultsList.SelectedItem = null; }
     private void OnToggleChannels(object sender, RoutedEventArgs e) { _sidebarShown = !_sidebarShown; UpdateLayoutMode(); }
     private async void OnRefreshChannels(object sender, RoutedEventArgs e) => await LoadChannelsAsync();
-    private async void OnRetry(object sender, RoutedEventArgs e) { if (_channelError) await LoadChannelsAsync(); else await SearchAsync(); }
+    private async void OnRetry(object sender, RoutedEventArgs e)
+    {
+        _service.InvalidateWorkspaceTokens();
+        if (_channelError) await LoadChannelsAsync(); else await SearchAsync();
+    }
     private async void OnLoadMore(object sender, RoutedEventArgs e) => await SearchAsync(append: true);
     private async void OnSearch(object sender, RoutedEventArgs e) => await SearchAsync();
     private async void OnPersonKeyDown(object sender, KeyEventArgs e) { if (e.Key == Key.Enter) { e.Handled = true; await SearchAsync(); } }

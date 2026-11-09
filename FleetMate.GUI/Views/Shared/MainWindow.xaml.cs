@@ -481,10 +481,12 @@ public partial class MainWindow : Window
 
     public void ResetPageCache()
     {
+        foreach (var teams in _pageCache.Values.OfType<FleetMate.GUI.Views.Teams.TeamsPage>()) teams.Dispose();
         _pageCache.Clear();
-        // The page showing keeps its toolbar until the next tab change brings a new page.
+        // Teams owns an account-bound workspace and must reopen with the new services.
         _pageToolbars.Clear();
         WarmTicketsPage();
+        if (CurrentTab == "Teams") NavigateToPage("Teams");
     }
 
     /// <summary>

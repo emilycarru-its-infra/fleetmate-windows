@@ -42,8 +42,26 @@ public sealed class TeamsSavedThreadsTests : IDisposable
         store.Save(Hit());
         var path = Assert.Single(Directory.GetFiles(_directory, "*.json"));
         File.WriteAllText(path, "broken data");
-        Assert.Throws<JsonException>(() => store.Save(Hit("channel-2")));
+        Assert.ThrowsAny<JsonException>(() => store.Save(Hit("channel-2")));
         Assert.Equal("broken data", File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void FollowingAndBookmarksShareStateAndOlderBookmarkListsStillLoad()
+    {
+        var store = new TeamsSavedThreads("https://search.example.org", "member@example.org", _directory);
+        store.Save(Hit(), "Reference");
+        var path = Assert.Single(Directory.GetFiles(_directory, "*.json"));
+        File.WriteAllText(path, JsonSerializer.Serialize(store.Load()));
+        store.SetFollowedChannels(new[] { "c1", "c2", "c1" });
+        Assert.Equal(new[] { "c1", "c2" }, store.FollowedChannels());
+        Assert.Equal("Reference", Assert.Single(store.Load()).Collection);
+        store.Save(Hit("channel-2"));
+        store.Remove(Hit());
+        Assert.Equal(new[] { "c1", "c2" }, store.FollowedChannels());
+        Assert.Empty(new TeamsSavedThreads("https://search.example.org", "other@example.org", _directory).FollowedChannels());
+        Assert.Throws<ArgumentException>(() => store.SetFollowedChannels(Enumerable.Range(0, 501).Select(index => "c" + index)));
+        Assert.Equal(new[] { "c1", "c2" }, store.FollowedChannels());
     }
 
     [Fact]

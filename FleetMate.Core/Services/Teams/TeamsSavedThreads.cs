@@ -11,7 +11,16 @@ public sealed record TeamsSavedThread(TeamsSearchHit Hit, DateTimeOffset SavedAt
 public sealed class TeamsSavedThreads
 {
     private readonly string _path;
-    private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions Json = new()
+    {
+        WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true,
+    };
+    private sealed record State
+    {
+        public int Version { get; init; } = 1;
+        public List<TeamsSavedThread> Saved { get; init; } = new();
+        public List<string> Following { get; init; } = new();
+    }
 
     public TeamsSavedThreads(string endpoint, string account, string? directory = null)
     {
@@ -24,39 +33,62 @@ public sealed class TeamsSavedThreads
         _path = Path.Combine(directory ?? Path.Combine(AppEdition.Current.LocalAppDataDirectory, "teams"), key + ".json");
     }
 
-    public IReadOnlyList<TeamsSavedThread> Load()
+    public IReadOnlyList<TeamsSavedThread> Load() => Read().Saved;
+    public IReadOnlyList<string> FollowedChannels() => Read().Following;
+
+    public IReadOnlyList<string> SetFollowedChannels(IEnumerable<string> channels)
     {
-        if (!File.Exists(_path)) return Array.Empty<TeamsSavedThread>();
-        return JsonSerializer.Deserialize<List<TeamsSavedThread>>(File.ReadAllText(_path), Json)
-            ?? throw new InvalidDataException("The saved Teams thread list could not be read.");
+        var ids = channels.ToList();
+        if (ids.Any(string.IsNullOrWhiteSpace)) throw new ArgumentException("A followed channel must have an ID.");
+        ids = ids.Select(id => id.Trim()).Distinct(StringComparer.Ordinal).ToList();
+        if (ids.Count > 500) throw new ArgumentException("Follow up to 500 channels.");
+        var state = Read();
+        Write(state with { Following = ids });
+        return ids;
     }
 
     public IReadOnlyList<TeamsSavedThread> Save(TeamsSearchHit hit, string? collection = null)
     {
-        var items = Load().Where(item => !Same(item.Hit, hit)).ToList();
+        var state = Read();
+        var items = state.Saved.Where(item => !Same(item.Hit, hit)).ToList();
         items.Insert(0, new TeamsSavedThread(hit, DateTimeOffset.UtcNow,
             string.IsNullOrWhiteSpace(collection) ? "Saved" : TeamsText.OneLine(collection.Trim())));
-        Write(items);
+        Write(state with { Saved = items });
         return items;
     }
 
     public IReadOnlyList<TeamsSavedThread> Remove(TeamsSearchHit hit)
     {
-        var items = Load().Where(item => !Same(item.Hit, hit)).ToList();
-        Write(items);
+        var state = Read();
+        var items = state.Saved.Where(item => !Same(item.Hit, hit)).ToList();
+        Write(state with { Saved = items });
         return items;
     }
 
     public static bool Same(TeamsSearchHit left, TeamsSearchHit right) =>
         left.ChannelId == right.ChannelId && left.ThreadId == right.ThreadId;
 
-    private void Write(IReadOnlyList<TeamsSavedThread> items)
+    private State Read()
+    {
+        if (!File.Exists(_path)) return new State();
+        using var json = JsonDocument.Parse(File.ReadAllText(_path));
+        var state = json.RootElement.ValueKind == JsonValueKind.Array
+            ? new State { Saved = json.RootElement.Deserialize<List<TeamsSavedThread>>(Json) ?? new() }
+            : json.RootElement.Deserialize<State>(Json) ?? throw new InvalidDataException("The saved Teams state could not be read.");
+        if (state.Version != 1 || state.Saved == null || state.Following == null
+            || state.Saved.Any(item => item == null || item.Hit == null || string.IsNullOrWhiteSpace(item.Hit.ChannelId) || string.IsNullOrWhiteSpace(item.Hit.ThreadId))
+            || state.Following.Any(string.IsNullOrWhiteSpace) || state.Following.Count > 500)
+            throw new InvalidDataException("The saved Teams state is invalid or belongs to a newer version.");
+        return state;
+    }
+
+    private void Write(State state)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
         var temporary = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            File.WriteAllText(temporary, JsonSerializer.Serialize(items, Json));
+            File.WriteAllText(temporary, JsonSerializer.Serialize(state, Json));
             File.Move(temporary, _path, overwrite: true);
         }
         finally { if (File.Exists(temporary)) File.Delete(temporary); }

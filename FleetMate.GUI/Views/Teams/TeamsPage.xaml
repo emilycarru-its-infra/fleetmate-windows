@@ -40,7 +40,10 @@
                          ui:ControlHelper.PlaceholderText="Person" AutomationProperties.Name="Thread participant" />
                 <Button Content="Search" Click="OnSearch" Margin="0,0,0,6" IsDefault="False" />
             </WrapPanel>
-            <TextBlock x:Name="ScopeText" Grid.Row="1" Text="All channels" FontWeight="SemiBold" Margin="0,0,0,8" />
+            <DockPanel Grid.Row="1" Margin="0,0,0,8">
+                <Button x:Name="FollowButton" DockPanel.Dock="Right" Content="Follow channel" Click="OnFollowChannel" Visibility="Collapsed" Margin="8,0,0,0" />
+                <TextBlock x:Name="ScopeText" Text="All channels" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            </DockPanel>
             <DockPanel Grid.Row="2" LastChildFill="True" Margin="0,0,0,8">
                 <Button x:Name="LoadMoreButton" DockPanel.Dock="Right" Content="Load more" Click="OnLoadMore" Visibility="Collapsed" Margin="8,0,0,0" />
                 <Button x:Name="RetryButton" DockPanel.Dock="Right" Content="Retry" Click="OnRetry" Visibility="Collapsed" Margin="8,0,0,0" />
@@ -55,8 +58,8 @@
                 <Grid>
                     <Border x:Name="Welcome" Padding="24" VerticalAlignment="Top">
                         <StackPanel>
-                            <TextBlock Text="Search Teams channels" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,12" />
-                            <TextBlock Text="Choose a channel to browse conversations, or search across channels (Ctrl+F). Save useful threads into collections and copy message text without switching apps." TextWrapping="Wrap" Margin="0,0,0,16" />
+                            <TextBlock x:Name="WelcomeTitle" Text="Search Teams channels" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,12" />
+                            <TextBlock x:Name="WelcomeDescription" Text="Choose a channel to browse conversations, or search across channels (Ctrl+F). Save useful threads into collections and copy message text without switching apps." TextWrapping="Wrap" Margin="0,0,0,16" />
                             <TextBlock x:Name="ChannelSummary" TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>

@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using FleetMate.Core.Services.Teams;
+using FleetMate.GUI.Views.Shared;
 
 namespace FleetMate.GUI.Views.Teams;
 
@@ -23,16 +24,27 @@ internal static class TeamsThreadCards
             return;
         }
         var root = thread.Messages.FirstOrDefault(message => message.ReplyToId == null) ?? thread.Messages[0];
-        host.Children.Add(Card(root, allowedHosts, copy, open));
+        var rootBody = new StackPanel();
+        rootBody.Children.Add(Card(root, allowedHosts, copy, open));
+        var rootRow = new ConversationRailRow { Author = TeamsText.OneLine(root.AuthorDisplayName), Child = rootBody };
+        host.Children.Add(rootRow);
         var replies = thread.Messages.Where(message => message.MessageId != root.MessageId).ToList();
         if (replies.Count == 0) return;
-        var body = new StackPanel { Margin = new Thickness(16, 8, 0, 0) };
-        foreach (var reply in replies) body.Children.Add(Card(reply, allowedHosts, copy, open));
-        host.Children.Add(new Expander
+        var body = new StackPanel { Visibility = Visibility.Collapsed };
+        for (var index = 0; index < replies.Count; index++)
         {
-            Header = replies.Count == 1 ? "1 reply" : $"{replies.Count} replies", Content = body,
-            IsExpanded = false, Margin = new Thickness(0, 12, 0, 0),
-        });
+            var reply = replies[index];
+            body.Children.Add(new ConversationRailRow
+            {
+                Author = TeamsText.OneLine(reply.AuthorDisplayName), IsReply = true, IsFirstReply = index == 0,
+                Continues = index < replies.Count - 1, Child = Card(reply, allowedHosts, copy, open),
+            });
+        }
+        var disclosure = new Expander { Header = replies.Count == 1 ? "1 reply" : $"{replies.Count} replies", Margin = new Thickness(0, 0, 0, 8) };
+        disclosure.Expanded += (_, _) => { body.Visibility = Visibility.Visible; rootRow.Continues = true; };
+        disclosure.Collapsed += (_, _) => { body.Visibility = Visibility.Collapsed; rootRow.Continues = false; };
+        rootBody.Children.Add(disclosure);
+        host.Children.Add(body);
     }
 
     private static Border Card(TeamsMessage message, IReadOnlyList<string> allowedHosts, Action<string> copy, Action<Uri> open)

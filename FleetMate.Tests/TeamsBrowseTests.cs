@@ -34,4 +34,13 @@ public class TeamsBrowseTests
         Assert.True(state.Apply(new TeamsBrowseResponse(null, "v2", 4, new[] { Hit("4") }, 1), false));
         Assert.Equal("4", Assert.Single(state.Results).ThreadId);
     }
+    [Fact]
+    public void AggregateFeedKeepsEqualMessageIdsFromDifferentChannels()
+    {
+        var state = new TeamsBrowseState();
+        var first = Hit("same-id");
+        var second = first with { ChannelId = "other-channel" };
+        state.Apply(new TeamsBrowseResponse(null, "v1", 2, new[] { first, second }, null), false);
+        Assert.Equal(2, state.Results.Count);
+    }
 }
