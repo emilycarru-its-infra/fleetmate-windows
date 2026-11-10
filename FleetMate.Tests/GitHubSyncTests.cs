@@ -110,6 +110,32 @@ public class GitHubSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task NoStoreAttachmentMetadataAlwaysReauthorizesAndNeverReplacesTheDiskCache()
+    {
+        var fake = new FakeGitHub { Respond = _ => Ok("ordinary-body", etag: "\"ordinary\"", pollInterval: 60) };
+        using var client = new HttpClient(new GitHubHttpHandler(new GitHubETagCache(directory: _dir), fake));
+        const string url = "https://api.github.com/repos/example/repo/issues/1";
+        Assert.Equal("ordinary-body", await client.GetStringAsync(url));
+        fake.Respond = request =>
+        {
+            Assert.Empty(request.Headers.IfNoneMatch);
+            return Ok("SIGNED_ATTACHMENT_METADATA", etag: "\"signed\"", pollInterval: 60);
+        };
+        using var fresh = new HttpRequestMessage(HttpMethod.Get, url);
+        fresh.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoStore = true, NoCache = true };
+        using var response = await client.SendAsync(fresh);
+        Assert.Equal("SIGNED_ATTACHMENT_METADATA", await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, fake.Requests.Count);
+        Assert.Equal("ordinary-body", await client.GetStringAsync(url));
+        Assert.Equal(2, fake.Requests.Count);
+        foreach (var file in Directory.GetFiles(_dir))
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(file));
+            Assert.Equal("ordinary-body", Encoding.UTF8.GetString(Convert.FromBase64String(document.RootElement.GetProperty("Body").GetString()!)));
+        }
+    }
+
+    [Fact]
     public void DiskCache_IsCappedOldestFirst()
     {
         var cache = new GitHubETagCache(capacity: 2, directory: _dir, diskCapacity: 3);

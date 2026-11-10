@@ -31,8 +31,8 @@ public sealed class AgentContextButton : Button
         Click += (_, _) =>
         {
             if (_source() is not { } context) return;
-            if (CopyOnly) AgentContextMenu.Copy([context]);
-            else AgentContextMenu.Send([context]);
+            if (CopyOnly) AgentContextMenu.Copy([context], this);
+            else AgentContextMenu.Send([context], this);
         };
         // Built when it opens, so it always names the record shown now.
         ContextMenu = new ContextMenu();

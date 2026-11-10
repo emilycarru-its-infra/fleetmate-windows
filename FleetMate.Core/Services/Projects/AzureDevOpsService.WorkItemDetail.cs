@@ -97,6 +97,7 @@ public partial class AzureDevOpsService
         "System.LinkTypes.Dependency-Reverse" => WorkItemRelationKind.Predecessor,
         "System.LinkTypes.Dependency-Forward" => WorkItemRelationKind.Successor,
         "ArtifactLink" => WorkItemRelationKind.Artifact,
+        "AttachedFile" => WorkItemRelationKind.Attachment,
         _ => WorkItemRelationKind.Other,
     };
 

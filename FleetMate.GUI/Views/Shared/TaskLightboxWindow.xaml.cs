@@ -20,6 +20,7 @@ public partial class TaskLightboxWindow : Window
 {
     private UnifiedTask _task;
     private readonly AzureDevOpsService? _devOps;
+    private WorkItemDetail? _attachmentDetail;
 
     public TaskLightboxWindow(UnifiedTask task, Window? owner = null)
     {
@@ -72,6 +73,8 @@ public partial class TaskLightboxWindow : Window
         base.OnPreviewKeyDown(e);
     }
 
+    private void OnCopyTitleLink(object sender, RoutedEventArgs e) => RecordClipboard.Copy(_task.Title, _task.ExternalUrl);
+
     private void OnScrimMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         // Only a click on the scrim itself dismisses; clicks inside the card bubble
@@ -90,6 +93,8 @@ public partial class TaskLightboxWindow : Window
             {
                 var item = await _devOps.GetWorkItemAsync(id);
                 if (item != null) _task = item.AsUnifiedTask();
+                _attachmentDetail = await _devOps.GetWorkItemDetailAsync(id);
+                if (!IsLoaded) return;
                 Render();
 
                 var comments = await _devOps.GetWorkItemCommentsAsync(id);
@@ -119,6 +124,12 @@ public partial class TaskLightboxWindow : Window
         {
             BodyPanel.Children.Add(Secondary("No description."));
         }
+
+        if (_attachmentDetail != null && _devOps != null)
+            RecordAttachmentSections.Add(BodyPanel, RecordAttachmentSections.WorkItem(_attachmentDetail, _devOps), _devOps.DownloadRecordAttachmentAsync);
+        else if (_task.Provider == "github" && FleetMate.GUI.Views.Projects.TaskDetailPanel.ParseIssueUrl(_task.ExternalUrl) is { } issue)
+            RecordAttachmentSections.Add(BodyPanel, RecordAttachments.GitHub(_task.Description, null, _task.ExternalUrl ?? ""),
+                (attachment, ct) => RecordAttachmentSections.DownloadGitHubAsync(issue.Owner, issue.Repo, issue.Number, attachment, ct));
 
         MetaPanel.Children.Clear();
         AddStateBadge(_task.Metadata.TryGetValue("state", out var s) && s.Length > 0 ? s : _task.State.ToString());
@@ -179,6 +190,8 @@ public partial class TaskLightboxWindow : Window
                 Margin = new Thickness(0, 6, 0, 0)
             });
             card.Child = stack;
+            if (_devOps != null)
+                RecordAttachmentSections.Add(stack, RecordAttachments.Discover(comment.Text, _devOps.IsAttachmentUrl), _devOps.DownloadRecordAttachmentAsync);
             BodyPanel.Children.Add(card);
         }
     }

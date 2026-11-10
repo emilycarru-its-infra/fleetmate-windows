@@ -103,6 +103,9 @@ public partial class TaskDetailPanel
 
         RenderIssueTitle(issue);
         RenderIssueBody(issue);
+        if (_issueRef is { } attachmentRef)
+            RecordAttachmentSections.Add(ContentPanel, RecordAttachments.GitHub(issue.Body, issue.BodyHtml, issue.HtmlUrl),
+                (attachment, ct) => RecordAttachmentSections.DownloadGitHubAsync(attachmentRef.Owner, attachmentRef.Repo, attachmentRef.Number, attachment, ct));
         RenderIssueMetadata(issue);
         RenderIssueComments();
         RenderIssueComposer();
@@ -128,7 +131,7 @@ public partial class TaskDetailPanel
                 Text = " Locked", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe UI"), Foreground = Alert, FontSize = 12,
                 VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 4),
             });
-        bar.Children.Add(SmallIcon("", "Copy link", () => { try { Clipboard.SetText(issue.HtmlUrl); } catch { } }));
+        bar.Children.Add(SmallIcon("", "Copy title and link", () => RecordClipboard.Copy(issue.Title, issue.HtmlUrl)));
         bar.Children.Add(SmallIcon("", "Open in GitHub", () => OpenUrl(issue.HtmlUrl)));
         return bar;
     }
@@ -295,6 +298,9 @@ public partial class TaskDetailPanel
             head.Children.Add(new TextBlock { Text = c.User?.Login ?? "Unknown", FontWeight = FontWeights.SemiBold, FontSize = 12 });
             body.Children.Add(head);
             body.Children.Add(new TextBlock { Text = c.Body, TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new Thickness(0, 4, 0, 0) });
+            if (_issueRef is { } attachmentRef && _issue is { } issue)
+                RecordAttachmentSections.Add(body, RecordAttachments.GitHub(c.Body, c.BodyHtml, issue.HtmlUrl),
+                    (attachment, ct) => RecordAttachmentSections.DownloadGitHubAsync(attachmentRef.Owner, attachmentRef.Repo, attachmentRef.Number, attachment, ct));
             ContentPanel.Children.Add(new Border
             {
                 Child = body, Padding = new Thickness(8), Margin = new Thickness(0, 0, 0, 6), CornerRadius = new CornerRadius(6),

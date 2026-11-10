@@ -276,6 +276,9 @@ public class GitHubIssueDetail
     [JsonPropertyName("title")]
     public string Title { get; set; } = string.Empty;
 
+    [JsonPropertyName("body_html")]
+    public string? BodyHtml { get; set; }
+
     [JsonPropertyName("body")]
     public string? Body { get; set; }
 
@@ -401,6 +404,9 @@ public class GitHubComment
 
     [JsonPropertyName("user")]
     public GitHubUser? User { get; set; }
+
+    [JsonPropertyName("body_html")]
+    public string? BodyHtml { get; set; }
 
     [JsonPropertyName("body")]
     public string Body { get; set; } = string.Empty;

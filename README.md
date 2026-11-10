@@ -607,3 +607,15 @@ For issues or questions:
 - File an issue on GitHub
 - Contact IT Systems team
 - Check logs in `quality\fleetmate\logs\`
+
+## Record attachments and copying
+
+Work item and issue attachments have a read-only **Preview** window for images, PDF and text.
+Attachments download when requested, with a 50 MB limit. Other formats offer **Save As** or
+**Open in Browser**; the app never launches a downloaded attachment locally. Private issue
+attachments are resolved again through the signed-in provider before downloading.
+
+The record header's **Copy title and link** action supplies both plain text (`Title`, then its
+URL on the next line) and an HTML title link. Existing number-only copy actions remain separate.
+**Copy for Agent** shows the exact copied text beside the originating control for five seconds.
+Copying again restarts that preview; sending text into a running agent keeps its existing behavior.
