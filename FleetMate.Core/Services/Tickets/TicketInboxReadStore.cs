@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 
@@ -14,6 +15,7 @@ public sealed class TicketInboxReadStore
         public HashSet<string> Imports { get; set; } = new();
     }
 
+    private static readonly ConcurrentDictionary<string, object> Gates = new(StringComparer.OrdinalIgnoreCase);
     private readonly string _directory;
     public TicketInboxReadStore(string directory) => _directory = directory;
     public string PathFor(Guid person) => Path.Combine(_directory, $"{person}.json");
@@ -91,13 +93,28 @@ public sealed class TicketInboxReadStore
         return document;
     }
 
-    private static FileStream AcquireLock(string path)
+    private sealed class HeldLock(FileStream stream, object gate) : IDisposable
     {
-        var deadline = Environment.TickCount64 + 2000;
-        while (true)
+        public void Dispose()
         {
-            try { return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
-            catch (IOException) when (Environment.TickCount64 < deadline) { Thread.Sleep(20); }
+            try { stream.Dispose(); }
+            finally { Monitor.Exit(gate); }
         }
+    }
+
+    private static IDisposable AcquireLock(string path)
+    {
+        var gate = Gates.GetOrAdd(Path.GetFullPath(path), _ => new());
+        Monitor.Enter(gate);
+        try
+        {
+            var deadline = Environment.TickCount64 + 5000;
+            while (true)
+            {
+                try { return new HeldLock(new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None), gate); }
+                catch (IOException) when (Environment.TickCount64 < deadline) { Thread.Sleep(20); }
+            }
+        }
+        catch { Monitor.Exit(gate); throw; }
     }
 }

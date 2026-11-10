@@ -285,11 +285,11 @@ public partial class TicketsPage
 
     private void OnInboxRefreshClicked(object sender, RoutedEventArgs e) => StartInboxPass();
 
-    private void OnInboxMarkAllReadClicked(object sender, RoutedEventArgs e)
+    private async void OnInboxMarkAllReadClicked(object sender, RoutedEventArgs e)
     {
         if (_inboxState is not { } state || _inboxPerson is not { } person) return;
-        SaveReadMarks(person, state, state.Items.Select(item => item.FeedId), true);
-        RenderInboxItems();
+        await SaveReadMarksAsync(person, state, state.Items.Select(item => item.FeedId), true);
+        if (ReferenceEquals(state, _inboxState)) RenderInboxItems();
     }
 
     private void OnInboxButtonClicked(object sender, RoutedEventArgs e)
@@ -386,7 +386,9 @@ public partial class TicketsPage
         InboxPopup.IsOpen = false;
         if (_inboxState is { } state && _inboxPerson is { } person && !state.IsRead(row.Item.FeedId))
         {
-            SaveReadMarks(person, state, new[] { row.Item.FeedId }, true);
+            var service = _tdxService;
+            await SaveReadMarksAsync(person, state, new[] { row.Item.FeedId }, true);
+            if (!ReferenceEquals(state, _inboxState) || !ReferenceEquals(service, _tdxService)) return;
             RenderInboxItems();
         }
 
@@ -400,19 +402,26 @@ public partial class TicketsPage
         await OpenTicketInDetailAsync(ticket);
     }
 
-    private void OnInboxMarkUnreadClicked(object sender, RoutedEventArgs e)
+    private async void OnInboxMarkUnreadClicked(object sender, RoutedEventArgs e)
     {
         if (sender is MenuItem { DataContext: InboxRow row } && _inboxState is { } state && _inboxPerson is { } person)
         {
-            SaveReadMarks(person, state, new[] { row.Item.FeedId }, false);
-            ReloadInboxReadMarks();
+            await SaveReadMarksAsync(person, state, new[] { row.Item.FeedId }, false);
+            if (ReferenceEquals(state, _inboxState)) ReloadInboxReadMarks();
         }
     }
 
     /// <summary>Only the requested decisions are changed; peer decisions remain intact.</summary>
-    private void SaveReadMarks(TicketInboxPerson person, TicketInboxState state, IEnumerable<int> ids, bool read)
+    private async Task SaveReadMarksAsync(TicketInboxPerson person, TicketInboxState state, IEnumerable<int> ids, bool read)
     {
-        try { state.ReadIds = _inboxStore.SetRead(person.Uid, ids, read); }
+        var store = _inboxStore;
+        var decisions = ids.ToArray();
+        try
+        {
+            var marks = await Task.Run(() => store.SetRead(person.Uid, decisions, read));
+            if (ReferenceEquals(store, _inboxStore) && ReferenceEquals(state, _inboxState) && person.Uid == _inboxPerson?.Uid)
+                state.ReadIds = marks;
+        }
         catch (Exception ex) { Log.Warning(ex, "Ticket inbox read state could not be saved"); }
     }
 }
