@@ -142,6 +142,9 @@ public partial class TicketsPage
         CancelInboxPass();
         _inboxReadWatcher?.Dispose();
         _inboxReadWatcher = null;
+        _inboxPerson = null;
+        _inboxState = null;
+        _inboxService = null;
         _inboxReadDebounce?.Stop();
         if (_inboxActivationWindow != null) _inboxActivationWindow.Activated -= OnInboxWindowActivated;
         _inboxActivationWindow = null;
@@ -276,7 +279,7 @@ public partial class TicketsPage
         var visibleUnread = enabled ? unread : 0;
         InboxBadgeText.Text = TicketInboxBadge.Label(visibleUnread);
         InboxBadge.Visibility = visibleUnread > 0 ? Visibility.Visible : Visibility.Collapsed;
-        System.Windows.Automation.AutomationProperties.SetItemStatus(InboxButton, TicketInboxBadge.AccessibleValue(visibleUnread));
+        System.Windows.Automation.AutomationProperties.SetItemStatus(InboxButton, enabled ? TicketInboxBadge.AccessibleValue(unread) : "");
         InboxButton.ToolTip = TicketsToolbarRules.InboxToolTip(visibleUnread);
     }
 

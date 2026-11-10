@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using FleetMate.Core.Models.Tickets;
+using FleetMate.Core.Services.Tickets;
 using FleetMate.GUI.Views.Shared;
 using FleetMate.GUI.Views.Tickets;
 using Xunit;
@@ -29,6 +30,40 @@ public sealed class TicketInboxPopoverTests
         page.UpdateLayout();
         return window;
     }
+
+    [Fact]
+    public Task PeerReadReloadUpdatesRowsWithoutReplacingSelection() => WpfFixture.RunAsync(() =>
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "inbox-ui-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new TicketInboxStore(Path.Combine(directory, "one"),
+                "https://tickets.example.invalid/tdwebapi/api/1/tickets", Path.Combine(directory, "shared"));
+            var person = new TicketInboxPerson(Guid.NewGuid(), "Example Person", "person@example.invalid");
+            var state = new TicketInboxState { Items = new() { new() { FeedId = 1, TicketId = 42 } } };
+            var page = Page();
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            typeof(TicketsPage).GetField("_inboxStore", flags)!.SetValue(page, store);
+            typeof(TicketsPage).GetField("_inboxPerson", flags)!.SetValue(page, person);
+            typeof(TicketsPage).GetField("_inboxState", flags)!.SetValue(page, state);
+            typeof(TicketsPage).GetMethod("RenderInboxItems", flags)!.Invoke(page, null);
+            var list = Assert.IsType<ListView>(page.FindName("InboxListView"));
+            var source = list.ItemsSource;
+            var row = Assert.IsType<InboxRow>(Assert.Single(list.Items.Cast<object>()));
+            list.SelectedItem = row;
+            store.SetRead(person.Uid, new[] { 1 }, true);
+            typeof(TicketsPage).GetMethod("ReloadInboxReadMarks", flags)!.Invoke(page, null);
+            Assert.True(row.IsRead);
+            Assert.Same(source, list.ItemsSource);
+            Assert.Same(row, list.SelectedItem);
+            store.SetRead(person.Uid, new[] { 1 }, false);
+            typeof(TicketsPage).GetMethod("ReloadInboxReadMarks", flags)!.Invoke(page, null);
+            Assert.False(row.IsRead);
+            Assert.Same(row, list.SelectedItem);
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+        return Task.CompletedTask;
+    });
 
     [Theory]
     [InlineData(true)]
