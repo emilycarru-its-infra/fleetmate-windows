@@ -18,7 +18,7 @@ public sealed class TicketFreshnessViewTests
     {
         var page = new TicketsPage();
         var person = Guid.NewGuid();
-        var original = new TdxTicket { Id = 42, Title = "Original", StatusId = 1, ModifiedDate = DateTime.UtcNow.AddMinutes(-1), ResponsibleUid = person, ResponsibleFullName = "Example Person" };
+        var original = new TdxTicket { Id = 42, Title = "Original", StatusId = 1, ModifiedDate = DateTime.UtcNow.AddMinutes(-1), ResponsibleUid = person, ResponsibleFullName = "Example Person", ResponsibleEmail = "person@example.invalid" };
         Set(page, "_selectedTicket", original);
         typeof(TicketsPage).GetMethod("UpdateDetailPanel", Flags)!.Invoke(page, new object[] { original });
         var loads = (TicketDetailLoadState)typeof(TicketsPage).GetField("_detailLoads", Flags)!.GetValue(page)!;
@@ -34,7 +34,7 @@ public sealed class TicketFreshnessViewTests
         var recipient = selected.Tag;
         Set(page, "_descriptionEditTicketId", 42);
         Assert.IsType<TextBox>(page.FindName("DescriptionEditor")).Text = "Unsent description";
-        var fresh = new TdxTicket { Id = 42, Title = "Fresh", StatusId = 7, Description = "Server description", ModifiedDate = DateTime.UtcNow, ResponsibleUid = person, ResponsibleFullName = "Example Person" };
+        var fresh = new TdxTicket { Id = 42, Title = "Fresh", StatusId = 7, Description = "Server description", ModifiedDate = DateTime.UtcNow, ResponsibleUid = person, ResponsibleFullName = "Example Person", ResponsibleEmail = "person@example.invalid" };
         Assert.True(page.ApplyBackgroundTicketRefresh(request, fresh, new()));
         Assert.Equal("Unsent comment", Assert.IsType<TextBox>(page.FindName("CommentTextBox")).Text);
         Assert.True(Assert.IsType<CheckBox>(page.FindName("PrivateCheckBox")).IsChecked);

@@ -177,6 +177,21 @@ public sealed class TicketInboxTests : IDisposable
     }
 
     [Fact]
+    public async Task ChangedIdentityRefusesTheCompletedResponseCheckpoint()
+    {
+        var api = new FakeApi { Tickets = { Ticket(1, Now.AddHours(-1)) } };
+        api.Feeds[1] = new() { Entry(10, "Pat Example") };
+        var store = new TicketInboxStore(_dir);
+        using var changed = new CancellationTokenSource();
+        api.Cancel = changed;
+        api.CancelAfterFeeds = 1;
+        var scanner = new TicketInboxScanner(api, store, () => Now, (_, _) => Task.CompletedTask,
+            stillCurrent: () => !changed.IsCancellationRequested);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => scanner.RunPassAsync(Person, new TicketInboxState()));
+        Assert.Empty(store.Load(Me).Items);
+    }
+
+    [Fact]
     public async Task AFeedThatFailsIsRetriedAndHoldsTheScanPoint()
     {
         var api = new FakeApi { Tickets = { Ticket(1, Now.AddHours(-1)) } };

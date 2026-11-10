@@ -232,9 +232,9 @@ public sealed class TicketInboxScanner
         Action? changed = null,
         CancellationToken ct = default)
     {
-        void CheckIdentity()
+        void CheckIdentity(bool honorCancellation = true)
         {
-            ct.ThrowIfCancellationRequested();
+            if (honorCancellation) ct.ThrowIfCancellationRequested();
             if (_stillCurrent?.Invoke() == false) throw new OperationCanceledException("The ticket account changed.");
         }
         CheckIdentity();
@@ -279,7 +279,10 @@ public sealed class TicketInboxScanner
                 continue;
             }
 
-            CheckIdentity();
+            // Keep a completed, valid read as a resumable checkpoint even when
+            // a quit was requested just after its response. Account changes
+            // still refuse this write.
+            CheckIdentity(honorCancellation: false);
             var before = state.Items.Count(item => item.TicketId == ticket.Id);
             var found = TicketInboxMatch.Select(ticket, feed, person, cutoff);
             state.ReplaceTicket(ticket.Id, found);
