@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using FleetMate.GUI.Views.Shared;
 using FleetMate.Core.Models.Tickets;
 using FleetMate.Core.Services.Tickets;
 using Serilog;
@@ -16,7 +17,12 @@ public partial class TicketsPage
     private static readonly TimeSpan InboxRefreshInterval = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan InboxReloadInterval = TimeSpan.FromMinutes(1);
 
-    private readonly TicketInboxStore _inboxStore = new();
+    private TicketInboxStore _inboxStore = new();
+    private string? _inboxService;
+    private IDisposable? _inboxReadWatcher;
+    private DispatcherTimer? _inboxReadDebounce;
+    private Window? _inboxActivationWindow;
+    private bool _inboxPreferencesAttached;
     private TicketInboxPerson? _inboxPerson;
     private TicketInboxState? _inboxState;
     private DispatcherTimer? _inboxTimer;
@@ -38,11 +44,29 @@ public partial class TicketsPage
         var person = _me?.Uid is { } uid && uid != Guid.Empty
             ? new TicketInboxPerson(uid, _me.FullName ?? _me.DisplayName, _me.PrimaryEmail)
             : null;
-        if (person?.Uid == _inboxPerson?.Uid) return;
+        var service = _tdxService?.InboxServiceUrl;
+        if (person?.Uid == _inboxPerson?.Uid && service == _inboxService) return;
+        _inboxReadWatcher?.Dispose();
+        _inboxReadWatcher = null;
+        _inboxService = service;
+        _inboxStore = service == null ? new() : new(serviceUrl: service, legacyServiceKey: _tdxService?.IsSsoAuthenticated == true ? _app?.Config?.TicketInboxLegacyServiceKey : null);
 
         CancelInboxPass();
         _inboxPerson = person;
         _inboxState = person == null ? null : _inboxStore.Load(person.Uid);
+        if (person != null && service != null)
+        {
+            _inboxReadDebounce ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+            _inboxReadDebounce.Stop();
+            _inboxReadDebounce.Tick -= OnInboxReadDebounce;
+            _inboxReadDebounce.Tick += OnInboxReadDebounce;
+            _inboxReadWatcher = _inboxStore.WatchRead(person.Uid, () => Dispatcher.BeginInvoke(() =>
+            {
+                if (person.Uid != _inboxPerson?.Uid || service != _inboxService) return;
+                _inboxReadDebounce.Stop();
+                _inboxReadDebounce.Start();
+            }));
+        }
         _inboxLastPassUtc = DateTime.MinValue;
         _inboxError = null;
         _inboxScannedElsewhere = false;
@@ -62,10 +86,34 @@ public partial class TicketsPage
     /// <summary>Re-read the saved inbox, unless this window is mid-pass and holds the newest copy.</summary>
     private void ReloadInboxFromDisk()
     {
-        if (_inboxPass is { IsCompleted: false } || _inboxPerson is not { } person) return;
+        if (_inboxPerson is not { } person) return;
+        if (_inboxPass is { IsCompleted: false }) { ReloadInboxReadMarks(); return; }
         _inboxState = _inboxStore.Load(person.Uid);
         RenderInbox();
     }
+
+    private void OnInboxReadDebounce(object? sender, EventArgs e)
+    {
+        _inboxReadDebounce?.Stop();
+        ReloadInboxReadMarks();
+    }
+
+    private void ReloadInboxReadMarks()
+    {
+        if (_inboxPerson is not { } person || _inboxState is not { } state) return;
+        try
+        {
+            state.ReadIds = _inboxStore.LoadRead(person.Uid);
+            UpdateInboxBadge(state.UnreadCount);
+            if (InboxListView.ItemsSource is IEnumerable<InboxRow> rows)
+                foreach (var row in rows) row.SetRead(state.IsRead(row.Item.FeedId));
+            InboxMarkAllReadButton.IsEnabled = state.UnreadCount > 0;
+        }
+        catch (Exception ex) { Log.Warning(ex, "Ticket Inbox read metadata could not be reloaded"); }
+    }
+
+    private void OnInboxWindowActivated(object? sender, EventArgs e) => ReloadInboxFromDisk();
+    private void OnInboxBadgePreferenceChanged() => Dispatcher.BeginInvoke(() => UpdateInboxBadge(_inboxState?.UnreadCount ?? 0));
 
     /// <summary>Inbox shown: refresh now if due, and every five minutes while it stays open.</summary>
     private void OnInboxVisibilityChanged()
@@ -92,6 +140,13 @@ public partial class TicketsPage
         _inboxTimer?.Stop();
         _inboxReloadTimer?.Stop();
         CancelInboxPass();
+        _inboxReadWatcher?.Dispose();
+        _inboxReadWatcher = null;
+        _inboxReadDebounce?.Stop();
+        if (_inboxActivationWindow != null) _inboxActivationWindow.Activated -= OnInboxWindowActivated;
+        _inboxActivationWindow = null;
+        UserPreferences.Changed -= OnInboxBadgePreferenceChanged;
+        _inboxPreferencesAttached = false;
     }
 
     private void CancelInboxPass()
@@ -186,10 +241,7 @@ public partial class TicketsPage
     {
         var state = _inboxState;
         var unread = state?.UnreadCount ?? 0;
-        InboxBadgeText.Text = TicketInboxBadge.Label(unread);
-        InboxBadge.Visibility = unread > 0 ? Visibility.Visible : Visibility.Collapsed;
-        System.Windows.Automation.AutomationProperties.SetItemStatus(InboxButton, TicketInboxBadge.AccessibleValue(unread));
-        InboxButton.ToolTip = TicketsToolbarRules.InboxToolTip(unread);
+        UpdateInboxBadge(unread);
 
         // The envelope remains available while scanning or signed out; status lives inside the popover.
         InboxButtonHost.Visibility = Visibility.Visible;
@@ -217,13 +269,23 @@ public partial class TicketsPage
                         : "No comments have notified you in the last 90 days.";
     }
 
+    private void UpdateInboxBadge(int unread)
+    {
+        var enabled = UserPreferences.TicketsBadgesEnabled(_app?.Config?.TicketsBadgesEnabled
+            ?? FleetMate.Core.Config.AppEdition.Current.IsTicketsOnly);
+        var visibleUnread = enabled ? unread : 0;
+        InboxBadgeText.Text = TicketInboxBadge.Label(visibleUnread);
+        InboxBadge.Visibility = visibleUnread > 0 ? Visibility.Visible : Visibility.Collapsed;
+        System.Windows.Automation.AutomationProperties.SetItemStatus(InboxButton, TicketInboxBadge.AccessibleValue(visibleUnread));
+        InboxButton.ToolTip = TicketsToolbarRules.InboxToolTip(visibleUnread);
+    }
+
     private void OnInboxRefreshClicked(object sender, RoutedEventArgs e) => StartInboxPass();
 
     private void OnInboxMarkAllReadClicked(object sender, RoutedEventArgs e)
     {
         if (_inboxState is not { } state || _inboxPerson is not { } person) return;
-        state.MarkAllRead();
-        SaveReadMarks(person, state);
+        SaveReadMarks(person, state, state.Items.Select(item => item.FeedId), true);
         RenderInboxItems();
     }
 
@@ -321,8 +383,7 @@ public partial class TicketsPage
         InboxPopup.IsOpen = false;
         if (_inboxState is { } state && _inboxPerson is { } person && !state.IsRead(row.Item.FeedId))
         {
-            state.MarkRead(row.Item.FeedId);
-            SaveReadMarks(person, state);
+            SaveReadMarks(person, state, new[] { row.Item.FeedId }, true);
             RenderInboxItems();
         }
 
@@ -336,16 +397,25 @@ public partial class TicketsPage
         await OpenTicketInDetailAsync(ticket);
     }
 
-    /// <summary>Read marks go to their own file, which only the window writes.</summary>
-    private void SaveReadMarks(TicketInboxPerson person, TicketInboxState state)
+    private void OnInboxMarkUnreadClicked(object sender, RoutedEventArgs e)
     {
-        try { _inboxStore.SaveRead(person.Uid, state); }
+        if (sender is MenuItem { DataContext: InboxRow row } && _inboxState is { } state && _inboxPerson is { } person)
+        {
+            SaveReadMarks(person, state, new[] { row.Item.FeedId }, false);
+            ReloadInboxReadMarks();
+        }
+    }
+
+    /// <summary>Only the requested decisions are changed; peer decisions remain intact.</summary>
+    private void SaveReadMarks(TicketInboxPerson person, TicketInboxState state, IEnumerable<int> ids, bool read)
+    {
+        try { state.ReadIds = _inboxStore.SetRead(person.Uid, ids, read); }
         catch (Exception ex) { Log.Warning(ex, "Ticket inbox read state could not be saved"); }
     }
 }
 
 /// <summary>One row of the Inbox list.</summary>
-public sealed class InboxRow
+public sealed class InboxRow : System.ComponentModel.INotifyPropertyChanged
 {
     public InboxRow(TicketInboxItem item, bool isRead)
     {
@@ -354,7 +424,16 @@ public sealed class InboxRow
     }
 
     public TicketInboxItem Item { get; }
-    public bool IsRead { get; }
+    public bool IsRead { get; private set; }
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+    public void SetRead(bool read)
+    {
+        if (IsRead == read) return;
+        IsRead = read;
+        PropertyChanged?.Invoke(this, new(nameof(IsRead)));
+        PropertyChanged?.Invoke(this, new(nameof(HeadingWeight)));
+        PropertyChanged?.Invoke(this, new(nameof(UnreadVisibility)));
+    }
 
     public string Heading => $"#{Item.TicketId} · {Item.TicketTitle ?? "Untitled"}";
     public FontWeight HeadingWeight => IsRead ? FontWeights.Normal : FontWeights.SemiBold;

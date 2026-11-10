@@ -12,21 +12,28 @@ public interface ITicketInboxApi
     Task<List<TdxFeedEntry>> GetTicketFeedOrThrowAsync(int ticketId, CancellationToken ct = default);
 }
 
-/// <summary>
-/// Saves one person's inbox under the app's local data folder
-/// (%LOCALAPPDATA%\FleetMate or %LOCALAPPDATA%\TicketsMate), in <c>Inbox</c>:
-/// <c>&lt;uid&gt;.json</c> for the items and scan point, written by whichever
-/// process scans; <c>&lt;uid&gt;.read.json</c> for read marks, written only by
-/// the app window; and <c>&lt;uid&gt;.lock</c>, held while a pass runs.
-/// </summary>
+/// <summary>Edition-owned, service-scoped scan content with cross-edition read metadata.</summary>
 public sealed class TicketInboxStore
 {
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = false };
     private readonly string _directory;
+    private readonly TicketInboxReadStore? _sharedRead;
+    private readonly string? _legacyDirectory;
+    private readonly bool _legacyBindingMatches;
 
-    public TicketInboxStore(string? directory = null)
+    public TicketInboxStore(string? directory = null, string? serviceUrl = null, string? sharedDirectory = null, string? legacyServiceKey = null)
     {
-        _directory = directory ?? Path.Combine(AppEdition.Current.LocalAppDataDirectory, "Inbox");
+        var legacyDirectory = directory ?? Path.Combine(AppEdition.Current.LocalAppDataDirectory, "Inbox");
+        if (serviceUrl == null) { _directory = legacyDirectory; return; }
+        var key = TicketInboxReadStore.ServiceKey(serviceUrl);
+        _legacyDirectory = legacyDirectory;
+        _legacyBindingMatches = string.Equals(key, legacyServiceKey, StringComparison.Ordinal);
+        _directory = Path.Combine(legacyDirectory, key);
+        _sharedRead = new TicketInboxReadStore(Path.Combine(sharedDirectory ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "FleetMateShared", "TicketInboxRead"), key));
+        // Old UID-only files have no service provenance. Preserve them without importing
+        // content or read IDs into a potentially different service.
+
     }
 
     public string PathFor(Guid uid) => Path.Combine(_directory, $"{uid}.json");
@@ -37,7 +44,12 @@ public sealed class TicketInboxStore
     public TicketInboxState Load(Guid uid)
     {
         var state = Read<TicketInboxState>(PathFor(uid)) ?? new TicketInboxState();
-        state.ReadIds = Read<HashSet<int>>(ReadPathFor(uid)) ?? new HashSet<int>();
+        try
+        {
+            ImportDeclaredLegacyRead(uid);
+            state.ReadIds = LoadRead(uid);
+        }
+        catch (Exception ex) { Log.Warning(ex, "Ticket Inbox read metadata is unavailable; preserving its file"); }
         return state;
     }
 
@@ -45,7 +57,37 @@ public sealed class TicketInboxStore
     public void Save(Guid uid, TicketInboxState state) => Write(PathFor(uid), state);
 
     /// <summary>Save the read marks. Only the app window calls this.</summary>
-    public void SaveRead(Guid uid, TicketInboxState state) => Write(ReadPathFor(uid), state.ReadIds);
+    public void SaveRead(Guid uid, TicketInboxState state)
+    {
+        if (_sharedRead == null) Write(ReadPathFor(uid), state.ReadIds);
+        else state.ReadIds = _sharedRead.SetRead(uid, state.ReadIds, true);
+    }
+
+    private void ImportDeclaredLegacyRead(Guid uid)
+    {
+        if (!_legacyBindingMatches || _sharedRead == null || _legacyDirectory == null || uid == Guid.Empty) return;
+        var path = Path.Combine(_legacyDirectory, $"{uid}.read.json");
+        if (!File.Exists(path)) return;
+        _sharedRead.ImportLegacy(uid, AppEdition.Current.Name, () =>
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            return JsonSerializer.Deserialize<HashSet<int>>(stream) ?? throw new InvalidDataException("Invalid legacy read metadata.");
+        });
+    }
+
+    public HashSet<int> LoadRead(Guid uid) => _sharedRead?.Load(uid)
+        ?? Read<HashSet<int>>(ReadPathFor(uid)) ?? new HashSet<int>();
+
+    public HashSet<int> SetRead(Guid uid, IEnumerable<int> ids, bool read)
+    {
+        if (_sharedRead != null) return _sharedRead.SetRead(uid, ids, read);
+        var marks = LoadRead(uid);
+        foreach (var id in ids) { if (read) marks.Add(id); else marks.Remove(id); }
+        Write(ReadPathFor(uid), marks);
+        return marks;
+    }
+
+    public IDisposable? WatchRead(Guid uid, Action changed) => _sharedRead?.Watch(uid, changed);
 
     /// <summary>
     /// Take the exclusive scan lock for one person, without waiting. Null when
@@ -89,7 +131,7 @@ public sealed class TicketInboxStore
     private void Write<T>(string path, T value)
     {
         Directory.CreateDirectory(_directory);
-        var temp = path + "." + Environment.ProcessId + ".tmp";
+        var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         File.WriteAllText(temp, JsonSerializer.Serialize(value, Options));
         File.Move(temp, path, overwrite: true);
     }

@@ -35,7 +35,7 @@ internal sealed class InboxAgent
     private static readonly TimeSpan NotConfiguredWait = TimeSpan.FromHours(1);
 
     private readonly App _app;
-    private readonly TicketInboxStore _store = new();
+    private TicketInboxStore _store = new();
 
     public InboxAgent(App app) => _app = app;
 
@@ -76,6 +76,7 @@ internal sealed class InboxAgent
             Log.Warning(ex, "[inbox-agent] Sign-in failed");
         }
 
+        _store = new TicketInboxStore(serviceUrl: tdx.InboxServiceUrl);
         TicketInboxPerson? person = null;
         while (true)
         {
@@ -93,7 +94,17 @@ internal sealed class InboxAgent
             }
 
             // While signed out, the keeper renews; the pass waits for it.
-            if (tdx.IsSsoAuthenticated) await RunPassAsync(tdx, person);
+            if (tdx.IsSsoAuthenticated)
+            {
+                // A renewed or adopted session may belong to a different person.
+                var current = await tdx.GetMeAsync();
+                if (current?.Uid is { } currentUid && currentUid != Guid.Empty)
+                {
+                    person = new TicketInboxPerson(currentUid, current.FullName ?? current.DisplayName, current.PrimaryEmail);
+                    await RunPassAsync(tdx, person);
+                }
+                else person = null;
+            }
             await Task.Delay(PassInterval);
         }
     }

@@ -97,6 +97,15 @@ public static class UserPreferences
 
     public static void MarkSetupCompleted() => Write("SetupCompleted", "1");
 
+    public static bool TicketsBadgesEnabled(bool managedDefault) => Read("tickets.showInboxBadges") switch
+    {
+        "1" => true,
+        "0" => false,
+        _ => managedDefault
+    };
+
+    public static void SetTicketsBadgesEnabled(bool on) => Write("tickets.showInboxBadges", on ? "1" : "0");
+
     public static bool TicketsAssignedToMe => Read("tickets.assignedToMe") == "1";
 
     public static void SetTicketsAssignedToMe(bool on) => Write("tickets.assignedToMe", on ? "1" : null);

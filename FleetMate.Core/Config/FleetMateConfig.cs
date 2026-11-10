@@ -328,6 +328,8 @@ public class FleetMateConfig
 
     // TeamDynamix Configuration
     public TdxConfig? Tdx { get; set; }
+    public bool TicketsBadgesEnabled { get; set; } = AppEdition.Current.IsTicketsOnly;
+    public string? TicketInboxLegacyServiceKey { get; set; }
 
     // Tasks Configuration (multi-provider task management)
     public TasksConfig? Tasks { get; set; }
@@ -651,6 +653,14 @@ public class FleetMateConfig
     internal static void ApplyRegistryValues(Func<string, object?> read, FleetMateConfig config, bool fromPolicy)
     {
         var key = new RegistryValueReader(read, fromPolicy);
+        if (key.GetValue("TicketInboxLegacyServiceKey") is string legacyServiceKey)
+            config.TicketInboxLegacyServiceKey = legacyServiceKey;
+        config.TicketsBadgesEnabled = key.GetValue("TicketsBadgesEnabled")?.ToString()?.ToLowerInvariant() switch
+        {
+            "true" or "1" => true,
+            "false" or "0" => false,
+            _ => config.TicketsBadgesEnabled
+        };
         {
             // ReportMate
             var reportMateUrl = key.GetValue("ReportMateUrl") as string;

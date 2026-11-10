@@ -20,6 +20,7 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
 {
     private readonly HttpClient _client;
     private readonly TdxConfig _config;
+    public string InboxServiceUrl => _config.GetTicketsUrl();
     private readonly JsonSerializerOptions _jsonOptions;
     // The service-account token cache is gone with the service account itself —
     // the operator's SSO token in _ssoToken is the only credential now.
