@@ -11,6 +11,22 @@ public sealed class TicketFreshnessTests : IDisposable
     public void Dispose() { if (Directory.Exists(_directory)) Directory.Delete(_directory, true); }
 
     [Fact]
+    public async Task InboxContentReplacementWaitsForTransientReaderAndKeepsAtomicSnapshot()
+    {
+        var store = new TicketInboxStore(_directory);
+        var person = Guid.NewGuid();
+        store.Save(person, new TicketInboxState { ScannedThrough = DateTime.UtcNow.AddDays(-1) });
+        using var reader = new FileStream(store.PathFor(person), FileMode.Open, FileAccess.Read, FileShare.Read);
+        var save = Task.Run(() => store.Save(person, new TicketInboxState { ScannedThrough = DateTime.UtcNow }));
+        await Task.Delay(100);
+        Assert.False(save.IsCompleted);
+        reader.Dispose();
+        await save.WaitAsync(TimeSpan.FromSeconds(6));
+        Assert.True(store.Load(person).ScannedThrough > DateTime.UtcNow.AddMinutes(-1));
+        Assert.Empty(Directory.GetFiles(_directory, "*.tmp"));
+    }
+
+    [Fact]
     public void SnapshotScopesDoNotGuessLegacyIdentityOrMixServicePersonAndRange()
     {
         var legacy = new TicketSnapshot(_directory);

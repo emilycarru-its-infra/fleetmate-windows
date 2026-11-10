@@ -143,8 +143,23 @@ public sealed class TicketInboxStore
     {
         Directory.CreateDirectory(_directory);
         var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(value, Options));
-        File.Move(temp, path, overwrite: true);
+        try
+        {
+            File.WriteAllText(temp, JsonSerializer.Serialize(value, Options));
+            var deadline = Environment.TickCount64 + 5000;
+            while (true)
+            {
+                try { File.Move(temp, path, overwrite: true); break; }
+                catch (IOException) when (Environment.TickCount64 < deadline) { Thread.Sleep(20); }
+                catch (UnauthorizedAccessException) when (Environment.TickCount64 < deadline) { Thread.Sleep(20); }
+            }
+        }
+        finally
+        {
+            try { if (File.Exists(temp)) File.Delete(temp); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
     }
 }
 
