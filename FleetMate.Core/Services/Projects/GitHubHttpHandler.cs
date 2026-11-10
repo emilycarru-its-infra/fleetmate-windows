@@ -37,7 +37,8 @@ public sealed class GitHubHttpHandler : DelegatingHandler
             return await base.SendAsync(request, ct);
 
         var bucket = BucketFor(request.RequestUri!);
-        var conditional = request.Method == HttpMethod.Get && bucket == GitHubRateLimitBucket.Core;
+        var conditional = request.Method == HttpMethod.Get && bucket == GitHubRateLimitBucket.Core
+            && request.Headers.CacheControl?.NoStore != true;
         var key = conditional ? CacheKey(request) : null;
         var cached = key != null ? _cache.Get(key) : null;
         var now = GitHubSync.Now();

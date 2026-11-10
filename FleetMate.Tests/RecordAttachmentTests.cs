@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using FleetMate.Core.Shared;
 using FleetMate.Core.Services.Projects;
+using FleetMate.GUI.Views.Shared;
 using Xunit;
 
 namespace FleetMate.Tests;
@@ -48,6 +49,16 @@ public sealed class RecordAttachmentTests
         Assert.Empty(RecordAttachments.Discover("<img src='https://evil.invalid/image.png'>", RecordAttachments.IsGitHubAsset));
     }
 
+    [Fact]
+    public void SeparateSignedAssetsDoNotMatchOnlyBecauseTheyShareTheIssueBrowserFallback()
+    {
+        const string browser = "https://github.com/example/repo/issues/1";
+        var first = new RecordAttachment("one", "https://private-user-images.githubusercontent.com/1/one.png?jwt=first", browser);
+        var second = new RecordAttachment("two", "https://private-user-images.githubusercontent.com/1/two.png?jwt=second", browser);
+        Assert.False(RecordAttachmentSections.Matches(first, second));
+        Assert.True(RecordAttachmentSections.Matches(first, first with { Url = "https://private-user-images.githubusercontent.com/1/one.png?jwt=refreshed" }));
+    }
+
     private sealed class Handler(Func<HttpRequestMessage, HttpResponseMessage> send) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) => Task.FromResult(send(request));
@@ -75,6 +86,7 @@ public sealed class RecordAttachmentTests
         Assert.Equal(new byte[] { 1, 2, 3 }, await File.ReadAllBytesAsync(staged.Path));
         var path = staged.Path;
         staged.Dispose();
+        for (var attempt = 0; attempt < 30 && File.Exists(path); attempt++) await Task.Delay(100);
         Assert.False(File.Exists(path));
     }
 

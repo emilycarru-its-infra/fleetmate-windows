@@ -152,6 +152,8 @@ public class GitHubGraphQLClient : IDisposable
         var url = $"https://api.github.com{path}";
         using var request = new HttpRequestMessage(new HttpMethod(method), url);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(mediaType ?? "application/vnd.github+json"));
+        if (mediaType == "application/vnd.github.full+json")
+            request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
         request.Headers.Add("X-GitHub-Api-Version", "2022-11-28");
 
         if (body != null)

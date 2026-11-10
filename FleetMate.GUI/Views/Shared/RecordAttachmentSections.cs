@@ -41,7 +41,8 @@ public static class RecordAttachmentSections
         return await service.DownloadRecordAttachmentAsync(current, ct);
     }
 
-    private static bool Matches(RecordAttachment current, RecordAttachment requested) =>
-        current.OriginalUrl == requested.OriginalUrl
+    internal static bool Matches(RecordAttachment current, RecordAttachment requested) =>
+        (current.OriginalUrl == requested.OriginalUrl && Uri.TryCreate(current.OriginalUrl, UriKind.Absolute, out var original)
+            && RecordAttachments.IsGitHubAsset(original))
         || new Uri(current.Url).GetLeftPart(UriPartial.Path) == new Uri(requested.Url).GetLeftPart(UriPartial.Path);
 }
