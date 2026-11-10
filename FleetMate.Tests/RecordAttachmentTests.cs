@@ -59,6 +59,14 @@ public sealed class RecordAttachmentTests
         Assert.True(RecordAttachmentSections.Matches(first, first with { Url = "https://private-user-images.githubusercontent.com/1/one.png?jwt=refreshed" }));
     }
 
+    [Theory]
+    [InlineData("00000000-0000-0000-0000-000000000001", "application/pdf", ".pdf")]
+    [InlineData("00000000-0000-0000-0000-000000000001", "image/png", ".png")]
+    [InlineData("report.pdf", "application/octet-stream", ".pdf")]
+    [InlineData("program.exe", "application/octet-stream", ".bin")]
+    public void PreviewFileExtensionsFollowTrustedMimeAndSafeFileTypes(string name, string type, string expected) =>
+        Assert.Equal(expected, RecordAttachments.SafeExtension(name, type));
+
     [Fact]
     public void LegacyRepositoryFileUploadsAreRecognizedWithoutAllowingOtherOrigins()
     {
@@ -74,7 +82,7 @@ public sealed class RecordAttachmentTests
         Assert.True(RecordAttachmentPreview.AllowsLocalResource(new Uri(path).AbsoluteUri, path));
         Assert.False(RecordAttachmentPreview.AllowsLocalResource(new Uri(Path.Combine(Path.GetTempPath(), "other.txt")).AbsoluteUri, path));
         Assert.False(RecordAttachmentPreview.AllowsLocalResource("https://example.invalid/tracker", path));
-        Assert.False(RecordAttachmentPreview.AllowsLocalResource("file://server/share/private.txt", path));
+        Assert.False(RecordAttachmentPreview.AllowsLocalResource("file://files.example.invalid/share/private.txt", path));
     }
 
     private sealed class WaitingBody : Stream

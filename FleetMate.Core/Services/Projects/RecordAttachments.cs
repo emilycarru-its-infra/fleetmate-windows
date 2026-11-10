@@ -123,7 +123,7 @@ public static class RecordAttachments
             if (response.Content.Headers.ContentLength > MaximumBytes) throw new InvalidDataException("Attachment exceeds the 50 MB preview limit.");
             var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "FleetMateAttachments", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(directory);
-            var name = "Attachment" + System.IO.Path.GetExtension(SafeName(attachment.Name));
+            var name = "Attachment" + SafeExtension(attachment.Name, type);
             var path = System.IO.Path.Combine(directory, name);
             try
             {
@@ -153,6 +153,21 @@ public static class RecordAttachments
     {
         var start = Encoding.UTF8.GetString(bytes[..Math.Min(bytes.Length, 512)]).TrimStart('\uFEFF', ' ', '\r', '\n', '\t');
         return start.StartsWith("<!doctype html", StringComparison.OrdinalIgnoreCase) || start.StartsWith("<html", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static string SafeExtension(string name, string contentType)
+    {
+        var inferred = contentType.ToLowerInvariant() switch
+        {
+            "application/pdf" => ".pdf", "image/png" => ".png", "image/jpeg" => ".jpg",
+            "image/gif" => ".gif", "image/bmp" => ".bmp", "image/tiff" => ".tif",
+            "text/plain" => ".txt", "text/csv" => ".csv", "application/json" => ".json",
+            _ => null,
+        };
+        if (inferred != null) return inferred;
+        var extension = System.IO.Path.GetExtension(SafeName(name)).ToLowerInvariant();
+        return extension is ".pdf" or ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".tif" or ".tiff"
+            or ".txt" or ".md" or ".log" or ".csv" or ".json" or ".yaml" or ".yml" or ".ini" ? extension : ".bin";
     }
 
     public static string SafeName(string name)
