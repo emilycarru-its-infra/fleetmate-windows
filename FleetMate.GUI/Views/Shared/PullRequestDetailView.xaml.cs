@@ -284,8 +284,8 @@ public partial class PullRequestDetailView : UserControl
         if (string.IsNullOrWhiteSpace(_pullRequest?.WebUrl)) return;
         try
         {
-            Clipboard.SetText(_pullRequest.WebUrl);
-            ShowStatus("Link copied.", false);
+            if (RecordClipboard.Copy(_pullRequest.Title, _pullRequest.WebUrl))
+                ShowStatus("Title and link copied.", false);
         }
         catch (Exception ex)
         {

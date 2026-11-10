@@ -329,12 +329,12 @@ public partial class MainWindow : Window
     /// the text was pasted, false when it was copied. <paramref name="pane"/>
     /// is the pane a row was dropped on, tried first.
     /// </summary>
-    public bool SendToAgent(string text, TerminalView? pane = null)
+    public bool SendToAgent(string text, TerminalView? pane = null, FrameworkElement? copyAnchor = null)
     {
         if (TicketsOnly) return false;
         SetTerminalVisible(true, takeFocus: false);
         if (Terminal.Insert(text, pane)) return true;
-        AgentContextClipboard.SetText(text);
+        AgentContextClipboard.CopyWithPreview(text, copyAnchor ?? pane);
         if (Terminal.HasSessions) Terminal.FocusActive();
         else Terminal.OpenDefaultSession();
         return false;

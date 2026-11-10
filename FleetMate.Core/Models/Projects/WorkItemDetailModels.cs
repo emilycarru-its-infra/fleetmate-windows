@@ -48,14 +48,14 @@ public sealed class WorkItemDetail
         : Tags.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
 }
 
-public enum WorkItemRelationKind { Parent, Child, Related, Predecessor, Successor, Artifact, Other }
+public enum WorkItemRelationKind { Parent, Child, Related, Predecessor, Successor, Artifact, Attachment, Other }
 
 /// <summary>One relation. <see cref="Name"/> is the link type ("Fixed in Commit"), not the artifact's name.</summary>
 public sealed record WorkItemRelationInfo(WorkItemRelationKind Kind, string Rel, string Url, string? Name, string? Comment)
 {
     /// <summary>The other work item's id, read from the end of its URL.</summary>
     public int? LinkedWorkItemId =>
-        Kind is WorkItemRelationKind.Artifact ? null
+        Kind is WorkItemRelationKind.Artifact or WorkItemRelationKind.Attachment ? null
         : int.TryParse(Url.TrimEnd('/').Split('/').LastOrDefault(), out var id) ? id : null;
 }
 

@@ -740,10 +740,13 @@ public class GitHubProjectsService : IDisposable
     /// <summary>
     /// Fetches full issue detail from the GitHub REST v3 API.
     /// </summary>
+    public Task<StagedRecordAttachment> DownloadRecordAttachmentAsync(RecordAttachment attachment, CancellationToken ct = default) =>
+        _client.DownloadIssueAttachmentAsync(attachment, ct);
+
     public async Task<GitHubIssueDetail> GetIssueDetailAsync(
         string owner, string repo, int number, CancellationToken ct = default)
     {
-        var bytes = await _client.ExecuteRestAsync($"/repos/{owner}/{repo}/issues/{number}", ct: ct);
+        var bytes = await _client.ExecuteRestAsync($"/repos/{owner}/{repo}/issues/{number}", ct: ct, mediaType: "application/vnd.github.full+json");
         return JsonSerializer.Deserialize<GitHubIssueDetail>(bytes, RestJsonOptions)
             ?? throw new InvalidOperationException("Failed to deserialize issue detail");
     }
@@ -755,7 +758,7 @@ public class GitHubProjectsService : IDisposable
         string owner, string repo, int number, CancellationToken ct = default)
     {
         var bytes = await _client.ExecuteRestAsync(
-            $"/repos/{owner}/{repo}/issues/{number}/comments?per_page=100", ct: ct);
+            $"/repos/{owner}/{repo}/issues/{number}/comments?per_page=100", ct: ct, mediaType: "application/vnd.github.full+json");
         return JsonSerializer.Deserialize<List<GitHubComment>>(bytes, RestJsonOptions) ?? new();
     }
 

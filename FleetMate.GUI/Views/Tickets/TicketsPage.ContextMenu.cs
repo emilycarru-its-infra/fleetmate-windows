@@ -147,7 +147,7 @@ public partial class TicketsPage
             return item;
         }
 
-        item.Click += (_, _) => Execute(entry.Command!.Value, ticket);
+        item.Click += (_, _) => Execute(entry.Command!.Value, ticket, CopyFeedback.Anchor(item));
         return item;
     }
 
@@ -169,7 +169,7 @@ public partial class TicketsPage
         _ => null,
     };
 
-    private async void Execute(TicketMenuCommand command, TdxTicket ticket)
+    private async void Execute(TicketMenuCommand command, TdxTicket ticket, FrameworkElement? copyAnchor = null)
     {
         switch (command)
         {
@@ -212,10 +212,10 @@ public partial class TicketsPage
                 await RefreshTicketAsync(ticket.Id);
                 break;
             case TicketMenuCommand.CopyForAgent:
-                if (AgentContextMenu.Resolve(ticket) is { } copy) AgentContextMenu.Copy([copy]);
+                if (AgentContextMenu.Resolve(ticket) is { } copy) AgentContextMenu.Copy([copy], copyAnchor ?? TicketsListView);
                 break;
             case TicketMenuCommand.SendToAgent:
-                if (AgentContextMenu.Resolve(ticket) is { } send) AgentContextMenu.Send([send]);
+                if (AgentContextMenu.Resolve(ticket) is { } send) AgentContextMenu.Send([send], copyAnchor ?? TicketsListView);
                 break;
         }
     }

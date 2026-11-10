@@ -27,13 +27,22 @@ namespace FleetMate.GUI.Views.Shared;
 /// <summary>Puts agent context blocks on the clipboard, retrying while another app holds it.</summary>
 public static class AgentContextClipboard
 {
-    public static bool SetText(string text)
+    public static bool SetText(string text) => SetData(text);
+
+    public static bool CopyWithPreview(string text, FrameworkElement? anchor)
+    {
+        if (!SetText(text)) return false;
+        CopyFeedback.Show(anchor, text);
+        return true;
+    }
+
+    public static bool SetData(object data)
     {
         for (var attempt = 0; attempt < 5; attempt++)
         {
             try
             {
-                Clipboard.SetDataObject(text, copy: true);
+                Clipboard.SetDataObject(data, copy: true);
                 return true;
             }
             catch (COMException) { Thread.Sleep(30); }
@@ -56,18 +65,18 @@ public static class AgentContextMenu
 
     // ── Actions ──────────────────────────────────────────────────────────
 
-    public static void Copy(IReadOnlyList<AgentContext> contexts)
+    public static void Copy(IReadOnlyList<AgentContext> contexts, FrameworkElement? anchor = null)
     {
         if (contexts.Count == 0) return;
-        AgentContextClipboard.SetText(AgentContextRenderer.Render(contexts));
+        AgentContextClipboard.CopyWithPreview(AgentContextRenderer.Render(contexts), anchor);
     }
 
-    public static void Send(IReadOnlyList<AgentContext> contexts)
+    public static void Send(IReadOnlyList<AgentContext> contexts, FrameworkElement? anchor = null)
     {
         if (contexts.Count == 0) return;
         var text = AgentContextRenderer.Render(contexts);
-        if (Application.Current?.MainWindow is MainWindow window) window.SendToAgent(text);
-        else AgentContextClipboard.SetText(text);
+        if (Application.Current?.MainWindow is MainWindow window) window.SendToAgent(text, copyAnchor: anchor);
+        else AgentContextClipboard.CopyWithPreview(text, anchor);
     }
 
     /// <summary>
@@ -82,12 +91,12 @@ public static class AgentContextMenu
         if (ticketsOnly) yield break;
         var copy = new MenuItem { Header = "Copy for Agent", Icon = new FontIcon { Glyph = "" }, Tag = AgentTag };
         AutomationProperties.SetAutomationId(copy, "CopyForAgentMenuItem");
-        copy.Click += (_, _) => Copy(contexts());
+        copy.Click += (_, _) => Copy(contexts(), CopyFeedback.Anchor(copy));
         yield return copy;
         var send = new MenuItem { Header = "Send to Agent", Icon = new FontIcon { Glyph = "" }, Tag = AgentTag };
         AutomationProperties.SetAutomationId(send, "SendToAgentMenuItem");
         send.ToolTip = "Paste into the running agent's input without pressing Return; with none running, copy and open the terminal";
-        send.Click += (_, _) => Send(contexts());
+        send.Click += (_, _) => Send(contexts(), CopyFeedback.Anchor(send));
         yield return send;
     }
 

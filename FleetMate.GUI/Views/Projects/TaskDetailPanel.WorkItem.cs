@@ -206,6 +206,8 @@ public partial class TaskDetailPanel
         if (_editing) RenderEditFields(d); else RenderFields(d);
 
         RenderLongText("Description", d.Description, _form?.Description, "No description provided.");
+        if (Service is { } attachmentService)
+            RecordAttachmentSections.Add(ContentPanel, RecordAttachmentSections.WorkItem(d, attachmentService), attachmentService.DownloadRecordAttachmentAsync);
         RenderDevelopment(d);
         RenderRelations(d);
 
@@ -268,7 +270,7 @@ public partial class TaskDetailPanel
         if (!isTerminal && done != null) bar.Children.Add(Icon("", done, async (_, _) => await QuickStateAsync(done)));
         if (isTerminal && reopen != null) bar.Children.Add(Icon("", $"Reactivate ({reopen})", async (_, _) => await QuickStateAsync(reopen)));
         bar.Children.Add(Icon("", "Delete", async (_, _) => await RemoveAsync()));
-        bar.Children.Add(Icon("", "Copy link", (_, _) => { try { Clipboard.SetText(d.WebUrl); } catch { } }));
+        bar.Children.Add(Icon("", "Copy title and link", (_, _) => RecordClipboard.Copy(d.Title, d.WebUrl)));
         bar.Children.Add(Icon("", "Open in Azure DevOps", (_, _) => OpenUrl(d.WebUrl)));
 
         var more = Icon("", "More actions", (_, _) => { });
@@ -582,7 +584,7 @@ public partial class TaskDetailPanel
 
     private void RenderRelations(WorkItemDetail d)
     {
-        var relations = d.Relations.Where(r => r.Kind != WorkItemRelationKind.Artifact).ToList();
+        var relations = d.Relations.Where(r => r.Kind is not (WorkItemRelationKind.Artifact or WorkItemRelationKind.Attachment)).ToList();
         if (relations.Count == 0) return;
 
         AddSection($"Relations ({relations.Count})");
@@ -719,6 +721,8 @@ public partial class TaskDetailPanel
         body.Children.Add(head);
 
         body.Children.Add(new TextBlock { Text = TaskLightboxWindow.HtmlToText(c.Text), TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new Thickness(0, 4, 0, 4) });
+        if (Service is { } attachmentService)
+            RecordAttachmentSections.Add(body, RecordAttachments.Discover(c.Text, attachmentService.IsAttachmentUrl), attachmentService.DownloadRecordAttachmentAsync);
         body.Children.Add(ReactionRow(d, c));
         return bubble;
     }

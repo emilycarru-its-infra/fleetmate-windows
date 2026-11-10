@@ -58,8 +58,8 @@
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
                     <Button x:Name="CopyLinkButton" Padding="8,3" Margin="0,0,6,0" Click="OnCopyLinkClicked"
-                            ToolTip="Copy link">
-                        <ui:FontIcon Glyph="&#xE71B;" FontSize="13" />
+                            ToolTip="Copy title and link">
+                        <ui:FontIcon Glyph="&#xE8C8;" FontSize="13" />
                     </Button>
                     <shared:AgentContextButton x:Name="AgentButton" Padding="8,3" Margin="0,0,6,0" />
                     <Button Padding="8,3" Click="OnOpenInBrowserClicked" ToolTip="Open in browser">
