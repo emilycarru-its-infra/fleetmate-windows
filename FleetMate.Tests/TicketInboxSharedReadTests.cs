@@ -73,6 +73,17 @@ public sealed class TicketInboxSharedReadTests : IDisposable
         Assert.Contains(7, legacy.LoadRead(_person));
     }
 
+    [Fact]
+    public void OversizedMetadataIsPreservedWithoutDeserializingOrRewriting()
+    {
+        Directory.CreateDirectory(_root);
+        var store = new TicketInboxReadStore(_root);
+        using (var file = File.Create(store.PathFor(_person))) file.SetLength(TicketInboxReadStore.MaximumDocumentBytes + 1);
+        Assert.Throws<InvalidDataException>(() => store.Load(_person));
+        Assert.Throws<InvalidDataException>(() => store.SetRead(_person, new[] { 4 }, true));
+        Assert.Equal(TicketInboxReadStore.MaximumDocumentBytes + 1, new FileInfo(store.PathFor(_person)).Length);
+    }
+
     [Theory]
     [InlineData("{\"Version\":2,\"Decisions\":{}}")]
     [InlineData("broken")]

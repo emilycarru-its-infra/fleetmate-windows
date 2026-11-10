@@ -46,7 +46,40 @@ public sealed class TicketInboxPopoverTests
     });
 
     [Fact]
-    public Task PeerReadReloadUpdatesRowsWithoutReplacingSelection() => WpfFixture.RunAsync(() =>
+    public Task LegacyImportContentionDoesNotBlockTheDispatcher() => WpfFixture.RunAsync(async () =>
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "inbox-async-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            const string service = "https://tickets.example.invalid/tdwebapi/api/1/tickets";
+            var person = new TicketInboxPerson(Guid.NewGuid(), "Example", null);
+            var legacyRoot = Path.Combine(directory, "edition");
+            var legacy = new TicketInboxStore(legacyRoot);
+            legacy.SaveRead(person.Uid, new TicketInboxState { ReadIds = new() { 1 } });
+            var sharedRoot = Path.Combine(directory, "shared");
+            var key = TicketInboxReadStore.ServiceKey(service);
+            var sharedDirectory = Path.Combine(sharedRoot, key);
+            Directory.CreateDirectory(sharedDirectory);
+            var store = new TicketInboxStore(legacyRoot, service, sharedRoot, key);
+            var page = Page();
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            typeof(TicketsPage).GetField("_inboxStore", flags)!.SetValue(page, store);
+            typeof(TicketsPage).GetField("_inboxPerson", flags)!.SetValue(page, person);
+            using var held = new FileStream(Path.Combine(sharedDirectory, $"{person.Uid}.json.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            var reload = (Task)typeof(TicketsPage).GetMethod("ReloadInboxFromDisk", flags)!.Invoke(page, null)!;
+            Assert.False(reload.IsCompleted);
+            var responsive = false;
+            await page.Dispatcher.InvokeAsync(() => responsive = true);
+            Assert.True(responsive);
+            held.Dispose();
+            await reload.WaitAsync(TimeSpan.FromSeconds(6));
+            Assert.Contains(1, ((TicketInboxState)typeof(TicketsPage).GetField("_inboxState", flags)!.GetValue(page)!).ReadIds);
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+    });
+
+    [Fact]
+    public Task PeerReadReloadUpdatesRowsWithoutReplacingSelection() => WpfFixture.RunAsync(async () =>
     {
         var directory = Path.Combine(Path.GetTempPath(), "inbox-ui-" + Guid.NewGuid().ToString("N"));
         try
@@ -66,17 +99,16 @@ public sealed class TicketInboxPopoverTests
             var row = Assert.IsType<InboxRow>(Assert.Single(list.Items.Cast<object>()));
             list.SelectedItem = row;
             store.SetRead(person.Uid, new[] { 1 }, true);
-            typeof(TicketsPage).GetMethod("ReloadInboxReadMarks", flags)!.Invoke(page, null);
+            await (Task)typeof(TicketsPage).GetMethod("ReloadInboxReadMarks", flags)!.Invoke(page, null)!;
             Assert.True(row.IsRead);
             Assert.Same(source, list.ItemsSource);
             Assert.Same(row, list.SelectedItem);
             store.SetRead(person.Uid, new[] { 1 }, false);
-            typeof(TicketsPage).GetMethod("ReloadInboxReadMarks", flags)!.Invoke(page, null);
+            await (Task)typeof(TicketsPage).GetMethod("ReloadInboxReadMarks", flags)!.Invoke(page, null)!;
             Assert.False(row.IsRead);
             Assert.Same(row, list.SelectedItem);
         }
         finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
-        return Task.CompletedTask;
     });
 
     [Theory]

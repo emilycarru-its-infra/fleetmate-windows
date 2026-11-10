@@ -8,6 +8,8 @@ namespace FleetMate.Core.Services.Tickets;
 /// <summary>Shared read decisions only. Bodies and scan snapshots remain edition-owned.</summary>
 public sealed class TicketInboxReadStore
 {
+    public const long MaximumDocumentBytes = 16 * 1024 * 1024;
+
     private sealed class Document
     {
         public int Version { get; set; } = 1;
@@ -61,7 +63,9 @@ public sealed class TicketInboxReadStore
         var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            File.WriteAllText(temp, JsonSerializer.Serialize(document));
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(document);
+            if (bytes.LongLength > MaximumDocumentBytes) throw new InvalidDataException("Inbox read metadata exceeds the supported size.");
+            File.WriteAllBytes(temp, bytes);
             var deadline = Environment.TickCount64 + 5000;
             while (true)
             {
@@ -98,6 +102,8 @@ public sealed class TicketInboxReadStore
     {
         if (!File.Exists(PathFor(person))) return new();
         using var stream = new FileStream(PathFor(person), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        if (stream.Length > MaximumDocumentBytes)
+            throw new InvalidDataException("Inbox read metadata exceeds the supported size.");
         var document = JsonSerializer.Deserialize<Document>(stream) ?? throw new InvalidDataException("Invalid Inbox read metadata.");
         if (document.Version != 1 || document.Decisions == null || document.Imports == null)
             throw new InvalidDataException("Unsupported Inbox read metadata version.");

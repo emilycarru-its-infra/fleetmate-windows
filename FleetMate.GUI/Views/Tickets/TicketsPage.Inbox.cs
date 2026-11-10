@@ -24,6 +24,10 @@ public partial class TicketsPage
     private Window? _inboxActivationWindow;
     private bool _inboxPreferencesAttached;
     private Task _inboxWriteTail = Task.CompletedTask;
+    private Task? _inboxReadReloadTask;
+    private bool _inboxReadReloadAgain;
+    private Task? _inboxDiskReloadTask;
+    private bool _inboxDiskReloadAgain;
     private TicketInboxPerson? _inboxPerson;
     private TicketInboxState? _inboxState;
     private DispatcherTimer? _inboxTimer;
@@ -54,7 +58,7 @@ public partial class TicketsPage
 
         CancelInboxPass();
         _inboxPerson = person;
-        _inboxState = person == null ? null : _inboxStore.Load(person.Uid);
+        _inboxState = person == null ? null : new TicketInboxState();
         if (person != null && service != null)
         {
             _inboxReadDebounce ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
@@ -76,7 +80,7 @@ public partial class TicketsPage
         if (_inboxReloadTimer == null)
         {
             _inboxReloadTimer = new DispatcherTimer { Interval = InboxReloadInterval };
-            _inboxReloadTimer.Tick += (_, _) => ReloadInboxFromDisk();
+            _inboxReloadTimer.Tick += (_, _) => _ = ReloadInboxFromDisk();
         }
         if (person == null) _inboxReloadTimer.Stop(); else _inboxReloadTimer.Start();
 
@@ -84,36 +88,76 @@ public partial class TicketsPage
         StartInboxPass();
     }
 
-    /// <summary>Re-read the saved inbox, unless this window is mid-pass and holds the newest copy.</summary>
-    private void ReloadInboxFromDisk()
+    /// <summary>Coalesced disk I/O never blocks the Dispatcher or replaces a running scan's items.</summary>
+    private Task ReloadInboxFromDisk()
     {
-        if (_inboxPerson is not { } person) return;
-        if (_inboxPass is { IsCompleted: false }) { ReloadInboxReadMarks(); return; }
-        _inboxState = _inboxStore.Load(person.Uid);
-        RenderInbox();
+        if (_inboxPass is { IsCompleted: false }) return ReloadInboxReadMarks();
+        _inboxDiskReloadAgain = true;
+        return _inboxDiskReloadTask is { IsCompleted: false } running ? running
+            : _inboxDiskReloadTask = ReloadInboxFromDiskAsync();
+    }
+
+    private async Task ReloadInboxFromDiskAsync()
+    {
+        do
+        {
+            _inboxDiskReloadAgain = false;
+            if (_inboxPerson is not { } person) return;
+            var store = _inboxStore;
+            var service = _inboxService;
+            try
+            {
+                var state = await Task.Run(() => store.Load(person.Uid));
+                if (!ReferenceEquals(store, _inboxStore) || person.Uid != _inboxPerson?.Uid || service != _inboxService) continue;
+                if (_inboxPass is { IsCompleted: false }) ApplyInboxReadMarks(state.ReadIds);
+                else { _inboxState = state; RenderInbox(); }
+            }
+            catch (Exception ex) { Log.Warning(ex, "Ticket Inbox cache could not be reloaded"); }
+        } while (_inboxDiskReloadAgain);
     }
 
     private void OnInboxReadDebounce(object? sender, EventArgs e)
     {
         _inboxReadDebounce?.Stop();
-        ReloadInboxReadMarks();
+        _ = ReloadInboxReadMarks();
     }
 
-    private void ReloadInboxReadMarks()
+    private Task ReloadInboxReadMarks()
     {
-        if (_inboxPerson is not { } person || _inboxState is not { } state) return;
-        try
-        {
-            state.ReadIds = _inboxStore.LoadRead(person.Uid);
-            UpdateInboxBadge(state.UnreadCount);
-            if (InboxListView.ItemsSource is IEnumerable<InboxRow> rows)
-                foreach (var row in rows) row.SetRead(state.IsRead(row.Item.FeedId));
-            InboxMarkAllReadButton.IsEnabled = state.UnreadCount > 0;
-        }
-        catch (Exception ex) { Log.Warning(ex, "Ticket Inbox read metadata could not be reloaded"); }
+        _inboxReadReloadAgain = true;
+        return _inboxReadReloadTask is { IsCompleted: false } running ? running
+            : _inboxReadReloadTask = ReloadInboxReadMarksAsync();
     }
 
-    private void OnInboxWindowActivated(object? sender, EventArgs e) => ReloadInboxFromDisk();
+    private async Task ReloadInboxReadMarksAsync()
+    {
+        do
+        {
+            _inboxReadReloadAgain = false;
+            if (_inboxPerson is not { } person || _inboxState == null) return;
+            var store = _inboxStore;
+            var service = _inboxService;
+            try
+            {
+                var marks = await Task.Run(() => store.LoadRead(person.Uid));
+                if (ReferenceEquals(store, _inboxStore) && person.Uid == _inboxPerson?.Uid && service == _inboxService)
+                    ApplyInboxReadMarks(marks);
+            }
+            catch (Exception ex) { Log.Warning(ex, "Ticket Inbox read metadata could not be reloaded"); }
+        } while (_inboxReadReloadAgain);
+    }
+
+    private void ApplyInboxReadMarks(HashSet<int> marks)
+    {
+        if (_inboxState is not { } state) return;
+        state.ReadIds = marks;
+        UpdateInboxBadge(state.UnreadCount);
+        if (InboxListView.ItemsSource is IEnumerable<InboxRow> rows)
+            foreach (var row in rows) row.SetRead(state.IsRead(row.Item.FeedId));
+        InboxMarkAllReadButton.IsEnabled = state.UnreadCount > 0;
+    }
+
+    private void OnInboxWindowActivated(object? sender, EventArgs e) => _ = ReloadInboxFromDisk();
     private void OnInboxBadgePreferenceChanged() => Dispatcher.BeginInvoke(() => UpdateInboxBadge(_inboxState?.UnreadCount ?? 0));
 
     /// <summary>Inbox shown: refresh now if due, and every five minutes while it stays open.</summary>
@@ -170,14 +214,14 @@ public partial class TicketsPage
         }
 
         // Start from what is on disk: the background helper may have scanned last.
-        var state = _inboxState = _inboxStore.Load(person.Uid);
+        var store = _inboxStore;
         var cts = _inboxPassCts = new CancellationTokenSource();
-        _inboxPass = RunInboxPassAsync(person, state, cts);
+        _inboxPass = RunInboxPassAsync(person, store, cts);
     }
 
-    private async Task RunInboxPassAsync(TicketInboxPerson person, TicketInboxState state, CancellationTokenSource cts)
+    private async Task RunInboxPassAsync(TicketInboxPerson person, TicketInboxStore store, CancellationTokenSource cts)
     {
-        var scanner = new TicketInboxScanner(_tdxService!, _inboxStore);
+        TicketInboxState? state = null;
         var progress = new Progress<TicketInboxProgress>(p =>
         {
             if (cts.IsCancellationRequested) return;
@@ -193,6 +237,11 @@ public partial class TicketsPage
         InboxStatusText.Text = "Checking for new comments…";
         try
         {
+            state = await Task.Run(() => store.Load(person.Uid), cts.Token);
+            if (cts.IsCancellationRequested || !ReferenceEquals(store, _inboxStore) || person.Uid != _inboxPerson?.Uid) return;
+            _inboxState = state;
+            RenderInboxItems();
+            var scanner = new TicketInboxScanner(_tdxService!, store);
             var ran = await scanner.TryRunPassAsync(person, state, progress, () =>
             {
                 if (!cts.IsCancellationRequested && ReferenceEquals(state, _inboxState)) RenderInboxItems();
@@ -206,6 +255,7 @@ public partial class TicketsPage
         }
         catch (Exception ex)
         {
+            if (cts.IsCancellationRequested || !ReferenceEquals(store, _inboxStore)) return;
             Log.Warning(ex, "Ticket inbox pass failed");
             _inboxError = ex.Message;
             _inboxLastPassUtc = DateTime.UtcNow;
@@ -220,7 +270,7 @@ public partial class TicketsPage
             }
         }
 
-        if (ReferenceEquals(state, _inboxState)) RenderInbox();
+        if (state != null && ReferenceEquals(state, _inboxState)) RenderInbox();
     }
 
     private void RenderInbox()
@@ -408,7 +458,7 @@ public partial class TicketsPage
         if (sender is MenuItem { DataContext: InboxRow row } && _inboxState is { } state && _inboxPerson is { } person)
         {
             await SaveReadMarksAsync(person, state, new[] { row.Item.FeedId }, false);
-            if (ReferenceEquals(state, _inboxState)) ReloadInboxReadMarks();
+            if (ReferenceEquals(state, _inboxState)) await ReloadInboxReadMarks();
         }
     }
 
@@ -429,7 +479,7 @@ public partial class TicketsPage
             _inboxWriteTail = write;
             await write;
             if (ReferenceEquals(store, _inboxStore) && ReferenceEquals(state, _inboxState) && person.Uid == _inboxPerson?.Uid)
-                ReloadInboxReadMarks();
+                await ReloadInboxReadMarks();
         }
         catch (Exception ex) { Log.Warning(ex, "Ticket inbox read state could not be saved"); }
     }

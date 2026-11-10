@@ -178,7 +178,7 @@ private bool _isInitialLoadDone;
                 _inboxActivationWindow = host;
                 if (host != null) host.Activated += OnInboxWindowActivated;
             }
-            ReloadInboxFromDisk();
+            _ = ReloadInboxFromDisk();
             if (!_isInitialLoadDone)
             {
                 _isInitialLoadDone = true;
