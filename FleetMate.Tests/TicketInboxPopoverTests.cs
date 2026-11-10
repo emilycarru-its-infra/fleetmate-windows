@@ -32,6 +32,20 @@ public sealed class TicketInboxPopoverTests
     }
 
     [Fact]
+    public Task LosingTheTicketServiceCannotLoadAnUnscopedLegacyCache() => WpfFixture.RunAsync(() =>
+    {
+        var page = Page();
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var uid = Guid.NewGuid();
+        typeof(TicketsPage).GetField("_me", flags)!.SetValue(page, new TdxPerson { Uid = uid });
+        typeof(TicketsPage).GetField("_inboxPerson", flags)!.SetValue(page, new TicketInboxPerson(uid, "Example", null));
+        typeof(TicketsPage).GetMethod("OnInboxPersonChanged", flags)!.Invoke(page, null);
+        Assert.Null(typeof(TicketsPage).GetField("_inboxState", flags)!.GetValue(page));
+        Assert.Null(typeof(TicketsPage).GetField("_inboxPerson", flags)!.GetValue(page));
+        return Task.CompletedTask;
+    });
+
+    [Fact]
     public Task PeerReadReloadUpdatesRowsWithoutReplacingSelection() => WpfFixture.RunAsync(() =>
     {
         var directory = Path.Combine(Path.GetTempPath(), "inbox-ui-" + Guid.NewGuid().ToString("N"));

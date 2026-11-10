@@ -42,7 +42,7 @@ public partial class TicketsPage
     /// <summary>The signed-in person was found, changed or lost: load their saved inbox.</summary>
     private void OnInboxPersonChanged()
     {
-        var person = _me?.Uid is { } uid && uid != Guid.Empty
+        var person = _tdxService != null && _me?.Uid is { } uid && uid != Guid.Empty
             ? new TicketInboxPerson(uid, _me.FullName ?? _me.DisplayName, _me.PrimaryEmail)
             : null;
         var service = person == null ? null : _tdxService?.InboxServiceUrl;
