@@ -86,7 +86,8 @@ private bool _isInitialLoadDone;
     {
         InitializeComponent();
         InboxPopup.PlacementTarget = InboxButton;
-        Unloaded += (_, _) => InboxPopup.IsOpen = false;
+        Unloaded += (_, _) => { InboxPopup.IsOpen = false; DetachTicketFreshness(); };
+        IsVisibleChanged += (_, _) => UpdateTicketFreshnessActivity();
         AttachTicketMenus();
         InitListTable();
         AgentButton.Source = () => _selectedTicket is { } ticket ? AgentContextMenu.Resolve(ticket) : null;
@@ -166,6 +167,7 @@ private bool _isInitialLoadDone;
 
         Loaded += async (s, e) =>
         {
+            AttachTicketFreshness();
             if (!_inboxPreferencesAttached)
             {
                 UserPreferences.Changed += OnInboxBadgePreferenceChanged;
@@ -271,8 +273,16 @@ private bool _isInitialLoadDone;
     private void OnAppCacheChanged(string key)
     {
         if (!TicketsPageSync.ShouldRedrawOnCacheChange(key, _isInitialLoadDone, _isLoading)) return;
+        var scroller = TicketListScroller(TicketsListView);
+        var offset = scroller?.VerticalOffset;
+        var boardOffset = BoardViewPanel.HorizontalOffset;
         UpdateFilterOptions();
         ApplyFiltersAndSort();
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (offset is { } top) scroller?.ScrollToVerticalOffset(top);
+            BoardViewPanel.ScrollToHorizontalOffset(boardOffset);
+        }, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     private void DetachFromApp()
@@ -284,6 +294,9 @@ private bool _isInitialLoadDone;
         _app.TdxLaunchStepChanged -= UpdateLoadingPanel;
         _app.ServicesReloaded -= DetachFromApp;
         StopInbox();
+        DetachTicketFreshness();
+        _ticketRefreshLoop?.Dispose();
+        _ticketRefreshLoop = null;
     }
     
     private async Task LoadTicketsAsync()
@@ -322,6 +335,8 @@ private bool _isInitialLoadDone;
         }
 
         NotConfiguredText.Visibility = Visibility.Collapsed;
+        _boardAttemptUtc = DateTime.UtcNow;
+        _boardRetryUtc = DateTime.MinValue;
         _isLoading = true;
         UpdateLoadingPanel();
         TicketWidgetsSection.Invalidate();
@@ -332,13 +347,14 @@ private bool _isInitialLoadDone;
             // group if any, plus the operator's own groupless tickets.
             var tickets = await _app.LoadBoardTicketsAsync();
             _ticketsLoadError = null;
-            _app.UpdateTicketsCache(tickets);
             UpdateFilterOptions();
             ApplyFiltersAndSort();
         }
+        catch (OperationCanceledException) { }
         catch (Exception ex)
         {
             Serilog.Log.Warning(ex, "[tickets] Tickets load failed");
+            _boardRetryUtc = DateTime.UtcNow.AddMinutes(5);
             _ticketsLoadError = ex.Message;
             ShowActionMessage($"Error: {ex.Message}", isError: true);
             _app.SetTdxLaunchStep(null);
@@ -1065,6 +1081,7 @@ private bool _isInitialLoadDone;
         DropPendingEditsUnlessFor(null);
         _selectedTicket = null;
         // A load still in flight for the closed ticket must not paint later.
+        _ticketDetailRefreshCts?.Cancel();
         _detailLoads.Invalidate();
         _ticketFeed = new();
         UpdateFeedPanel();
@@ -1259,6 +1276,7 @@ private bool _isInitialLoadDone;
 
     private async Task LoadTicketDetailAsync(int ticketId)
     {
+        NoteManualDetailRefresh();
         if (_tdxService == null) return;
 
         NoSelectionPanel.Visibility = Visibility.Collapsed;
@@ -1659,6 +1677,7 @@ private bool _isInitialLoadDone;
 
     private void UpdateFeedPanel()
     {
+        _backgroundFeedRenderPending = false;
         // Filter feed based on current filter mode
         IEnumerable<TdxFeedEntry> filteredFeed = _feedFilter switch
         {

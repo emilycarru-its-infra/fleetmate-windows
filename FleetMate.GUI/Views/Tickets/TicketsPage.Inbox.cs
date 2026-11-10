@@ -222,6 +222,7 @@ public partial class TicketsPage
     private async Task RunInboxPassAsync(TicketInboxPerson person, TicketInboxStore store, CancellationTokenSource cts)
     {
         TicketInboxState? state = null;
+        var account = _tdxService?.AuthenticatedUserId;
         var progress = new Progress<TicketInboxProgress>(p =>
         {
             if (cts.IsCancellationRequested) return;
@@ -241,7 +242,8 @@ public partial class TicketsPage
             if (cts.IsCancellationRequested || !ReferenceEquals(store, _inboxStore) || person.Uid != _inboxPerson?.Uid) return;
             _inboxState = state;
             RenderInboxItems();
-            var scanner = new TicketInboxScanner(_tdxService!, store);
+            var scanner = new TicketInboxScanner(_tdxService!, store, stillCurrent: () => ReferenceEquals(store, _inboxStore)
+                && string.Equals(account, _tdxService?.AuthenticatedUserId, StringComparison.OrdinalIgnoreCase));
             var ran = await scanner.TryRunPassAsync(person, state, progress, () =>
             {
                 if (!cts.IsCancellationRequested && ReferenceEquals(state, _inboxState)) RenderInboxItems();
@@ -249,7 +251,8 @@ public partial class TicketsPage
             _inboxScannedElsewhere = !ran;
             _inboxLastPassUtc = DateTime.UtcNow;
         }
-        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        catch (OperationCanceledException) when (cts.IsCancellationRequested
+            || !string.Equals(account, _tdxService?.AuthenticatedUserId, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }

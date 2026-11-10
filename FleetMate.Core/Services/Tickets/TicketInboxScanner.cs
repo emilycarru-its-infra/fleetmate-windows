@@ -156,15 +156,15 @@ public readonly record struct TicketInboxProgress(int Done, int Total);
 /// signed-in person. TDX keeps no per-person notification list, so each pass
 /// searches the tickets modified since the last one and reads their feeds.
 ///
-/// TDX allows about 60 requests a minute, so requests are spaced about 1.2
-/// seconds apart. Tickets are read newest-modified first and the state is
+/// TDX allows about 60 requests a minute, so the two editions space requests 2.5
+/// seconds apart each. Tickets are read newest-modified first and the state is
 /// saved after each one, so a quit resumes where it stopped: the next pass
 /// searches from the same point and skips tickets already read at the same
 /// ModifiedDate.
 /// </summary>
 public sealed class TicketInboxScanner
 {
-    public static readonly TimeSpan RequestSpacing = TimeSpan.FromSeconds(1.2);
+    public static readonly TimeSpan RequestSpacing = TimeSpan.FromSeconds(2.5);
     public static readonly TimeSpan Overlap = TimeSpan.FromMinutes(10);
     public const int MaxTickets = 5000;
 
@@ -172,17 +172,19 @@ public sealed class TicketInboxScanner
     private readonly TicketInboxStore _store;
     private readonly Func<DateTime> _utcNow;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
+    private readonly Func<bool>? _stillCurrent;
 
     public TicketInboxScanner(
         ITicketInboxApi api,
         TicketInboxStore store,
         Func<DateTime>? utcNow = null,
-        Func<TimeSpan, CancellationToken, Task>? delay = null)
+        Func<TimeSpan, CancellationToken, Task>? delay = null, Func<bool>? stillCurrent = null)
     {
         _api = api;
         _store = store;
         _utcNow = utcNow ?? (() => DateTime.UtcNow);
         _delay = delay ?? Task.Delay;
+        _stillCurrent = stillCurrent;
     }
 
     /// <summary>
@@ -215,6 +217,12 @@ public sealed class TicketInboxScanner
         Action? changed = null,
         CancellationToken ct = default)
     {
+        void CheckIdentity()
+        {
+            ct.ThrowIfCancellationRequested();
+            if (_stillCurrent?.Invoke() == false) throw new OperationCanceledException("The ticket account changed.");
+        }
+        CheckIdentity();
         var passStart = _utcNow();
         var cutoff = passStart - TicketInboxMatch.Window;
         var from = state.ScannedThrough is { } through ? TicketInboxState.ToUtc(through) - Overlap : cutoff;
@@ -256,6 +264,7 @@ public sealed class TicketInboxScanner
                 continue;
             }
 
+            CheckIdentity();
             var before = state.Items.Count(item => item.TicketId == ticket.Id);
             var found = TicketInboxMatch.Select(ticket, feed, person, cutoff);
             state.ReplaceTicket(ticket.Id, found);
@@ -265,6 +274,7 @@ public sealed class TicketInboxScanner
             progress?.Report(new TicketInboxProgress(i + 1, pending.Count));
         }
 
+        CheckIdentity();
         // The scan point moves only when every feed was read, so a skipped
         // ticket stays inside the next pass's search window.
         if (failures == 0) state.ScannedThrough = passStart;

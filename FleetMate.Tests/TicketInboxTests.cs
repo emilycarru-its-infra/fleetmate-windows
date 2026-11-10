@@ -134,7 +134,7 @@ public sealed class TicketInboxTests : IDisposable
         Assert.Equal(Now - TimeSpan.FromDays(90), api.Searches[0].ModifiedDateFrom);
         Assert.Null(api.Searches[0].ResponsibleGroupIds);
         Assert.Equal(new[] { 2, 1 }, api.FeedReads);
-        Assert.All(delays, d => Assert.Equal(TimeSpan.FromSeconds(1.2), d));
+        Assert.All(delays, d => Assert.Equal(TimeSpan.FromSeconds(2.5), d));
         Assert.Equal(2, delays.Count);
         Assert.Equal(new[] { 10 }, state.Items.Select(i => i.FeedId));
         Assert.Equal(Now, state.ScannedThrough);

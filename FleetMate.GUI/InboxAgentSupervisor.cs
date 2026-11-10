@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using FleetMate.Core.Config;
 using Serilog;
@@ -19,6 +20,10 @@ namespace FleetMate.GUI;
 internal sealed class InboxAgentSupervisor
 {
     public const string Argument = "--inbox-agent";
+    public static string ExecutableName => AppEdition.Current.IsTicketsOnly ? "TicketsMate-inbox.exe" : "fleetmate-inbox.exe";
+    internal static bool IsHelperExecutable(string? path) => Path.GetFileName(path ?? "") is { } name
+        && (name.Equals("fleetmate-inbox.exe", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("TicketsMate-inbox.exe", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>The least time between two starts of the helper.</summary>
     public static readonly TimeSpan Throttle = TimeSpan.FromSeconds(60);
@@ -44,10 +49,10 @@ internal sealed class InboxAgentSupervisor
     }
 
     /// <summary>The supervisor starts with the Run entry's switch and without the worker's.</summary>
-    public static bool IsRequested(IEnumerable<string> args)
+    public static bool IsRequested(IEnumerable<string> args, string? executable = null)
     {
         var list = args.ToList();
-        return list.Contains(Argument, StringComparer.OrdinalIgnoreCase) && !InboxAgent.IsRequested(list);
+        return !InboxAgent.IsRequested(list) && (list.Contains(Argument, StringComparer.OrdinalIgnoreCase) || IsHelperExecutable(executable));
     }
 
     /// <summary>How long to wait before starting the helper again.</summary>
@@ -108,7 +113,9 @@ internal sealed class InboxAgentSupervisor
 
     private static async Task<int> StartWorkerAsync(CancellationToken ct)
     {
-        var exe = Environment.ProcessPath ?? throw new InvalidOperationException("The app's own path is unknown.");
+        var alias = Path.Combine(AppContext.BaseDirectory, ExecutableName);
+        var exe = File.Exists(alias) ? alias : Environment.ProcessPath
+            ?? throw new InvalidOperationException("The app's own path is unknown.");
         using var worker = Process.Start(new ProcessStartInfo(exe, InboxAgent.Argument) { UseShellExecute = false })
             ?? throw new InvalidOperationException("The helper did not start.");
         await worker.WaitForExitAsync(ct);

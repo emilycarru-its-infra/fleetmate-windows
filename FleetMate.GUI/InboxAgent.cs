@@ -36,6 +36,9 @@ internal sealed class InboxAgent
 
     private readonly App _app;
     private TicketInboxStore _store = new();
+    private Task? _boardWarmTask;
+    private DateTime _lastBoardWarmUtc = DateTime.MinValue;
+    private DateTime _boardWarmRetryUtc = DateTime.MinValue;
 
     public InboxAgent(App app) => _app = app;
 
@@ -101,6 +104,7 @@ internal sealed class InboxAgent
                 if (current?.Uid is { } currentUid && currentUid != Guid.Empty)
                 {
                     person = new TicketInboxPerson(currentUid, current.FullName ?? current.DisplayName, current.PrimaryEmail);
+                    await WarmBoardIfDueAsync();
                     await RunPassAsync(tdx, person);
                 }
                 else person = null;
@@ -120,14 +124,41 @@ internal sealed class InboxAgent
         return null;
     }
 
+    private Task WarmBoardIfDueAsync()
+    {
+        if (_boardWarmTask is { IsCompleted: false }) return _boardWarmTask;
+        var now = DateTime.UtcNow;
+        if (now < _boardWarmRetryUtc || now - _lastBoardWarmUtc < TimeSpan.FromMinutes(10)) return Task.CompletedTask;
+        return _boardWarmTask = WarmBoardAsync();
+    }
+
+    private async Task WarmBoardAsync()
+    {
+        try
+        {
+            await _app.LoadBoardTicketsAsync();
+            _lastBoardWarmUtc = DateTime.UtcNow;
+            _boardWarmRetryUtc = DateTime.MinValue;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _boardWarmRetryUtc = DateTime.UtcNow.AddMinutes(5);
+            Log.Debug(ex, "[inbox-agent] Board preparation deferred");
+        }
+    }
+
     private async Task RunPassAsync(TdxService tdx, TicketInboxPerson person)
     {
         try
         {
             // Start from what is on disk: the window may have scanned last.
             var state = _store.Load(person.Uid);
-            var scanner = new TicketInboxScanner(tdx, _store);
-            if (!await scanner.TryRunPassAsync(person, state))
+            var account = tdx.AuthenticatedUserId;
+            var scanner = new TicketInboxScanner(tdx, _store,
+                stillCurrent: () => string.Equals(account, tdx.AuthenticatedUserId, StringComparison.OrdinalIgnoreCase));
+            var progress = new Progress<TicketInboxProgress>(progress => { _ = WarmBoardIfDueAsync(); });
+            if (!await scanner.TryRunPassAsync(person, state, progress))
                 Log.Debug("[inbox-agent] The app window is scanning; skipped this pass");
         }
         catch (Exception ex)

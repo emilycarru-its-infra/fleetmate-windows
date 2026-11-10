@@ -277,7 +277,7 @@ public partial class App
         // A token arrived; the sign-in window has nothing left to do.
         _tdxWindowCts?.Cancel();
         RefreshTdxSessionStatus();
-        if (!wasSignedIn)
+        if (!wasSignedIn || TicketWorkspaceIdentityChanged)
         {
             _ticketsCacheTime = null;
             NotifyTdxSignInChanged();
