@@ -127,7 +127,7 @@ public partial class TaskLightboxWindow : Window
 
         if (_attachmentDetail != null && _devOps != null)
             RecordAttachmentSections.Add(BodyPanel, RecordAttachmentSections.WorkItem(_attachmentDetail, _devOps), _devOps.DownloadRecordAttachmentAsync);
-        else if (_task.Provider == "github" && Projects.TaskDetailPanel.ParseIssueUrl(_task.ExternalUrl) is { } issue)
+        else if (_task.Provider == "github" && FleetMate.GUI.Views.Projects.TaskDetailPanel.ParseIssueUrl(_task.ExternalUrl) is { } issue)
             RecordAttachmentSections.Add(BodyPanel, RecordAttachments.GitHub(_task.Description, null, _task.ExternalUrl ?? ""),
                 (attachment, ct) => RecordAttachmentSections.DownloadGitHubAsync(issue.Owner, issue.Repo, issue.Number, attachment, ct));
 

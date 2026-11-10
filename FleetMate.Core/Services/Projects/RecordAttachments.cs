@@ -10,9 +10,22 @@ public sealed record StagedRecordAttachment(string Path, string ContentType, str
 {
     public void Dispose()
     {
-        try { Directory.Delete(System.IO.Path.GetDirectoryName(Path)!, recursive: true); }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
+        var directory = System.IO.Path.GetDirectoryName(Path)!;
+        if (TryDelete(directory)) return;
+        _ = Task.Run(async () =>
+        {
+            for (var attempt = 0; attempt < 4; attempt++)
+            {
+                await Task.Delay(500);
+                if (TryDelete(directory)) return;
+            }
+        });
+    }
+    private static bool TryDelete(string directory)
+    {
+        try { if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true); return true; }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
     }
 }
 
@@ -25,7 +38,7 @@ public static class RecordAttachments
     private static readonly Regex MarkdownLinks = new(@"!?\[(?<name>[^\]]*)\]\((?<url>https://[^\s)]+)(?:\s+[^)]*)?\)", RegexOptions.IgnoreCase, MatchTimeout);
     private static readonly Regex AssetId = new(@"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", RegexOptions.IgnoreCase, MatchTimeout);
 
-    public static bool IsWeb(Uri uri) => uri.Scheme == Uri.UriSchemeHttps && string.IsNullOrEmpty(uri.UserInfo) && string.IsNullOrEmpty(uri.Fragment);
+    public static bool IsWeb(Uri uri) => uri.IsAbsoluteUri && uri.Scheme == Uri.UriSchemeHttps && string.IsNullOrEmpty(uri.UserInfo) && string.IsNullOrEmpty(uri.Fragment);
     public static bool SameOrigin(Uri first, Uri second) => first.Scheme == second.Scheme && first.Host.Equals(second.Host, StringComparison.OrdinalIgnoreCase) && first.Port == second.Port;
     public static bool IsDevOpsAttachment(Uri uri, Uri organization) => IsWeb(uri) && SameOrigin(uri, organization)
         && uri.AbsolutePath.StartsWith(organization.AbsolutePath.TrimEnd('/') + "/", StringComparison.OrdinalIgnoreCase)
@@ -50,7 +63,7 @@ public static class RecordAttachments
             foreach (var match in MarkdownLinks.Matches(input).Cast<Match>().Concat(HtmlLinks.Matches(input).Cast<Match>()))
             {
                 var raw = WebUtility.HtmlDecode(match.Groups["url"].Value);
-                if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri) || !allowed(uri)) continue;
+                if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri) || !IsWeb(uri) || !allowed(uri)) continue;
                 var name = match.Groups["name"].Value;
                 if (string.IsNullOrWhiteSpace(name)) name = Uri.UnescapeDataString(uri.Segments.LastOrDefault() ?? "Attachment");
                 result.Add(new(name, raw, originalFallback ?? raw));
@@ -78,7 +91,7 @@ public static class RecordAttachments
     public static async Task<StagedRecordAttachment> DownloadAsync(RecordAttachment attachment, Uri credentialOrigin,
         string? token, Func<Uri, bool> allowed, CancellationToken ct = default, HttpMessageHandler? handler = null)
     {
-        if (!Uri.TryCreate(attachment.Url, UriKind.Absolute, out var uri) || !allowed(uri))
+        if (!Uri.TryCreate(attachment.Url, UriKind.Absolute, out var uri) || !IsWeb(uri) || !allowed(uri))
             throw new InvalidOperationException("This attachment address is not supported.");
         using var client = new HttpClient(handler ?? new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }) { Timeout = TimeSpan.FromSeconds(60) };
         var canAuthorize = SameOrigin(uri, credentialOrigin);
@@ -92,13 +105,13 @@ public static class RecordAttachments
             {
                 if (response.Headers.Location == null || hop == 5) throw new HttpRequestException("Attachment redirect limit reached.");
                 var next = new Uri(uri, response.Headers.Location);
-                if (!allowed(next)) throw new HttpRequestException("Attachment redirected to an unsupported address.");
+                if (!IsWeb(next) || !allowed(next)) throw new HttpRequestException("Attachment redirected to an unsupported address.");
                 canAuthorize &= SameOrigin(uri, next);
                 uri = next;
                 continue;
             }
             if (!response.IsSuccessStatusCode) throw new HttpRequestException($"Attachment download returned HTTP {(int)response.StatusCode}.", null, response.StatusCode);
-            var type = response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
+            var type = response.Content.Headers.ContentType?.MediaType?.ToLowerInvariant() ?? "application/octet-stream";
             if (type is "text/html" or "application/xhtml+xml") throw new InvalidDataException("The attachment returned a web page instead of a file.");
             if (response.Content.Headers.ContentLength > MaximumBytes) throw new InvalidDataException("Attachment exceeds the 50 MB preview limit.");
             var directory = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "FleetMateAttachments", Guid.NewGuid().ToString("N"));
@@ -124,7 +137,7 @@ public static class RecordAttachments
                 }
                 return new(path, type, attachment.OriginalUrl);
             }
-            catch { Directory.Delete(directory, recursive: true); throw; }
+            catch { new StagedRecordAttachment(path, type, attachment.OriginalUrl).Dispose(); throw; }
         }
         throw new HttpRequestException("Attachment redirect limit reached.");
     }
