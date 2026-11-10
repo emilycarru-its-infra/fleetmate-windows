@@ -50,6 +50,7 @@
          with it on uninstall, like every file the MSI owns. -->
     <Component Id="TicketsMateExecutable" Directory="INSTALLDIR" Guid="{CDDB0235-3E53-4DF0-90EF-D7E91B252E7A}">
       <File Id="TicketsMateExe" Source="$(var.BIN_DIR)\TicketsMate.exe" KeyPath="yes" Vital="yes">
+        <CopyFile Id="TicketsMateExeInboxAlias" DestinationDirectory="INSTALLDIR" DestinationName="TicketsMate-inbox.exe" />
         <Shortcut Id="TicketsMateStartMenuShortcut"
                   Directory="ProgramMenuFolder"
                   Name="TicketsMate"
@@ -74,13 +75,13 @@
       <RegistryValue Root="HKLM" Key="SOFTWARE\Classes\ticketsmate\shell\open\command" Value="&quot;[#TicketsMateExe]&quot; &quot;%1&quot;" Type="string" />
     </Component>
 
-    <!-- The inbox helper: the same exe with the inbox-agent switch, started at every
+    <!-- The inbox helper: a dedicated alias of the same signed exe, started at every
          user's sign-in. No window or tray icon; it keeps the ticket Inbox
          current, starts again after any exit, and waits for anyone without
          TeamDynamix set up. -->
     <Component Id="TicketsMateInboxAgent" Directory="INSTALLDIR" Guid="{5EF6CBCB-2D33-4777-BC13-B895AAAF5E82}">
       <RegistryValue Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run" Name="TicketsMate Inbox"
-                     Value="&quot;[#TicketsMateExe]&quot; --inbox-agent" Type="string" KeyPath="yes" />
+                     Value="&quot;[INSTALLDIR]TicketsMate-inbox.exe&quot; --inbox-agent" Type="string" KeyPath="yes" />
     </Component>
 
     <Feature Id="DefaultFeature" Level="1">

@@ -111,6 +111,7 @@ public partial class TicketsPage
     {
         if (_replyingToEntryId == threadId) _replyingToEntryId = null;
         if (ShownThreads.FirstOrDefault(t => t.Id == threadId) is { } thread) thread.IsComposing = false;
+        if (_backgroundFeedRenderPending) UpdateFeedPanel();
     }
 
     private void OnCancelReplyClicked(object sender, RoutedEventArgs e)

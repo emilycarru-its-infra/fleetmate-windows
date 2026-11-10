@@ -61,6 +61,7 @@
          shortcut is what operators actually launch. -->
     <Component Id="FleetMateGuiExecutable" Directory="INSTALLDIR" Guid="{7A2D0C51-9E3B-4F6A-8C1D-2B5E4F7A9D13}">
       <File Id="FleetMateGuiExe" Source="$(var.BIN_DIR)\fleetmate-gui.exe" KeyPath="yes" Vital="yes">
+        <CopyFile Id="FleetMateGuiExeInboxAlias" DestinationDirectory="INSTALLDIR" DestinationName="fleetmate-inbox.exe" />
         <Shortcut Id="FleetMateStartMenuShortcut"
                   Directory="ProgramMenuFolder"
                   Name="FleetMate"
@@ -97,13 +98,13 @@
       <Environment Id="UpdatePath" Name="PATH" Value="[INSTALLDIR]" Permanent="no" Part="last" Action="set" Separator=";" System="yes" />
     </Component>
 
-    <!-- The inbox helper: the same exe with the inbox-agent switch, started at every
+    <!-- The inbox helper: a dedicated alias of the same signed exe, started at every
          user's sign-in. No window or tray icon; it keeps the ticket Inbox
          current, starts again after any exit, and waits for anyone without
          TeamDynamix set up. -->
     <Component Id="FleetMateInboxAgent" Directory="INSTALLDIR" Guid="{6D403898-2258-4904-B533-5CD7B82BBFB8}">
       <RegistryValue Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run" Name="FleetMate Inbox"
-                     Value="&quot;[#FleetMateGuiExe]&quot; --inbox-agent" Type="string" KeyPath="yes" />
+                     Value="&quot;[INSTALLDIR]fleetmate-inbox.exe&quot; --inbox-agent" Type="string" KeyPath="yes" />
     </Component>
 
     <Feature Id="DefaultFeature" Level="1">

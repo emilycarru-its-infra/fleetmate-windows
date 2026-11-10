@@ -57,20 +57,6 @@ public partial class App : Application
     /// </summary>
     public TicketDateRangePreset TicketDatePreset { get; set; } = TicketDateRangePreset.CurrentTerm;
 
-    /// <summary>
-    /// Load the board's ticket set — the same query the macOS app runs. See
-    /// <see cref="TicketBoardQuery"/>. Waits for a TeamDynamix sign-in in flight, and shares one fetch between
-    /// callers asking at the same time (the Tickets page and the preload).
-    /// </summary>
-    public Task<List<TdxTicket>> LoadBoardTicketsAsync() => _boardLoader.LoadAsync(TicketDatePreset);
-
-    private TicketBoardLoader? _boardLoaderInstance;
-    private TicketBoardLoader _boardLoader => _boardLoaderInstance ??= new TicketBoardLoader(
-        () => TdxSignInSettled,
-        preset => TdxService is { } tdx && Config.Tdx is { } tdxConfig
-            ? TicketBoardQuery.LoadAsync(tdx, tdxConfig, preset)
-            : Task.FromResult(new List<TdxTicket>()));
-
     /// <summary>The TeamDynamix sign-in in flight, or a completed task when there is none.</summary>
     public Task TdxSignInSettled => _tdxSsoInFlight ?? Task.CompletedTask;
 
@@ -141,8 +127,13 @@ public partial class App : Application
 
     private void NotifyTdxSignInChanged()
     {
-        if (Dispatcher.CheckAccess()) TdxSignInChanged?.Invoke();
-        else Dispatcher.BeginInvoke(() => TdxSignInChanged?.Invoke());
+        void Notify()
+        {
+            if (TicketWorkspaceIdentityChanged) ResetTicketWorkspace();
+            TdxSignInChanged?.Invoke();
+        }
+        if (Dispatcher.CheckAccess()) Notify();
+        else Dispatcher.BeginInvoke(Notify);
     }
 
     /// <summary>
@@ -335,13 +326,11 @@ public partial class App : Application
         _ticketsCacheTime = DateTime.Now;
         NotifyCacheChanged("Tickets");
         SetTdxLaunchStep(null);
-        // Kept for the next launch to show before sign-in. Never from the
-        // inbox helper, which has no ticket list of its own.
-        if (!_isInboxAgent) _ = TicketSnapshot.SaveInBackground(tickets);
+        // Helpers and windows write only their confirmed service/person/query scope.
+        if (_ticketWorkspace is { } workspace && workspace.IsCurrent(this))
+            _ = workspace.Snapshot.SaveInBackground(tickets);
     }
 
-    /// <summary>The last loaded ticket list, shown at the next launch before sign-in.</summary>
-    internal TicketSnapshot TicketSnapshot { get; } = new();
 
     private bool _isInboxAgent;
     
@@ -363,6 +352,7 @@ public partial class App : Application
     public void InvalidateAllCaches()
     {
         _developmentSync?.Dispose();
+        _ticketWorkspace?.Dispose();
         _developmentSync = null;
         DevelopmentPullRequests = null;
         DevelopmentCommits = null;
@@ -870,7 +860,7 @@ public partial class App : Application
         // The inbox helper never takes the single-instance lock, so opening the
         // app while it runs still opens a normal window.
         var inboxAgent = _isInboxAgent = InboxAgent.IsRequested(e.Args);
-        var inboxSupervisor = InboxAgentSupervisor.IsRequested(e.Args);
+        var inboxSupervisor = InboxAgentSupervisor.IsRequested(e.Args, Environment.ProcessPath);
         if (!headless && !inboxAgent && !inboxSupervisor && !Links.LinkHost.TryBecomePrimary(startupLink))
         {
             Shutdown();
@@ -945,15 +935,7 @@ public partial class App : Application
             return;
         }
 
-        // Show the last session's tickets straight away. The cache time stays
-        // unset, so the fresh load still runs and replaces them.
-        if (TdxService != null)
-        {
-            CachedTickets = TicketSnapshot.Load();
-            if (CachedTickets.Count > 0)
-                Log.Information("Showing {Count} tickets from the last session", CachedTickets.Count);
-        }
-
+        // Scoped snapshots load only after silent sign-in confirms the ticket person.
         // Before the window, whose launch session reads the brief.
         Agent.Start();
         var mainWindow = new MainWindow();
@@ -1082,7 +1064,6 @@ public partial class App : Application
                 try
                 {
                     var tickets = await LoadBoardTicketsAsync();
-                    Dispatcher.Invoke(() => UpdateTicketsCache(tickets));
                     Log.Information("Preloaded {Count} tickets", tickets.Count);
                 }
                 catch (Exception ex)
@@ -1230,6 +1211,7 @@ public partial class App : Application
 
         GraphService = null;
         SnipeService = null;
+        ResetTicketWorkspace();
         TdxService = null;
         DevOpsService = null;
         DevOpsSsoService = null;
@@ -1334,6 +1316,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         _developmentSync?.Dispose();
+        _ticketWorkspace?.Dispose();
         StopTdxSessionKeeper();
         Links.LinkHost.Stop();
         GraphService?.Dispose();

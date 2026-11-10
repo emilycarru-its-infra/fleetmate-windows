@@ -619,3 +619,17 @@ The record header's **Copy title and link** action supplies both plain text (`Ti
 URL on the next line) and an HTML title link. Existing number-only copy actions remain separate.
 **Copy for Agent** shows the exact copied text beside the originating control for five seconds.
 Copying again restarts that preview; sending text into a running agent keeps its existing behavior.
+
+## Ticket preparation and freshness
+
+The background ticket helper can prepare each edition's ticket board before the app is opened,
+using the existing silent sign-in. New snapshots are scoped to the confirmed person, ticket
+service and date range; ambiguous older snapshots remain untouched. The Inbox feed pacing
+leaves room for both editions and foreground reads within the provider's per-user budget.
+
+While Tickets is visible in an active window, one refresh loop checks the selected ticket and
+activity every minute and the board every five minutes. Returning to a stale view refreshes it;
+minimizing, leaving the view or suspending cancels that work. Failed checks back off for five
+minutes and retain existing rows. Automatic refresh preserves drafts, notify choices and pending
+field edits. Dedicated helper executable aliases keep background work separate from foreground
+application blockers during managed upgrades.

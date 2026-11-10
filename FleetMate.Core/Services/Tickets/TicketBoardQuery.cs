@@ -166,18 +166,26 @@ public static class TicketBoardQuery
 
     /// <summary>Run the three searches and merge them.</summary>
     public static async Task<List<TdxTicket>> LoadAsync(
-        TdxService service, TdxConfig config, TicketDateRangePreset preset, DateTime? now = null)
+        TdxService service, TdxConfig config, TicketDateRangePreset preset, DateTime? now = null, CancellationToken ct = default, Guid? personUid = null)
     {
         var (from, to) = Range(preset, now ?? DateTime.Now);
 
         // Sequential on purpose: TdxService sets its bearer on the shared
         // client's default headers per call, which must not race a request.
-        var dated = await service.SearchTicketsAsync(BoardSearch(config, from, to), MaxResults);
-        var open = await service.SearchTicketsAsync(OpenSearch(config), MaxResults);
+        var datedSearch = BoardSearch(config, from, to);
+        datedSearch.MaxResults = MaxResults;
+        var dated = await service.SearchTicketsOrThrowAsync(datedSearch, ct);
+        var openSearch = OpenSearch(config);
+        openSearch.MaxResults = MaxResults;
+        var open = await service.SearchTicketsOrThrowAsync(openSearch, ct);
 
         List<TdxTicket>? mine = null;
-        var mineSearch = MineSearch((await service.GetMeAsync())?.Uid);
-        if (mineSearch != null) mine = await service.SearchTicketsAsync(mineSearch, MineMaxResults);
+        var mineSearch = MineSearch(personUid ?? (await service.GetMeAsync().WaitAsync(ct))?.Uid);
+        if (mineSearch != null)
+        {
+            mineSearch.MaxResults = MineMaxResults;
+            mine = await service.SearchTicketsOrThrowAsync(mineSearch, ct);
+        }
 
         return Merge(dated, open, mine);
     }

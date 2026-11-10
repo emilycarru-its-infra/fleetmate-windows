@@ -134,7 +134,7 @@ public sealed class TicketInboxTests : IDisposable
         Assert.Equal(Now - TimeSpan.FromDays(90), api.Searches[0].ModifiedDateFrom);
         Assert.Null(api.Searches[0].ResponsibleGroupIds);
         Assert.Equal(new[] { 2, 1 }, api.FeedReads);
-        Assert.All(delays, d => Assert.Equal(TimeSpan.FromSeconds(1.2), d));
+        Assert.All(delays, d => Assert.Equal(TimeSpan.FromSeconds(2.5), d));
         Assert.Equal(2, delays.Count);
         Assert.Equal(new[] { 10 }, state.Items.Select(i => i.FeedId));
         Assert.Equal(Now, state.ScannedThrough);
@@ -174,6 +174,21 @@ public sealed class TicketInboxTests : IDisposable
 
         Assert.Equal(new[] { 2, 3 }, api.FeedReads);
         Assert.Equal(new[] { 10, 20, 30 }, saved.Items.Select(i => i.FeedId).OrderBy(i => i));
+    }
+
+    [Fact]
+    public async Task ChangedIdentityRefusesTheCompletedResponseCheckpoint()
+    {
+        var api = new FakeApi { Tickets = { Ticket(1, Now.AddHours(-1)) } };
+        api.Feeds[1] = new() { Entry(10, "Pat Example") };
+        var store = new TicketInboxStore(_dir);
+        using var changed = new CancellationTokenSource();
+        api.Cancel = changed;
+        api.CancelAfterFeeds = 1;
+        var scanner = new TicketInboxScanner(api, store, () => Now, (_, _) => Task.CompletedTask,
+            stillCurrent: () => !changed.IsCancellationRequested);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => scanner.RunPassAsync(Person, new TicketInboxState()));
+        Assert.Empty(store.Load(Me).Items);
     }
 
     [Fact]

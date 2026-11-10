@@ -1208,6 +1208,12 @@ public class TdxService : IDisposable, ITicketWorkflowApi, ITicketWorkflowAssign
     public Task<List<TdxTicket>> SearchTicketsOrThrowAsync(TicketSearchRequest search, CancellationToken ct = default) =>
         SendJsonOrThrowAsync<List<TdxTicket>>(HttpMethod.Post, _config.GetTicketsUrl("search"), search, "search tickets", ct);
 
+    public Task<TdxTicket> GetTicketOrThrowAsync(int ticketId, CancellationToken ct = default) =>
+        GetJsonOrThrowAsync<TdxTicket>(_config.GetTicketsUrl(ticketId.ToString()), "read the ticket", ct);
+
+    public Task<TdxFeedEntry> GetFeedEntryOrThrowAsync(int entryId, CancellationToken ct = default) =>
+        GetJsonOrThrowAsync<TdxFeedEntry>(_config.GetApiUrl($"feed/{entryId}"), "read the comment thread", ct);
+
     /// <summary>A ticket's feed without reply hydration, throwing on failure.</summary>
     /// <exception cref="TdxRequestException">The feed was not read.</exception>
     public Task<List<TdxFeedEntry>> GetTicketFeedOrThrowAsync(int ticketId, CancellationToken ct = default) =>
