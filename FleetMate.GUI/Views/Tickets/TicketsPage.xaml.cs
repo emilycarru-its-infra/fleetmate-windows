@@ -166,6 +166,19 @@ private bool _isInitialLoadDone;
 
         Loaded += async (s, e) =>
         {
+            if (!_inboxPreferencesAttached)
+            {
+                UserPreferences.Changed += OnInboxBadgePreferenceChanged;
+                _inboxPreferencesAttached = true;
+            }
+            var host = Window.GetWindow(this);
+            if (!ReferenceEquals(host, _inboxActivationWindow))
+            {
+                if (_inboxActivationWindow != null) _inboxActivationWindow.Activated -= OnInboxWindowActivated;
+                _inboxActivationWindow = host;
+                if (host != null) host.Activated += OnInboxWindowActivated;
+            }
+            _ = ReloadInboxFromDisk();
             if (!_isInitialLoadDone)
             {
                 _isInitialLoadDone = true;

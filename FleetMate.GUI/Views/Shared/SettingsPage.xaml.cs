@@ -153,8 +153,14 @@ public partial class SettingsPage : Page
             "Dark" => 2,
             _ => 0
         };
+        TicketBadgesCheckBox.IsChecked = UserPreferences.TicketsBadgesEnabled(config.TicketsBadgesEnabled);
         LoadPreferences(config);
         _isLoadingSettings = false;
+    }
+
+    private void OnTicketBadgesChanged(object sender, RoutedEventArgs e)
+    {
+        if (!_isLoadingSettings) UserPreferences.SetTicketsBadgesEnabled(TicketBadgesCheckBox.IsChecked == true);
     }
 
     private void OnThemeSelectionChanged(object sender, SelectionChangedEventArgs e)

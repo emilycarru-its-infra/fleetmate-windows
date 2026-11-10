@@ -617,6 +617,11 @@
                             <ListView.ItemTemplate>
                                 <DataTemplate>
                                     <DockPanel Margin="4,6">
+                                        <DockPanel.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Mark unread" Click="OnInboxMarkUnreadClicked" />
+                                            </ContextMenu>
+                                        </DockPanel.ContextMenu>
                                         <Grid DockPanel.Dock="Left" Width="8" Margin="0,6,10,0" VerticalAlignment="Top">
                                             <Ellipse Width="8" Height="8" Fill="{DynamicResource SystemControlHighlightAccentBrush}"
                                                      Visibility="{Binding UnreadVisibility}" />

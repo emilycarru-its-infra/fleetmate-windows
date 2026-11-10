@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using FleetMate.Core.Models.Tickets;
+using FleetMate.Core.Services.Tickets;
 using FleetMate.GUI.Views.Shared;
 using FleetMate.GUI.Views.Tickets;
 using Xunit;
@@ -29,6 +30,86 @@ public sealed class TicketInboxPopoverTests
         page.UpdateLayout();
         return window;
     }
+
+    [Fact]
+    public Task LosingTheTicketServiceCannotLoadAnUnscopedLegacyCache() => WpfFixture.RunAsync(() =>
+    {
+        var page = Page();
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        var uid = Guid.NewGuid();
+        typeof(TicketsPage).GetField("_me", flags)!.SetValue(page, new TdxPerson { Uid = uid });
+        typeof(TicketsPage).GetField("_inboxPerson", flags)!.SetValue(page, new TicketInboxPerson(uid, "Example", null));
+        typeof(TicketsPage).GetMethod("OnInboxPersonChanged", flags)!.Invoke(page, null);
+        Assert.Null(typeof(TicketsPage).GetField("_inboxState", flags)!.GetValue(page));
+        Assert.Null(typeof(TicketsPage).GetField("_inboxPerson", flags)!.GetValue(page));
+        return Task.CompletedTask;
+    });
+
+    [Fact]
+    public Task LegacyImportContentionDoesNotBlockTheDispatcher() => WpfFixture.RunAsync(async () =>
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "inbox-async-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            const string service = "https://tickets.example.invalid/tdwebapi/api/1/tickets";
+            var person = new TicketInboxPerson(Guid.NewGuid(), "Example", null);
+            var legacyRoot = Path.Combine(directory, "edition");
+            var legacy = new TicketInboxStore(legacyRoot);
+            legacy.SaveRead(person.Uid, new TicketInboxState { ReadIds = new() { 1 } });
+            var sharedRoot = Path.Combine(directory, "shared");
+            var key = TicketInboxReadStore.ServiceKey(service);
+            var sharedDirectory = Path.Combine(sharedRoot, key);
+            Directory.CreateDirectory(sharedDirectory);
+            var store = new TicketInboxStore(legacyRoot, service, sharedRoot, key);
+            var page = Page();
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            typeof(TicketsPage).GetField("_inboxStore", flags)!.SetValue(page, store);
+            typeof(TicketsPage).GetField("_inboxPerson", flags)!.SetValue(page, person);
+            using var held = new FileStream(Path.Combine(sharedDirectory, $"{person.Uid}.json.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            var reload = (Task)typeof(TicketsPage).GetMethod("ReloadInboxFromDisk", flags)!.Invoke(page, null)!;
+            Assert.False(reload.IsCompleted);
+            var responsive = false;
+            await page.Dispatcher.InvokeAsync(() => responsive = true);
+            Assert.True(responsive);
+            held.Dispose();
+            await reload.WaitAsync(TimeSpan.FromSeconds(6));
+            Assert.Contains(1, ((TicketInboxState)typeof(TicketsPage).GetField("_inboxState", flags)!.GetValue(page)!).ReadIds);
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+    });
+
+    [Fact]
+    public Task PeerReadReloadUpdatesRowsWithoutReplacingSelection() => WpfFixture.RunAsync(async () =>
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "inbox-ui-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new TicketInboxStore(Path.Combine(directory, "one"),
+                "https://tickets.example.invalid/tdwebapi/api/1/tickets", Path.Combine(directory, "shared"));
+            var person = new TicketInboxPerson(Guid.NewGuid(), "Example Person", "person@example.invalid");
+            var state = new TicketInboxState { Items = new() { new() { FeedId = 1, TicketId = 42 } } };
+            var page = Page();
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            typeof(TicketsPage).GetField("_inboxStore", flags)!.SetValue(page, store);
+            typeof(TicketsPage).GetField("_inboxPerson", flags)!.SetValue(page, person);
+            typeof(TicketsPage).GetField("_inboxState", flags)!.SetValue(page, state);
+            typeof(TicketsPage).GetMethod("RenderInboxItems", flags)!.Invoke(page, null);
+            var list = Assert.IsType<ListView>(page.FindName("InboxListView"));
+            var source = list.ItemsSource;
+            var row = Assert.IsType<InboxRow>(Assert.Single(list.Items.Cast<object>()));
+            list.SelectedItem = row;
+            store.SetRead(person.Uid, new[] { 1 }, true);
+            await (Task)typeof(TicketsPage).GetMethod("ReloadInboxReadMarks", flags)!.Invoke(page, null)!;
+            Assert.True(row.IsRead);
+            Assert.Same(source, list.ItemsSource);
+            Assert.Same(row, list.SelectedItem);
+            store.SetRead(person.Uid, new[] { 1 }, false);
+            await (Task)typeof(TicketsPage).GetMethod("ReloadInboxReadMarks", flags)!.Invoke(page, null)!;
+            Assert.False(row.IsRead);
+            Assert.Same(row, list.SelectedItem);
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+    });
 
     [Theory]
     [InlineData(true)]

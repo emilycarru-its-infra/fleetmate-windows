@@ -397,6 +397,9 @@
             <TabItem Header="Appearance">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,0">
                     <StackPanel Margin="2" MaxWidth="860">
+                        <CheckBox x:Name="TicketBadgesCheckBox" Content="Show ticket Inbox badges in this app"
+                                  Margin="0,0,0,14" Checked="OnTicketBadgesChanged" Unchecked="OnTicketBadgesChanged"
+                                  AutomationProperties.AutomationId="SettingsTicketBadges" />
                         <TextBlock Text="Appearance" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4" />
                         <TextBlock x:Name="AppearanceSubtitleText" Text="Choose how FleetMate looks on this PC."
                                    Style="{StaticResource SubtitleTextStyle}" Margin="0,0,0,14" />

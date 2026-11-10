@@ -56,6 +56,27 @@ fleetmate status
 
 This displays your configuration, available services, and connection status.
 
+## Ticket Inbox read status
+
+FleetMate and TicketsMate share local Inbox read/unread decisions for the same Windows user,
+TeamDynamix ticket service and signed-in person. Ticket content and scan progress stay in each
+edition's service-scoped cache. Read changes propagate while both apps are open; right-click
+an Inbox comment to mark it unread.
+
+In **Settings → Appearance**, **Show ticket Inbox badges in this app** controls the envelope's
+unread count. FleetMate defaults off and TicketsMate defaults on. Administrators can set the
+`TicketsBadgesEnabled` registry default; the person's `tickets.showInboxBadges` preference
+still wins.
+
+Older UID-only Inbox files do not identify their original service and remain untouched by
+default. An administrator who has verified their service provenance can set
+`TicketInboxLegacyServiceKey` to the lowercase SHA256 of the canonical full ticket collection
+URL, including the ticketing app ID. Canonicalization lowercases the scheme, host and path,
+omits the default port and trims the trailing slash; credentials, query strings and fragments
+are rejected. A matching declaration permits each edition to adopt only its own authenticated
+person's cache and import its old read marks once. Existing explicit unread choices win over
+imports, and legacy files remain unchanged.
+
 ## Agent terminal
 
 The desktop app keeps an Agent terminal handle above the terminal area. Use **Show/Hide**,

@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using FleetMate.GUI.Views.Shared;
 using FleetMate.Core.Models.Tickets;
 using FleetMate.Core.Services.Tickets;
 using Serilog;
@@ -16,7 +17,17 @@ public partial class TicketsPage
     private static readonly TimeSpan InboxRefreshInterval = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan InboxReloadInterval = TimeSpan.FromMinutes(1);
 
-    private readonly TicketInboxStore _inboxStore = new();
+    private TicketInboxStore _inboxStore = new();
+    private string? _inboxService;
+    private IDisposable? _inboxReadWatcher;
+    private DispatcherTimer? _inboxReadDebounce;
+    private Window? _inboxActivationWindow;
+    private bool _inboxPreferencesAttached;
+    private Task _inboxWriteTail = Task.CompletedTask;
+    private Task? _inboxReadReloadTask;
+    private bool _inboxReadReloadAgain;
+    private Task? _inboxDiskReloadTask;
+    private bool _inboxDiskReloadAgain;
     private TicketInboxPerson? _inboxPerson;
     private TicketInboxState? _inboxState;
     private DispatcherTimer? _inboxTimer;
@@ -35,14 +46,32 @@ public partial class TicketsPage
     /// <summary>The signed-in person was found, changed or lost: load their saved inbox.</summary>
     private void OnInboxPersonChanged()
     {
-        var person = _me?.Uid is { } uid && uid != Guid.Empty
+        var person = _tdxService != null && _me?.Uid is { } uid && uid != Guid.Empty
             ? new TicketInboxPerson(uid, _me.FullName ?? _me.DisplayName, _me.PrimaryEmail)
             : null;
-        if (person?.Uid == _inboxPerson?.Uid) return;
+        var service = person == null ? null : _tdxService?.InboxServiceUrl;
+        if (person?.Uid == _inboxPerson?.Uid && service == _inboxService) return;
+        _inboxReadWatcher?.Dispose();
+        _inboxReadWatcher = null;
+        _inboxService = service;
+        _inboxStore = service == null ? new() : new(serviceUrl: service, legacyServiceKey: _tdxService?.IsSsoAuthenticated == true ? _app?.Config?.TicketInboxLegacyServiceKey : null);
 
         CancelInboxPass();
         _inboxPerson = person;
-        _inboxState = person == null ? null : _inboxStore.Load(person.Uid);
+        _inboxState = person == null ? null : new TicketInboxState();
+        if (person != null && service != null)
+        {
+            _inboxReadDebounce ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+            _inboxReadDebounce.Stop();
+            _inboxReadDebounce.Tick -= OnInboxReadDebounce;
+            _inboxReadDebounce.Tick += OnInboxReadDebounce;
+            _inboxReadWatcher = _inboxStore.WatchRead(person.Uid, () => Dispatcher.BeginInvoke(() =>
+            {
+                if (person.Uid != _inboxPerson?.Uid || service != _inboxService) return;
+                _inboxReadDebounce.Stop();
+                _inboxReadDebounce.Start();
+            }));
+        }
         _inboxLastPassUtc = DateTime.MinValue;
         _inboxError = null;
         _inboxScannedElsewhere = false;
@@ -51,7 +80,7 @@ public partial class TicketsPage
         if (_inboxReloadTimer == null)
         {
             _inboxReloadTimer = new DispatcherTimer { Interval = InboxReloadInterval };
-            _inboxReloadTimer.Tick += (_, _) => ReloadInboxFromDisk();
+            _inboxReloadTimer.Tick += (_, _) => _ = ReloadInboxFromDisk();
         }
         if (person == null) _inboxReloadTimer.Stop(); else _inboxReloadTimer.Start();
 
@@ -59,13 +88,77 @@ public partial class TicketsPage
         StartInboxPass();
     }
 
-    /// <summary>Re-read the saved inbox, unless this window is mid-pass and holds the newest copy.</summary>
-    private void ReloadInboxFromDisk()
+    /// <summary>Coalesced disk I/O never blocks the Dispatcher or replaces a running scan's items.</summary>
+    private Task ReloadInboxFromDisk()
     {
-        if (_inboxPass is { IsCompleted: false } || _inboxPerson is not { } person) return;
-        _inboxState = _inboxStore.Load(person.Uid);
-        RenderInbox();
+        if (_inboxPass is { IsCompleted: false }) return ReloadInboxReadMarks();
+        _inboxDiskReloadAgain = true;
+        return _inboxDiskReloadTask is { IsCompleted: false } running ? running
+            : _inboxDiskReloadTask = ReloadInboxFromDiskAsync();
     }
+
+    private async Task ReloadInboxFromDiskAsync()
+    {
+        do
+        {
+            _inboxDiskReloadAgain = false;
+            if (_inboxPerson is not { } person) return;
+            var store = _inboxStore;
+            var service = _inboxService;
+            try
+            {
+                var state = await Task.Run(() => store.Load(person.Uid));
+                if (!ReferenceEquals(store, _inboxStore) || person.Uid != _inboxPerson?.Uid || service != _inboxService) continue;
+                if (_inboxPass is { IsCompleted: false }) ApplyInboxReadMarks(state.ReadIds);
+                else { _inboxState = state; RenderInbox(); }
+            }
+            catch (Exception ex) { Log.Warning(ex, "Ticket Inbox cache could not be reloaded"); }
+        } while (_inboxDiskReloadAgain);
+    }
+
+    private void OnInboxReadDebounce(object? sender, EventArgs e)
+    {
+        _inboxReadDebounce?.Stop();
+        _ = ReloadInboxReadMarks();
+    }
+
+    private Task ReloadInboxReadMarks()
+    {
+        _inboxReadReloadAgain = true;
+        return _inboxReadReloadTask is { IsCompleted: false } running ? running
+            : _inboxReadReloadTask = ReloadInboxReadMarksAsync();
+    }
+
+    private async Task ReloadInboxReadMarksAsync()
+    {
+        do
+        {
+            _inboxReadReloadAgain = false;
+            if (_inboxPerson is not { } person || _inboxState == null) return;
+            var store = _inboxStore;
+            var service = _inboxService;
+            try
+            {
+                var marks = await Task.Run(() => store.LoadRead(person.Uid));
+                if (ReferenceEquals(store, _inboxStore) && person.Uid == _inboxPerson?.Uid && service == _inboxService)
+                    ApplyInboxReadMarks(marks);
+            }
+            catch (Exception ex) { Log.Warning(ex, "Ticket Inbox read metadata could not be reloaded"); }
+        } while (_inboxReadReloadAgain);
+    }
+
+    private void ApplyInboxReadMarks(HashSet<int> marks)
+    {
+        if (_inboxState is not { } state) return;
+        state.ReadIds = marks;
+        UpdateInboxBadge(state.UnreadCount);
+        if (InboxListView.ItemsSource is IEnumerable<InboxRow> rows)
+            foreach (var row in rows) row.SetRead(state.IsRead(row.Item.FeedId));
+        InboxMarkAllReadButton.IsEnabled = state.UnreadCount > 0;
+    }
+
+    private void OnInboxWindowActivated(object? sender, EventArgs e) => _ = ReloadInboxFromDisk();
+    private void OnInboxBadgePreferenceChanged() => Dispatcher.BeginInvoke(() => UpdateInboxBadge(_inboxState?.UnreadCount ?? 0));
 
     /// <summary>Inbox shown: refresh now if due, and every five minutes while it stays open.</summary>
     private void OnInboxVisibilityChanged()
@@ -92,6 +185,16 @@ public partial class TicketsPage
         _inboxTimer?.Stop();
         _inboxReloadTimer?.Stop();
         CancelInboxPass();
+        _inboxReadWatcher?.Dispose();
+        _inboxReadWatcher = null;
+        _inboxPerson = null;
+        _inboxState = null;
+        _inboxService = null;
+        _inboxReadDebounce?.Stop();
+        if (_inboxActivationWindow != null) _inboxActivationWindow.Activated -= OnInboxWindowActivated;
+        _inboxActivationWindow = null;
+        UserPreferences.Changed -= OnInboxBadgePreferenceChanged;
+        _inboxPreferencesAttached = false;
     }
 
     private void CancelInboxPass()
@@ -111,14 +214,14 @@ public partial class TicketsPage
         }
 
         // Start from what is on disk: the background helper may have scanned last.
-        var state = _inboxState = _inboxStore.Load(person.Uid);
+        var store = _inboxStore;
         var cts = _inboxPassCts = new CancellationTokenSource();
-        _inboxPass = RunInboxPassAsync(person, state, cts);
+        _inboxPass = RunInboxPassAsync(person, store, cts);
     }
 
-    private async Task RunInboxPassAsync(TicketInboxPerson person, TicketInboxState state, CancellationTokenSource cts)
+    private async Task RunInboxPassAsync(TicketInboxPerson person, TicketInboxStore store, CancellationTokenSource cts)
     {
-        var scanner = new TicketInboxScanner(_tdxService!, _inboxStore);
+        TicketInboxState? state = null;
         var progress = new Progress<TicketInboxProgress>(p =>
         {
             if (cts.IsCancellationRequested) return;
@@ -134,6 +237,11 @@ public partial class TicketsPage
         InboxStatusText.Text = "Checking for new comments…";
         try
         {
+            state = await Task.Run(() => store.Load(person.Uid), cts.Token);
+            if (cts.IsCancellationRequested || !ReferenceEquals(store, _inboxStore) || person.Uid != _inboxPerson?.Uid) return;
+            _inboxState = state;
+            RenderInboxItems();
+            var scanner = new TicketInboxScanner(_tdxService!, store);
             var ran = await scanner.TryRunPassAsync(person, state, progress, () =>
             {
                 if (!cts.IsCancellationRequested && ReferenceEquals(state, _inboxState)) RenderInboxItems();
@@ -147,6 +255,7 @@ public partial class TicketsPage
         }
         catch (Exception ex)
         {
+            if (cts.IsCancellationRequested || !ReferenceEquals(store, _inboxStore)) return;
             Log.Warning(ex, "Ticket inbox pass failed");
             _inboxError = ex.Message;
             _inboxLastPassUtc = DateTime.UtcNow;
@@ -161,7 +270,7 @@ public partial class TicketsPage
             }
         }
 
-        if (ReferenceEquals(state, _inboxState)) RenderInbox();
+        if (state != null && ReferenceEquals(state, _inboxState)) RenderInbox();
     }
 
     private void RenderInbox()
@@ -186,10 +295,7 @@ public partial class TicketsPage
     {
         var state = _inboxState;
         var unread = state?.UnreadCount ?? 0;
-        InboxBadgeText.Text = TicketInboxBadge.Label(unread);
-        InboxBadge.Visibility = unread > 0 ? Visibility.Visible : Visibility.Collapsed;
-        System.Windows.Automation.AutomationProperties.SetItemStatus(InboxButton, TicketInboxBadge.AccessibleValue(unread));
-        InboxButton.ToolTip = TicketsToolbarRules.InboxToolTip(unread);
+        UpdateInboxBadge(unread);
 
         // The envelope remains available while scanning or signed out; status lives inside the popover.
         InboxButtonHost.Visibility = Visibility.Visible;
@@ -217,14 +323,24 @@ public partial class TicketsPage
                         : "No comments have notified you in the last 90 days.";
     }
 
+    private void UpdateInboxBadge(int unread)
+    {
+        var enabled = UserPreferences.TicketsBadgesEnabled(_app?.Config?.TicketsBadgesEnabled
+            ?? FleetMate.Core.Config.AppEdition.Current.IsTicketsOnly);
+        var visibleUnread = enabled ? unread : 0;
+        InboxBadgeText.Text = TicketInboxBadge.Label(visibleUnread);
+        InboxBadge.Visibility = visibleUnread > 0 ? Visibility.Visible : Visibility.Collapsed;
+        System.Windows.Automation.AutomationProperties.SetItemStatus(InboxButton, enabled ? TicketInboxBadge.AccessibleValue(unread) : "");
+        InboxButton.ToolTip = TicketsToolbarRules.InboxToolTip(visibleUnread);
+    }
+
     private void OnInboxRefreshClicked(object sender, RoutedEventArgs e) => StartInboxPass();
 
-    private void OnInboxMarkAllReadClicked(object sender, RoutedEventArgs e)
+    private async void OnInboxMarkAllReadClicked(object sender, RoutedEventArgs e)
     {
         if (_inboxState is not { } state || _inboxPerson is not { } person) return;
-        state.MarkAllRead();
-        SaveReadMarks(person, state);
-        RenderInboxItems();
+        await SaveReadMarksAsync(person, state, state.Items.Select(item => item.FeedId), true);
+        if (ReferenceEquals(state, _inboxState)) RenderInboxItems();
     }
 
     private void OnInboxButtonClicked(object sender, RoutedEventArgs e)
@@ -321,8 +437,9 @@ public partial class TicketsPage
         InboxPopup.IsOpen = false;
         if (_inboxState is { } state && _inboxPerson is { } person && !state.IsRead(row.Item.FeedId))
         {
-            state.MarkRead(row.Item.FeedId);
-            SaveReadMarks(person, state);
+            var service = _tdxService;
+            await SaveReadMarksAsync(person, state, new[] { row.Item.FeedId }, true);
+            if (!ReferenceEquals(state, _inboxState) || !ReferenceEquals(service, _tdxService)) return;
             RenderInboxItems();
         }
 
@@ -336,16 +453,40 @@ public partial class TicketsPage
         await OpenTicketInDetailAsync(ticket);
     }
 
-    /// <summary>Read marks go to their own file, which only the window writes.</summary>
-    private void SaveReadMarks(TicketInboxPerson person, TicketInboxState state)
+    private async void OnInboxMarkUnreadClicked(object sender, RoutedEventArgs e)
     {
-        try { _inboxStore.SaveRead(person.Uid, state); }
+        if (sender is MenuItem { DataContext: InboxRow row } && _inboxState is { } state && _inboxPerson is { } person)
+        {
+            await SaveReadMarksAsync(person, state, new[] { row.Item.FeedId }, false);
+            if (ReferenceEquals(state, _inboxState)) await ReloadInboxReadMarks();
+        }
+    }
+
+    /// <summary>Only the requested decisions are changed; peer decisions remain intact.</summary>
+    private async Task SaveReadMarksAsync(TicketInboxPerson person, TicketInboxState state, IEnumerable<int> ids, bool read)
+    {
+        var store = _inboxStore;
+        var decisions = ids.ToArray();
+        try
+        {
+            var previous = _inboxWriteTail;
+            var write = Task.Run(async () =>
+            {
+                try { await previous.ConfigureAwait(false); }
+                catch { /* A failed decision must not prevent later explicit decisions. */ }
+                store.SetRead(person.Uid, decisions, read);
+            });
+            _inboxWriteTail = write;
+            await write;
+            if (ReferenceEquals(store, _inboxStore) && ReferenceEquals(state, _inboxState) && person.Uid == _inboxPerson?.Uid)
+                await ReloadInboxReadMarks();
+        }
         catch (Exception ex) { Log.Warning(ex, "Ticket inbox read state could not be saved"); }
     }
 }
 
 /// <summary>One row of the Inbox list.</summary>
-public sealed class InboxRow
+public sealed class InboxRow : System.ComponentModel.INotifyPropertyChanged
 {
     public InboxRow(TicketInboxItem item, bool isRead)
     {
@@ -354,7 +495,16 @@ public sealed class InboxRow
     }
 
     public TicketInboxItem Item { get; }
-    public bool IsRead { get; }
+    public bool IsRead { get; private set; }
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+    public void SetRead(bool read)
+    {
+        if (IsRead == read) return;
+        IsRead = read;
+        PropertyChanged?.Invoke(this, new(nameof(IsRead)));
+        PropertyChanged?.Invoke(this, new(nameof(HeadingWeight)));
+        PropertyChanged?.Invoke(this, new(nameof(UnreadVisibility)));
+    }
 
     public string Heading => $"#{Item.TicketId} · {Item.TicketTitle ?? "Untitled"}";
     public FontWeight HeadingWeight => IsRead ? FontWeights.Normal : FontWeights.SemiBold;
