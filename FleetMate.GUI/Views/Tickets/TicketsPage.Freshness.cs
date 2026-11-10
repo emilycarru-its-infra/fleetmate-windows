@@ -96,17 +96,18 @@ public partial class TicketsPage
 
     private async Task RefreshActiveTicketDetailAsync(CancellationToken ct)
     {
-        if (_tdxService == null || _selectedTicket is not { } previous || _detailLoads.Current is not { } request
+        var service = _tdxService;
+        if (service == null || _selectedTicket is not { } previous || _detailLoads.Current is not { } request
             || _postingComment || _savingEdits || _savingDescription || !TicketRefreshIsActive) return;
         _detailAttemptUtc = DateTime.UtcNow;
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _ticketDetailRefreshCts?.Cancel(); _ticketDetailRefreshCts = cancellation;
-        var account = _tdxService.AuthenticatedUserId;
+        var account = service.AuthenticatedUserId;
         try
         {
-            var ticket = await _tdxService.GetTicketOrThrowAsync(previous.Id, cancellation.Token);
-            var feed = await _tdxService.GetTicketFeedOrThrowAsync(previous.Id, cancellation.Token);
-            if (!_detailLoads.IsCurrent(request) || _selectedTicket?.Id != previous.Id) return;
+            var ticket = await service.GetTicketOrThrowAsync(previous.Id, cancellation.Token);
+            var feed = await service.GetTicketFeedOrThrowAsync(previous.Id, cancellation.Token);
+            if (!ReferenceEquals(service, _tdxService) || !_detailLoads.IsCurrent(request) || _selectedTicket?.Id != previous.Id) return;
             var old = _ticketFeed.ToDictionary(entry => entry.Id);
             var visible = VisibleFeedForRefresh(feed).ToList();
             foreach (var entry in visible.Where(entry => (entry.RepliesCount ?? 0) > 0))
@@ -125,12 +126,12 @@ public partial class TicketsPage
             }
             foreach (var id in fetchIds)
             {
-                var thread = await _tdxService.GetFeedEntryOrThrowAsync(id, cancellation.Token);
+                var thread = await service.GetFeedEntryOrThrowAsync(id, cancellation.Token);
                 fetched[id] = thread.ReplyList.ToList();
             }
             cancellation.Token.ThrowIfCancellationRequested();
-            if (!TicketRefreshIsActive || !_detailLoads.IsCurrent(request) || _selectedTicket?.Id != previous.Id
-                || !string.Equals(account, _tdxService.AuthenticatedUserId, StringComparison.OrdinalIgnoreCase)) return;
+            if (!TicketRefreshIsActive || !ReferenceEquals(service, _tdxService) || !_detailLoads.IsCurrent(request) || _selectedTicket?.Id != previous.Id
+                || !string.Equals(account, service.AuthenticatedUserId, StringComparison.OrdinalIgnoreCase)) return;
             var merged = TicketFeedRefresh.Merge(feed, _ticketFeed, fetched);
             ApplyBackgroundTicketRefresh(request, ticket, merged);
             _detailRetryUtc = DateTime.MinValue;
