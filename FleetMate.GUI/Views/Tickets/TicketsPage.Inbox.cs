@@ -44,7 +44,7 @@ public partial class TicketsPage
         var person = _me?.Uid is { } uid && uid != Guid.Empty
             ? new TicketInboxPerson(uid, _me.FullName ?? _me.DisplayName, _me.PrimaryEmail)
             : null;
-        var service = _tdxService?.InboxServiceUrl;
+        var service = person == null ? null : _tdxService?.InboxServiceUrl;
         if (person?.Uid == _inboxPerson?.Uid && service == _inboxService) return;
         _inboxReadWatcher?.Dispose();
         _inboxReadWatcher = null;

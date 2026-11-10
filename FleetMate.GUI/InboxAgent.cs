@@ -76,7 +76,7 @@ internal sealed class InboxAgent
             Log.Warning(ex, "[inbox-agent] Sign-in failed");
         }
 
-        _store = new TicketInboxStore(serviceUrl: tdx.InboxServiceUrl);
+        _store = new TicketInboxStore(serviceUrl: tdx.InboxServiceUrl, legacyServiceKey: _app.Config?.TicketInboxLegacyServiceKey);
         TicketInboxPerson? person = null;
         while (true)
         {

@@ -43,6 +43,7 @@ public sealed class TicketInboxStore
     /// <summary>The saved inbox with its read marks, or an empty one when none is saved or it cannot be read.</summary>
     public TicketInboxState Load(Guid uid)
     {
+        AdoptDeclaredLegacyContent(uid);
         var state = Read<TicketInboxState>(PathFor(uid)) ?? new TicketInboxState();
         try
         {
@@ -56,11 +57,21 @@ public sealed class TicketInboxStore
     /// <summary>Save the items and scan point. Read marks are left alone.</summary>
     public void Save(Guid uid, TicketInboxState state) => Write(PathFor(uid), state);
 
-    /// <summary>Save the read marks. Only the app window calls this.</summary>
+    /// <summary>Compatibility writer for unscoped legacy files; shared callers must use per-ID changes.</summary>
     public void SaveRead(Guid uid, TicketInboxState state)
     {
         if (_sharedRead == null) Write(ReadPathFor(uid), state.ReadIds);
-        else state.ReadIds = _sharedRead.SetRead(uid, state.ReadIds, true);
+        else throw new InvalidOperationException("Shared read state requires per-comment updates.");
+    }
+
+    private void AdoptDeclaredLegacyContent(Guid uid)
+    {
+        if (!_legacyBindingMatches || _legacyDirectory == null || uid == Guid.Empty || File.Exists(PathFor(uid))) return;
+        using var held = TryLock(uid);
+        if (held == null || File.Exists(PathFor(uid))) return;
+        // Only this edition's authenticated person's cache is adopted, never a peer's bodies.
+        if (Read<TicketInboxState>(Path.Combine(_legacyDirectory, $"{uid}.json")) is { } legacy)
+            Save(uid, legacy);
     }
 
     private void ImportDeclaredLegacyRead(Guid uid)

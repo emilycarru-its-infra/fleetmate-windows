@@ -1,5 +1,6 @@
 using FleetMate.Core.Services.Tickets;
 using FleetMate.Core.Models.Tickets;
+using FleetMate.Core.Config;
 using Xunit;
 
 namespace FleetMate.Tests;
@@ -22,8 +23,8 @@ public sealed class TicketInboxSharedReadTests : IDisposable
         Assert.Equal(40, first.LoadRead(_person).Count);
         second.SetRead(_person, new[] { 1 }, false);
         first.SetRead(_person, new[] { 41 }, true);
-        Assert.False(first.LoadRead(_person).Contains(1));
-        Assert.True(second.LoadRead(_person).Contains(41));
+        Assert.DoesNotContain(1, first.LoadRead(_person));
+        Assert.Contains(41, second.LoadRead(_person));
         Assert.Equal(40, second.LoadRead(_person).Count);
     }
 
@@ -78,12 +79,21 @@ public sealed class TicketInboxSharedReadTests : IDisposable
         var state = new TicketInboxState();
         state.ReadIds = new() { 1, 2 };
         legacy.SaveRead(_person, state);
+        state.ScannedThrough = DateTime.UtcNow;
+        state.Items.Add(new() { FeedId = 2, Body = "EDITION_OWNED_BODY" });
+        legacy.Save(_person, state);
+        var original = File.ReadAllText(legacy.PathFor(_person));
         var shared = Path.Combine(_root, "shared");
         var wrong = new TicketInboxStore(legacyRoot, service, shared, new string('0', 64));
         Assert.Empty(wrong.Load(_person).ReadIds);
         var bound = new TicketInboxStore(legacyRoot, service, shared, TicketInboxReadStore.ServiceKey(service));
         bound.SetRead(_person, new[] { 1 }, false);
-        Assert.Equal(new[] { 2 }, bound.Load(_person).ReadIds);
+        var adopted = bound.Load(_person);
+        Assert.Equal(new[] { 2 }, adopted.ReadIds);
+        Assert.Equal(state.ScannedThrough, adopted.ScannedThrough);
+        Assert.Equal("EDITION_OWNED_BODY", Assert.Single(adopted.Items).Body);
+        Assert.Equal(original, File.ReadAllText(legacy.PathFor(_person)));
+        Assert.Empty(Store("two").Load(_person).Items);
         bound.SetRead(_person, new[] { 2 }, false);
         Assert.Empty(bound.Load(_person).ReadIds);
         Assert.Equal(2, legacy.LoadRead(_person).Count);
@@ -96,6 +106,30 @@ public sealed class TicketInboxSharedReadTests : IDisposable
             TicketInboxReadStore.ServiceKey("HTTPS://TICKETS.EXAMPLE.INVALID:443/TDWebApi/API/1/Tickets/"));
         Assert.Throws<ArgumentException>(() => TicketInboxReadStore.ServiceKey("https://user@tickets.example.invalid/api/1/tickets"));
         Assert.Throws<ArgumentException>(() => TicketInboxReadStore.ServiceKey("https://tickets.example.invalid/api/1/tickets?q=1"));
+    }
+
+    [Theory]
+    [InlineData("false", false)]
+    [InlineData("0", false)]
+    [InlineData("true", true)]
+    [InlineData("1", true)]
+    public void ManagedBadgeDefaultSupportsPolicyStrings(string value, bool expected)
+    {
+        var config = new FleetMateConfig();
+        FleetMateConfig.ApplyRegistryValues(name => name == "TicketsBadgesEnabled" ? value : null, config, true);
+        Assert.Equal(expected, config.TicketsBadgesEnabled);
+    }
+
+    [Fact]
+    public void MarkAllUsesOnlyDisplayedIdsAndKeepsPeerUnreadDecisions()
+    {
+        var one = Store("one");
+        var two = Store("two");
+        one.SetRead(_person, new[] { 1, 2 }, true);
+        two.SetRead(_person, new[] { 2 }, false);
+        one.SetRead(_person, new[] { 3, 4 }, true);
+        Assert.DoesNotContain(2, two.LoadRead(_person));
+        Assert.Equal(new[] { 1, 3, 4 }, two.LoadRead(_person).OrderBy(id => id));
     }
 
     [Fact]
