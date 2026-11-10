@@ -46,7 +46,7 @@ public static class RecordAttachments
     public static bool IsGitHubAsset(Uri uri) => IsWeb(uri) && uri.IsDefaultPort && (uri.Host.ToLowerInvariant() switch
     {
         "github.com" => uri.AbsolutePath.StartsWith("/user-attachments/", StringComparison.OrdinalIgnoreCase)
-            || Regex.IsMatch(uri.AbsolutePath, @"^/[^/]+/[^/]+/assets/", RegexOptions.IgnoreCase, MatchTimeout),
+            || Regex.IsMatch(uri.AbsolutePath, @"^/[^/]+/[^/]+/(?:assets|files)/", RegexOptions.IgnoreCase, MatchTimeout),
         "user-images.githubusercontent.com" or "private-user-images.githubusercontent.com" or "objects.githubusercontent.com"
             or "github-production-user-asset-6210df.s3.amazonaws.com" => true,
         _ => false,
@@ -88,11 +88,18 @@ public static class RecordAttachments
         }).DistinctBy(a => a.Url).ToList();
     }
 
-    public static async Task<StagedRecordAttachment> DownloadAsync(RecordAttachment attachment, Uri credentialOrigin,
-        string? token, Func<Uri, bool> allowed, CancellationToken ct = default, HttpMessageHandler? handler = null)
+    public static Task<StagedRecordAttachment> DownloadAsync(RecordAttachment attachment, Uri credentialOrigin,
+        string? token, Func<Uri, bool> allowed, CancellationToken ct = default, HttpMessageHandler? handler = null) =>
+        DownloadWithDeadlineAsync(attachment, credentialOrigin, token, allowed, TimeSpan.FromSeconds(60), ct, handler);
+
+    internal static async Task<StagedRecordAttachment> DownloadWithDeadlineAsync(RecordAttachment attachment, Uri credentialOrigin,
+        string? token, Func<Uri, bool> allowed, TimeSpan deadline, CancellationToken ct = default, HttpMessageHandler? handler = null)
     {
         if (!Uri.TryCreate(attachment.Url, UriKind.Absolute, out var uri) || !IsWeb(uri) || !allowed(uri))
             throw new InvalidOperationException("This attachment address is not supported.");
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        operation.CancelAfter(deadline);
+        ct = operation.Token;
         using var client = new HttpClient(handler ?? new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }) { Timeout = TimeSpan.FromSeconds(60) };
         var canAuthorize = SameOrigin(uri, credentialOrigin);
         for (var hop = 0; hop <= 5; hop++)

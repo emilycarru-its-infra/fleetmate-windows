@@ -59,6 +59,56 @@ public sealed class RecordAttachmentTests
         Assert.True(RecordAttachmentSections.Matches(first, first with { Url = "https://private-user-images.githubusercontent.com/1/one.png?jwt=refreshed" }));
     }
 
+    [Fact]
+    public void LegacyRepositoryFileUploadsAreRecognizedWithoutAllowingOtherOrigins()
+    {
+        Assert.True(RecordAttachments.IsGitHubAsset(new Uri("https://github.com/example/repo/files/1/document.pdf")));
+        Assert.True(RecordAttachments.IsGitHubAsset(new Uri("https://github.com/example/repo/assets/1/image.png")));
+        Assert.False(RecordAttachments.IsGitHubAsset(new Uri("https://github.com.evil.invalid/example/repo/files/1/document.pdf")));
+    }
+
+    [Fact]
+    public void PdfResourcesCannotReadAnotherFileOrFetchRemoteSubresources()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "preview.pdf");
+        Assert.True(RecordAttachmentPreview.AllowsLocalResource(new Uri(path).AbsoluteUri, path));
+        Assert.False(RecordAttachmentPreview.AllowsLocalResource(new Uri(Path.Combine(Path.GetTempPath(), "other.txt")).AbsoluteUri, path));
+        Assert.False(RecordAttachmentPreview.AllowsLocalResource("https://example.invalid/tracker", path));
+        Assert.False(RecordAttachmentPreview.AllowsLocalResource("file://server/share/private.txt", path));
+    }
+
+    private sealed class WaitingBody : Stream
+    {
+        public bool Closed;
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() => throw new NotSupportedException();
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+        {
+            await Task.Delay(Timeout.Infinite, ct);
+            return 0;
+        }
+        protected override void Dispose(bool disposing) { Closed = true; base.Dispose(disposing); }
+    }
+
+    [Fact]
+    public async Task DeadlineCancelsAStalledBodyAfterHeadersHaveCompleted()
+    {
+        var body = new WaitingBody();
+        using var handler = new Handler(_ => new(HttpStatusCode.OK) { Content = new StreamContent(body) });
+        var attachment = new RecordAttachment("document.pdf", "https://github.com/example/repo/files/1/document.pdf", "https://github.com/example/repo/files/1/document.pdf");
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => RecordAttachments.DownloadWithDeadlineAsync(attachment,
+            new Uri("https://github.com"), "synthetic-token", RecordAttachments.IsGitHubAsset, TimeSpan.FromMilliseconds(100), handler: handler));
+        Assert.True(body.Closed);
+    }
+
     private sealed class Handler(Func<HttpRequestMessage, HttpResponseMessage> send) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) => Task.FromResult(send(request));

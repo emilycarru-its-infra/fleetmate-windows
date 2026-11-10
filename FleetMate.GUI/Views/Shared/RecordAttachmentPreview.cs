@@ -8,6 +8,7 @@ using FleetMate.Core.Services;
 using FleetMate.Core.Services.Projects;
 using Microsoft.Win32;
 using Microsoft.Web.WebView2.Wpf;
+using Microsoft.Web.WebView2.Core;
 
 namespace FleetMate.GUI.Views.Shared;
 
@@ -85,7 +86,14 @@ public sealed class RecordAttachmentPreview : Window
                 core.Settings.AreDevToolsEnabled = false;
                 core.Settings.AreDefaultContextMenusEnabled = false;
                 var localUrl = new Uri(downloaded.Path).AbsoluteUri;
-                core.NavigationStarting += (_, e) => e.Cancel = e.Uri != localUrl && e.Uri != "about:blank";
+                foreach (var pattern in new[] { "http://*", "https://*", "file://*" })
+                    core.AddWebResourceRequestedFilter(pattern, CoreWebView2WebResourceContext.All);
+                core.WebResourceRequested += (_, e) =>
+                {
+                    if (!AllowsLocalResource(e.Request.Uri, downloaded.Path))
+                        e.Response = core.Environment.CreateWebResourceResponse(Stream.Null, 403, "Forbidden", "Content-Type: text/plain");
+                };
+                core.NavigationStarting += (_, e) => e.Cancel = e.Uri != "about:blank" && !AllowsLocalResource(e.Uri, downloaded.Path);
                 core.NewWindowRequested += (_, e) => e.Handled = true;
                 core.DownloadStarting += (_, e) => e.Cancel = true;
                 core.Navigate(localUrl);
@@ -120,6 +128,13 @@ public sealed class RecordAttachmentPreview : Window
         {
             if (!_closed) _content.Content = Status("This attachment could not be previewed. Open it in your browser or try again.");
         }
+    }
+
+    internal static bool AllowsLocalResource(string address, string expectedPath)
+    {
+        if (!Uri.TryCreate(address, UriKind.Absolute, out var uri) || !uri.IsFile || uri.IsUnc || !string.IsNullOrEmpty(uri.Query)) return false;
+        try { return Path.GetFullPath(uri.LocalPath).Equals(Path.GetFullPath(expectedPath), StringComparison.OrdinalIgnoreCase); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or IOException) { return false; }
     }
 
     private void OpenOriginal()
