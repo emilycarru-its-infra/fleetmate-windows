@@ -23,6 +23,7 @@ public partial class TicketsPage
     private DispatcherTimer? _inboxReadDebounce;
     private Window? _inboxActivationWindow;
     private bool _inboxPreferencesAttached;
+    private Task _inboxWriteTail = Task.CompletedTask;
     private TicketInboxPerson? _inboxPerson;
     private TicketInboxState? _inboxState;
     private DispatcherTimer? _inboxTimer;
@@ -418,9 +419,17 @@ public partial class TicketsPage
         var decisions = ids.ToArray();
         try
         {
-            var marks = await Task.Run(() => store.SetRead(person.Uid, decisions, read));
+            var previous = _inboxWriteTail;
+            var write = Task.Run(async () =>
+            {
+                try { await previous.ConfigureAwait(false); }
+                catch { /* A failed decision must not prevent later explicit decisions. */ }
+                store.SetRead(person.Uid, decisions, read);
+            });
+            _inboxWriteTail = write;
+            await write;
             if (ReferenceEquals(store, _inboxStore) && ReferenceEquals(state, _inboxState) && person.Uid == _inboxPerson?.Uid)
-                state.ReadIds = marks;
+                ReloadInboxReadMarks();
         }
         catch (Exception ex) { Log.Warning(ex, "Ticket inbox read state could not be saved"); }
     }
