@@ -29,6 +29,21 @@ public sealed class TicketInboxSharedReadTests : IDisposable
     }
 
     [Fact]
+    public async Task ReplacementRetriesTransientWindowsReadersWithoutRemovingTheLastGoodFile()
+    {
+        var store = new TicketInboxReadStore(Path.Combine(_root, "shared"));
+        store.SetRead(_person, new[] { 1 }, true);
+        using var held = new FileStream(store.PathFor(_person), FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        var write = Task.Run(() => store.SetRead(_person, new[] { 2 }, true));
+        await Task.Delay(150);
+        Assert.False(write.IsCompleted);
+        Assert.Contains(1, store.Load(_person));
+        held.Dispose();
+        var result = await write.WaitAsync(TimeSpan.FromSeconds(6));
+        Assert.Equal(new[] { 1, 2 }, result.OrderBy(id => id));
+    }
+
+    [Fact]
     public void PersonServiceAndAppAreIsolatedWhileContentRemainsEditionOwned()
     {
         var first = Store("one");

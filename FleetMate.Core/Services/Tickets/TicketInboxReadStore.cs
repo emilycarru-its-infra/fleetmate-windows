@@ -62,9 +62,20 @@ public sealed class TicketInboxReadStore
         try
         {
             File.WriteAllText(temp, JsonSerializer.Serialize(document));
-            File.Move(temp, path, overwrite: true);
+            var deadline = Environment.TickCount64 + 5000;
+            while (true)
+            {
+                try { File.Move(temp, path, overwrite: true); break; }
+                catch (IOException) when (Environment.TickCount64 < deadline) { Thread.Sleep(20); }
+                catch (UnauthorizedAccessException) when (Environment.TickCount64 < deadline) { Thread.Sleep(20); }
+            }
         }
-        finally { if (File.Exists(temp)) File.Delete(temp); }
+        finally
+        {
+            try { if (File.Exists(temp)) File.Delete(temp); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
     }
 
     public IDisposable Watch(Guid person, Action changed)
