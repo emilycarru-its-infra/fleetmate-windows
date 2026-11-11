@@ -88,12 +88,19 @@
             <DockPanel Margin="2,4" Background="Transparent">
                 <DockPanel.ContextMenu>
                     <ContextMenu>
+                        <MenuItem Header="Review Approval…" Click="OnRunReviewApproval"
+                                  Visibility="{Binding ApprovalVisibility}" />
+                        <Separator Visibility="{Binding ApprovalVisibility}" />
                         <MenuItem Header="Open in Browser" Click="OnRunOpenInBrowser" />
                         <MenuItem Header="Copy Link" Click="OnRunCopyLink" />
                     </ContextMenu>
                 </DockPanel.ContextMenu>
-                <ui:FontIcon DockPanel.Dock="Left" Glyph="{Binding StatusGlyph}" Foreground="{Binding StatusBrush}"
-                             FontSize="12" Margin="0,2,8,0" VerticalAlignment="Top" ToolTip="{Binding StatusLabel}" />
+                <Grid DockPanel.Dock="Left" Margin="0,2,8,0" VerticalAlignment="Top" ToolTip="{Binding StatusLabel}"
+                      AutomationProperties.Name="{Binding StatusLabel}">
+                    <ui:FontIcon Glyph="{Binding StatusGlyph}" Foreground="{Binding StatusBrush}" FontSize="12" />
+                    <local:ApprovalBadge HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-5,-5"
+                                         Visibility="{Binding ApprovalVisibility}" />
+                </Grid>
                 <StackPanel>
                     <DockPanel>
                         <Border DockPanel.Dock="Left" CornerRadius="3" Padding="4,1" Margin="0,0,6,0"

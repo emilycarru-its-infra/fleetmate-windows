@@ -225,6 +225,7 @@ public sealed class DevelopmentDataSync : IDisposable
             if (_selected != null) _selected = merged.FirstOrDefault(run => PipelineRunCache.Key(run) == PipelineRunCache.Key(_selected)) ?? _selected;
         }
         _errors[DevelopmentRefreshArea.Pipelines] = string.Join(" · ", new[] { _github.Error, _azure.Error }.Where(error => error != null));
+        await RefreshApprovalsAsync(ct);
         return outcomes.All(success => success);
 
         async Task<bool> RefreshGitHubAsync()
@@ -310,6 +311,24 @@ public sealed class DevelopmentDataSync : IDisposable
             _azure.Error = succeeded ? null : "Azure DevOps unavailable";
             _azure.Complete(succeeded, DateTimeOffset.UtcNow);
             return succeeded;
+        }
+    }
+
+    /// <summary>
+    /// Pending approvals for the projects with active runs. Best effort: a
+    /// failure keeps what was known and never fails the pipelines refresh.
+    /// </summary>
+    private async Task RefreshApprovalsAsync(CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(_app.Config.AzureDevOps?.Organization) || _app.DevelopmentRuns is not { } runs) return;
+        try
+        {
+            using var service = new AzureDevOpsService(_app.Config.AzureDevOps!, ct);
+            await _app.PipelineApprovals.RefreshAsync(runs, service, ct: ct);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            Log.Debug(ex, "[approvals] refresh failed");
         }
     }
 
