@@ -1,0 +1,66 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Prototype of a WinUI 3 FleetMate shell. Unpackaged and self-contained so
+    `dotnet run` starts it with no MSIX registration.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>FleetMate.WinUI</RootNamespace>
+    <AssemblyName>FleetMate.WinUI</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <Platforms>x64;ARM64</Platforms>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
+    <PublishProfile Condition="Exists('Properties\PublishProfiles\win-$(Platform).pubxml')">win-$(Platform).pubxml</PublishProfile>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- Edition: FleetMate by default; -p:Edition=TicketsMate builds the Tickets-only
+       app as TicketsMate.exe. Same switch as FleetMate.GUI, read at run time by
+       FleetMate.Core/Config/AppEdition.cs. -->
+  <PropertyGroup>
+    <Edition Condition="'$(Edition)' == ''">FleetMate</Edition>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Edition)' == 'TicketsMate'">
+    <AssemblyName>TicketsMate</AssemblyName>
+    <AssemblyTitle>TicketsMate</AssemblyTitle>
+    <AssemblyProduct>TicketsMate</AssemblyProduct>
+    <ApplicationIcon>Assets\TicketsMate.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(Edition)' == 'TicketsMate'">
+    <AssemblyMetadata Include="FleetMateEdition" Value="TicketsMate" />
+  </ItemGroup>
+  <Target Name="CheckEdition" BeforeTargets="Build">
+    <Error Condition="'$(Edition)' != 'FleetMate' And '$(Edition)' != 'TicketsMate'"
+           Text="Edition must be FleetMate or TicketsMate, not '$(Edition)'." />
+  </Target>
+
+  <!-- Signs our own exe and DLLs after every build when a code-signing
+       certificate is installed, so the dev build runs where unsigned
+       executables are blocked. No certificate: it skips and the build
+       succeeds. Opt out with -p:SignDevBuild=false. -->
+  <Target Name="SignDevBuild" AfterTargets="Build" Condition="'$(SignDevBuild)' != 'false' And '$(OS)' == 'Windows_NT'">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\Sign-DevBuild.ps1&quot; -Directory &quot;$(TargetDir.TrimEnd('\'))&quot; -Files $(TargetName).exe,$(TargetName).dll,FleetMate.Core.dll" />
+  </Target>
+
+  <ItemGroup>
+    <None Remove="Sign-DevBuild.ps1" />
+    <Content Include="Assets\**\*.*" CopyToOutputDirectory="PreserveNewest" />
+    <Manifest Include="$(ApplicationManifest)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2957" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FleetMate.Core\FleetMate.Core.csproj" />
+  </ItemGroup>
+</Project>
