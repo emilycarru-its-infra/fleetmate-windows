@@ -178,7 +178,11 @@ public sealed class PipelineRunRowViewModel : INotifyPropertyChanged
             FormatDuration(Run.Duration),
         }.Where(s => !string.IsNullOrEmpty(s)));
 
-    public string StatusLabel => Run.Status.DisplayName();
+    /// <summary>True while a pending approval holds this run.</summary>
+    public bool AwaitingApproval { get; init; }
+    public Visibility ApprovalVisibility => AwaitingApproval ? Visibility.Visible : Visibility.Collapsed;
+
+    public string StatusLabel => AwaitingApproval ? PipelineStatusVisuals.WaitingForApproval : Run.Status.DisplayName();
     public string StatusGlyph => PipelineStatusVisuals.Glyph(Run.Status);
     public Brush StatusBrush => PipelineStatusVisuals.Brush(Run.Status);
 
@@ -198,6 +202,11 @@ public sealed class PipelineRunRowViewModel : INotifyPropertyChanged
 /// </summary>
 public static class PipelineStatusVisuals
 {
+    public const string WaitingForApproval = "Waiting for approval";
+
+    /// <summary>The approval badge and banner colour: orange, never red.</summary>
+    public static readonly Color ApprovalColor = Color.FromRgb(0xE0, 0x7A, 0x1F);
+
     public static string Glyph(PipelineRunStatus status) => status switch
     {
         PipelineRunStatus.Succeeded => "",

@@ -169,6 +169,9 @@ public partial class App : Application
     }
     private List<FleetMate.Core.Models.Projects.PipelineRun>? _developmentRuns;
 
+    /// <summary>Pending Azure Pipelines approvals, pinned to the active runs they hold.</summary>
+    public FleetMate.Core.Services.Projects.PipelineApprovalTracker PipelineApprovals { get; } = new();
+
     private FleetMate.GUI.Views.Development.DevelopmentDataSync? _developmentSync;
     public FleetMate.GUI.Views.Development.DevelopmentDataSync DevelopmentSync =>
         _developmentSync ??= new FleetMate.GUI.Views.Development.DevelopmentDataSync(this);

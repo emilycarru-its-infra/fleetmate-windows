@@ -194,3 +194,32 @@ public sealed class PipelineRunLog
 
     public string Text => string.Join("\n\n", Sections.Select(s => $"── {s.Name} ──\n{s.Text}"));
 }
+
+// MARK: - Approvals
+
+/// <summary>
+/// A pending approval that holds an Azure Pipelines run: a ManualValidation
+/// task or an environment approval check. Both use the same Approvals API.
+/// </summary>
+public sealed record PipelineApproval
+{
+    /// <summary>The approval id; also the <c>identifier</c> of the run's timeline record.</summary>
+    public string Id { get; init; } = string.Empty;
+
+    /// <summary>Azure DevOps project name.</summary>
+    public string Project { get; init; } = string.Empty;
+
+    /// <summary>
+    /// The build the approval holds, when the API says so. ManualValidation
+    /// approvals leave it out, so it is matched through the build's timeline.
+    /// </summary>
+    public long? BuildId { get; init; }
+
+    public string Instructions { get; init; } = string.Empty;
+    public DateTime? CreatedOn { get; init; }
+
+    /// <summary>Display names of the people or groups asked to approve.</summary>
+    public IReadOnlyList<string> Approvers { get; init; } = Array.Empty<string>();
+
+    public PipelineApproval AssignedTo(long buildId) => this with { BuildId = buildId };
+}

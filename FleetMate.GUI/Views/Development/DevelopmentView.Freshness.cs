@@ -21,6 +21,7 @@ public partial class DevelopmentView
         app.Inbox.Changed += OnInboxCacheChanged;
         app.CacheChanged += OnDevelopmentCacheChanged;
         app.ServicesReloaded += OnDevelopmentServicesReloaded;
+        app.PipelineApprovals.Changed += OnPipelineApprovalsChanged;
         _dataSync.StatusChanged += OnFreshnessStatusChanged;
         UpdateFreshnessContext();
     }
@@ -38,6 +39,7 @@ public partial class DevelopmentView
             app.Inbox.Changed -= OnInboxCacheChanged;
             app.CacheChanged -= OnDevelopmentCacheChanged;
             app.ServicesReloaded -= OnDevelopmentServicesReloaded;
+            app.PipelineApprovals.Changed -= OnPipelineApprovalsChanged;
         }
         if (_dataSync != null)
         {

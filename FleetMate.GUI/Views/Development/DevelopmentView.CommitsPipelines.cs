@@ -95,7 +95,8 @@ public partial class DevelopmentView
             RepositoryFilterHierarchy.Count(all.Where(run => CommitsAndPipelinesFilter.MatchesSource(run.Source, _runsSource)), run => new RepositoryFilterScope(run.Source, run.Container, run.Repository)), _runsRepository);
 
         var runs = CommitsAndPipelinesFilter.Runs(all, _runsSource, _runsStatus, PipelinesSearchBox.Text, _runsRepository);
-        var rows = runs.Select(r => new PipelineRunRowViewModel { Run = r }).ToList();
+        var approvals = AppInstance?.PipelineApprovals;
+        var rows = runs.Select(r => new PipelineRunRowViewModel { Run = r, AwaitingApproval = approvals?.IsAwaiting(r) == true }).ToList();
         _renderingRuns = true;
         try
         {
@@ -191,6 +192,29 @@ public partial class DevelopmentView
         PipelinesSegment.IsChecked = true;
         RenderRuns();
         UpdateFreshnessContext();
+    }
+
+    // MARK: - Approvals
+
+    private void OnPipelineApprovalsChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(() =>
+    {
+        if (!IsLoaded) return;
+        if (PipelinesSegment.IsChecked == true) RenderRuns();
+        RunView.RefreshApprovals();
+    });
+
+    /// <summary>The row's Review Approval… item: show the run, then open its review.</summary>
+    private async void OnRunReviewApproval(object sender, RoutedEventArgs e)
+    {
+        if (RowOf<PipelineRunRowViewModel>(sender) is not { } row) return;
+        PipelinesList.SelectedItem = (PipelinesList.ItemsSource as IEnumerable<PipelineRunRowViewModel>)?
+            .FirstOrDefault(r => PipelineRunCache.Key(r.Run) == PipelineRunCache.Key(row.Run)) ?? PipelinesList.SelectedItem;
+        if (!RunView.IsShowing(row.Run))
+        {
+            ShowDetail(RunView);
+            await RunView.ShowAsync(row.Run);
+        }
+        RunView.ReviewApproval();
     }
 
     private async void OnRunSelected(object sender, SelectionChangedEventArgs e)

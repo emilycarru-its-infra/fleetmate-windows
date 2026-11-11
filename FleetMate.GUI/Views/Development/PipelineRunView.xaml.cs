@@ -76,6 +76,7 @@ public partial class PipelineRunView : UserControl
         AgentButton.Context = AgentContexts.PipelineRun(run);
         ActionStatus.Visibility = Visibility.Collapsed;
         RenderHeader(run);
+        _ = RefreshApprovalsForAsync(run);
         await LoadLogAsync();
     }
 
@@ -88,6 +89,7 @@ public partial class PipelineRunView : UserControl
         StatusIcon.Glyph = row.StatusGlyph;
         StatusIcon.Foreground = row.StatusBrush;
         StatusText.Text = row.StatusLabel;
+        RenderApprovals(run);
 
         var sha = run.CommitSha is { Length: > 8 } s ? s[..8] : run.CommitSha;
         DetailsText.Text = string.Join(" · ", new[]
@@ -232,6 +234,62 @@ public partial class PipelineRunView : UserControl
         {
             RerunButton.IsEnabled = CancelButton.IsEnabled = true;
         }
+    }
+
+    // MARK: - Approvals
+
+    private static PipelineApprovalTracker? Approvals => (Application.Current as App)?.PipelineApprovals;
+
+    private IReadOnlyList<PipelineApproval> CurrentApprovals =>
+        _run is { } run && Approvals is { } tracker ? tracker.For(run) : Array.Empty<PipelineApproval>();
+
+    /// <summary>Re-draw the badge, status and banner after the tracker changed.</summary>
+    public void RefreshApprovals()
+    {
+        if (_run is { } run) RenderHeader(run);
+    }
+
+    private void RenderApprovals(PipelineRun run)
+    {
+        var approvals = Approvals?.For(run) ?? Array.Empty<PipelineApproval>();
+        var waiting = approvals.Count > 0;
+        HeaderApprovalBadge.Visibility = waiting ? Visibility.Visible : Visibility.Collapsed;
+        ApprovalBanner.Visibility = waiting ? Visibility.Visible : Visibility.Collapsed;
+        ApprovalBannerText.Text = waiting ? PipelineApprovalTracker.BannerText(approvals.Count) : "";
+        if (waiting)
+        {
+            StatusText.Text = PipelineStatusVisuals.WaitingForApproval;
+            StatusIcon.Foreground = new SolidColorBrush(PipelineStatusVisuals.ApprovalColor);
+        }
+    }
+
+    /// <summary>Opening a run re-reads its project's approvals, so the banner is current.</summary>
+    private static async Task RefreshApprovalsForAsync(PipelineRun run)
+    {
+        if (run.Source != PullRequestSource.AzureDevOps || !run.Status.IsActive()) return;
+        if (Application.Current is not App app || app.Config.AzureDevOps is not { } ado) return;
+        try
+        {
+            using var service = new AzureDevOpsService(ado);
+            var runs = app.DevelopmentRuns ?? new List<PipelineRun> { run };
+            if (!runs.Any(r => PipelineRunCache.Key(r) == PipelineRunCache.Key(run))) runs = runs.Append(run).ToList();
+            await app.PipelineApprovals.RefreshAsync(runs, service, new[] { run.Container });
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "[approvals] refresh for {Run} failed", run.Id);
+        }
+    }
+
+    private void OnReviewApprovalClicked(object sender, RoutedEventArgs e) => ReviewApproval();
+
+    /// <summary>Open the review for this run's first pending approval, if it has one.</summary>
+    public void ReviewApproval()
+    {
+        if (_run is not { } run || CurrentApprovals.Count == 0) return;
+        var window = new ApprovalReviewWindow(run, () => CurrentApprovals) { Owner = Window.GetWindow(this) };
+        window.Responded += (_, _) => RunChanged?.Invoke(this, EventArgs.Empty);
+        window.ShowDialog();
     }
 
     private bool Confirm(string title, string message) =>
