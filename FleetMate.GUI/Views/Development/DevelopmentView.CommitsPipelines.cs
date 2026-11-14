@@ -94,9 +94,15 @@ public partial class DevelopmentView
         _runsRepository = RepoFilterMenu.Fill(PipelinesRepoCombo,
             RepositoryFilterHierarchy.Count(all.Where(run => CommitsAndPipelinesFilter.MatchesSource(run.Source, _runsSource)), run => new RepositoryFilterScope(run.Source, run.Container, run.Repository)), _runsRepository);
 
-        var runs = CommitsAndPipelinesFilter.Runs(all, _runsSource, _runsStatus, PipelinesSearchBox.Text, _runsRepository);
         var approvals = AppInstance?.PipelineApprovals;
-        var rows = runs.Select(r => new PipelineRunRowViewModel { Run = r, AwaitingApproval = approvals?.IsAwaiting(r) == true }).ToList();
+        Func<PipelineRun, bool>? awaiting = approvals == null ? null : approvals.IsAwaiting;
+        var runs = CommitsAndPipelinesFilter.Runs(all, _runsSource, _runsStatus, PipelinesSearchBox.Text, _runsRepository, awaiting);
+        var rows = runs.Select(r => new PipelineRunRowViewModel { Run = r, AwaitingApproval = awaiting?.Invoke(r) == true }).ToList();
+
+        var awaitingCount = CommitsAndPipelinesFilter.ApprovalRunCount(all, awaiting);
+        RunsStatusApproval.Content = awaitingCount > 0 ? $"Approval {awaitingCount}" : "Approval";
+        RunsStatusApproval.Visibility = CommitsAndPipelinesFilter.ShowApprovalChip(awaitingCount, _runsStatus)
+            ? Visibility.Visible : Visibility.Collapsed;
         _renderingRuns = true;
         try
         {
@@ -153,10 +159,17 @@ public partial class DevelopmentView
         if ((sender as FrameworkElement)?.Tag is string tag && Enum.TryParse<PipelineStatusFilter>(tag, out var status))
             _runsStatus = _runsStatus == status ? PipelineStatusFilter.All : status;
 
+        SyncRunsStatusChips();
+        RenderRuns();
+    }
+
+    /// <summary>One status chip lit at most, Approval included.</summary>
+    private void SyncRunsStatusChips()
+    {
+        RunsStatusApproval.IsChecked = _runsStatus == PipelineStatusFilter.Approval;
         RunsStatusRunning.IsChecked = _runsStatus == PipelineStatusFilter.Running;
         RunsStatusFailed.IsChecked = _runsStatus == PipelineStatusFilter.Failed;
         RunsStatusSucceeded.IsChecked = _runsStatus == PipelineStatusFilter.Succeeded;
-        RenderRuns();
     }
 
     /// <summary>Open Commits filtered to one repository — the Commits graphs' repository bar.</summary>
@@ -186,9 +199,7 @@ public partial class DevelopmentView
     public void ShowPipelines(PipelineStatusFilter status)
     {
         _runsStatus = status;
-        RunsStatusRunning.IsChecked = status == PipelineStatusFilter.Running;
-        RunsStatusFailed.IsChecked = status == PipelineStatusFilter.Failed;
-        RunsStatusSucceeded.IsChecked = status == PipelineStatusFilter.Succeeded;
+        SyncRunsStatusChips();
         PipelinesSegment.IsChecked = true;
         RenderRuns();
         UpdateFreshnessContext();

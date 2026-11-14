@@ -314,6 +314,10 @@
                                   Padding="10,2" FontSize="11" Margin="0,0,4,4" Click="OnRunsSourceClicked" />
                     <ToggleButton x:Name="RunsSourceGitHub" Content="GitHub" Tag="GitHub"
                                   Padding="10,2" FontSize="11" Margin="0,0,14,4" Click="OnRunsSourceClicked" />
+                    <ToggleButton x:Name="RunsStatusApproval" Content="Approval" Tag="Approval"
+                                  Padding="10,2" FontSize="11" Margin="0,0,4,4" Click="OnRunsStatusClicked"
+                                  Foreground="#E07A1F" Visibility="Collapsed"
+                                  ToolTip="Runs waiting for an approval" />
                     <ToggleButton x:Name="RunsStatusRunning" Content="Running" Tag="Running"
                                   Padding="10,2" FontSize="11" Margin="0,0,4,4" Click="OnRunsStatusClicked" />
                     <ToggleButton x:Name="RunsStatusFailed" Content="Failed" Tag="Failed"
