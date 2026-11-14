@@ -41,14 +41,24 @@ public sealed record SidebarRepoRow(RepoRecord Record, RepoStatus? Status, bool 
     public Visibility ScopeVisibility => ShowScope ? Visibility.Visible : Visibility.Collapsed;
     public Visibility FetchingVisibility => IsFetching ? Visibility.Visible : Visibility.Collapsed;
     public Thickness Indent => new(Depth * 14 + 4, 3, 2, 3);
-    public string Tooltip => Record.Local is { } local ? RepoShell.Abbreviate(local.Path) : Record.Key.DisplayName;
+    public string Tooltip
+    {
+        get
+        {
+            var where = Record.Local is { } local ? RepoShell.Abbreviate(local.Path) : Record.Key.DisplayName;
+            return Status?.Error is { } error ? $"{where}\n\n{error.Trim()}" : where;
+        }
+    }
+
+    /// <summary>Copy Error shows only while git status failed for this row.</summary>
+    public Visibility ErrorVisibility => Status?.Error != null ? Visibility.Visible : Visibility.Collapsed;
 
     public string Metadata
     {
         get
         {
             if (Status is null) return Record.Key.Scope;
-            if (Status.Error is { } error) return "⚠ " + error;
+            if (Status.Error is { } error) return "⚠ " + RepoStatusError.Summarize(error);
             var parts = new List<string> { "⎇ " + (Status.Branch ?? "detached") };
             var sync = (Status.Ahead > 0 ? $"↑{Status.Ahead}" : "") + (Status.Behind > 0 ? (Status.Ahead > 0 ? " " : "") + $"↓{Status.Behind}" : "");
             if (sync.Length > 0) parts.Add(sync);
@@ -342,6 +352,11 @@ public partial class RepoSidebar : UserControl
     private void OnCopyName(object sender, RoutedEventArgs e)
     {
         if (RowOf(sender) is { } row) RepoShell.Copy(row.Record.Key.DisplayName);
+    }
+
+    private void OnCopyError(object sender, RoutedEventArgs e)
+    {
+        if (RowOf(sender)?.Status?.Error is { } error) RepoShell.Copy(error.Trim());
     }
 
     // ── Choose Folder, edit mode ────────────────────────────────────────
