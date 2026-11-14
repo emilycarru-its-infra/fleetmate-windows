@@ -18,20 +18,39 @@ public class TeamsSearchServiceTests
 
     private sealed class Stub(HttpStatusCode status, string body) : HttpMessageHandler
     {
+        public bool VerifiedMembership { get; set; } = true;
+        public HttpContent? ResponseContent { get; set; }
         public List<HttpRequestMessage> Requests { get; } = new();
         public List<string?> Authorizations { get; } = new();
         public List<string?> Purposes { get; } = new();
+        public List<string?> GraphProofs { get; } = new();
+        public List<string?> Bodies { get; } = new();
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Requests.Add(request);
             Authorizations.Add(request.Headers.Authorization?.ToString());
             Purposes.Add(request.Headers.TryGetValues("X-Vantage-Purpose", out var p) ? string.Join(",", p) : null);
-            return Task.FromResult(new HttpResponseMessage(status)
+            GraphProofs.Add(request.Headers.TryGetValues(TeamsSearchService.GraphTokenHeader, out var proof) ? string.Join(",", proof) : null);
+            Bodies.Add(request.Content == null ? null : await request.Content.ReadAsStringAsync(ct));
+            var response = new HttpResponseMessage(status)
             {
                 RequestMessage = request,
-                Content = new StringContent(body, Encoding.UTF8, "application/json"),
-            });
+                Content = ResponseContent ?? new StringContent(body, Encoding.UTF8, "application/json"),
+            };
+            if (VerifiedMembership) response.Headers.Add(TeamsSearchService.AccessHeader, TeamsSearchService.AccessVersion);
+            return response;
+        }
+    }
+
+    private sealed class TrackingContent : HttpContent
+    {
+        public bool WasRead { get; private set; }
+        protected override bool TryComputeLength(out long length) { length = 15; return true; }
+        protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            WasRead = true;
+            await stream.WriteAsync(Encoding.UTF8.GetBytes("{\"channels\":[]}"));
         }
     }
 
@@ -39,13 +58,14 @@ public class TeamsSearchServiceTests
     private static EntraTokenSource Tokens(List<string> scopes)
     {
         var n = 0;
+        var graph = 0;
         return new EntraTokenSource("00000000-0000-0000-0000-000000000000")
         {
             AcquireOverride = (scope, _) =>
             {
                 scopes.Add(scope);
-                n++;
-                return Task.FromResult(($"token-{n}", DateTimeOffset.UtcNow.AddHours(1)));
+                var token = scope == TeamsSearchService.GraphTokenScope ? $"graph-token-{++graph}" : $"token-{++n}";
+                return Task.FromResult((token, DateTimeOffset.UtcNow.AddHours(1)));
             },
         };
     }
@@ -100,6 +120,134 @@ public class TeamsSearchServiceTests
         var config = deserializer.Deserialize<FleetMateConfig>("teams_api_url: https://search.example.org\nteams_api_scope: api://example-search\n");
         Assert.Equal("https://search.example.org", config.TeamsApiUrl);
         Assert.Equal("api://example-search", config.TeamsApiScope);
+    }
+
+    [Fact]
+    public async Task BrowseUsesTheSameIdentityAndPurposeAndDecodesPagination()
+    {
+        var stub = new Stub(HttpStatusCode.OK, """
+            {"as_of":"2026-11-01T00:00:00Z","index_version":"snapshot-1","total":0,"results":[],"next_offset":null}
+            """);
+        using var service = Service(stub);
+        var response = (await service.BrowseAsync(new TeamsBrowseQuery(Channel: "channel-1"))).Value;
+        Assert.Equal("snapshot-1", response.IndexVersion);
+        Assert.Null(response.NextOffset);
+        Assert.Equal("/api/v1/teams/threads", stub.Requests.Single().RequestUri!.AbsolutePath);
+        Assert.Equal("Bearer token-1", stub.Authorizations.Single());
+        Assert.Equal(TeamsSearchService.DefaultPurpose, stub.Purposes.Single());
+    }
+
+    [Fact]
+    public async Task FollowingFeedPostsTheFullChannelSetAndSearchBeforePaging()
+    {
+        var stub = new Stub(HttpStatusCode.OK, """
+            {"as_of":null,"index_version":"feed-1","total":0,"results":[],"next_offset":null}
+            """);
+        using var service = Service(stub);
+        await service.FeedAsync(new TeamsFeedQuery(new[] { "c1", "c2" }, Q: " network ", Author: "Example", Limit: 50, Offset: 100));
+        Assert.Equal(HttpMethod.Post, stub.Requests.Single().Method);
+        Assert.Equal("/api/v1/teams/feed", stub.Requests.Single().RequestUri!.AbsolutePath);
+        using var body = System.Text.Json.JsonDocument.Parse(stub.Bodies.Single()!);
+        Assert.Equal(new[] { "c1", "c2" }, body.RootElement.GetProperty("channels").EnumerateArray().Select(item => item.GetString()));
+        Assert.Equal("network", body.RootElement.GetProperty("q").GetString());
+        Assert.Equal(100, body.RootElement.GetProperty("offset").GetInt32());
+        Assert.Equal("Bearer token-1", stub.Authorizations.Single());
+        Assert.Equal(TeamsSearchService.DefaultPurpose, stub.Purposes.Single());
+    }
+
+    [Fact]
+    public async Task FollowingFeedRejectsEmptyOrDuplicateSetsWithoutSendingARequest()
+    {
+        var stub = new Stub(HttpStatusCode.OK, "{}");
+        using var service = Service(stub);
+        await Assert.ThrowsAsync<TeamsSearchException>(() => service.FeedAsync(new TeamsFeedQuery(Array.Empty<string>())));
+        await Assert.ThrowsAsync<TeamsSearchException>(() => service.FeedAsync(new TeamsFeedQuery(new[] { "c1", "c1" })));
+        await Assert.ThrowsAsync<TeamsSearchException>(() => service.FeedAsync(new TeamsFeedQuery(new[] { "c1" }, Q: new string('x', 501))));
+        Assert.Empty(stub.Requests);
+    }
+
+    [Fact]
+    public async Task FollowingFeedRetryKeepsTheFullJsonBodyAndRefreshesIdentity()
+    {
+        var stub = new Stub(HttpStatusCode.Unauthorized, "{}");
+        using var service = Service(stub);
+        await Assert.ThrowsAsync<TeamsSearchException>(() => service.FeedAsync(new TeamsFeedQuery(new[] { "c1", "c2" }, Q: "network")));
+        Assert.Equal(2, stub.Bodies.Count);
+        Assert.Equal(stub.Bodies[0], stub.Bodies[1]);
+        Assert.Equal(new[] { "Bearer token-1", "Bearer token-2" }, stub.Authorizations);
+        Assert.Equal(new[] { "graph-token-1", "graph-token-2" }, stub.GraphProofs);
+    }
+
+    [Fact]
+    public async Task MissingGraphProofFailsWithoutSendingTheApiRequest()
+    {
+        var stub = new Stub(HttpStatusCode.OK, "{}");
+        var source = new EntraTokenSource("00000000-0000-0000-0000-000000000000")
+        {
+            AcquireOverride = (scope, _) => Task.FromResult((scope == TeamsSearchService.GraphTokenScope ? "" : "api-token", DateTimeOffset.UtcNow.AddHours(1))),
+        };
+        using var service = new TeamsSearchService(Base, Scope, stub, () => source);
+        await Assert.ThrowsAsync<EntraTokenException>(() => service.GetChannelsAsync());
+        Assert.Empty(stub.Requests);
+    }
+
+    [Fact]
+    public async Task DelegatedProofRefusesPlainHttpWithoutSendingCredentials()
+    {
+        var stub = new Stub(HttpStatusCode.OK, "{}");
+        var source = Tokens(new List<string>());
+        using var service = new TeamsSearchService("http://search.example.org", Scope, stub, () => source);
+        await Assert.ThrowsAsync<TeamsSearchException>(() => service.GetChannelsAsync());
+        Assert.Empty(stub.Requests);
+    }
+
+    [Fact]
+    public async Task OlderSuccessfulBackendWithoutMembershipMarkerIsRefused()
+    {
+        var content = new TrackingContent();
+        var stub = new Stub(HttpStatusCode.OK, """{"channels":[]}""") { VerifiedMembership = false, ResponseContent = content };
+        using var service = Service(stub);
+        var error = await Assert.ThrowsAsync<TeamsSearchException>(() => service.GetChannelsAsync());
+        Assert.Equal(TeamsSearchFailure.AccessNotVerified, error.Failure);
+        Assert.False(content.WasRead);
+    }
+
+    [Fact]
+    public async Task MembershipProviderFailureIsNotAnEmptyOrIndexNotReadyResponse()
+    {
+        using var service = Service(new Stub(HttpStatusCode.ServiceUnavailable, """{"detail":"teams_membership_unavailable"}"""));
+        var error = await Assert.ThrowsAsync<TeamsSearchException>(() => service.GetChannelsAsync());
+        Assert.Equal(TeamsSearchFailure.AccessNotVerified, error.Failure);
+    }
+
+    [Fact]
+    public async Task GuiWorkspaceChecksOnlyTheApiJwtAndRefusesACachedAccountChange()
+    {
+        var token = TeamsWorkspaceIdentityTests.Token("first@example.org");
+        var stub = new Stub(HttpStatusCode.OK, """{"channels":[]}""");
+        var source = new EntraTokenSource("11111111-1111-1111-1111-111111111111")
+        {
+            AcquireOverride = (scope, _) => Task.FromResult((scope == TeamsSearchService.GraphTokenScope ? "opaque-graph-proof" : token, DateTimeOffset.UtcNow.AddHours(1))),
+        };
+        using var service = new TeamsSearchService(Base, Scope, stub, () => source,
+            workspace: new TeamsWorkspaceIdentity("first@example.org", "11111111-1111-1111-1111-111111111111"));
+        await service.GetChannelsAsync();
+        Assert.Equal("opaque-graph-proof", stub.GraphProofs.Single());
+        token = TeamsWorkspaceIdentityTests.Token("second@example.org");
+        source.Invalidate();
+        var error = await Assert.ThrowsAsync<TeamsSearchException>(() => service.GetChannelsAsync());
+        Assert.Equal(TeamsSearchFailure.AccessNotVerified, error.Failure);
+        Assert.Single(stub.Requests);
+    }
+
+    [Fact]
+    public async Task BrowseRefusesAnUnversionedResponse()
+    {
+        using var service = Service(new Stub(HttpStatusCode.OK, """
+            {"total":0,"results":[]}
+            """));
+        var error = await Assert.ThrowsAsync<TeamsSearchException>(() => service.BrowseAsync(new TeamsBrowseQuery(Team: "team-1")));
+        Assert.Equal(TeamsSearchFailure.InvalidResponse, error.Failure);
     }
 
     // ── URL building ──
@@ -162,7 +310,8 @@ public class TeamsSearchServiceTests
         Assert.Equal(HttpMethod.Get, request.Method);
         Assert.Equal("/api/v1/teams/search", request.RequestUri!.AbsolutePath);
         Assert.Equal("Bearer token-1", stub.Authorizations[0]);
-        Assert.Equal(new[] { Scope }, scopes);
+        Assert.Equal(new[] { Scope, TeamsSearchService.GraphTokenScope }, scopes);
+        Assert.Equal("graph-token-1", stub.GraphProofs.Single());
         Assert.Equal("purpose.its_teams_channel_search", stub.Purposes[0]);
 
         var response = payload.Value;
@@ -234,7 +383,8 @@ public class TeamsSearchServiceTests
 
         Assert.Equal(TeamsSearchFailure.Unauthorized, ex.Failure);
         Assert.Equal(new[] { "Bearer token-1", "Bearer token-2" }, stub.Authorizations);
-        Assert.Equal(2, scopes.Count);
+        Assert.Equal(new[] { Scope, TeamsSearchService.GraphTokenScope, Scope, TeamsSearchService.GraphTokenScope }, scopes);
+        Assert.Equal(new[] { "graph-token-1", "graph-token-2" }, stub.GraphProofs);
     }
 
     [Theory]

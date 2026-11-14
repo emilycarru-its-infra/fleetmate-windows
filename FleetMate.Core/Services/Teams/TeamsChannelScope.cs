@@ -13,4 +13,12 @@ public static class TeamsChannelScope
         return PinnedIds(configured).Where(byId.ContainsKey).Select(id => byId[id]).ToList();
     }
 
+    public static IReadOnlyList<TeamsChannel> Filter(IEnumerable<TeamsChannel> channels, string? query)
+    {
+        var words = (query ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return channels.Where(channel => words.All(word =>
+            channel.TeamName.Contains(word, StringComparison.CurrentCultureIgnoreCase)
+            || channel.ChannelName.Contains(word, StringComparison.CurrentCultureIgnoreCase))).ToList();
+    }
+
 }
