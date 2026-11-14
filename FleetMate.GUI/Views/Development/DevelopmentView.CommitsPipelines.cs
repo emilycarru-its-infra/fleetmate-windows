@@ -96,10 +96,16 @@ public partial class DevelopmentView
 
         var approvals = AppInstance?.PipelineApprovals;
         Func<PipelineRun, bool>? awaiting = approvals == null ? null : approvals.IsAwaiting;
+        var awaitingCount = CommitsAndPipelinesFilter.ApprovalRunCount(all, awaiting);
+        var status = CommitsAndPipelinesFilter.StatusAfterApprovalCount(_runsStatus, awaitingCount);
+        if (status != _runsStatus)
+        {
+            _runsStatus = status;
+            SyncRunsStatusChips();
+        }
         var runs = CommitsAndPipelinesFilter.Runs(all, _runsSource, _runsStatus, PipelinesSearchBox.Text, _runsRepository, awaiting);
         var rows = runs.Select(r => new PipelineRunRowViewModel { Run = r, AwaitingApproval = awaiting?.Invoke(r) == true }).ToList();
 
-        var awaitingCount = CommitsAndPipelinesFilter.ApprovalRunCount(all, awaiting);
         RunsStatusApproval.Content = awaitingCount > 0 ? $"Approval {awaitingCount}" : "Approval";
         RunsStatusApproval.Visibility = CommitsAndPipelinesFilter.ShowApprovalChip(awaitingCount, _runsStatus)
             ? Visibility.Visible : Visibility.Collapsed;
@@ -115,7 +121,7 @@ public partial class DevelopmentView
 
         var running = all.Count(r => r.Status.IsActive());
         var failed = CommitsAndPipelinesFilter.FailingCount(all);
-        _pipelineCountSummary = $"{rows.Count} runs · {running} running · {failed} failed · last 7 days";
+        _pipelineCountSummary = $"{PipelineAvailability.Count(rows.Count, "run")} · {running} running · {failed} failed · last 7 days";
         UpdateFreshnessStatus();
 
         if (PipelinesSegment.IsChecked == true)

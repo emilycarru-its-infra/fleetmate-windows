@@ -251,6 +251,14 @@ public class CommitsAndPipelinesTests
     public void ApprovalChip_ShowsWhileARunWaitsOrItIsTheFilter(int count, PipelineStatusFilter status, bool shown) =>
         Assert.Equal(shown, CommitsAndPipelinesFilter.ShowApprovalChip(count, status));
 
+    [Theory]
+    [InlineData(PipelineStatusFilter.Approval, 0, PipelineStatusFilter.All)]
+    [InlineData(PipelineStatusFilter.Approval, 1, PipelineStatusFilter.Approval)]
+    [InlineData(PipelineStatusFilter.Failed, 0, PipelineStatusFilter.Failed)]
+    [InlineData(PipelineStatusFilter.All, 0, PipelineStatusFilter.All)]
+    public void ApprovalFilter_TurnsOffWhenNoRunWaits(PipelineStatusFilter status, int count, PipelineStatusFilter expected) =>
+        Assert.Equal(expected, CommitsAndPipelinesFilter.StatusAfterApprovalCount(status, count));
+
     [Fact]
     public void Runs_FilterBySourceStatusAndSearch()
     {

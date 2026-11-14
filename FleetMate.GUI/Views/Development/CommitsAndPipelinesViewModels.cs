@@ -68,6 +68,14 @@ public static class CommitsAndPipelinesFilter
     public static int ApprovalRunCount(IEnumerable<PipelineRun> runs, Func<PipelineRun, bool>? awaitingApproval) =>
         awaitingApproval == null ? 0 : runs.Count(awaitingApproval);
 
+    /// <summary>
+    /// The status filter to keep after the approval count changes. Approving or
+    /// rejecting the last waiting run turns the Approval filter off, so the list
+    /// returns to every run instead of "Nothing matches these filters".
+    /// </summary>
+    public static PipelineStatusFilter StatusAfterApprovalCount(PipelineStatusFilter status, int count) =>
+        status == PipelineStatusFilter.Approval && count == 0 ? PipelineStatusFilter.All : status;
+
     /// <summary>The Approval chip shows while any run waits, or while it is the active filter.</summary>
     public static bool ShowApprovalChip(int count, PipelineStatusFilter status) =>
         count > 0 || status == PipelineStatusFilter.Approval;

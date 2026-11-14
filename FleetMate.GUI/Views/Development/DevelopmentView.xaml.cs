@@ -118,7 +118,7 @@ public partial class DevelopmentView : UserControl
             .Select(e => $"{e.Source.ShortName()} unavailable");
         var errorText = string.Join(" · ", errors);
 
-        _pullCountSummary = $"{rows.Count} open across {rows.Select(r => r.RepositoryKey).Distinct().Count()} repositories"
+        _pullCountSummary = $"{rows.Count} open across {PipelineAvailability.Count(rows.Select(r => r.RepositoryKey).Distinct().Count(), "repository", "repositories")}"
                             + (errorText.Length > 0 ? $" · {errorText}" : "");
         UpdateFreshnessStatus();
 

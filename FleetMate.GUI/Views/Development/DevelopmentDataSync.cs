@@ -284,13 +284,23 @@ public sealed class DevelopmentDataSync : IDisposable
             if (!history && !focusRefresh && now < _azure.RetryAfter) return false;
             var fullHistory = history || now - _azure.HistoryAt >= HistoryInterval;
             var succeeded = true;
+            var aborted = false;
+            var directoryFailed = false;
+            var queried = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var failed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             using var service = new AzureDevOpsService(_app.Config.AzureDevOps!, ct, requireComplete: true);
             try
             {
                 if (history || now - _projectDirectoryAt >= HistoryInterval)
                 {
                     try { _projects = await service.GetPipelineProjectsAsync(); _projectDirectoryAt = now; }
-                    catch { ct.ThrowIfCancellationRequested(); succeeded = false; }
+                    catch (Exception ex)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        Log.Warning(ex, "[pipelines] Azure DevOps project list failed");
+                        succeeded = false;
+                        directoryFailed = true;
+                    }
                 }
                 _projects = _projects.Concat(previous.Where(run => run.Source == PullRequestSource.AzureDevOps).Select(run => run.Container))
                     .Concat(_selected?.Source == PullRequestSource.AzureDevOps ? new[] { _selected.Container } : Array.Empty<string>()).Distinct().Take(200).ToList();
@@ -300,15 +310,29 @@ public sealed class DevelopmentDataSync : IDisposable
                 await Task.WhenAll(targets.Select(async target =>
                 {
                     await gate.WaitAsync(ct);
+                    lock (queried) queried.Add(target.Container);
                     try { updated.AddRange(await service.GetProjectPipelineRunsAsync(target.Container, DateTime.UtcNow.AddDays(-7), target.BuildIds)); }
-                    catch { ct.ThrowIfCancellationRequested(); succeeded = false; }
+                    catch (Exception ex)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        Log.Warning(ex, "[pipelines] Azure DevOps runs failed for one project ({Kind})",
+                            target.BuildIds is { Count: > 0 } ? "known runs" : "last 7 days");
+                        lock (failed) failed.Add(target.Container);
+                        succeeded = false;
+                    }
                     finally { gate.Release(); }
                 }));
             }
-            catch { ct.ThrowIfCancellationRequested(); succeeded = false; }
+            catch (Exception ex)
+            {
+                ct.ThrowIfCancellationRequested();
+                Log.Warning(ex, "[pipelines] Azure DevOps refresh failed");
+                succeeded = false;
+                aborted = true;
+            }
             ct.ThrowIfCancellationRequested();
             if (fullHistory && succeeded) _azure.HistoryAt = DateTimeOffset.UtcNow;
-            _azure.Error = succeeded ? null : "Azure DevOps unavailable";
+            _azure.Error = succeeded ? null : PipelineAvailability.AzureDevOps(aborted, directoryFailed, failed.Count, queried.Count);
             _azure.Complete(succeeded, DateTimeOffset.UtcNow);
             return succeeded;
         }
