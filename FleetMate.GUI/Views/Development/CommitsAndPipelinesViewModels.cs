@@ -6,8 +6,11 @@ using FleetMate.GUI.Views.Shared;
 
 namespace FleetMate.GUI.Views.Development;
 
-/// <summary>Status chip filter for the Pipelines list.</summary>
-public enum PipelineStatusFilter { All, Running, Failed, Succeeded }
+/// <summary>
+/// Status chip filter for the Pipelines list. One value at a time, so the
+/// Approval chip and the status chips clear each other.
+/// </summary>
+public enum PipelineStatusFilter { All, Running, Failed, Succeeded, Approval }
 
 /// <summary>Filtering rules for Commits and Pipelines, kept out of the view so they can be tested.</summary>
 public static class CommitsAndPipelinesFilter
@@ -32,11 +35,12 @@ public static class CommitsAndPipelinesFilter
     /// Runs by source, status chip and search over name, repo, branch, requester
     /// and run number. Failed means the pipeline's LATEST run failed: an older
     /// red run under a newer green one is history, not something to act on.
-    /// Running and Succeeded still match every run.
+    /// Running and Succeeded still match every run. Approval keeps the runs
+    /// <paramref name="awaitingApproval"/> says an approval holds.
     /// </summary>
     public static List<PipelineRun> Runs(
         IEnumerable<PipelineRun> runs, DevelopmentSourceFilter source, PipelineStatusFilter status, string? search,
-        string? repository = null)
+        string? repository = null, Func<PipelineRun, bool>? awaitingApproval = null)
     {
         var needle = search?.Trim() ?? "";
         var all = runs.ToList();
@@ -50,6 +54,7 @@ public static class CommitsAndPipelinesFilter
                 PipelineStatusFilter.Running => r.Status.IsActive(),
                 PipelineStatusFilter.Failed => IsFailing(r, latest),
                 PipelineStatusFilter.Succeeded => r.Status == PipelineRunStatus.Succeeded,
+                PipelineStatusFilter.Approval => awaitingApproval?.Invoke(r) == true,
                 _ => true,
             })
             .Where(r => needle.Length == 0
@@ -58,6 +63,14 @@ public static class CommitsAndPipelinesFilter
             .OrderByDescending(r => r.SortDate)
             .ToList();
     }
+
+    /// <summary>Runs an approval holds: the Approval chip's count.</summary>
+    public static int ApprovalRunCount(IEnumerable<PipelineRun> runs, Func<PipelineRun, bool>? awaitingApproval) =>
+        awaitingApproval == null ? 0 : runs.Count(awaitingApproval);
+
+    /// <summary>The Approval chip shows while any run waits, or while it is the active filter.</summary>
+    public static bool ShowApprovalChip(int count, PipelineStatusFilter status) =>
+        count > 0 || status == PipelineStatusFilter.Approval;
 
     /// <summary>Repository dropdown entries for Commits, within the current source.</summary>
     public static List<(string Repository, int Count)> CommitRepositoryCounts(

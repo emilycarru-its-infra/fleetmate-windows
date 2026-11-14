@@ -160,9 +160,7 @@ public partial class DevelopmentView
         RunsSourceAll.IsChecked = true;
         RunsSourceDevOps.IsChecked = false;
         RunsSourceGitHub.IsChecked = false;
-        RunsStatusRunning.IsChecked = false;
-        RunsStatusFailed.IsChecked = false;
-        RunsStatusSucceeded.IsChecked = false;
+        SyncRunsStatusChips();
     }
 
     // ── Pull requests ────────────────────────────────────────────────────

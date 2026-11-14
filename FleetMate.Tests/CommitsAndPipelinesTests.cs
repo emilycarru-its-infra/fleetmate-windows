@@ -222,6 +222,36 @@ public class CommitsAndPipelinesTests
     };
 
     [Fact]
+    public void Runs_ApprovalKeepsOnlyRunsAnApprovalHolds()
+    {
+        var held = Run(PullRequestSource.AzureDevOps, PipelineRunStatus.Running, "Deploy", 3);
+        var runs = new[]
+        {
+            held,
+            Run(PullRequestSource.AzureDevOps, PipelineRunStatus.Running, "Build", 4),
+            Run(PullRequestSource.GitHub, PipelineRunStatus.Succeeded, "CI", 6),
+        };
+        bool Awaiting(PipelineRun run) => ReferenceEquals(run, held);
+
+        var approval = CommitsAndPipelinesFilter.Runs(runs, DevelopmentSourceFilter.All, PipelineStatusFilter.Approval, null, null, Awaiting);
+        Assert.Equal(new[] { "Deploy" }, approval.Select(r => r.PipelineName));
+        Assert.Equal(1, CommitsAndPipelinesFilter.ApprovalRunCount(runs, Awaiting));
+
+        // Without an approval lookup nothing is held, and the other chips ignore it.
+        Assert.Empty(CommitsAndPipelinesFilter.Runs(runs, DevelopmentSourceFilter.All, PipelineStatusFilter.Approval, null));
+        Assert.Equal(0, CommitsAndPipelinesFilter.ApprovalRunCount(runs, null));
+        Assert.Equal(2, CommitsAndPipelinesFilter.Runs(runs, DevelopmentSourceFilter.All, PipelineStatusFilter.Running, null, null, Awaiting).Count);
+    }
+
+    [Theory]
+    [InlineData(0, PipelineStatusFilter.All, false)]
+    [InlineData(0, PipelineStatusFilter.Failed, false)]
+    [InlineData(2, PipelineStatusFilter.All, true)]
+    [InlineData(0, PipelineStatusFilter.Approval, true)]
+    public void ApprovalChip_ShowsWhileARunWaitsOrItIsTheFilter(int count, PipelineStatusFilter status, bool shown) =>
+        Assert.Equal(shown, CommitsAndPipelinesFilter.ShowApprovalChip(count, status));
+
+    [Fact]
     public void Runs_FilterBySourceStatusAndSearch()
     {
         var runs = new[]
