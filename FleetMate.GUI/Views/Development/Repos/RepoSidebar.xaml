@@ -37,6 +37,8 @@
                         <MenuItem Header="Reveal in Explorer" Click="OnRevealRepo" IsEnabled="{Binding IsLocal}" />
                         <MenuItem Header="Copy Path" Click="OnCopyPath" IsEnabled="{Binding IsLocal}" />
                         <MenuItem Header="Copy Name" Click="OnCopyName" />
+                        <MenuItem Header="Copy Error" Click="OnCopyError" Visibility="{Binding ErrorVisibility}"
+                                  ToolTip="Copy git's full message for this repository" />
                         <Separator />
                         <MenuItem Header="{Binding HideHeader}" Click="OnToggleHidden" />
                         <MenuItem Header="Stop Tracking" Click="OnStopTracking"
