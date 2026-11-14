@@ -172,10 +172,14 @@ public sealed class DevelopmentRefreshTests
     {
         var path = AzureDevOpsService.BuildPipelineSummaryPath("Example Project", DateTime.UtcNow, new long[] { 12, 24, 12 });
         Assert.Contains("Example%20Project/", path);
-        Assert.Contains("statusFilter=all", path);
         Assert.Contains("queryOrder=queueTimeDescending", path);
         Assert.Contains("buildIds=12,24", path);
         Assert.DoesNotContain("minTime", path);
+        Assert.DoesNotContain("statusFilter", path);
+        var window = AzureDevOpsService.BuildPipelineSummaryPath("Example Project", DateTime.UtcNow);
+        Assert.Contains("statusFilter=all", window);
+        Assert.Contains("minTime=", window);
+        Assert.DoesNotContain("buildIds", window);
         Assert.Throws<ArgumentException>(() => AzureDevOpsService.BuildPipelineSummaryPath("example", DateTime.UtcNow, new long[] { 0 }));
         Assert.Throws<ArgumentException>(() => AzureDevOpsService.BuildPipelineSummaryPath("example", DateTime.UtcNow, Enumerable.Range(1, 51).Select(id => (long)id).ToArray()));
     }
@@ -209,4 +213,22 @@ public sealed class DevelopmentRefreshTests
         Assert.Contains(selected, bounded);
         Assert.Contains(oldActive, bounded);
     }
+
+    [Theory]
+    [InlineData(false, false, 0, 8, null)]
+    [InlineData(false, false, 1, 8, "1 project unavailable")]
+    [InlineData(false, false, 2, 8, "2 projects unavailable")]
+    [InlineData(false, false, 8, 8, "Azure DevOps unavailable")]
+    [InlineData(true, false, 0, 0, "Azure DevOps unavailable")]
+    [InlineData(false, true, 0, 0, "Azure DevOps unavailable")]
+    [InlineData(false, true, 0, 8, "Azure DevOps project list unavailable")]
+    public void AzureAvailabilityNamesWhatFailedInsteadOfTheWholeProvider(bool aborted, bool directoryFailed, int failed, int queried, string? expected) =>
+        Assert.Equal(expected, PipelineAvailability.AzureDevOps(aborted, directoryFailed, failed, queried));
+
+    [Theory]
+    [InlineData(0, "0 runs")]
+    [InlineData(1, "1 run")]
+    [InlineData(500, "500 runs")]
+    public void SummaryCountsAgreeWithTheirNumber(int n, string expected) =>
+        Assert.Equal(expected, PipelineAvailability.Count(n, "run"));
 }

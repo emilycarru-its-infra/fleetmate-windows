@@ -242,9 +242,12 @@ public partial class AzureDevOpsService
         var ids = buildIds?.Distinct().ToArray();
         if (ids is { Length: > 50 } || ids?.Any(id => id <= 0 || id > int.MaxValue) == true)
             throw new ArgumentException("A pipeline batch accepts up to 50 valid build IDs.", nameof(buildIds));
+        // Azure DevOps refuses buildIds alongside any other filter (statusFilter,
+        // minTime) with a 400, and returns a known ID whatever its status, so only
+        // the window query carries statusFilter=all to include queued runs.
         var filter = ids is { Length: > 0 } ? "&buildIds=" + string.Join(",", ids)
-            : "&minTime=" + Uri.EscapeDataString(since.ToUniversalTime().Date.ToString("yyyy-MM-ddTHH:mm:ssZ"));
-        return $"{Uri.EscapeDataString(project)}/_apis/build/builds?statusFilter=all&queryOrder=queueTimeDescending&$top=50{filter}&api-version=7.0";
+            : "&statusFilter=all&minTime=" + Uri.EscapeDataString(since.ToUniversalTime().Date.ToString("yyyy-MM-ddTHH:mm:ssZ"));
+        return $"{Uri.EscapeDataString(project)}/_apis/build/builds?queryOrder=queueTimeDescending&$top=50{filter}&api-version=7.0";
     }
 
     internal static List<PipelineRun> ParseBuilds(JsonElement json, string project, string root)

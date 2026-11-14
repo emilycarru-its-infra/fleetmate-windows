@@ -115,7 +115,7 @@ public partial class DevelopmentView
 
         var running = all.Count(r => r.Status.IsActive());
         var failed = CommitsAndPipelinesFilter.FailingCount(all);
-        _pipelineCountSummary = $"{rows.Count} runs · {running} running · {failed} failed · last 7 days";
+        _pipelineCountSummary = $"{PipelineAvailability.Count(rows.Count, "run")} · {running} running · {failed} failed · last 7 days";
         UpdateFreshnessStatus();
 
         if (PipelinesSegment.IsChecked == true)
