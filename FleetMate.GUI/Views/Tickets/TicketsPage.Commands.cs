@@ -13,9 +13,7 @@ public partial class TicketsPage : IPageCommands, IChromeToolbar
     {
         if (shortcut == AppShortcut.ShowInbox && InboxButtonHost.Visibility == Visibility.Visible)
         {
-            var wasOpen = InboxPopup.IsOpen;
-            InboxPopup.IsOpen = !wasOpen;
-            if (wasOpen) System.Windows.Input.Keyboard.Focus(InboxButton);
+            SetInboxSidebarVisible(!_inboxSidebarVisible, moveFocus: true);
             return true;
         }
         if (shortcut != AppShortcut.ClearFilters) return false;

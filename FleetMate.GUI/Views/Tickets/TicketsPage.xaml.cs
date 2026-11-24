@@ -85,8 +85,9 @@ private bool _isInitialLoadDone;
     public TicketsPage()
     {
         InitializeComponent();
-        InboxPopup.PlacementTarget = InboxButton;
-        Unloaded += (_, _) => { InboxPopup.IsOpen = false; DetachTicketFreshness(); };
+        ApplyInboxSidebar();
+        SizeChanged += (_, _) => FitInboxSidebar();
+        Unloaded += (_, _) => DetachTicketFreshness();
         IsVisibleChanged += (_, _) => UpdateTicketFreshnessActivity();
         AttachTicketMenus();
         InitListTable();
@@ -891,6 +892,7 @@ private bool _isInitialLoadDone;
     /// </summary>
     private async Task OpenTicketInDetailAsync(TdxTicket ticket)
     {
+        RecordInboxTicketOpened(ticket.Id);
         if (_selectedTicket?.Id != ticket.Id)
         {
             StashCommentDraft();
@@ -1046,6 +1048,7 @@ private bool _isInitialLoadDone;
         DetailPanelColumn.MinWidth = DetailPanelMinWidth;
         ListPanelColumn.Width = _listShare;
         DetailPanelColumn.Width = _detailShare;
+        FitInboxSidebar();
     }
 
     private void CloseDetailPanel()
@@ -1061,6 +1064,7 @@ private bool _isInitialLoadDone;
         DetailPanelColumn.MinWidth = 0;
         DetailPanelColumn.Width = new GridLength(0);
         ListPanelColumn.Width = new GridLength(1, GridUnitType.Star);
+        FitInboxSidebar();
     }
 
     private void OnToggleDetailPanel(object sender, RoutedEventArgs e)
@@ -1126,6 +1130,8 @@ private bool _isInitialLoadDone;
                 _selectedTicket = ticket;
                 return;
             }
+
+            RecordInboxTicketOpened(ticket.Id);
 
             // A draft belongs to the ticket it was written on. The box used to
             // persist across selections, so half-written text followed you to

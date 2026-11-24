@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
+using FleetMate.Core.Models.Tickets;
 
 namespace FleetMate.Core.Services.Tickets;
 
@@ -15,6 +16,9 @@ public sealed class TicketInboxReadStore
         public int Version { get; set; } = 1;
         public Dictionary<int, bool> Decisions { get; set; } = new();
         public HashSet<string> Imports { get; set; } = new();
+        // Optional, so files written by earlier builds still decode at version 1.
+        public Dictionary<int, DateTime>? UnreadAt { get; set; }
+        public Dictionary<int, DateTime>? TicketOpenedAt { get; set; }
     }
 
     private static readonly ConcurrentDictionary<string, object> Gates = new(StringComparer.OrdinalIgnoreCase);
@@ -34,15 +38,61 @@ public sealed class TicketInboxReadStore
 
     public HashSet<int> Load(Guid person) => Read(person).Decisions.Where(p => p.Value).Select(p => p.Key).ToHashSet();
 
+    public TicketInboxReadMarks LoadMarks(Guid person) => Marks(Read(person));
+
+    private static TicketInboxReadMarks Marks(Document document) => new(
+        document.Decisions.Where(p => p.Value).Select(p => p.Key).ToHashSet(),
+        document.UnreadAt == null ? new() : new(document.UnreadAt),
+        document.TicketOpenedAt == null ? new() : new(document.TicketOpenedAt));
+
     /// <summary>Read-modify-write under a cross-process lock; never save a caller's stale snapshot.</summary>
     public HashSet<int> SetRead(Guid person, IEnumerable<int> ids, bool read)
     {
         Directory.CreateDirectory(_directory);
         using var held = AcquireLock(PathFor(person) + ".lock");
         var document = Read(person);
-        foreach (var id in ids.Distinct().Where(id => id > 0)) document.Decisions[id] = read;
+        var now = DateTime.UtcNow;
+        foreach (var id in ids.Distinct().Where(id => id > 0))
+        {
+            document.Decisions[id] = read;
+            if (read) document.UnreadAt?.Remove(id);
+            else (document.UnreadAt ??= new())[id] = now;
+        }
+        Prune(document, now);
         Write(person, document);
         return document.Decisions.Where(p => p.Value).Select(p => p.Key).ToHashSet();
+    }
+
+    /// <summary>
+    /// A ticket was opened: covers its comments up to <paramref name="openedUtc"/>,
+    /// plus the ones already listed, whose server time may run ahead of this clock.
+    /// </summary>
+    public TicketInboxReadMarks RecordTicketOpened(Guid person, int ticketId, IEnumerable<int> ids, DateTime openedUtc)
+    {
+        Directory.CreateDirectory(_directory);
+        using var held = AcquireLock(PathFor(person) + ".lock");
+        var document = Read(person);
+        foreach (var id in ids.Distinct().Where(id => id > 0))
+        {
+            document.Decisions[id] = true;
+            document.UnreadAt?.Remove(id);
+        }
+        var opened = document.TicketOpenedAt ??= new();
+        opened[ticketId] = opened.TryGetValue(ticketId, out var previous) && previous > openedUtc ? previous : openedUtc;
+        Prune(document, DateTime.UtcNow);
+        Write(person, document);
+        return Marks(document);
+    }
+
+    /// <summary>Times outlive the comment window by a week, as on the Mac.</summary>
+    private static void Prune(Document document, DateTime nowUtc)
+    {
+        var cutoff = nowUtc - TicketInboxMatch.Window - TimeSpan.FromDays(7);
+        foreach (var times in new[] { document.UnreadAt, document.TicketOpenedAt })
+        {
+            if (times == null) continue;
+            foreach (var stale in times.Where(p => p.Value < cutoff).Select(p => p.Key).ToList()) times.Remove(stale);
+        }
     }
 
     /// <summary>An explicit service declaration permits one edition's positive legacy marks once.</summary>

@@ -23,6 +23,24 @@ internal static class TicketsToolbarRules
     public const double CompactBelowOnBoard = 1200;
     public const double CompactBelowOnList = 960;
 
+    public const double InboxSidebarMinWidth = 260;
+    public const double InboxSidebarMaxWidth = 640;
+    public const double InboxSidebarDefaultWidth = 360;
+    public const double ListMinWidthBesideInbox = 220;
+
+    /// <summary>
+    /// The sidebar's width at this page width: what was dragged, narrowed so
+    /// the list and an open ticket keep their minimum room.
+    /// </summary>
+    public static double InboxSidebarWidth(double preferred, double pageWidth, bool detailOpen)
+    {
+        const double chrome = 38, detailMin = 360, detailSplitter = 16;
+        var clamped = Math.Clamp(preferred, InboxSidebarMinWidth, InboxSidebarMaxWidth);
+        if (pageWidth <= 0) return clamped;
+        var workspace = detailOpen ? ListMinWidthBesideInbox + detailSplitter + detailMin : 480;
+        return Math.Clamp(Math.Min(clamped, pageWidth - chrome - workspace), InboxSidebarMinWidth, clamped);
+    }
+
     public static TicketsViewMode ModeOf(bool board, bool inbox) =>
         inbox ? TicketsViewMode.Inbox : board ? TicketsViewMode.Board : TicketsViewMode.List;
 

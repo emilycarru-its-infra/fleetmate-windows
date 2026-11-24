@@ -29,6 +29,24 @@ public sealed class TicketInboxState
     /// </summary>
     [JsonIgnore] public HashSet<int> ReadIds { get; set; } = new();
 
+    /// <summary>When each comment was explicitly marked unread.</summary>
+    [JsonIgnore] public Dictionary<int, DateTime> UnreadMarkedAt { get; set; } = new();
+
+    /// <summary>
+    /// When each ticket was last opened. Opening a ticket shows its latest
+    /// activity, so it covers every comment up to that moment.
+    /// </summary>
+    [JsonIgnore] public Dictionary<int, DateTime> TicketOpenedAt { get; set; } = new();
+
+    [JsonIgnore] public TicketInboxReadMarks ReadMarks => new(ReadIds, UnreadMarkedAt, TicketOpenedAt);
+
+    public void ApplyReadMarks(TicketInboxReadMarks marks)
+    {
+        ReadIds = marks.ReadIds;
+        UnreadMarkedAt = marks.UnreadMarkedAt;
+        TicketOpenedAt = marks.TicketOpenedAt;
+    }
+
     /// <summary>Start of the last full pass. The next pass searches from ten minutes before it.</summary>
     [JsonPropertyName("scannedThrough")] public DateTime? ScannedThrough { get; set; }
 
@@ -36,9 +54,30 @@ public sealed class TicketInboxState
     [JsonPropertyName("ticketModified")] public Dictionary<int, DateTime> TicketModified { get; set; } = new();
 
     [JsonIgnore]
-    public int UnreadCount => Items.Count(i => !ReadIds.Contains(i.FeedId));
+    public int UnreadCount => Items.Count(i => !IsRead(i));
 
     public bool IsRead(int feedId) => ReadIds.Contains(feedId);
+
+    /// <summary>
+    /// A later Mark Unread beats an earlier open, and a later open clears it.
+    /// A comment newer than the last open stays unread.
+    /// </summary>
+    public bool IsRead(TicketInboxItem item)
+    {
+        var hasOpened = TicketOpenedAt.TryGetValue(item.TicketId, out var opened);
+        if (UnreadMarkedAt.TryGetValue(item.FeedId, out var unreadAt) && (!hasOpened || unreadAt >= opened))
+            return false;
+        if (ReadIds.Contains(item.FeedId)) return true;
+        return hasOpened && ToUtc(item.Created) <= opened;
+    }
+
+    /// <summary>Apply an open to this copy, so the rows update before the write lands.</summary>
+    public void MarkTicketOpened(int ticketId, IEnumerable<int> feedIds, DateTime openedUtc)
+    {
+        foreach (var id in feedIds) ReadIds.Add(id);
+        TicketOpenedAt[ticketId] = TicketOpenedAt.TryGetValue(ticketId, out var previous) && previous > openedUtc
+            ? previous : openedUtc;
+    }
 
     public void MarkRead(int feedId) => ReadIds.Add(feedId);
 
@@ -72,6 +111,12 @@ public sealed class TicketInboxState
         _ => DateTime.SpecifyKind(value, DateTimeKind.Utc),
     };
 }
+
+/// <summary>The saved read decisions, with the times that order them.</summary>
+public sealed record TicketInboxReadMarks(
+    HashSet<int> ReadIds,
+    Dictionary<int, DateTime> UnreadMarkedAt,
+    Dictionary<int, DateTime> TicketOpenedAt);
 
 /// <summary>Who the inbox is for: the signed-in TDX person.</summary>
 public sealed record TicketInboxPerson(Guid Uid, string? FullName, string? Email);

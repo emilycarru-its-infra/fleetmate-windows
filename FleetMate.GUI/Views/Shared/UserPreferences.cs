@@ -110,6 +110,18 @@ public static class UserPreferences
 
     public static void SetTicketsAssignedToMe(bool on) => Write("tickets.assignedToMe", on ? "1" : null);
 
+    /// <summary>The Inbox sidebar opens expanded until it is collapsed, then stays as left.</summary>
+    public static bool TicketsInboxSidebarVisible => Read("tickets.inboxSidebarVisible") != "0";
+
+    public static void SetTicketsInboxSidebarVisible(bool on) => Write("tickets.inboxSidebarVisible", on ? null : "0");
+
+    public static double? TicketsInboxSidebarWidth =>
+        double.TryParse(Read("tickets.inboxSidebarWidth"), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var value) && double.IsFinite(value) ? value : null;
+
+    public static void SetTicketsInboxSidebarWidth(double width) =>
+        Write("tickets.inboxSidebarWidth", width.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
     /// <summary>The Tickets list's column order and widths, as <see cref="FleetMate.Core.Models.Tickets.TicketListColumnLayout"/> JSON.</summary>
     public static string? TicketsListColumns => Read("tickets.listColumns");
 

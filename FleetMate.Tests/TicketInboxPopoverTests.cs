@@ -111,10 +111,16 @@ public sealed class TicketInboxPopoverTests
         finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
     });
 
+    private static void ShowSidebar(TicketsPage page)
+    {
+        if (Assert.IsType<Border>(page.FindName("InboxSidebar")).Visibility != Visibility.Visible)
+            Assert.True(((IPageCommands)page).Execute(AppShortcut.ShowInbox));
+    }
+
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public Task InboxOpensWithoutChangingBoardOrListContext(bool boardMode) => WpfFixture.RunAsync(async () =>
+    public Task SidebarTogglesWithoutChangingBoardOrListContext(bool boardMode) => WpfFixture.RunAsync(() =>
     {
         var page = Page();
         var window = Host(page);
@@ -125,88 +131,95 @@ public sealed class TicketInboxPopoverTests
         search.Text = "preserved filter";
         var ticketList = Assert.IsType<ListView>(page.FindName("TicketsListView"));
         var source = ticketList.ItemsSource;
-        var popup = Assert.IsType<Popup>(page.FindName("InboxPopup"));
+        var sidebar = Assert.IsType<Border>(page.FindName("InboxSidebar"));
         var button = Assert.IsType<ToggleButton>(page.FindName("InboxButton"));
-        Assert.Same(button, popup.PlacementTarget);
-        Assert.False(popup.StaysOpen);
-        popup.StaysOpen = true;
-        Assert.True(((IPageCommands)page).Execute(AppShortcut.ShowInbox));
+        ShowSidebar(page);
         try
         {
-            Assert.True(popup.IsOpen);
-            var popover = Assert.IsType<Border>(page.FindName("InboxPopover"));
-            var anchorBottom = button.TranslatePoint(new Point(0, button.ActualHeight), window).Y;
-            Assert.Equal(window.ActualHeight - anchorBottom - popup.VerticalOffset, popover.Height, 1);
-            var originalHeight = popover.Height;
-            var resized = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            window.SizeChanged += (_, args) => { if (args.HeightChanged) resized.TrySetResult(); };
-            window.Height = window.ActualHeight - 80;
-            await resized.Task.WaitAsync(TimeSpan.FromSeconds(3));
-            window.UpdateLayout();
-            anchorBottom = button.TranslatePoint(new Point(0, button.ActualHeight), window).Y;
-            Assert.Equal(Math.Max(180, window.ActualHeight - anchorBottom - popup.VerticalOffset), popover.Height, 1);
-            Assert.NotEqual(originalHeight, popover.Height);
+            page.UpdateLayout();
+            Assert.True(button.IsChecked);
+            Assert.True(sidebar.ActualWidth >= TicketsToolbarRules.InboxSidebarMinWidth);
+            Assert.True(((IPageCommands)page).Execute(AppShortcut.ShowInbox));
+            page.UpdateLayout();
+            Assert.Equal(Visibility.Collapsed, sidebar.Visibility);
+            Assert.False(button.IsChecked);
+            Assert.True(((IPageCommands)page).Execute(AppShortcut.ShowInbox));
+            Assert.Equal(Visibility.Visible, sidebar.Visibility);
             Assert.Equal(boardMode, board.IsChecked);
             Assert.Equal(!boardMode, list.IsChecked);
             Assert.Equal("preserved filter", search.Text);
             Assert.Same(source, ticketList.ItemsSource);
-            var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            popup.Closed += (_, _) => closed.TrySetResult();
-            popup.IsOpen = false;
-            await closed.Task.WaitAsync(TimeSpan.FromSeconds(3));
-            Assert.False(button.IsChecked);
-            Assert.Equal(boardMode, board.IsChecked);
-            Assert.Equal(!boardMode, list.IsChecked);
         }
-        finally { popup.IsOpen = false; window.Close(); }
+        finally { window.Close(); }
+        return Task.CompletedTask;
     });
 
     [Fact]
-    public Task FirstScanOrUnavailableStateKeepsTheEnvelopeAndPopoverAvailable() => WpfFixture.RunAsync(async () =>
+    public Task FirstScanOrUnavailableStateKeepsTheEnvelopeAndSidebarAvailable() => WpfFixture.RunAsync(() =>
     {
         var page = new TicketsPage();
         var host = Assert.IsType<Grid>(page.FindName("InboxButtonHost"));
         Assert.Equal(Visibility.Visible, host.Visibility);
         var window = Host(page);
-        var popup = Assert.IsType<Popup>(page.FindName("InboxPopup"));
-        popup.StaysOpen = true;
         try
         {
-            Assert.True(((IPageCommands)page).Execute(AppShortcut.ShowInbox));
-            Assert.True(popup.IsOpen);
+            ShowSidebar(page);
             typeof(TicketsPage).GetField("_inboxState", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .SetValue(page, new TicketInboxState());
             typeof(TicketsPage).GetMethod("RenderInboxItems", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(page, null);
-            Assert.True(popup.IsOpen);
+            Assert.Equal(Visibility.Visible, Assert.IsType<Border>(page.FindName("InboxSidebar")).Visibility);
             Assert.Equal(Visibility.Visible, host.Visibility);
             Assert.False(string.IsNullOrWhiteSpace(Assert.IsType<TextBlock>(page.FindName("InboxEmptyText")).Text));
-            var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            popup.Closed += (_, _) => closed.TrySetResult();
-            popup.IsOpen = false;
-            await closed.Task.WaitAsync(TimeSpan.FromSeconds(3));
         }
-        finally { popup.IsOpen = false; window.Close(); }
+        finally { window.Close(); }
+        return Task.CompletedTask;
     });
 
     [Fact]
-    public Task ActivatingAnInboxRowDismissesWithoutSwitchingTheWorkQueue() => WpfFixture.RunAsync(async () =>
+    public Task ActivatingAnInboxRowKeepsTheSidebarAndTheWorkQueue() => WpfFixture.RunAsync(async () =>
     {
         var page = Page();
         var window = Host(page);
-        var popup = Assert.IsType<Popup>(page.FindName("InboxPopup"));
-        popup.StaysOpen = true;
-        ((IPageCommands)page).Execute(AppShortcut.ShowInbox);
+        ShowSidebar(page);
         try
         {
             var inbox = Assert.IsType<ListView>(page.FindName("InboxListView"));
             var row = new InboxRow(new TicketInboxItem { FeedId = 1, TicketId = 42, TicketTitle = "Example ticket" }, true);
             inbox.ItemsSource = new[] { row };
             inbox.SelectedItem = row;
-            Assert.True(popup.IsOpen);
             await page.ActivateInboxSelectionAsync();
-            Assert.False(popup.IsOpen);
+            Assert.Equal(Visibility.Visible, Assert.IsType<Border>(page.FindName("InboxSidebar")).Visibility);
+            Assert.Same(row, inbox.SelectedItem);
             Assert.True(Assert.IsType<RadioButton>(page.FindName("BoardViewRadio")).IsChecked);
         }
-        finally { popup.IsOpen = false; window.Close(); }
+        finally { window.Close(); }
     });
+
+    [Fact]
+    public Task AnUnchangedRefreshKeepsTheRowsAndSelection() => WpfFixture.RunAsync(() =>
+    {
+        var page = Page();
+        var state = new TicketInboxState { Items = new() { new() { FeedId = 1, TicketId = 42 }, new() { FeedId = 2, TicketId = 43 } } };
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        typeof(TicketsPage).GetField("_inboxState", flags)!.SetValue(page, state);
+        var render = typeof(TicketsPage).GetMethod("RenderInboxItems", flags)!;
+        render.Invoke(page, null);
+        var list = Assert.IsType<ListView>(page.FindName("InboxListView"));
+        var source = list.ItemsSource;
+        var selected = list.Items[1];
+        list.SelectedItem = selected;
+        render.Invoke(page, null);
+        Assert.Same(source, list.ItemsSource);
+        Assert.Same(selected, list.SelectedItem);
+        return Task.CompletedTask;
+    });
+
+    [Theory]
+    [InlineData(360, 1600, true, 360)]
+    [InlineData(360, 900, true, 266)]
+    [InlineData(500, 1000, false, 482)]
+    [InlineData(9999, 3000, false, 640)]
+    [InlineData(10, 3000, false, 260)]
+    public void SidebarWidthLeavesTheWorkspaceItsRoom(double preferred, double page, bool detail, double expected) =>
+        Assert.Equal(expected, TicketsToolbarRules.InboxSidebarWidth(preferred, page, detail));
 }
