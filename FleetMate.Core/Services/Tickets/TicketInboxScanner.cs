@@ -48,7 +48,7 @@ public sealed class TicketInboxStore
         try
         {
             ImportDeclaredLegacyRead(uid);
-            state.ReadIds = LoadRead(uid);
+            state.ApplyReadMarks(LoadReadMarks(uid));
         }
         catch (Exception ex) { Log.Warning(ex, "Ticket Inbox read metadata is unavailable; preserving its file"); }
         return state;
@@ -88,6 +88,16 @@ public sealed class TicketInboxStore
 
     public HashSet<int> LoadRead(Guid uid) => _sharedRead?.Load(uid)
         ?? Read<HashSet<int>>(ReadPathFor(uid)) ?? new HashSet<int>();
+
+    public TicketInboxReadMarks LoadReadMarks(Guid uid) => _sharedRead?.LoadMarks(uid)
+        ?? new TicketInboxReadMarks(LoadRead(uid), new(), new());
+
+    /// <summary>Record an open. An unscoped legacy store keeps only the per-comment marks.</summary>
+    public void RecordTicketOpened(Guid uid, int ticketId, IEnumerable<int> ids, DateTime openedUtc)
+    {
+        if (_sharedRead != null) _sharedRead.RecordTicketOpened(uid, ticketId, ids, openedUtc);
+        else SetRead(uid, ids, true);
+    }
 
     public HashSet<int> SetRead(Guid uid, IEnumerable<int> ids, bool read)
     {

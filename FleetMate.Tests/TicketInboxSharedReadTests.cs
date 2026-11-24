@@ -28,6 +28,76 @@ public sealed class TicketInboxSharedReadTests : IDisposable
         Assert.Equal(40, second.LoadRead(_person).Count);
     }
 
+    private static readonly DateTime Opened = new(2026, 10, 30, 12, 0, 0, DateTimeKind.Utc);
+
+    private static TicketInboxItem Comment(int id, DateTime created, int ticket = 42) =>
+        new() { FeedId = id, TicketId = ticket, Created = created };
+
+    private TicketInboxState StateWith(TicketInboxStore store, params TicketInboxItem[] items)
+    {
+        var state = new TicketInboxState { Items = items.ToList() };
+        state.ApplyReadMarks(store.LoadReadMarks(_person));
+        return state;
+    }
+
+    [Fact]
+    public void OpeningATicketReadsItsCommentsUpToThatTimeOnly()
+    {
+        var store = Store("one");
+        var clicked = Comment(1, Opened.AddHours(-2));
+        var sibling = Comment(2, Opened.AddHours(-1));
+        var scannedLater = Comment(3, Opened.AddMinutes(-1));
+        var newer = Comment(4, Opened.AddMinutes(1));
+        var otherTicket = Comment(5, Opened.AddHours(-1), ticket: 43);
+
+        store.RecordTicketOpened(_person, 42, new[] { 1, 2 }, Opened);
+
+        var state = StateWith(store, clicked, sibling, scannedLater, newer, otherTicket);
+        Assert.True(state.IsRead(clicked));
+        Assert.True(state.IsRead(sibling));
+        Assert.True(state.IsRead(scannedLater));
+        Assert.False(state.IsRead(newer));
+        Assert.False(state.IsRead(otherTicket));
+        Assert.Equal(2, state.UnreadCount);
+    }
+
+    [Fact]
+    public void MarkUnreadAfterAnOpenHoldsUntilTheTicketIsOpenedAgain()
+    {
+        var store = Store("one");
+        var opened = DateTime.UtcNow.AddMinutes(-1);
+        var comment = Comment(1, opened.AddHours(-1));
+
+        store.RecordTicketOpened(_person, 42, new[] { 1 }, opened);
+        store.SetRead(_person, new[] { 1 }, false);
+        Assert.False(StateWith(store, comment).IsRead(comment));
+
+        store.RecordTicketOpened(_person, 42, Array.Empty<int>(), DateTime.UtcNow.AddMinutes(1));
+        Assert.True(StateWith(store, comment).IsRead(comment));
+    }
+
+    [Fact]
+    public void AnEarlierOpenNeverMovesTheOpenedTimeBack()
+    {
+        var store = Store("one");
+        var recent = DateTime.UtcNow;
+        store.RecordTicketOpened(_person, 42, Array.Empty<int>(), recent);
+        store.RecordTicketOpened(_person, 42, Array.Empty<int>(), recent.AddHours(-1));
+        Assert.Equal(recent, store.LoadReadMarks(_person).TicketOpenedAt[42]);
+    }
+
+    [Fact]
+    public void AFileFromAnEarlierBuildStillDecodes()
+    {
+        var store = new TicketInboxReadStore(Path.Combine(_root, "shared"));
+        Directory.CreateDirectory(Path.GetDirectoryName(store.PathFor(_person))!);
+        File.WriteAllText(store.PathFor(_person), "{\"Version\":1,\"Decisions\":{\"7\":true,\"8\":false},\"Imports\":[]}");
+        var marks = store.LoadMarks(_person);
+        Assert.Equal(new[] { 7 }, marks.ReadIds);
+        Assert.Empty(marks.TicketOpenedAt);
+        Assert.Empty(marks.UnreadMarkedAt);
+    }
+
     [Fact]
     public async Task ReplacementRetriesTransientWindowsReadersWithoutRemovingTheLastGoodFile()
     {

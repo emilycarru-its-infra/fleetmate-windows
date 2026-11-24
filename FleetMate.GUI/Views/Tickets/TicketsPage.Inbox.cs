@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using FleetMate.GUI.Views.Shared;
 using FleetMate.Core.Models.Tickets;
@@ -10,7 +11,7 @@ using Serilog;
 namespace FleetMate.GUI.Views.Tickets;
 
 // The Inbox view: every comment of the last 90 days, on any ticket, that
-// notified the signed-in TDX person. Built by TicketInboxScanner and saved per
+// notified the signed-in TDX person, as a sidebar. Built by TicketInboxScanner and saved per
 // person; read state lives only on this PC, since TDX keeps none.
 public partial class TicketsPage
 {
@@ -40,8 +41,8 @@ public partial class TicketsPage
     private DateTime _inboxLastPassUtc = DateTime.MinValue;
     private string? _inboxError;
     private bool _inboxSelecting;
-    private DateTime _inboxClosedAt;
-    private Window? _inboxHostWindow;
+    private bool _inboxSidebarVisible = UserPreferences.TicketsInboxSidebarVisible;
+    private double _inboxSidebarWidth = UserPreferences.TicketsInboxSidebarWidth ?? TicketsToolbarRules.InboxSidebarDefaultWidth;
 
     /// <summary>The signed-in person was found, changed or lost: load their saved inbox.</summary>
     private void OnInboxPersonChanged()
@@ -86,6 +87,7 @@ public partial class TicketsPage
 
         // Scan silently from launch, whichever view is showing.
         StartInboxPass();
+        UpdateInboxTimer();
     }
 
     /// <summary>Coalesced disk I/O never blocks the Dispatcher or replaces a running scan's items.</summary>
@@ -109,7 +111,7 @@ public partial class TicketsPage
             {
                 var state = await Task.Run(() => store.Load(person.Uid));
                 if (!ReferenceEquals(store, _inboxStore) || person.Uid != _inboxPerson?.Uid || service != _inboxService) continue;
-                if (_inboxPass is { IsCompleted: false }) ApplyInboxReadMarks(state.ReadIds);
+                if (_inboxPass is { IsCompleted: false }) ApplyInboxReadMarks(state.ReadMarks);
                 else { _inboxState = state; RenderInbox(); }
             }
             catch (Exception ex) { Log.Warning(ex, "Ticket Inbox cache could not be reloaded"); }
@@ -139,7 +141,7 @@ public partial class TicketsPage
             var service = _inboxService;
             try
             {
-                var marks = await Task.Run(() => store.LoadRead(person.Uid));
+                var marks = await Task.Run(() => store.LoadReadMarks(person.Uid));
                 if (ReferenceEquals(store, _inboxStore) && person.Uid == _inboxPerson?.Uid && service == _inboxService)
                     ApplyInboxReadMarks(marks);
             }
@@ -147,23 +149,28 @@ public partial class TicketsPage
         } while (_inboxReadReloadAgain);
     }
 
-    private void ApplyInboxReadMarks(HashSet<int> marks)
+    private void ApplyInboxReadMarks(TicketInboxReadMarks marks)
     {
         if (_inboxState is not { } state) return;
-        state.ReadIds = marks;
+        state.ApplyReadMarks(marks);
+        RefreshInboxReadRows(state);
+    }
+
+    private void RefreshInboxReadRows(TicketInboxState state)
+    {
         UpdateInboxBadge(state.UnreadCount);
         if (InboxListView.ItemsSource is IEnumerable<InboxRow> rows)
-            foreach (var row in rows) row.SetRead(state.IsRead(row.Item.FeedId));
+            foreach (var row in rows) row.SetRead(state.IsRead(row.Item));
         InboxMarkAllReadButton.IsEnabled = state.UnreadCount > 0;
     }
 
     private void OnInboxWindowActivated(object? sender, EventArgs e) => _ = ReloadInboxFromDisk();
     private void OnInboxBadgePreferenceChanged() => Dispatcher.BeginInvoke(() => UpdateInboxBadge(_inboxState?.UnreadCount ?? 0));
 
-    /// <summary>Inbox shown: refresh now if due, and every five minutes while it stays open.</summary>
-    private void OnInboxVisibilityChanged()
+    /// <summary>While the sidebar is showing, refresh when due and every five minutes.</summary>
+    private void UpdateInboxTimer()
     {
-        if (!InboxPopup.IsOpen)
+        if (!_inboxSidebarVisible || _inboxPerson == null)
         {
             _inboxTimer?.Stop();
             return;
@@ -175,13 +182,11 @@ public partial class TicketsPage
             _inboxTimer.Tick += (_, _) => StartInboxPass();
         }
         _inboxTimer.Start();
-        RenderInbox();
         if (DateTime.UtcNow - _inboxLastPassUtc >= InboxRefreshInterval) StartInboxPass();
     }
 
     private void StopInbox()
     {
-        InboxPopup.IsOpen = false;
         _inboxTimer?.Stop();
         _inboxReloadTimer?.Stop();
         CancelInboxPass();
@@ -300,19 +305,41 @@ public partial class TicketsPage
         var unread = state?.UnreadCount ?? 0;
         UpdateInboxBadge(unread);
 
-        // The envelope remains available while scanning or signed out; status lives inside the popover.
+        // The envelope remains available while scanning or signed out; status lives in the sidebar.
         InboxButtonHost.Visibility = Visibility.Visible;
         InboxMarkAllReadButton.IsEnabled = unread > 0;
 
         var rows = (state?.Items ?? new List<TicketInboxItem>())
             .OrderByDescending(i => i.Created)
-            .Select(i => new InboxRow(i, state!.IsRead(i.FeedId)))
+            .Select(i => new InboxRow(i, state!.IsRead(i)))
             .ToList();
 
-        _inboxSelecting = true;
-        InboxListView.ItemsSource = rows;
-        InboxListView.SelectedItem = null;
-        _inboxSelecting = false;
+        // A refresh that changed nothing keeps the rows, so the selection,
+        // focus and scroll position stay exactly where they were.
+        if (InboxListView.ItemsSource is IReadOnlyList<InboxRow> current && current.SequenceEqual(rows, InboxRowContent.Instance))
+        {
+            foreach (var (row, next) in current.Zip(rows)) row.SetRead(next.IsRead);
+        }
+        else
+        {
+            var selectedFeedId = (InboxListView.SelectedItem as InboxRow)?.Item.FeedId;
+            var hadFocus = InboxListView.IsKeyboardFocusWithin;
+            var scroller = FindInboxScroller(InboxListView);
+            var offset = scroller?.VerticalOffset ?? 0;
+            _inboxSelecting = true;
+            InboxListView.ItemsSource = rows;
+            InboxListView.SelectedItem = selectedFeedId is { } id ? rows.FirstOrDefault(r => r.Item.FeedId == id) : null;
+            _inboxSelecting = false;
+            if (scroller != null || hadFocus)
+                Dispatcher.BeginInvoke(() =>
+                {
+                    scroller?.ScrollToVerticalOffset(offset);
+                    if (hadFocus && InboxListView.SelectedItem is { } selected
+                        && InboxListView.ItemContainerGenerator.ContainerFromItem(selected) is ListViewItem container)
+                        container.Focus();
+                    else if (hadFocus) InboxListView.Focus();
+                }, DispatcherPriority.Loaded);
+        }
 
         InboxEmptyText.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         InboxEmptyText.Text = _tdxService == null
@@ -346,77 +373,59 @@ public partial class TicketsPage
         if (ReferenceEquals(state, _inboxState)) RenderInboxItems();
     }
 
-    private void OnInboxButtonClicked(object sender, RoutedEventArgs e)
+    private void OnInboxButtonClicked(object sender, RoutedEventArgs e) =>
+        SetInboxSidebarVisible(InboxButton.IsChecked == true, moveFocus: false);
+
+    private void SetInboxSidebarVisible(bool visible, bool moveFocus)
     {
-        if ((DateTime.UtcNow - _inboxClosedAt).TotalMilliseconds < 250)
+        _inboxSidebarVisible = visible;
+        UserPreferences.SetTicketsInboxSidebarVisible(visible);
+        ApplyInboxSidebar();
+        if (visible) { RenderInbox(); UpdateInboxTimer(); }
+        else _inboxTimer?.Stop();
+        if (!moveFocus) return;
+        if (visible) Dispatcher.BeginInvoke(() => Keyboard.Focus(InboxListView), DispatcherPriority.Input);
+        else Keyboard.Focus(InboxButton);
+    }
+
+    private void ApplyInboxSidebar()
+    {
+        InboxButton.IsChecked = _inboxSidebarVisible;
+        var visibility = _inboxSidebarVisible ? Visibility.Visible : Visibility.Collapsed;
+        InboxSidebar.Visibility = visibility;
+        InboxSidebarSplitter.Visibility = visibility;
+        InboxSidebarColumn.MinWidth = _inboxSidebarVisible ? TicketsToolbarRules.InboxSidebarMinWidth : 0;
+        InboxSidebarColumn.MaxWidth = _inboxSidebarVisible ? TicketsToolbarRules.InboxSidebarMaxWidth : double.PositiveInfinity;
+        ListPanelColumn.MinWidth = _inboxSidebarVisible ? TicketsToolbarRules.ListMinWidthBesideInbox : 480;
+        FitInboxSidebar();
+    }
+
+    /// <summary>Narrow the sidebar for the window without changing the width that was dragged.</summary>
+    private void FitInboxSidebar()
+    {
+        var width = _inboxSidebarVisible
+            ? TicketsToolbarRules.InboxSidebarWidth(_inboxSidebarWidth, ActualWidth, _detailPanelVisible)
+            : 0;
+        InboxSidebarColumn.Width = new GridLength(width);
+    }
+
+    private void OnInboxSidebarDragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        _inboxSidebarWidth = Math.Clamp(InboxSidebarColumn.ActualWidth,
+            TicketsToolbarRules.InboxSidebarMinWidth, TicketsToolbarRules.InboxSidebarMaxWidth);
+        UserPreferences.SetTicketsInboxSidebarWidth(_inboxSidebarWidth);
+        FitInboxSidebar();
+    }
+
+    private static ScrollViewer? FindInboxScroller(DependencyObject parent)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
         {
-            InboxButton.IsChecked = false;
-            return;
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is ScrollViewer viewer) return viewer;
+            if (FindInboxScroller(child) is { } nested) return nested;
         }
-        InboxPopup.IsOpen = InboxButton.IsChecked == true;
-    }
-
-    private void OnInboxPopupOpened(object? sender, EventArgs e)
-    {
-        InboxButton.IsChecked = true;
-        _inboxHostWindow = Window.GetWindow(this);
-        if (_inboxHostWindow != null)
-        {
-            _inboxHostWindow.SizeChanged += OnInboxHostLayoutChanged;
-            _inboxHostWindow.LocationChanged += OnInboxHostLayoutChanged;
-            _inboxHostWindow.StateChanged += OnInboxHostLayoutChanged;
-        }
-        UpdateInboxPopoverSize();
-        OnInboxVisibilityChanged();
-        Dispatcher.BeginInvoke(() =>
-        {
-            if (InboxPopup.IsOpen) Keyboard.Focus(InboxListView);
-        }, DispatcherPriority.Input);
-    }
-
-    private void OnInboxPopupClosed(object? sender, EventArgs e)
-    {
-        _inboxClosedAt = DateTime.UtcNow;
-        InboxButton.IsChecked = false;
-        if (_inboxHostWindow != null)
-        {
-            _inboxHostWindow.SizeChanged -= OnInboxHostLayoutChanged;
-            _inboxHostWindow.LocationChanged -= OnInboxHostLayoutChanged;
-            _inboxHostWindow.StateChanged -= OnInboxHostLayoutChanged;
-            _inboxHostWindow = null;
-        }
-        OnInboxVisibilityChanged();
-    }
-
-    private void OnInboxHostLayoutChanged(object? sender, EventArgs e)
-    {
-        if (_inboxHostWindow?.WindowState == WindowState.Minimized) { InboxPopup.IsOpen = false; return; }
-        UpdateInboxPopoverSize();
-        var offset = InboxPopup.HorizontalOffset;
-        InboxPopup.HorizontalOffset = offset + 0.5;
-        InboxPopup.HorizontalOffset = offset;
-    }
-
-    private void UpdateInboxPopoverSize()
-    {
-        if ((_inboxHostWindow ?? Window.GetWindow(this)) is not { } window) return;
-        var anchorBottom = InboxButton.TranslatePoint(new Point(0, InboxButton.ActualHeight), window).Y;
-        InboxPopover.Width = Math.Clamp(window.ActualWidth - 32, 280, 560);
-        InboxPopover.Height = Math.Max(180, window.ActualHeight - anchorBottom - InboxPopup.VerticalOffset);
-    }
-
-    private void OnInboxCloseClicked(object sender, RoutedEventArgs e)
-    {
-        InboxPopup.IsOpen = false;
-        Keyboard.Focus(InboxButton);
-    }
-
-    private void OnInboxPopupKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Escape) return;
-        InboxPopup.IsOpen = false;
-        Keyboard.Focus(InboxButton);
-        e.Handled = true;
+        return null;
     }
 
     private async void OnInboxItemClicked(object sender, MouseButtonEventArgs e)
@@ -437,15 +446,6 @@ public partial class TicketsPage
     internal async Task ActivateInboxSelectionAsync()
     {
         if (_inboxSelecting || InboxListView.SelectedItem is not InboxRow row) return;
-        InboxPopup.IsOpen = false;
-        if (_inboxState is { } state && _inboxPerson is { } person && !state.IsRead(row.Item.FeedId))
-        {
-            var service = _tdxService;
-            await SaveReadMarksAsync(person, state, new[] { row.Item.FeedId }, true);
-            if (!ReferenceEquals(state, _inboxState) || !ReferenceEquals(service, _tdxService)) return;
-            RenderInboxItems();
-        }
-
         var ticket = _allTickets.FirstOrDefault(t => t.Id == row.Item.TicketId)
                      ?? (_tdxService == null ? null : await _tdxService.GetTicketAsync(row.Item.TicketId));
         if (ticket == null)
@@ -465,11 +465,32 @@ public partial class TicketsPage
         }
     }
 
+    /// <summary>
+    /// A ticket was shown, by any route: the comments on it up to now are read,
+    /// and one that arrives later comes in unread.
+    /// </summary>
+    private void RecordInboxTicketOpened(int ticketId)
+    {
+        if (InboxListView.SelectedItem is InboxRow { Item.TicketId: var selectedTicket } && selectedTicket != ticketId)
+            InboxListView.SelectedItem = null;
+        if (_inboxState is not { } state || _inboxPerson is not { } person) return;
+        var opened = DateTime.UtcNow;
+        var ids = state.Items.Where(i => i.TicketId == ticketId).Select(i => i.FeedId).ToArray();
+        state.MarkTicketOpened(ticketId, ids, opened);
+        RefreshInboxReadRows(state);
+        _ = SaveInboxChangeAsync(person, state, store => store.RecordTicketOpened(person.Uid, ticketId, ids, opened));
+    }
+
     /// <summary>Only the requested decisions are changed; peer decisions remain intact.</summary>
-    private async Task SaveReadMarksAsync(TicketInboxPerson person, TicketInboxState state, IEnumerable<int> ids, bool read)
+    private Task SaveReadMarksAsync(TicketInboxPerson person, TicketInboxState state, IEnumerable<int> ids, bool read)
+    {
+        var decisions = ids.ToArray();
+        return SaveInboxChangeAsync(person, state, store => store.SetRead(person.Uid, decisions, read));
+    }
+
+    private async Task SaveInboxChangeAsync(TicketInboxPerson person, TicketInboxState state, Action<TicketInboxStore> change)
     {
         var store = _inboxStore;
-        var decisions = ids.ToArray();
         try
         {
             var previous = _inboxWriteTail;
@@ -477,7 +498,7 @@ public partial class TicketsPage
             {
                 try { await previous.ConfigureAwait(false); }
                 catch { /* A failed decision must not prevent later explicit decisions. */ }
-                store.SetRead(person.Uid, decisions, read);
+                change(store);
             });
             _inboxWriteTail = write;
             await write;
@@ -486,6 +507,19 @@ public partial class TicketsPage
         }
         catch (Exception ex) { Log.Warning(ex, "Ticket inbox read state could not be saved"); }
     }
+}
+
+/// <summary>Rows that would draw the same comment, ignoring read state.</summary>
+internal sealed class InboxRowContent : IEqualityComparer<InboxRow>
+{
+    public static readonly InboxRowContent Instance = new();
+
+    public bool Equals(InboxRow? a, InboxRow? b) =>
+        a != null && b != null && a.Item.FeedId == b.Item.FeedId && a.Item.TicketId == b.Item.TicketId
+        && a.Item.Created == b.Item.Created && a.Item.TicketTitle == b.Item.TicketTitle
+        && a.Item.Author == b.Item.Author && a.Item.Body == b.Item.Body && a.Item.IsPrivate == b.Item.IsPrivate;
+
+    public int GetHashCode(InboxRow row) => row.Item.FeedId;
 }
 
 /// <summary>One row of the Inbox list.</summary>
