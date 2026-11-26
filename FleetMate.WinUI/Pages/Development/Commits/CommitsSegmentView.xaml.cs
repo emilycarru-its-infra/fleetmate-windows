@@ -222,6 +222,16 @@ public sealed partial class CommitsSegmentView : UserControl, IDevelopmentSegmen
         return null;
     }
 
+    /// <summary>Select the first commit and wait for its detail — the QA capture's commits-detail view.</summary>
+    public async Task SelectFirstAsync()
+    {
+        if ((CommitsSource.Source as IEnumerable<RepositoryCommitsGroup>)?.SelectMany(g => g.OfType<CommitRowItem>()).FirstOrDefault() is not { } row) return;
+        _rendering = true;
+        CommitsList.SelectedItem = row;
+        _rendering = false;
+        await ShowCommitAsync(row.Repository, row.Commit);
+    }
+
     // MARK: - Links and sign-in
 
     /// <summary>Signed in to Azure DevOps: a load that ran before left Azure DevOps out, so load again.</summary>

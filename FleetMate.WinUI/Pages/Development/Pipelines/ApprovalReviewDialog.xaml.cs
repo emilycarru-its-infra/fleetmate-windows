@@ -2,7 +2,10 @@ using FleetMate.Core.Development;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml.Input;
+using Windows.System;
+using Windows.UI.Core;
 
 namespace FleetMate.WinUI.Pages.Development.Pipelines;
 
@@ -63,10 +66,12 @@ public sealed partial class ApprovalReviewDialog : ContentDialog
         SecondaryButtonText = confirming ? "Confirm Reject" : "Reject";
     }
 
-    private async void ApproveAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    /// <summary>Ctrl+Enter approves, even from the comment box, where Enter alone starts a new line.</summary>
+    private async void Dialog_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (ApprovalPanel.Visibility != Microsoft.UI.Xaml.Visibility.Visible) return;
-        args.Handled = true;
+        if (e.Key != VirtualKey.Enter || ApprovalPanel.Visibility != Microsoft.UI.Xaml.Visibility.Visible) return;
+        if (!InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control).HasFlag(CoreVirtualKeyStates.Down)) return;
+        e.Handled = true;
         if (await RespondAsync(approve: true)) Hide();
     }
 

@@ -7,6 +7,7 @@
     DefaultButton="Primary"
     PrimaryButtonText="Approve"
     SecondaryButtonText="Reject"
+    PreviewKeyDown="Dialog_PreviewKeyDown"
     Style="{StaticResource DefaultContentDialogStyle}">
 
     <!--
@@ -14,10 +15,6 @@
         an optional comment, then Approve (Ctrl+Enter) or Reject. Reject asks
         once more, in place, because it stops the run.
     -->
-    <ContentDialog.KeyboardAccelerators>
-        <KeyboardAccelerator Key="Enter" Invoked="ApproveAccelerator_Invoked" Modifiers="Control" />
-    </ContentDialog.KeyboardAccelerators>
-
     <Grid MinWidth="420" MaxWidth="560">
         <StackPanel x:Name="ApprovalPanel" Spacing="10">
             <TextBlock

@@ -307,6 +307,22 @@ public sealed partial class PipelinesSegmentView : UserControl, IDevelopmentSegm
         await RunPane.ReviewApprovalAsync();
     }
 
+    /// <summary>
+    /// Select a run and wait for its log — the QA capture's pipelines views: the
+    /// first failed run, or with <paramref name="awaitingApproval"/> the first one an approval holds.
+    /// </summary>
+    public async Task SelectFirstAsync(bool awaitingApproval = false)
+    {
+        var row = awaitingApproval
+            ? _rows.FirstOrDefault(r => r.AwaitingApproval)
+            : _rows.FirstOrDefault(r => r.Status is PipelineRunStatus.Failed) ?? _rows.FirstOrDefault();
+        if (row == null) return;
+        _rendering = true;
+        RunsList.SelectedItem = row;
+        _rendering = false;
+        await ShowRunAsync(row.Run);
+    }
+
     // MARK: - Links and sign-in
 
     /// <summary>Signed in to Azure DevOps: reload runs loaded without it, then open a held link.</summary>

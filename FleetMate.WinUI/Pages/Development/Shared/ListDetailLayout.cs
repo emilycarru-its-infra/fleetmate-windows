@@ -21,6 +21,9 @@ public sealed class ListDetailLayout
     private readonly FrameworkElement _detail;
     private readonly Button _back;
     private bool _detailOpen;
+    private readonly Thickness _listPadding;
+    private readonly Thickness _detailPadding;
+    private readonly Thickness _detailBorder;
 
     public ListDetailLayout(Grid root, ColumnDefinition listColumn, ColumnDefinition detailColumn,
         FrameworkElement list, FrameworkElement detail, Button back)
@@ -30,6 +33,10 @@ public sealed class ListDetailLayout
         _list = list;
         _detail = detail;
         _back = back;
+        // The divider and gutters between the panes go when they stack.
+        _listPadding = (list as Grid)?.Padding ?? default;
+        _detailPadding = (detail as Grid)?.Padding ?? default;
+        _detailBorder = (detail as Grid)?.BorderThickness ?? default;
         back.Click += (_, _) => ShowList();
         root.SizeChanged += (_, e) => Apply(e.NewSize.Width);
     }
@@ -72,6 +79,12 @@ public sealed class ListDetailLayout
             _listColumn.Width = new GridLength(ListWidth);
             _detailColumn.Width = new GridLength(1, GridUnitType.Star);
             _list.Visibility = _detail.Visibility = Visibility.Visible;
+        }
+        if (_list is Grid listGrid) listGrid.Padding = IsNarrow ? default : _listPadding;
+        if (_detail is Grid detailGrid)
+        {
+            detailGrid.Padding = IsNarrow ? default : _detailPadding;
+            detailGrid.BorderThickness = IsNarrow ? default : _detailBorder;
         }
         _back.Visibility = DevelopmentUi.Show(IsNarrow && _detailOpen);
     }

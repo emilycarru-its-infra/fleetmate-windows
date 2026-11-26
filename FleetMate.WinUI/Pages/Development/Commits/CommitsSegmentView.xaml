@@ -135,7 +135,7 @@
                                             Background="{ThemeResource SubtleFillColorSecondaryBrush}"
                                             BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
                                             BorderThickness="1"
-                                            CornerRadius="4">
+                                            CornerRadius="{ThemeResource ControlCornerRadius}">
                                             <TextBlock Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind SourceLabel}" />
                                         </Border>
                                         <TextBlock
