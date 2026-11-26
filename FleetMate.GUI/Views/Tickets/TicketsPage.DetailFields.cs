@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using FleetMate.Core.Models.Tickets;
+using FleetMate.Core.Services.Tickets;
 
 namespace FleetMate.GUI.Views.Tickets;
 
@@ -164,30 +165,15 @@ public partial class TicketsPage
         try
         {
             ShowActionMessage($"Saving #{ticket.Id}…", isLoading: true);
-            var latest = await _tdxService.GetTicketAsync(ticket.Id) ?? ticket;
-            var patch = edits.Patch(latest);
-            // As on the Mac, the new responsible is emailed only when the box
-            // is ticked and Save really changes who is responsible.
-            var notify = patch != null && edits.ShouldNotify(latest);
-            var updated = patch == null ? latest : await _tdxService.UpdateTicketAsync(ticket.Id, patch, notifyNewResponsible: notify);
-            if (updated == null)
+            var outcome = await TicketEditor.SaveAsync(_tdxService, ticket, edits);
+            if (outcome.Updated is not { } updated)
             {
-                ShowActionMessage("TeamDynamix did not accept the changes. See the log for the response.", isError: true);
+                ShowActionMessage(outcome.Message, isError: true);
                 return;
             }
-            // Picks made while the save ran are newer work and stay.
-            if (edits.Patch(updated) == null) edits.Clear();
             ReplaceCachedTicket(updated);
-            // A new group brings new members to the People section and the notify list.
-            if (patch?.ContainsKey(TicketDetailFields.Group) == true && _selectedTicket?.Id == ticket.Id)
-                _ = LoadTicketPeopleAsync(updated);
-            ShowActionMessage(patch == null ? $"#{ticket.Id} already had these values"
-                : notify ? $"Saved #{ticket.Id} and notified the new responsible"
-                : $"Saved #{ticket.Id}");
-        }
-        catch (Exception ex)
-        {
-            ShowActionMessage($"Could not save #{ticket.Id}: {ex.Message}", isError: true);
+            if (outcome.GroupChanged && _selectedTicket?.Id == ticket.Id) _ = LoadTicketPeopleAsync(updated);
+            ShowActionMessage(outcome.Message);
         }
         finally
         {
@@ -390,8 +376,7 @@ public partial class TicketsPage
     private async Task SaveDescriptionAsync()
     {
         if (_savingDescription || _tdxService == null || _selectedTicket is not { } ticket) return;
-        var update = TicketDetailFields.DescriptionChange(DecodeHtml(ticket.Description ?? ""), DescriptionEditor.Text);
-        if (update == null)
+        if (TicketDetailFields.DescriptionChange(DecodeHtml(ticket.Description ?? ""), DescriptionEditor.Text) == null)
         {
             SetDescriptionEditing(false);
             return;
@@ -404,15 +389,15 @@ public partial class TicketsPage
         try
         {
             ShowActionMessage($"Saving the description of #{ticket.Id}…", isLoading: true);
-            var updated = await _tdxService.UpdateTicketAsync(ticket.Id, update);
-            if (updated == null)
+            var outcome = await TicketEditor.SaveDescriptionAsync(_tdxService, ticket, DescriptionEditor.Text);
+            if (outcome?.Updated is not { } updated)
             {
-                ShowActionMessage("TeamDynamix did not accept the description. See the log for the response.", isError: true);
+                if (outcome != null) ShowActionMessage(outcome.Message, isError: true);
                 return;
             }
             if (_selectedTicket?.Id == ticket.Id) SetDescriptionEditing(false);
             ReplaceCachedTicket(updated);
-            ShowActionMessage($"Saved the description of #{ticket.Id}");
+            ShowActionMessage(outcome.Message);
         }
         finally
         {

@@ -1138,17 +1138,8 @@ private bool _isInitialLoadDone;
         SetComposeOpen(true, focus: true);
     }
 
-    internal static string BuildQuote(FeedDisplayItem entry)
-    {
-        var author = string.IsNullOrWhiteSpace(entry.CreatedFullName) ? "someone" : entry.CreatedFullName;
-
-        // The body is already stripped for display, so quoting it gives plain
-        // text rather than a block of markup nobody wants in their comment.
-        var quoted = string.Join("\n",
-            (entry.StrippedBody ?? "").Split('\n').Select(line => $"> {line.TrimEnd()}"));
-
-        return $"{author} wrote:\n{quoted}";
-    }
+    /// <summary>The body is already stripped for display, so the quote is plain text, not markup.</summary>
+    internal static string BuildQuote(FeedDisplayItem entry) => TicketFeedView.Quote(entry.CreatedFullName, entry.StrippedBody);
 
     private async Task LoadTicketDetailAsync(int ticketId)
     {
@@ -1434,33 +1425,23 @@ private bool _isInitialLoadDone;
     private async Task SetParentAsync()
     {
         if (_selectedTicket == null || _tdxService == null) return;
-        var text = ParentIdBox.Text.Trim().TrimStart('#');
-        int? parentId = null;
-        if (text.Length > 0)
+        var (parentId, error) = TicketEditor.ParseParent(ParentIdBox.Text, _selectedTicket.Id);
+        if (error != null)
         {
-            if (!int.TryParse(text, out var parsed) || parsed <= 0)
-            {
-                SetParentHintText.Text = "Enter a ticket number.";
-                return;
-            }
-            if (parsed == _selectedTicket.Id)
-            {
-                SetParentHintText.Text = "A ticket can't be its own parent.";
-                return;
-            }
-            parentId = parsed;
+            SetParentHintText.Text = error;
+            return;
         }
 
         SetParentPopup.IsOpen = false;
         ShowActionMessage(parentId == null ? "Clearing the parent…" : $"Setting parent to #{parentId}…", isLoading: true);
-        var updated = await _tdxService.SetParentAsync(_selectedTicket.Id, parentId);
-        if (updated == null)
+        var outcome = await TicketEditor.SetParentAsync(_tdxService, _selectedTicket.Id, parentId);
+        if (outcome.Updated is not { } updated)
         {
-            ShowActionMessage("TeamDynamix did not accept the parent. See the log for the response.", isError: true);
+            ShowActionMessage(outcome.Message, isError: true);
             return;
         }
         ReplaceCachedTicket(updated);
-        ShowActionMessage(parentId == null ? "Parent cleared" : $"Parent set to #{parentId}");
+        ShowActionMessage(outcome.Message);
     }
 
     // Create Parent ------------------------------------------------------------
@@ -1511,23 +1492,16 @@ private bool _isInitialLoadDone;
         var child = _selectedTicket;
         CreateParentPopup.IsOpen = false;
         ShowActionMessage("Creating the parent ticket…", isLoading: true);
-        var parent = await _tdxService.CreateTicketAsync(ParentTicketRequest.For(child, title));
-        if (parent == null)
-        {
-            ShowActionMessage("TeamDynamix did not create the parent. See the log for the response.", isError: true);
-            return;
-        }
-        _app.CachedTickets.Insert(0, parent);
-
-        var updated = await _tdxService.SetParentAsync(child.Id, parent.Id);
-        if (updated == null)
+        var (parent, outcome) = await TicketEditor.CreateParentAsync(_tdxService, child, title);
+        if (parent != null) _app.CachedTickets.Insert(0, parent);
+        if (outcome.Updated is not { } updated)
         {
             ApplyFiltersAndSort();
-            ShowActionMessage($"Created #{parent.Id}, but could not set it as the parent.", isError: true);
+            ShowActionMessage(outcome.Message, isError: true);
             return;
         }
         ReplaceCachedTicket(updated);
-        ShowActionMessage($"Created parent #{parent.Id}");
+        ShowActionMessage(outcome.Message);
     }
 
     // New Ticket ---------------------------------------------------------------
@@ -1963,12 +1937,7 @@ private bool _isInitialLoadDone;
 
             ShowActionMessage("Adding comment...", isLoading: true);
             var notify = SelectedNotifyEmails();
-            await _tdxService.AddCommentAsync(ticketId, comment!, isPrivate, notify: notify);
-
-            var files = attachedCount == 0 ? "" : attachedCount == 1 ? " with 1 file" : $" with {attachedCount} files";
-            ShowActionMessage(notify.Count == 0
-                ? $"Comment added{files}"
-                : $"Comment added{files}; notified {notify.Count} {(notify.Count == 1 ? "person" : "people")}");
+            ShowActionMessage(await TicketEditor.PostCommentAsync(_tdxService, ticketId, comment!, isPrivate, notify, attachedCount));
 
             // Drop the stashed copy too, or navigating away and back would
             // resurrect a comment that was already posted. A draft changed

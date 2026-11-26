@@ -59,6 +59,7 @@ public sealed partial class TicketsPage : Page
         ViewModel.Redrawn += OnRedrawn;
         ViewModel.SignedIn += OnSignedIn;
         Detail.LoadFailed += message => ShowAction(message, InfoBarSeverity.Warning);
+        AttachEditing();
 
         MainWindow.SearchChanged += (_, text) => ViewModel.Search = text;
         MainWindow.ViewModeChanged += (_, mode) => ViewModel.IsBoard = mode == "board";

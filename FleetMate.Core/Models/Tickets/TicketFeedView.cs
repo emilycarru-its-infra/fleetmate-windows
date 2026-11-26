@@ -49,6 +49,17 @@ public static partial class TicketFeedView
         string.IsNullOrWhiteSpace(notifiedList) ? "" : $"Notified: {WebUtility.HtmlDecode(notifiedList.Trim())}";
 
     /// <summary>
+    /// Quote in New Comment: "Ada wrote:" and the entry's plain text, each
+    /// line marked with "> ". An entry without an author is "someone".
+    /// </summary>
+    public static string Quote(string? author, string? plainBody)
+    {
+        var who = string.IsNullOrWhiteSpace(author) ? "someone" : author;
+        var quoted = string.Join("\n", (plainBody ?? "").Split('\n').Select(line => $"> {line.TrimEnd()}"));
+        return $"{who} wrote:\n{quoted}";
+    }
+
+    /// <summary>
     /// TeamDynamix HTML as plain text: line and paragraph breaks become new
     /// lines, the tags go, the common entities decode and runs of blank lines
     /// shrink to one.
