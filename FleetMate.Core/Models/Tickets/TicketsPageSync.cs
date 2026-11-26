@@ -1,7 +1,7 @@
-namespace FleetMate.GUI.Views.Tickets;
+namespace FleetMate.Core.Models.Tickets;
 
 /// <summary>Why the ticket list shows nothing, so it can say so instead of a bare empty list.</summary>
-internal enum TicketsEmptyReason
+public enum TicketsEmptyReason
 {
     /// <summary>Something is listed, or the loading progress covers the list.</summary>
     None,
@@ -23,7 +23,7 @@ internal enum TicketsEmptyReason
 /// When the Tickets page redraws or reloads in response to app events. Kept
 /// apart from the page so the rules are testable without a window.
 /// </summary>
-internal static class TicketsPageSync
+public static class TicketsPageSync
 {
     /// <summary>
     /// After a sign-in succeeds, reload unless a load is already running (it
@@ -45,7 +45,7 @@ internal static class TicketsPageSync
     /// The progress over the list shows only while it is empty: during the
     /// launch sign-in, or a load. With a snapshot showing, nothing.
     /// </summary>
-    public static bool ShowLoading(bool loading, FleetMate.Core.Models.Tickets.TdxSignInStep? step, int ticketCount) =>
+    public static bool ShowLoading(bool loading, TdxSignInStep? step, int ticketCount) =>
         ticketCount == 0 && (loading || step != null);
 
     /// <summary>The Activity bar's button: "(Draft)" when closed over unsent text or files.</summary>
@@ -84,4 +84,33 @@ internal static class TicketsPageSync
     /// </summary>
     public static bool IsSameOpenTicket(int selectedId, int? openId, bool detailVisible) =>
         detailVisible && openId == selectedId;
+
+    /// <summary>
+    /// What the empty list says and offers for <paramref name="reason"/>.
+    /// <paramref name="narrowed"/> is true while a filter or a date window
+    /// other than the current term is on, so Clear Filters has something to do.
+    /// </summary>
+    public static TicketsEmptyState EmptyState(TicketsEmptyReason reason, string? loadError, string? search, bool narrowed, bool showClosed)
+    {
+        var (glyph, title, description) = reason switch
+        {
+            TicketsEmptyReason.NotSignedIn => ("", "Not Signed In", "Sign in to TeamDynamix to see tickets."),
+            TicketsEmptyReason.LoadFailed => ("", "Tickets Didn't Load", loadError ?? ""),
+            TicketsEmptyReason.NoTickets => ("", "No Tickets", "There are no tickets in this date range."),
+            TicketsEmptyReason.Search => ("", "No Results", $"No tickets match “{search?.Trim()}”."),
+            TicketsEmptyReason.AssignedToMe => ("", "No Matching Tickets", "No open tickets are assigned to you."),
+            _ => ("", "No Matching Tickets", "No tickets match the current filters."),
+        };
+        var filtering = reason is TicketsEmptyReason.AssignedToMe or TicketsEmptyReason.Filters;
+        return new TicketsEmptyState(glyph, title, description,
+            ShowsSignIn: reason == TicketsEmptyReason.NotSignedIn,
+            ShowsRetry: reason is TicketsEmptyReason.NotSignedIn or TicketsEmptyReason.LoadFailed,
+            ShowsShowAll: reason == TicketsEmptyReason.AssignedToMe,
+            ShowsClearFilters: filtering && narrowed,
+            ShowsShowClosed: filtering && !showClosed);
+    }
 }
+
+/// <summary>The empty list's icon, words and the buttons that can fill it again.</summary>
+public sealed record TicketsEmptyState(string Glyph, string Title, string Description,
+    bool ShowsSignIn, bool ShowsRetry, bool ShowsShowAll, bool ShowsClearFilters, bool ShowsShowClosed);

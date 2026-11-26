@@ -1,6 +1,4 @@
-using FleetMate.Core.Models.Tickets;
-
-namespace FleetMate.GUI.Views.Tickets;
+namespace FleetMate.Core.Models.Tickets;
 
 /// <summary>
 /// One section of the Filters popover's left column: a ticket filter
@@ -8,7 +6,7 @@ namespace FleetMate.GUI.Views.Tickets;
 /// and Show Closed. The Mac's FilterPanelView lists the same categories in
 /// the same order, with Time Period last.
 /// </summary>
-internal sealed record TicketFilterSection(TicketFilterCategory? Category)
+public sealed record TicketFilterSection(TicketFilterCategory? Category)
 {
     public bool IsTimePeriod => Category == null;
 
@@ -20,7 +18,7 @@ internal sealed record TicketFilterSection(TicketFilterCategory? Category)
 /// count on the button, the per-section counts, the value list and its
 /// search. Kept apart from the page so it is testable without a window.
 /// </summary>
-internal static class TicketFiltersPopoverRules
+public static class TicketFiltersPopoverRules
 {
     public const string TimePeriodTitle = "Time Period";
 

@@ -279,7 +279,7 @@ public partial class App
         RefreshTdxSessionStatus();
         if (!wasSignedIn || TicketWorkspaceIdentityChanged)
         {
-            _ticketsCacheTime = null;
+            TicketCache.Invalidate();
             NotifyTdxSignInChanged();
         }
     }

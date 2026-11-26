@@ -1,3 +1,4 @@
+using FleetMate.Core.Models.Tickets;
 using FleetMate.Core.Links;
 using FleetMate.GUI;
 using FleetMate.GUI.Views.Tickets;

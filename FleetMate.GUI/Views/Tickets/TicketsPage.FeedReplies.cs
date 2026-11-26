@@ -364,8 +364,7 @@ public class FeedDisplayItem : INotifyPropertyChanged
     public List<FeedDisplayItem> Replies { get; set; } = new();
 
     /// <summary>"Notified: …", or nothing when TDX sent no names.</summary>
-    public static string NotifiedLine(string? notifiedList) =>
-        string.IsNullOrWhiteSpace(notifiedList) ? "" : $"Notified: {System.Net.WebUtility.HtmlDecode(notifiedList.Trim())}";
+    public static string NotifiedLine(string? notifiedList) => TicketFeedView.NotifiedLine(notifiedList);
 
     public Visibility NotificationVisibility =>
         string.IsNullOrEmpty(NotificationRecipients) ? Visibility.Collapsed : Visibility.Visible;
