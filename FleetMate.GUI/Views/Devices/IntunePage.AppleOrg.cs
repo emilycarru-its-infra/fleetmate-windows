@@ -1,4 +1,5 @@
 using System.Windows;
+using FleetMate.Core.Devices;
 using FleetMate.Core.Models.Devices;
 using FleetMate.Core.Services.Devices;
 
@@ -96,28 +97,20 @@ public partial class IntunePage
         return state;
     }
 
-    /// <summary>Show the Apple cards that fit every selected device; true when any does.</summary>
-    private bool UpdateAppleSections(List<DeviceListRow> selected)
+    /// <summary>Show the Apple cards <paramref name="s"/> allows for the selection.</summary>
+    private void UpdateAppleSections(DeviceActionSections s, AppleOrgSnapshot? org)
     {
-        var orgName = AppleOrgJoin.SingleOrg(selected);
-        var org = orgName == null ? null : _appleOrgs.FirstOrDefault(o => o.Profile.Name == orgName);
-        var profile = org?.Profile;
-        bool Can(AppleOrgActionKind kind) => AppleOrgJoin.IsAvailable(kind, selected, profile);
         static Visibility Show(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
 
-        var assign = Can(AppleOrgActionKind.Assign);
-        var migrate = Can(AppleOrgActionKind.ScheduleMigration) || Can(AppleOrgActionKind.UpdateMigrationDeadline);
-        var release = Can(AppleOrgActionKind.Release);
-
-        AppleAssignSection.Visibility = Show(assign);
-        AppleUnassignButton.Visibility = Show(Can(AppleOrgActionKind.Unassign));
-        AppleMigrationSection.Visibility = Show(migrate);
-        AppleScheduleMigrationButton.Visibility = Show(Can(AppleOrgActionKind.ScheduleMigration));
-        AppleUpdateDeadlineButton.Visibility = Show(Can(AppleOrgActionKind.UpdateMigrationDeadline));
-        AppleCancelMigrationButton.Visibility = Show(Can(AppleOrgActionKind.CancelMigration));
-        AppleReleaseSection.Visibility = Show(release);
-        AppleActionsHeader.Visibility = Show(assign || migrate || release);
-        if (profile != null) AppleActionsHeader.Text = selected[0].OrgName ?? profile.ServiceName;
+        AppleAssignSection.Visibility = Show(s.AppleAssign);
+        AppleUnassignButton.Visibility = Show(s.AppleUnassign);
+        AppleMigrationSection.Visibility = Show(s.AppleMigrate);
+        AppleScheduleMigrationButton.Visibility = Show(s.AppleScheduleMigration);
+        AppleUpdateDeadlineButton.Visibility = Show(s.AppleUpdateDeadline);
+        AppleCancelMigrationButton.Visibility = Show(s.AppleCancelMigration);
+        AppleReleaseSection.Visibility = Show(s.AppleRelease);
+        AppleActionsHeader.Visibility = Show(s.AppleHeaderShown);
+        AppleActionsHeader.Text = s.AppleHeader;
 
         if (org != null)
         {
@@ -126,7 +119,6 @@ public partial class IntunePage
             AppleMigrationDeadline.DisplayDateStart = DateTime.Today.AddDays(1);
             AppleMigrationDeadline.DisplayDateEnd = DateTime.Today.AddDays(AppleOrgAction.MaxMigrationDays);
         }
-        return assign || migrate || release;
     }
 
     private async void OnAppleAssignClicked(object sender, RoutedEventArgs e)
@@ -173,15 +165,11 @@ public partial class IntunePage
 
     private async void OnAppleReleaseClicked(object sender, RoutedEventArgs e) =>
         await RunAppleAsync(new AppleOrgAction(AppleOrgActionKind.Release),
-            "— they leave the organization and lose their enrollment assignment. This cannot be undone", MessageBoxImage.Warning);
+            DeviceActionText.AppleReleaseDetail, MessageBoxImage.Warning);
 
     /// <summary>The picked deadline at the end of that local day, within Apple's 90-day cap.</summary>
-    private DateTimeOffset? MigrationDeadline()
-    {
-        if (AppleMigrationDeadline.SelectedDate is not { } day) return null;
-        var deadline = new DateTimeOffset(day.Date.AddHours(23).AddMinutes(59));
-        return deadline > DateTimeOffset.Now && deadline <= AppleOrgAction.LatestDeadline(DateTimeOffset.Now) ? deadline : null;
-    }
+    private DateTimeOffset? MigrationDeadline() =>
+        DeviceActionText.MigrationDeadline(AppleMigrationDeadline.SelectedDate, DateTimeOffset.Now);
 
     private async Task RunAppleAsync(AppleOrgAction action, string detail, MessageBoxImage image = MessageBoxImage.Question)
     {
@@ -190,17 +178,14 @@ public partial class IntunePage
         if (orgName == null || AppleService(orgName) is not { } service) return;
         var serials = selected.Select(r => r.Apple!.SerialNumber).ToList();
 
-        var what = $"{action.Title}: {serials.Count} device{(serials.Count == 1 ? "" : "s")} {detail}".TrimEnd();
+        var what = DeviceActionText.AppleWhat(action, serials.Count, detail);
         if (MessageBox.Show($"{what}?", service.Profile.ServiceName, MessageBoxButton.YesNo, image) != MessageBoxResult.Yes) return;
 
         ShowActionMessage($"{what}...", isLoading: true);
         try
         {
             var result = await service.PerformAsync(action, serials);
-            ShowActionMessage(result.Succeeded
-                    ? $"{action.Title}: done on {serials.Count} device(s)."
-                    : $"{action.Title}: Apple reports {result.Status} (activity {result.ActivityId}).",
-                isError: !result.Succeeded);
+            ShowActionMessage(DeviceActionText.AppleResult(action, result, serials.Count), isError: !result.Succeeded);
         }
         catch (Exception ex)
         {
@@ -210,7 +195,7 @@ public partial class IntunePage
 
         // A few devices are re-read one by one; more than that re-reads the
         // whole organization, which costs fewer requests.
-        if (serials.Count <= 15)
+        if (serials.Count <= DeviceActionText.AppleRereadLimit)
         {
             var fresh = (await service.RereadAsync(serials)).ToDictionary(d => DeviceListJoin.Normalize(d.SerialNumber));
             _appleOrgs = _appleOrgs.Select(o => o.Profile.Name != orgName ? o : o with

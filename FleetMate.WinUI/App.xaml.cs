@@ -61,6 +61,9 @@ public partial class App : Application
         ShellPages.Register("Development", typeof(Pages.Development.DevelopmentPage));
         Shell.Widgets.WidgetStrip.RegisterTab("Development");
         ShellServices.RegisterDemoFixtures(s => s.SeedDevelopmentDemo());
+        ShellPages.Register("Devices", typeof(Pages.Devices.DevicesPage));
+        Shell.Widgets.WidgetStrip.RegisterTab("Devices");
+        ShellServices.RegisterDemoFixtures(s => s.SeedDevicesDemo());
         ShellPages.Register("Identity", typeof(Pages.Identity.IdentityPage));
         ShellServices.RegisterDemoFixtures(s => s.Identity = new Pages.Identity.IdentityDemo());
     }

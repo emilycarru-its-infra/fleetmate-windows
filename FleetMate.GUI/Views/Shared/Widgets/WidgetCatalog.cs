@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
+using FleetMate.Core.Devices;
 using FleetMate.Core.Models.Devices;
 using FleetMate.Core.Models.Inventory;
 using FleetMate.Core.Models.Projects;
@@ -224,58 +225,22 @@ public static partial class WidgetCatalog
 
     // MARK: - Devices
 
-    /// <summary>Each platform's own colour, so a platform keeps it whatever its rank.</summary>
-    private static readonly Dictionary<string, Color> PlatformColors = new()
-    {
-        ["Macintosh"] = P.Orange,
-        ["Windows"] = P.Blue,
-        ["iOS/iPadOS"] = P.Purple,
-        ["Android"] = P.Green,
-        ["Linux"] = P.Teal,
-        ["ChromeOS"] = P.Brown,
-    };
-
-    private static readonly Color[] PlatformFallbackColors = { P.Blue, P.Purple, P.Orange, P.Teal, P.Brown, P.Gray };
-
-    /// <summary>The platform name the widgets show for an Intune operating system.</summary>
-    internal static string PlatformLabel(string? operatingSystem) => operatingSystem switch
-    {
-        "macOS" => "Macintosh",
-        "iOS" or "iPadOS" => "iOS/iPadOS",
-        _ => operatingSystem ?? "",
-    };
+    /// <summary>The platform name the widgets show for an Intune operating system (<see cref="DeviceFigures.PlatformLabel"/>).</summary>
+    internal static string PlatformLabel(string? operatingSystem) => DeviceFigures.PlatformLabel(operatingSystem);
 
     /// <summary>Devices per platform, most first, top six, each with its fixed colour.</summary>
-    internal static List<(ChartSlice Slice, Color Color)> PlatformBreakdown(IEnumerable<IntuneDevice> devices) => devices
-        .GroupBy(d => PlatformLabel(d.OperatingSystem))
-        .Where(g => g.Key.Length > 0)
-        .Select(g => new ChartSlice(g.Key, g.Count()))
-        .OrderByDescending(s => s.Value)
-        .Take(6)
-        .Select((s, i) => (s, PlatformColors.TryGetValue(s.Label, out var c) ? c : PlatformFallbackColors[i % PlatformFallbackColors.Length]))
-        .ToList();
+    internal static List<(ChartSlice Slice, Color Color)> PlatformBreakdown(IEnumerable<IntuneDevice> devices) =>
+        DeviceFigures.PlatformBreakdown(devices).Select(p => (p.Slice, ToneColor(p.Tone))).ToList();
 
-    /// <summary>Non-compliant is Intune's own "noncompliant"; every other state counts as compliant, as on the Mac.</summary>
-    internal static bool IsNonCompliant(IntuneDevice device) =>
-        string.Equals(device.ComplianceState, "noncompliant", StringComparison.OrdinalIgnoreCase);
+    internal static bool IsNonCompliant(IntuneDevice device) => DeviceFigures.IsNonCompliant(device);
 
     /// <summary>Compliant and Non-Compliant, leaving out a side with no devices.</summary>
-    internal static List<(ChartSlice Slice, Color Color)> ComplianceBreakdown(IReadOnlyCollection<IntuneDevice> devices)
-    {
-        var nonCompliant = devices.Count(IsNonCompliant);
-        return new List<(ChartSlice, Color)>
-        {
-            (new ChartSlice("Compliant", devices.Count - nonCompliant), P.Green),
-            (new ChartSlice("Non-Compliant", nonCompliant), P.Orange),
-        }.Where(x => x.Item1.Value > 0).ToList();
-    }
+    internal static List<(ChartSlice Slice, Color Color)> ComplianceBreakdown(IReadOnlyCollection<IntuneDevice> devices) =>
+        DeviceFigures.ComplianceBreakdown(devices).Select(c => (c.Slice, ToneColor(c.Tone))).ToList();
 
-    /// <summary>Days without an Intune check-in after which a device counts as not synced, as on the Mac.</summary>
-    internal const int StaleDays = 30;
+    internal const int StaleDays = DeviceFigures.StaleDays;
 
-    /// <summary>Devices whose last check-in is more than <see cref="StaleDays"/> days before <paramref name="now"/>; a device with no check-in is not counted.</summary>
-    internal static int StaleCount(IEnumerable<IntuneDevice> devices, DateTime now) =>
-        devices.Count(d => d.LastSyncDateTime is { } t && (now - t.ToUniversalTime()).TotalDays > StaleDays);
+    internal static int StaleCount(IEnumerable<IntuneDevice> devices, DateTime now) => DeviceFigures.StaleCount(devices, now);
 
     /// <summary>Cards in the Devices row share its height (see <see cref="WidgetFlowPanel.EqualHeights"/>).</summary>
     private static System.Windows.Controls.Border Stretch(System.Windows.Controls.Border card)
@@ -289,12 +254,7 @@ public static partial class WidgetCatalog
     private static bool _loadingErrors;
 
     /// <summary>Errors per category, summed over the devices each error hits, top eight.</summary>
-    internal static List<ChartSlice> ErrorCategorySlices(IEnumerable<ErrorSummary> errors) => errors
-        .GroupBy(e => e.Category)
-        .Select(g => new ChartSlice(CategoryLabel(g.Key), g.Sum(e => e.DeviceCount)))
-        .OrderByDescending(s => s.Value)
-        .Take(8)
-        .ToList();
+    internal static List<ChartSlice> ErrorCategorySlices(IEnumerable<ErrorSummary> errors) => DeviceFigures.ErrorCategorySlices(errors);
 
     private static List<UIElement> Devices(App app, Action<string, string> filter)
     {
@@ -407,21 +367,6 @@ public static partial class WidgetCatalog
                 Foreground = (Brush)Application.Current.FindResource("SystemControlForegroundBaseMediumBrush"),
             },
         },
-    };
-
-    private static string CategoryLabel(ErrorCategory category) => category switch
-    {
-        ErrorCategory.NotFound => "Not Found",
-        ErrorCategory.HashMismatch => "Hash Mismatch",
-        ErrorCategory.DownloadFailed => "Download Failed",
-        ErrorCategory.MsiFailure => "MSI Failure",
-        ErrorCategory.SignatureRequired => "Sig Required",
-        ErrorCategory.CatalogMissing => "Catalog Missing",
-        ErrorCategory.MissingChocolatey => "No Chocolatey",
-        ErrorCategory.MissingSbinInstaller => "No sbin-installer",
-        ErrorCategory.InstallVerificationFailed => "Verify Failed",
-        ErrorCategory.MissingInstallerLocation => "No Installer Loc",
-        _ => category.ToString(),
     };
 
     // MARK: - Inventory

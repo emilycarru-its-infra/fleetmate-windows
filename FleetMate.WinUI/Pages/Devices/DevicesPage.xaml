@@ -1,0 +1,293 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="FleetMate.WinUI.Pages.Devices.DevicesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:FleetMate.WinUI.Pages.Devices"
+    NavigationCacheMode="Required">
+
+    <Page.Resources>
+        <DataTemplate x:Key="DeviceRowTemplate">
+            <local:DeviceRowCells />
+        </DataTemplate>
+    </Page.Resources>
+
+    <Page.KeyboardAccelerators>
+        <KeyboardAccelerator Key="F5" Invoked="RefreshAccelerator_Invoked" />
+        <KeyboardAccelerator Key="R" Modifiers="Control" Invoked="RefreshAccelerator_Invoked" />
+        <KeyboardAccelerator Key="A" Modifiers="Control,Shift" Invoked="SelectAllAccelerator_Invoked" />
+        <KeyboardAccelerator Key="Escape" Invoked="EscapeAccelerator_Invoked" />
+    </Page.KeyboardAccelerators>
+
+    <Grid x:Name="Root" SizeChanged="Root_SizeChanged">
+        <Grid Padding="24,8,24,16" RowSpacing="8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- No page heading: the tab names the page, as on Mac. The counts and loading notes sit beside the toolbar. -->
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="160" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
+                    <TextBlock
+                        x:Name="CountText"
+                        AutomationProperties.AutomationId="DevicesCount"
+                        AutomationProperties.LiveSetting="Polite"
+                        Style="{StaticResource BodyStrongTextBlockStyle}"
+                        Text="{x:Bind ViewModel.CountText, Mode=OneWay}"
+                        TextWrapping="Wrap" />
+                    <TextBlock
+                        x:Name="LoadingNote"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Style="{StaticResource BodyTextBlockStyle}"
+                        Visibility="Collapsed" />
+                    <TextBlock
+                        Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                        Style="{StaticResource BodyStrongTextBlockStyle}"
+                        Text="{x:Bind ViewModel.SelectionText, Mode=OneWay}" />
+                </StackPanel>
+
+                <CommandBar
+                    x:Name="Toolbar"
+                    Grid.Column="1"
+                    AutomationProperties.AutomationId="DevicesToolbar"
+                    AutomationProperties.Name="Devices toolbar"
+                    Background="Transparent"
+                    DefaultLabelPosition="Right"
+                    IsDynamicOverflowEnabled="True"
+                    OverflowButtonVisibility="Auto">
+                    <AppBarButton
+                        x:Name="FiltersButton"
+                        AutomationProperties.AutomationId="DevicesFiltersButton"
+                        Label="{x:Bind ViewModel.FiltersButtonText, Mode=OneWay}"
+                        ToolTipService.ToolTip="Filter the list by service, platform, compliance and more">
+                        <AppBarButton.Icon>
+                            <FontIcon Glyph="&#xE71C;" />
+                        </AppBarButton.Icon>
+                        <AppBarButton.Flyout>
+                            <Flyout x:Name="FiltersFlyout" Opening="FiltersFlyout_Opening" Placement="BottomEdgeAlignedRight">
+                                <Grid Width="320" RowSpacing="8">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock VerticalAlignment="Center" Style="{StaticResource BodyStrongTextBlockStyle}" Text="Filters" />
+                                    <Button
+                                        HorizontalAlignment="Right"
+                                        AutomationProperties.AutomationId="DevicesClearFilters"
+                                        Click="ClearFilters_Click"
+                                        Content="Clear" />
+                                    <ScrollViewer Grid.Row="1" MaxHeight="520" VerticalScrollBarVisibility="Auto">
+                                        <StackPanel x:Name="FiltersHost" Padding="0,0,12,0" />
+                                    </ScrollViewer>
+                                </Grid>
+                            </Flyout>
+                        </AppBarButton.Flyout>
+                    </AppBarButton>
+
+                    <!-- Look up a list of serials: typed, pasted, or imported from a text or CSV file. -->
+                    <AppBarButton
+                        x:Name="SerialsButton"
+                        AutomationProperties.AutomationId="DevicesSerialsButton"
+                        Label="{x:Bind ViewModel.SerialsButtonText, Mode=OneWay}"
+                        ToolTipService.ToolTip="Show only the devices on a list of serial numbers">
+                        <AppBarButton.Icon>
+                            <FontIcon Glyph="&#xEA37;" />
+                        </AppBarButton.Icon>
+                        <AppBarButton.Flyout>
+                            <Flyout x:Name="SerialsFlyout" Opened="SerialsFlyout_Opened" Placement="BottomEdgeAlignedRight">
+                                <StackPanel Width="320" Spacing="8">
+                                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Look Up Serials" />
+                                    <TextBlock
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        Text="Type or paste serial numbers, one per line or separated by commas, or import a text or CSV file."
+                                        TextWrapping="Wrap" />
+                                    <TextBox
+                                        x:Name="SerialsInput"
+                                        Height="160"
+                                        AcceptsReturn="True"
+                                        AutomationProperties.AutomationId="DevicesSerialsInput"
+                                        AutomationProperties.Name="Serial numbers"
+                                        FontFamily="Cascadia Mono, Consolas"
+                                        ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                        TextChanged="SerialsInput_TextChanged"
+                                        TextWrapping="NoWrap" />
+                                    <TextBlock
+                                        x:Name="SerialsParsedText"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        TextWrapping="Wrap" />
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Button AutomationProperties.AutomationId="DevicesImportSerials" Click="ImportSerials_Click" Content="Import File…" />
+                                        <Button Grid.Column="1" AutomationProperties.AutomationId="DevicesClearSerials" Click="ClearSerials_Click" Content="Clear" />
+                                        <Button
+                                            x:Name="SerialsShowButton"
+                                            Grid.Column="2"
+                                            AutomationProperties.AutomationId="DevicesShowSerials"
+                                            Click="ShowSerials_Click"
+                                            Content="Show"
+                                            IsEnabled="False"
+                                            Style="{StaticResource AccentButtonStyle}" />
+                                    </Grid>
+                                </StackPanel>
+                            </Flyout>
+                        </AppBarButton.Flyout>
+                    </AppBarButton>
+
+                    <AppBarButton
+                        x:Name="ImportHashesButton"
+                        AutomationProperties.AutomationId="DevicesImportHashes"
+                        Click="ImportHashes_Click"
+                        Label="Import Hashes"
+                        ToolTipService.ToolTip="Register devices with Windows Autopilot from a hardware hash CSV">
+                        <AppBarButton.Icon>
+                            <FontIcon Glyph="&#xE8B5;" />
+                        </AppBarButton.Icon>
+                    </AppBarButton>
+
+                    <AppBarButton
+                        x:Name="ActionsButton"
+                        AutomationProperties.AutomationId="DevicesActionsButton"
+                        Click="ActionsButton_Click"
+                        IsEnabled="{x:Bind ViewModel.HasSelection, Mode=OneWay}"
+                        Label="Actions"
+                        ToolTipService.ToolTip="Show the actions for the selected devices">
+                        <AppBarButton.Icon>
+                            <FontIcon Glyph="&#xE7EF;" />
+                        </AppBarButton.Icon>
+                    </AppBarButton>
+
+                    <AppBarSeparator />
+
+                    <AppBarButton
+                        AutomationProperties.AutomationId="DevicesSelectAll"
+                        Click="SelectAll_Click"
+                        Label="Select All"
+                        ToolTipService.ToolTip="Select every device in the list (Ctrl+Shift+A)">
+                        <AppBarButton.Icon>
+                            <FontIcon Glyph="&#xE8B3;" />
+                        </AppBarButton.Icon>
+                    </AppBarButton>
+                    <AppBarButton
+                        x:Name="ClearSelectionButton"
+                        AutomationProperties.AutomationId="DevicesClearSelection"
+                        Click="ClearSelection_Click"
+                        IsEnabled="{x:Bind ViewModel.HasSelection, Mode=OneWay}"
+                        Label="Clear Selection"
+                        ToolTipService.ToolTip="Clear the selection (Escape)">
+                        <AppBarButton.Icon>
+                            <FontIcon Glyph="&#xE894;" />
+                        </AppBarButton.Icon>
+                    </AppBarButton>
+                    <AppBarButton
+                        x:Name="RefreshButton"
+                        AutomationProperties.AutomationId="DevicesRefresh"
+                        Click="Refresh_Click"
+                        Label="Refresh"
+                        ToolTipService.ToolTip="Read Intune, Autopilot and the Apple organizations again (F5)">
+                        <AppBarButton.Icon>
+                            <FontIcon Glyph="&#xE72C;" />
+                        </AppBarButton.Icon>
+                    </AppBarButton>
+                </CommandBar>
+            </Grid>
+
+            <!-- Configuration and action errors, under the toolbar. -->
+            <InfoBar
+                x:Name="Notice"
+                Grid.Row="1"
+                AutomationProperties.AutomationId="DevicesNotice"
+                IsClosable="True"
+                IsOpen="False" />
+
+            <!-- The widget strip, shown from the toolbar's Graphs button. -->
+            <ScrollViewer
+                x:Name="GraphsScroller"
+                Grid.Row="2"
+                HorizontalScrollMode="Disabled"
+                VerticalScrollBarVisibility="Auto"
+                Visibility="Collapsed">
+                <ContentControl x:Name="GraphsHost" HorizontalContentAlignment="Stretch" IsTabStop="False" />
+            </ScrollViewer>
+
+            <Grid Grid.Row="3" ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="320" />
+                    <ColumnDefinition x:Name="SideColumn" Width="0" />
+                </Grid.ColumnDefinitions>
+
+                <Border Style="{StaticResource CardStyle}" Padding="0">
+                    <Grid>
+                        <local:DeviceTable x:Name="Table" RowTemplate="{StaticResource DeviceRowTemplate}" />
+                        <StackPanel
+                            x:Name="LoadingPanel"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="8"
+                            Visibility="Collapsed">
+                            <ProgressRing Width="32" Height="32" IsActive="True" />
+                            <TextBlock HorizontalAlignment="Center" Style="{StaticResource BodyTextBlockStyle}" Text="Loading devices…" />
+                        </StackPanel>
+                        <TextBlock
+                            x:Name="EmptyText"
+                            Margin="24"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource BodyTextBlockStyle}"
+                            TextAlignment="Center"
+                            TextWrapping="Wrap"
+                            Visibility="Collapsed" />
+                    </Grid>
+                </Border>
+
+                <!--
+                    The selection's side: the actions that apply to every
+                    selected device, and the detail of a single one. Wide, they
+                    sit side by side, as on Mac; narrow, they share one column
+                    and a switch picks which shows.
+                -->
+                <Grid x:Name="SidePanel" Grid.Column="1" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <SelectorBar
+                        x:Name="SideSwitch"
+                        Margin="0,0,0,8"
+                        AutomationProperties.AutomationId="DevicesSideSwitch"
+                        AutomationProperties.Name="Selection view"
+                        SelectionChanged="SideSwitch_SelectionChanged"
+                        Visibility="Collapsed">
+                        <SelectorBarItem x:Name="DetailSwitchItem" IsSelected="True" Tag="detail" Text="Details" />
+                        <SelectorBarItem x:Name="ActionsSwitchItem" Tag="actions" Text="Actions" />
+                    </SelectorBar>
+                    <Grid x:Name="SideGrid" Grid.Row="1" ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition x:Name="ActionsColumn" Width="300" />
+                            <ColumnDefinition x:Name="DetailColumn" Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <local:DeviceActionsPanel x:Name="Actions" />
+                        <local:DeviceDetailPane x:Name="Detail" Grid.Column="1" Visibility="Collapsed" />
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Grid>
+
+        <!-- The compliance troubleshooting lightbox, over the whole page. -->
+        <local:ComplianceLightbox x:Name="Lightbox" Visibility="Collapsed" />
+    </Grid>
+</Page>
