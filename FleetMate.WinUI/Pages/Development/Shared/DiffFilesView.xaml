@@ -57,12 +57,25 @@
 
         <DataTemplate x:Key="HunkHeaderTemplate" x:DataType="core:DiffRow">
             <Border Padding="8,2" Background="{ThemeResource SubtleFillColorTertiaryBrush}">
-                <TextBlock
-                    FontFamily="Cascadia Mono, Consolas"
-                    FontSize="11"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    Text="{x:Bind Hunk.Header}"
-                    TextTrimming="CharacterEllipsis" />
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontFamily="Cascadia Mono, Consolas"
+                        FontSize="11"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="{x:Bind Hunk.Header}"
+                        TextTrimming="CharacterEllipsis" />
+                    <!-- The host's hunk actions (Repos: Stage, Unstage and Discard Chunk); none by default. -->
+                    <StackPanel
+                        Grid.Column="1"
+                        DataContextChanged="HunkActions_DataContextChanged"
+                        Orientation="Horizontal"
+                        Spacing="4" />
+                </Grid>
             </Border>
         </DataTemplate>
 
