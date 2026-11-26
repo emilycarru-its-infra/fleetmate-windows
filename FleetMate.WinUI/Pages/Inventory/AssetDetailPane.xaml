@@ -8,12 +8,9 @@
         <KeyboardAccelerator Key="Escape" Invoked="CloseAccelerator_Invoked" />
     </UserControl.KeyboardAccelerators>
 
-    <Grid x:Name="Root" SizeChanged="Root_SizeChanged">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
+    <!-- One scroll for the header and either segment, so a short window still reaches every card. -->
+    <ScrollViewer x:Name="Root" SizeChanged="Root_SizeChanged" VerticalScrollBarVisibility="Auto">
+    <StackPanel>
 
         <!-- The hero header: what the asset is at a glance, then where it stands. -->
         <StackPanel Padding="16,16,16,8" Spacing="8">
@@ -125,7 +122,7 @@
         </StackPanel>
 
         <!-- Details | History; the choice carries across assets. -->
-        <Grid Grid.Row="1" Padding="12,0,16,4">
+        <Grid Padding="12,0,16,4">
             <SelectorBar
                 x:Name="SegmentBar"
                 AutomationProperties.AutomationId="InventoryDetailSegments"
@@ -138,23 +135,16 @@
 
         <InfoBar
             x:Name="ErrorBar"
-            Grid.Row="2"
             Margin="16,0,16,8"
-            VerticalAlignment="Top"
-            Canvas.ZIndex="1"
             IsOpen="False"
             Severity="Warning" />
 
-        <ScrollViewer x:Name="DetailsView" Grid.Row="2" VerticalScrollBarVisibility="Auto">
+        <StackPanel x:Name="DetailsView">
             <StackPanel x:Name="CardsHost" Padding="16,4,16,16" Spacing="12" />
-        </ScrollViewer>
+        </StackPanel>
 
         <!-- Change history, newest first: a card per event, its field changes under it. -->
-        <Grid x:Name="HistoryView" Grid.Row="2" Visibility="Collapsed">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
+        <StackPanel x:Name="HistoryView" Visibility="Collapsed">
             <Grid Padding="16,4,16,8" ColumnSpacing="12">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -174,18 +164,16 @@
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     Style="{StaticResource CaptionTextBlockStyle}" />
             </Grid>
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                <StackPanel x:Name="HistoryHost" Padding="16,0,16,16" Spacing="8" />
-            </ScrollViewer>
             <ProgressRing
                 x:Name="HistoryLoadingRing"
-                Grid.Row="1"
                 Width="24"
                 Height="24"
-                Margin="0,24,0,0"
-                VerticalAlignment="Top"
+                Margin="0,16,0,0"
                 AutomationProperties.Name="Loading history"
-                IsActive="False" />
-        </Grid>
-    </Grid>
+                IsActive="False"
+                Visibility="Collapsed" />
+            <StackPanel x:Name="HistoryHost" Padding="16,0,16,16" Spacing="8" />
+        </StackPanel>
+    </StackPanel>
+    </ScrollViewer>
 </UserControl>

@@ -21,9 +21,9 @@
                 <TextBlock Width="200" Style="{StaticResource CellStyle}" Text="{x:Bind Name, Mode=OneTime}" Visibility="{x:Bind Columns.Name, Mode=OneWay}" />
                 <TextBlock Width="132" FontFamily="Cascadia Mono, Consolas" Style="{StaticResource CellStyle}" Text="{x:Bind Serial, Mode=OneTime}" Visibility="{x:Bind Columns.Serial, Mode=OneWay}" />
                 <TextBlock Width="200" Style="{StaticResource CellStyle}" Text="{x:Bind Model, Mode=OneTime}" Visibility="{x:Bind Columns.Model, Mode=OneWay}" />
-                <StackPanel Width="128" Orientation="Horizontal" Spacing="6" Visibility="{x:Bind Columns.Status, Mode=OneWay}">
+                <StackPanel Width="160" Orientation="Horizontal" Spacing="6" Visibility="{x:Bind Columns.Status, Mode=OneWay}">
                     <Ellipse Width="8" Height="8" VerticalAlignment="Center" Fill="{x:Bind StatusBrush, Mode=OneTime}" />
-                    <TextBlock MaxWidth="110" Style="{StaticResource CellStyle}" Text="{x:Bind Status, Mode=OneTime}" />
+                    <TextBlock MaxWidth="146" Style="{StaticResource CellStyle}" Text="{x:Bind Status, Mode=OneTime}" />
                 </StackPanel>
                 <TextBlock Width="148" Style="{StaticResource CellStyle}" Text="{x:Bind AssignedTo, Mode=OneTime}" Visibility="{x:Bind Columns.AssignedTo, Mode=OneWay}" />
                 <TextBlock Width="112" Style="{StaticResource CellStyle}" Text="{x:Bind Category, Mode=OneTime}" Visibility="{x:Bind Columns.Category, Mode=OneWay}" />

@@ -553,18 +553,27 @@ public sealed partial class AssetDetailPane : UserControl
         header.Children.Add(new TextBlock { Text = bar.Title, Style = InventoryUi.Style("CaptionTextBlockStyle"), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         header.Children.Add(trailing);
 
-        var progress = new ProgressBar
+        // A track and its fill, 6px, as in WPF: the share of the span that has passed.
+        var filled = Math.Max(bar.Fraction, 0.02);
+        var fill = new Border
         {
-            Minimum = 0,
-            Maximum = 100,
-            Value = Math.Max(bar.Fraction, 0.02) * 100,
+            CornerRadius = new CornerRadius(3),
+            Background = DevelopmentUi.Theme(bar.Overdue ? "SystemFillColorCriticalBrush" : "SystemFillColorCautionBrush"),
+        };
+        var track = new Grid
+        {
             Height = 6,
             CornerRadius = new CornerRadius(3),
-            Foreground = DevelopmentUi.Theme(bar.Overdue ? "SystemFillColorCriticalBrush" : "SystemFillColorCautionBrush"),
             Background = DevelopmentUi.Theme("BarTrackBrush"),
+            ColumnDefinitions =
+            {
+                new ColumnDefinition { Width = new GridLength(filled, GridUnitType.Star) },
+                new ColumnDefinition { Width = new GridLength(Math.Max(1 - filled, 0.0001), GridUnitType.Star) },
+            },
+            Children = { fill },
         };
-        AutomationProperties.SetName(progress, $"{bar.Title}: {bar.Trailing}");
-        return new StackPanel { Spacing = 4, Children = { header, progress } };
+        AutomationProperties.SetName(track, $"{bar.Title}: {bar.Trailing}");
+        return new StackPanel { Spacing = 4, Children = { header, track } };
     }
 
     // MARK: - Options and status

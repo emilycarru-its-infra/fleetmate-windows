@@ -14,7 +14,7 @@ public sealed partial class AssetColumnLayout : INotifyPropertyChanged
     /// <summary>Each column's width in DIPs, by header.</summary>
     public static readonly IReadOnlyDictionary<string, double> Widths = new Dictionary<string, double>
     {
-        ["Asset Tag"] = 112, ["Name"] = 200, ["Serial"] = 132, ["Model"] = 200, ["Status"] = 128,
+        ["Asset Tag"] = 112, ["Name"] = 200, ["Serial"] = 132, ["Model"] = 200, ["Status"] = 160,
         ["Assigned To"] = 148, ["Category"] = 112, ["Platform"] = 108, ["Manufacturer"] = 120, ["Usage"] = 96,
         ["Catalog"] = 96, ["Area"] = 96, ["Location"] = 128, ["Last Activity"] = 152,
     };

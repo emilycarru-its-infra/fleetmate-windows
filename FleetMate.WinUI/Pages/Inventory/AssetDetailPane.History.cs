@@ -64,6 +64,7 @@ public sealed partial class AssetDetailPane
         HistoryHost.Children.Clear();
         HistoryCountText.Text = "";
         HistoryLoadingRing.IsActive = true;
+        HistoryLoadingRing.Visibility = Visibility.Visible;
         try
         {
             var rows = await App.Services.GetAssetHistoryAsync(asset);
@@ -81,6 +82,7 @@ public sealed partial class AssetDetailPane
             if (_asset?.Id == asset.Id)
             {
                 HistoryLoadingRing.IsActive = false;
+                HistoryLoadingRing.Visibility = Visibility.Collapsed;
                 RenderHistory();
             }
             _historyLoaded.TrySetResult();

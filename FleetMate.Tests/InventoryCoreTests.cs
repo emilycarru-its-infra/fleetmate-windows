@@ -125,7 +125,7 @@ public class InventoryCoreTests
 
         var status = cards.Single(c => c.Title == "Asset Status");
         Assert.Equal(GraphCardKind.Donut, status.Kind);
-        Assert.Equal("deployed (2)", status.Bars[0].Label);
+        Assert.Equal("deployed", status.Bars[0].Label);
         Assert.Equal(new GraphFilter(InventoryGraphCategory.StatusType, "deployed"), status.Bars[0].Open);
     }
 

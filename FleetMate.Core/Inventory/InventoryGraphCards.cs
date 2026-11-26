@@ -61,7 +61,8 @@ public static class InventoryGraphCards
 
         var statuses = InventoryFigures.AssetStatusSlices(assets);
         cards.Add(Chart(GraphCardKind.Donut, "Asset Status", statuses.Count > 0, loading, empty,
-            statuses.Select((s, i) => new GraphBar(s.Label, s.Value, StatusTones[i % StatusTones.Length],
+            // The legend shows each count beside its name, so the label is the status alone.
+            statuses.Select((s, i) => new GraphBar(Shared.ChartSlice.FilterValue(s.Label), s.Value, StatusTones[i % StatusTones.Length],
                 GraphFilter.For(InventoryGraphCategory.StatusType, s.Label),
                 DevelopmentGraphCards.Describe(Shared.ChartSlice.FilterValue(s.Label), s.Value, "asset"))).ToList()));
 
