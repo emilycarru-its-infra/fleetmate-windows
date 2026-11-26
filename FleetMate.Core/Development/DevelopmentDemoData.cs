@@ -1,5 +1,6 @@
 using FleetMate.Core.Knowledge;
 using FleetMate.Core.Models.Projects;
+using FleetMate.Core.Services.Projects;
 using FleetMate.Core.Shared;
 
 namespace FleetMate.Core.Development;
@@ -131,6 +132,89 @@ public static class DevelopmentDemoData
         new SkillEntry(SkillKind.Skill, SkillOrigin.Local, "tidy-notes", "Sort this week's notes into folders.",
             "skills/tidy-notes/SKILL.md", Array.Empty<string>(), "Sort notes by *project* and date."),
     };
+
+    /// <summary>What the commit detail shows for a fictional commit: a diff on GitHub, a change list on Azure DevOps.</summary>
+    public static CommitDetail CommitDetail(RepositoryCommits repository, PullRequestCommit commit)
+    {
+        var message = $"{(commit.Subject.Length > 0 ? commit.Subject : "Update the widgets query")}\n\nKeeps the first page fast and covers the edge cases in tests.";
+        if (repository.Source == PullRequestSource.AzureDevOps)
+            return new CommitDetail
+            {
+                Message = message,
+                Changes =
+                {
+                    new CommitChange { Path = "/src/Inventory/WarehouseCache.cs", ChangeType = "edit" },
+                    new CommitChange { Path = "/src/Inventory/WarehouseCacheOptions.cs", ChangeType = "add" },
+                    new CommitChange { Path = "/tests/WarehouseCacheTests.cs", ChangeType = "add" },
+                },
+            };
+        var files = DiffParser.Parse(DemoPatch).Files;
+        return new CommitDetail
+        {
+            Message = message,
+            Files = files,
+            Additions = files.Sum(f => f.Insertions),
+            Deletions = files.Sum(f => f.Deletions),
+        };
+    }
+
+    /// <summary>A fictional run's log: jobs that match its status, the failing one last.</summary>
+    public static PipelineRunLog RunLog(PipelineRun run)
+    {
+        var last = run.Status switch
+        {
+            PipelineRunStatus.Failed => PipelineRunStatus.Failed,
+            PipelineRunStatus.Partial => PipelineRunStatus.Partial,
+            PipelineRunStatus.Running or PipelineRunStatus.Queued => PipelineRunStatus.Running,
+            PipelineRunStatus.Cancelled => PipelineRunStatus.Cancelled,
+            _ => PipelineRunStatus.Succeeded,
+        };
+        return new PipelineRunLog
+        {
+            RunId = run.RunId,
+            Sections =
+            {
+                Section("checkout", "Checkout", PipelineRunStatus.Succeeded,
+                    "Syncing repository: example.com/" + run.Container + "/" + run.Repository + "\nHEAD is now at 4f3c2a1b"),
+                Section("restore", "Restore packages", PipelineRunStatus.Succeeded,
+                    "Restoring packages for Widgets.sln...\n  Restored 14 projects in 6.2 s."),
+                Section("test", "Build and test", last, last switch
+                {
+                    PipelineRunStatus.Failed => "Build succeeded.\nRunning 212 tests...\n  Failed WidgetQueryTests.SecondPageSkipsTheFirst\n    Expected: 50\n    Actual:   0\nTotal: 212, Failed: 1",
+                    PipelineRunStatus.Partial => "Build succeeded with 3 warnings.\nRunning 212 tests...\nTotal: 212, Passed: 212\nPublishing coverage skipped: no report found.",
+                    PipelineRunStatus.Running => "Build succeeded.\nRunning 212 tests...",
+                    PipelineRunStatus.Cancelled => "Build started.\nThe run was cancelled.",
+                    _ => "Build succeeded.\nRunning 212 tests...\nTotal: 212, Passed: 212",
+                }),
+            },
+        };
+    }
+
+    /// <summary>The fictional Azure DevOps project's pending approval, holding its running deploy.</summary>
+    public static IPipelineApprovalSource Approvals(DateTime now) => new DemoApprovalSource(now);
+
+    private sealed class DemoApprovalSource(DateTime now) : IPipelineApprovalSource
+    {
+        public Task<List<PipelineApproval>> GetPendingApprovalsAsync(string project) => Task.FromResult(project == Project
+            ? new List<PipelineApproval>
+            {
+                new()
+                {
+                    Id = "6f1d2c3b-0000-4000-8000-000000003301",
+                    Project = Project,
+                    BuildId = 3301,
+                    Instructions = "Check the staging smoke tests on the run summary, then approve the production deploy.",
+                    CreatedOn = now.AddMinutes(-9),
+                    Approvers = new[] { "Release approvers" },
+                },
+            }
+            : new List<PipelineApproval>());
+
+        public Task<HashSet<string>> GetOpenTimelineIdentifiersAsync(string project, long buildId) => Task.FromResult(new HashSet<string>());
+    }
+
+    private static PipelineRunLog.Section Section(string id, string name, PipelineRunStatus status, string text) =>
+        new() { Id = id, Name = name, Status = status, Text = text };
 
     private static UnifiedPullRequest Pr(PullRequestSource source, string container, string repo, int number, string title, string author,
         string branch, DateTime updated, DateTime created, PullRequestRelation relation,

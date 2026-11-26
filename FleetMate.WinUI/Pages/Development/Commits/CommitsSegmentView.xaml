@@ -2,12 +2,207 @@
 <UserControl
     x:Class="FleetMate.WinUI.Pages.Development.Commits.CommitsSegmentView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:dev="using:FleetMate.WinUI.Pages.Development"
+    xmlns:local="using:FleetMate.WinUI.Pages.Development.Commits">
 
-    <!-- Placeholder until the Commits sub-tab is ported. -->
-    <TextBlock
-        HorizontalAlignment="Center"
-        VerticalAlignment="Center"
-        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-        Text="Commits is not ported to this app yet." />
+    <UserControl.Resources>
+        <Style x:Key="ChipStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
+            <Setter Property="Padding" Value="12,4" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="CornerRadius" Value="15" />
+        </Style>
+
+        <CollectionViewSource x:Name="CommitsSource" IsSourceGrouped="True" />
+
+        <DataTemplate x:Key="CommitTemplate" x:DataType="local:CommitRowItem">
+            <StackPanel Padding="0,6" Spacing="2">
+                <TextBlock
+                    MaxLines="1"
+                    Text="{x:Bind Subject}"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTipService.ToolTip="{x:Bind Subject}" />
+                <TextBlock
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    MaxLines="1"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="{x:Bind Byline}"
+                    TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="ShowAllTemplate" x:DataType="local:ShowAllItem">
+            <StackPanel Padding="0,4" Orientation="Horizontal" Spacing="6">
+                <TextBlock Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Text="{x:Bind Label}" />
+                <FontIcon
+                    VerticalAlignment="Center"
+                    FontSize="10"
+                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                    Glyph="{x:Bind Glyph}" />
+            </StackPanel>
+        </DataTemplate>
+
+        <local:CommitListTemplateSelector
+            x:Key="RowSelector"
+            Commit="{StaticResource CommitTemplate}"
+            ShowAll="{StaticResource ShowAllTemplate}" />
+    </UserControl.Resources>
+
+    <Grid x:Name="Root">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition x:Name="ListColumn" Width="400" MinWidth="280" />
+            <ColumnDefinition x:Name="DetailColumn" Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- The list: source chips, the repository menu, the count line, then a card per repository. -->
+        <Grid x:Name="ListPane" Padding="0,0,12,0" RowSpacing="8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <StackPanel
+                AutomationProperties.Name="Source"
+                Orientation="Horizontal"
+                Spacing="4">
+                <ToggleButton
+                    x:Name="SourceAll"
+                    AutomationProperties.AutomationId="CommitsSourceAll"
+                    Click="Source_Click"
+                    Content="All"
+                    IsChecked="True"
+                    Style="{StaticResource ChipStyle}"
+                    Tag="All" />
+                <ToggleButton
+                    x:Name="SourceDevOps"
+                    AutomationProperties.AutomationId="CommitsSourceDevOps"
+                    Click="Source_Click"
+                    Content="DevOps"
+                    Style="{StaticResource ChipStyle}"
+                    Tag="DevOps" />
+                <ToggleButton
+                    x:Name="SourceGitHub"
+                    AutomationProperties.AutomationId="CommitsSourceGitHub"
+                    Click="Source_Click"
+                    Content="GitHub"
+                    Style="{StaticResource ChipStyle}"
+                    Tag="GitHub" />
+            </StackPanel>
+
+            <dev:RepositoryFilterButton
+                x:Name="RepoFilter"
+                Grid.Row="1"
+                MinWidth="200"
+                MaxWidth="360"
+                HorizontalAlignment="Left"
+                AutomationProperties.AutomationId="CommitsRepositoryFilter"
+                SelectionChanged="RepoFilter_SelectionChanged" />
+
+            <TextBlock
+                x:Name="CountText"
+                Grid.Row="2"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="Commits"
+                TextWrapping="Wrap" />
+
+            <Grid Grid.Row="3">
+                <ListView
+                    x:Name="CommitsList"
+                    AutomationProperties.AutomationId="CommitsList"
+                    AutomationProperties.Name="Recent commits"
+                    ContextRequested="CommitsList_ContextRequested"
+                    IsItemClickEnabled="True"
+                    ItemClick="CommitsList_ItemClick"
+                    ItemTemplateSelector="{StaticResource RowSelector}"
+                    SelectionChanged="CommitsList_SelectionChanged"
+                    SelectionMode="Single">
+                    <ListView.GroupStyle>
+                        <GroupStyle HidesIfEmpty="True">
+                            <GroupStyle.HeaderTemplate>
+                                <DataTemplate x:DataType="local:RepositoryCommitsGroup">
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border
+                                            Padding="6,1"
+                                            VerticalAlignment="Center"
+                                            Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                            BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="{ThemeResource ControlCornerRadius}">
+                                            <TextBlock Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind SourceLabel}" />
+                                        </Border>
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            VerticalAlignment="Center"
+                                            Style="{StaticResource BodyStrongTextBlockStyle}"
+                                            Text="{x:Bind Title}"
+                                            TextTrimming="CharacterEllipsis"
+                                            ToolTipService.ToolTip="{x:Bind Title}" />
+                                        <TextBlock
+                                            Grid.Column="2"
+                                            VerticalAlignment="Center"
+                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                            Style="{StaticResource CaptionTextBlockStyle}"
+                                            Text="{x:Bind Subtitle}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </GroupStyle.HeaderTemplate>
+                        </GroupStyle>
+                    </ListView.GroupStyle>
+                </ListView>
+                <TextBlock
+                    x:Name="EmptyText"
+                    Margin="16"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextAlignment="Center"
+                    TextWrapping="Wrap"
+                    Visibility="Collapsed" />
+            </Grid>
+        </Grid>
+
+        <!-- The selected commit. -->
+        <Grid
+            x:Name="DetailPane"
+            Grid.Column="1"
+            Padding="16,0,0,0"
+            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+            BorderThickness="1,0,0,0"
+            RowSpacing="8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Button
+                x:Name="BackButton"
+                AutomationProperties.AutomationId="CommitsBackButton"
+                AutomationProperties.Name="Back to commits"
+                Style="{StaticResource SubtleButtonStyle}"
+                ToolTipService.ToolTip="Back to commits"
+                Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon FontSize="14" Glyph="&#xE72B;" />
+                    <TextBlock Text="Commits" />
+                </StackPanel>
+            </Button>
+            <Grid Grid.Row="1">
+                <TextBlock
+                    x:Name="Placeholder"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="Select a commit to see its changes."
+                    TextWrapping="Wrap" />
+                <local:CommitDetailPane x:Name="Detail" Visibility="Collapsed" />
+            </Grid>
+        </Grid>
+    </Grid>
 </UserControl>

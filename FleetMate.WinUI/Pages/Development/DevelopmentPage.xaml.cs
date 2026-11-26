@@ -159,7 +159,8 @@ public sealed partial class DevelopmentPage : Page, Shell.ICaptureViews
     /// <summary>Every sub-tab, and the detail pane of each that has one, for the QA capture.</summary>
     public IReadOnlyList<string> CaptureViews { get; } = new[]
     {
-        "pulls", "pulls-detail", "pulls-graphs", "commits", "pipelines", "skills", "skills-detail",
+        "pulls", "pulls-detail", "pulls-graphs", "commits", "commits-detail", "pipelines", "pipelines-detail",
+        "pipelines-approval", "skills", "skills-detail",
     };
 
     public async Task ShowCaptureViewAsync(string view)
@@ -176,8 +177,11 @@ public sealed partial class DevelopmentPage : Page, Shell.ICaptureViews
         if (view.EndsWith("-detail", StringComparison.Ordinal))
         {
             if (segment == DevelopmentSegment.Pulls) await PullsView.SelectFirstAsync();
+            else if (segment == DevelopmentSegment.Commits) await CommitsView.SelectFirstAsync();
+            else if (segment == DevelopmentSegment.Pipelines) await PipelinesView.SelectFirstAsync();
             else if (segment == DevelopmentSegment.Skills) SkillsView.SelectFirst();
         }
+        else if (view == "pipelines-approval") await PipelinesView.SelectFirstAsync(awaitingApproval: true);
     }
 
     // MARK: - Refresh
