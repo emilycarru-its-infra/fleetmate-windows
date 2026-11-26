@@ -13,12 +13,20 @@ public sealed partial class SettingsPage : Page, Shell.ICaptureViews
     public SettingsPage()
     {
         ViewModel = new SettingsViewModel(App.Services);
+        Edit = new SettingsEditViewModel(App.Services);
         InitializeComponent();
+        // TicketsMate has no Manage tab and no agent sessions.
+        if (Core.Config.AppEdition.Current.IsTicketsOnly)
+            foreach (var item in Sections.Items.Where(i => i.Tag is "Manage" or "Terminal").ToList())
+                Sections.Items.Remove(item);
         ViewModel.AuthSystems.CollectionChanged += (_, _) => UpdateAuthEmpty();
         UpdateAuthEmpty();
     }
 
     public SettingsViewModel ViewModel { get; }
+
+    /// <summary>Connections, Manage and Terminal.</summary>
+    public SettingsEditViewModel Edit { get; }
 
     private void Sections_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
@@ -27,6 +35,16 @@ public sealed partial class SettingsPage : Page, Shell.ICaptureViews
         AuthenticationPanel.Visibility = Show(section == "Authentication");
         AppearancePanel.Visibility = Show(section == "Appearance");
         AboutPanel.Visibility = Show(section == "About");
+        var cards = section switch
+        {
+            "Connections" => Edit.Connections,
+            "Manage" => Edit.Manage,
+            "Terminal" => Edit.Terminal,
+            _ => null,
+        };
+        EditPanel.Visibility = Show(cards != null);
+        EditCards.ItemsSource = cards;
+        SshKeyStatusText.Visibility = Show(section == "Manage");
         if (section == "Authentication") ViewModel.RefreshAuthCommand.Execute(null);
     }
 
@@ -38,7 +56,8 @@ public sealed partial class SettingsPage : Page, Shell.ICaptureViews
     }
 
     /// <summary>The sections after General, for the QA capture.</summary>
-    public IReadOnlyList<string> CaptureViews { get; } = new[] { "authentication", "appearance", "about" };
+    public IReadOnlyList<string> CaptureViews =>
+        Sections.Items.Skip(1).Select(i => ((string)i.Tag).ToLowerInvariant()).ToList();
 
     public Task ShowCaptureViewAsync(string view)
     {
