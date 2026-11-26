@@ -43,10 +43,11 @@
                     <TextBlock
                         Grid.Column="1"
                         VerticalAlignment="Center"
-                        MaxLines="1"
+                        MaxLines="2"
                         Style="{StaticResource BodyStrongTextBlockStyle}"
                         Text="{x:Bind Title}"
                         TextTrimming="CharacterEllipsis"
+                        TextWrapping="WrapWholeWords"
                         ToolTipService.ToolTip="{x:Bind Title}" />
                     <Border Grid.Column="2" Style="{StaticResource PillStyle}" Visibility="{x:Bind RelationVisibility}">
                         <TextBlock Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind RelationLabel}" />

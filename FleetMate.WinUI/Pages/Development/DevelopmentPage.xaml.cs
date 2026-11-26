@@ -131,6 +131,18 @@ public sealed partial class DevelopmentPage : Page, Shell.ICaptureViews
         SegmentChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// Too little room for every sub-tab: they fold into one menu naming the
+    /// open one, as on Mac. Measured on the page, so it holds in any window size.
+    /// </summary>
+    private void Root_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        var fold = e.NewSize.Width < 640;
+        SegmentBar.Visibility = DevelopmentUi.Show(!fold);
+        SegmentMenu.Visibility = DevelopmentUi.Show(fold);
+        GraphsScroller.MaxHeight = Math.Max(180, e.NewSize.Height * 0.4);
+    }
+
     private void BuildSegmentMenu()
     {
         SegmentMenu.Content = CurrentSegment.ToString();

@@ -55,6 +55,7 @@
                 HorizontalAlignment="Stretch"
                 HorizontalContentAlignment="Left"
                 Padding="8,3"
+                Margin="0,0,6,6"
                 AutomationProperties.Name="{x:Bind ToolTip}"
                 Click="Check_Click"
                 CornerRadius="12"
@@ -125,26 +126,29 @@
                         PlaceholderText="Leave a comment, or say what needs to change…"
                         ScrollViewer.VerticalScrollBarVisibility="Auto"
                         TextWrapping="Wrap" />
-                    <!-- Wraps to a second line in a narrow pane rather than clipping. -->
-                    <VariableSizedWrapGrid x:Name="ActionButtons" ItemHeight="40" Orientation="Horizontal">
-                        <Button x:Name="CommentButton" Margin="0,0,6,6" Click="Comment_Click" Content="Comment" />
-                        <Button x:Name="ApproveButton" Margin="0,0,6,6" Click="Approve_Click" Content="Approve" />
-                        <Button x:Name="RequestChangesButton" Margin="0,0,16,6" Click="RequestChanges_Click" Content="Request changes" />
-                        <ComboBox
-                            x:Name="MergeMethodBox"
-                            MinWidth="140"
-                            Margin="0,0,6,6"
-                            AutomationProperties.Name="Merge method"
-                            SelectedIndex="1"
-                            ToolTipService.ToolTip="How GitHub merges this pull request">
-                            <ComboBoxItem Content="Merge commit" Tag="Merge" />
-                            <ComboBoxItem Content="Squash" Tag="Squash" />
-                            <ComboBoxItem Content="Rebase" Tag="Rebase" />
-                        </ComboBox>
-                        <Button x:Name="MergeButton" Margin="0,0,6,6" Click="Merge_Click" Content="Merge" Style="{StaticResource AccentButtonStyle}" />
-                        <Button x:Name="DraftButton" Margin="0,0,6,6" Click="Draft_Click" Content="Mark ready" />
-                        <Button x:Name="CloseButton" Margin="0,0,6,6" Click="Close_Click" Content="Close" />
-                    </VariableSizedWrapGrid>
+                    <!-- Review on one line, the PR's state on the next, so neither clips in a narrow pane. -->
+                    <StackPanel x:Name="ActionButtons" Spacing="8">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button x:Name="CommentButton" Click="Comment_Click" Content="Comment" />
+                            <Button x:Name="ApproveButton" Click="Approve_Click" Content="Approve" />
+                            <Button x:Name="RequestChangesButton" Click="RequestChanges_Click" Content="Request changes" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <ComboBox
+                                x:Name="MergeMethodBox"
+                                MinWidth="150"
+                                AutomationProperties.Name="Merge method"
+                                SelectedIndex="1"
+                                ToolTipService.ToolTip="How GitHub merges this pull request">
+                                <ComboBoxItem Content="Merge commit" Tag="Merge" />
+                                <ComboBoxItem Content="Squash" Tag="Squash" />
+                                <ComboBoxItem Content="Rebase" Tag="Rebase" />
+                            </ComboBox>
+                            <Button x:Name="MergeButton" Click="Merge_Click" Content="Merge" Style="{StaticResource AccentButtonStyle}" />
+                            <Button x:Name="DraftButton" Click="Draft_Click" Content="Mark ready" />
+                            <Button x:Name="CloseButton" Click="Close_Click" Content="Close" />
+                        </StackPanel>
+                    </StackPanel>
                     <InfoBar x:Name="ActionStatus" IsClosable="True" IsOpen="False" />
                 </StackPanel>
             </Border>
@@ -198,7 +202,7 @@
                     <StackPanel x:Name="ConversationSection" Margin="0,0,0,16">
                         <TextBlock x:Name="ConversationHeader" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Padding="16,4" Style="{StaticResource CardStyle}">
-                            <ItemsRepeater x:Name="CommentsList" ItemTemplate="{StaticResource CommentTemplate}" />
+                            <ItemsControl x:Name="CommentsList" IsTabStop="False" ItemTemplate="{StaticResource CommentTemplate}" />
                         </Border>
                     </StackPanel>
 
@@ -209,16 +213,18 @@
                         <StackPanel Margin="0,0,0,16">
                             <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Checks" />
                             <TextBlock x:Name="ChecksSummary" Margin="0,0,0,6" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
-                            <ItemsRepeater x:Name="ChecksList" ItemTemplate="{StaticResource CheckTemplate}">
-                                <ItemsRepeater.Layout>
-                                    <UniformGridLayout ItemsStretch="Fill" MinColumnSpacing="6" MinItemWidth="180" MinRowSpacing="6" />
-                                </ItemsRepeater.Layout>
-                            </ItemsRepeater>
+                            <ItemsControl x:Name="ChecksList" IsTabStop="False" ItemTemplate="{StaticResource CheckTemplate}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VariableSizedWrapGrid ItemHeight="36" ItemWidth="196" Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
                         </StackPanel>
                         <StackPanel x:Name="CommitsSection" Margin="0,0,0,16">
                             <TextBlock x:Name="CommitsHeader" Style="{StaticResource SectionHeaderStyle}" />
                             <Border Style="{StaticResource CardStyle}">
-                                <ItemsRepeater x:Name="CommitsList" ItemTemplate="{StaticResource CommitTemplate}" />
+                                <ItemsControl x:Name="CommitsList" IsTabStop="False" ItemTemplate="{StaticResource CommitTemplate}" />
                             </Border>
                         </StackPanel>
                     </StackPanel>

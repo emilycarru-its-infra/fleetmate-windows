@@ -16,32 +16,13 @@
         <KeyboardAccelerator Key="R" Modifiers="Control" Invoked="RefreshAccelerator_Invoked" />
     </Page.KeyboardAccelerators>
 
-    <Grid x:Name="Root" Padding="16,8,16,16" RowSpacing="8">
+    <Grid x:Name="Root" Padding="16,8,16,16" RowSpacing="8" SizeChanged="Root_SizeChanged">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <VisualStateManager.VisualStateGroups>
-            <VisualStateGroup>
-                <!-- Too little room for every sub-tab: they fold into one menu naming the open one, as on Mac. -->
-                <VisualState x:Name="Narrow">
-                    <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="0" />
-                    </VisualState.StateTriggers>
-                    <VisualState.Setters>
-                        <Setter Target="SegmentBar.Visibility" Value="Collapsed" />
-                        <Setter Target="SegmentMenu.Visibility" Value="Visible" />
-                    </VisualState.Setters>
-                </VisualState>
-                <VisualState x:Name="Wide">
-                    <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="760" />
-                    </VisualState.StateTriggers>
-                </VisualState>
-            </VisualStateGroup>
-        </VisualStateManager.VisualStateGroups>
 
         <!-- The sub-tabs, Graphs, Inbox and Refresh. -->
         <Grid ColumnSpacing="4">
