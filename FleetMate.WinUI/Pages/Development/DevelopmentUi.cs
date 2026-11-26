@@ -59,8 +59,9 @@ public static class DevelopmentUi
         _ => Theme("TextFillColorSecondaryBrush"),
     };
 
-    private static Brush MergedBrush => Application.Current.Resources.TryGetValue("DevelopmentMergedBrush", out var b) && b is Brush brush
-        ? brush
+    /// <summary>Merged purple, as on GitHub; the system text colour in high contrast.</summary>
+    private static Brush MergedBrush => new Windows.UI.ViewManagement.AccessibilitySettings().HighContrast
+        ? Theme("TextFillColorPrimaryBrush")
         : new SolidColorBrush(Color.FromArgb(0xFF, 0x8A, 0x63, 0xD2));
 
     public static Visibility Show(bool on) => on ? Visibility.Visible : Visibility.Collapsed;

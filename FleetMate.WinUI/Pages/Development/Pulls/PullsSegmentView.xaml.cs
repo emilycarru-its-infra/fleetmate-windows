@@ -323,7 +323,9 @@ public sealed partial class PullsSegmentView : UserControl, IDevelopmentSegmentV
     }
 
     /// <summary>Open one pull request, filters cleared so its row is in the list.</summary>
-    public async void ShowPullRequest(UnifiedPullRequest pr)
+    public void ShowPullRequest(UnifiedPullRequest pr) => _ = ShowPullRequestAsync(pr);
+
+    private async Task ShowPullRequestAsync(UnifiedPullRequest pr)
     {
         ClearFilters();
         _page?.ShowSegment(DevelopmentSegment.Pulls);
