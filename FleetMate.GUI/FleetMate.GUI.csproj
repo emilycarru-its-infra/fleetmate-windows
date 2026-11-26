@@ -68,6 +68,12 @@
     <Resource Include="Assets\TicketsMate.ico" />
   </ItemGroup>
 
+  <!-- The WebView2 sign-in adapter is shared with FleetMate.WinUI: one source,
+       compiled against each app's WebView2. -->
+  <ItemGroup>
+    <Compile Include="..\FleetMate.WinUI\SignIn\CoreWebView2SignInBrowser.cs" Link="Views\Shared\CoreWebView2SignInBrowser.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="LiveChartsCore.SkiaSharpView.WPF" Version="2.0.0-rc3.3" />

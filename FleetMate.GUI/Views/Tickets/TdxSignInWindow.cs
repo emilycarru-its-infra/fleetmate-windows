@@ -5,7 +5,8 @@ using System.Windows.Controls;
 using FleetMate.Core.Services;
 using FleetMate.Core.Services.Tickets;
 using FleetMate.GUI.Views.Shared;
-using Microsoft.Web.WebView2.Core;
+using FleetMate.Core.Services.SignIn;
+using FleetMate.SignIn;
 using Microsoft.Web.WebView2.Wpf;
 using Serilog;
 
@@ -32,7 +33,7 @@ internal sealed class TdxSignInWindow : Window
     private readonly string _upn;
     private readonly WebView2 _web = new();
     private readonly TextBlock _status = new() { Margin = new Thickness(12, 8, 12, 8), TextWrapping = TextWrapping.Wrap };
-    private bool _jwtRequested;
+    private TdxWindowSignIn? _flow;
 
     /// <summary>The finished sign-in; null when the window was closed first.</summary>
     public TdxSsoResult? Result { get; private set; }
@@ -47,7 +48,7 @@ internal sealed class TdxSignInWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ShowInTaskbar = true;
 
-        _status.Text = $"Sign in as {upn}. This window closes by itself when you are signed in.";
+        _status.Text = TdxWindowSignIn.Prompt(upn);
         var root = new DockPanel();
         DockPanel.SetDock(_status, Dock.Top);
         root.Children.Add(_status);
@@ -124,63 +125,24 @@ internal sealed class TdxSignInWindow : Window
         core.Settings.AreDevToolsEnabled = false;
         // A sign-in page that opens a window stays in this one.
         core.NewWindowRequested += (_, e) => { e.Handled = true; core.Navigate(e.Uri); };
-        // Entra's request carries the Windows account, so it is filled in.
-        core.NavigationStarting += (_, e) =>
+        // The page handling is shared with the WinUI app.
+        _flow = new TdxWindowSignIn(new CoreWebView2SignInBrowser(core), _baseUrl, _upn);
+        _flow.StatusChanged += status => _status.Text = status;
+        _flow.Finished += result =>
         {
-            if (Result != null || EntraWebSignIn.WithLoginHint(e.Uri, _upn) is not { } hinted) return;
-            e.Cancel = true;
-            core.Navigate(hinted);
+            Result = result;
+            Close();
         };
-        core.NavigationCompleted += async (_, e) => await OnNavigatedAsync(core, e);
-        core.Navigate(TdxSsoService.BuildEntryUrl(_baseUrl));
-    }
-
-    private async Task OnNavigatedAsync(CoreWebView2 core, CoreWebView2NavigationCompletedEventArgs e)
-    {
-        if (Result != null) return;
-        var url = core.Source ?? "";
-        Log.Debug("[tdx-sso] [window] {Status} {Url}", e.IsSuccess ? "ok" : e.WebErrorStatus.ToString(), url);
-        if (!e.IsSuccess) return;
-
-        try
-        {
-            if (EntraWebSignIn.IsEntraPage(url))
-            {
-                // Only the account tile and "Stay signed in" are answered for the
-                // person; the second factor is theirs to give.
-                await core.ExecuteScriptAsync(EntraWebSignIn.KmsiScript);
-                await core.ExecuteScriptAsync(EntraWebSignIn.AccountScript(_upn));
-                return;
-            }
-
-            if (url.Contains("/api/auth/loginsso", StringComparison.OrdinalIgnoreCase))
-            {
-                var body = await core.ExecuteScriptAsync("document.body ? document.body.innerText : ''");
-                var token = (JsonSerializer.Deserialize<string>(body) ?? "").Trim().Trim('"');
-                if (TdxSsoService.LooksLikeJwt(token))
-                {
-                    var result = TdxHeadlessSso.Checked(token, _upn);
-                    if (!result.Success) _status.Text = result.Error ?? "TeamDynamix sign-in was refused.";
-                    Finish(result);
-                }
-                return;
-            }
-
-            if (!_jwtRequested && TdxHeadlessSso.SignedInPaths.Any(p => url.Contains(p, StringComparison.OrdinalIgnoreCase)))
-            {
-                _jwtRequested = true;
-                _status.Text = "Signed in. Finishing…";
-                core.Navigate(TdxSsoService.BuildLoginSsoUrl(_baseUrl));
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Debug(ex, "[tdx-sso] Sign-in window page handling failed at {Url}", url);
-        }
+        _flow.Start();
     }
 
     private void Finish(TdxSsoResult result)
     {
+        if (_flow != null)
+        {
+            _flow.Finish(result);
+            return;
+        }
         Result = result;
         Close();
     }

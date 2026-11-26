@@ -1,3 +1,4 @@
+using FleetMate.Core.Services.SignIn;
 using System.Text.Json;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services;
@@ -84,7 +85,7 @@ internal static class DevOpsHeadlessSso
                 if (!e.IsSuccess || !EntraWebSignIn.IsEntraPage(url)) return;
                 try
                 {
-                    await EntraPageDriver.HandleAsync(core, url, upn, accountAnswered, tcs.Task,
+                    await EntraPageDriver.HandleAsync(browser, url, upn, accountAnswered, tcs.Task,
                         reason => tcs.TrySetResult(DevOpsSsoResult.Failed(reason)));
                 }
                 catch (Exception ex)

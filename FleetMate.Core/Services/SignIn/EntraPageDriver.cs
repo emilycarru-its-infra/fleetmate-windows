@@ -1,8 +1,6 @@
-using FleetMate.Core.Services;
-using Microsoft.Web.WebView2.Core;
 using Serilog;
 
-namespace FleetMate.GUI.Views.Shared;
+namespace FleetMate.Core.Services.SignIn;
 
 /// <summary>
 /// What every hidden sign-in does on an Entra page, so the API tokens, Azure
@@ -11,14 +9,14 @@ namespace FleetMate.GUI.Views.Shared;
 /// prompt to another method, and give up on the passkey page early rather
 /// than waiting out the whole attempt. Call on the UI thread.
 /// </summary>
-internal static class EntraPageDriver
+public static class EntraPageDriver
 {
     /// <summary>
     /// Handle one loaded Entra page. <paramref name="fail"/> is called with the
     /// reason when the browser is still on the passkey page after
     /// <see cref="EntraWebSignIn.PasskeyGiveUp"/>.
     /// </summary>
-    public static async Task HandleAsync(CoreWebView2 core, string url, string? upn, bool accountAnswered, Task done, Action<string> fail)
+    public static async Task HandleAsync(ISignInBrowser core, string url, string? upn, bool accountAnswered, Task done, Action<string> fail)
     {
         await core.ExecuteScriptAsync(EntraWebSignIn.KmsiScript);
         if (!accountAnswered && upn != null)
@@ -33,7 +31,7 @@ internal static class EntraPageDriver
     /// passkey prompt the hidden browser cannot answer — offer Entra another
     /// method. The script runs inside the page; nothing is shown.
     /// </summary>
-    public static void ScheduleMethodFallback(CoreWebView2 core, string url, Task done)
+    public static void ScheduleMethodFallback(ISignInBrowser core, string url, Task done)
     {
         _ = Task.Delay(3000).ContinueWith(async _ =>
         {
@@ -47,7 +45,7 @@ internal static class EntraPageDriver
         }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
-    private static void WatchPasskey(CoreWebView2 core, Task done, Action<string> fail)
+    private static void WatchPasskey(ISignInBrowser core, Task done, Action<string> fail)
     {
         _ = Task.Delay(EntraWebSignIn.PasskeyGiveUp).ContinueWith(_ =>
         {
