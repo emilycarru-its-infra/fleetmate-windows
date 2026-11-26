@@ -29,8 +29,12 @@ namespace FleetMate.WinUI.Shell;
 /// an app cannot turn on for itself, so the run uses whichever contrast theme
 /// Windows has, and says so in <c>qa.md</c>.
 ///
-/// A page added in a later phase is covered as soon as it is registered in
-/// <see cref="ShellPages"/>; nothing here needs changing.
+/// A capture is always a demo (<see cref="ShellServices.DemoMode"/>): the
+/// services hold registered fixtures and nothing live, and the run refuses to
+/// write a single PNG if a live service or a sign-in is present. A page added
+/// in a later phase is covered as soon as it is registered in
+/// <see cref="ShellPages"/> with its fixtures in
+/// <see cref="ShellServices.RegisterDemoFixtures"/>.
 /// </summary>
 internal static class CaptureHarness
 {
@@ -61,6 +65,17 @@ internal static class CaptureHarness
     public static async Task RunAsync(MainWindow window, string directory)
     {
         Directory.CreateDirectory(directory);
+
+        // The repository is public: a capture shows fixtures or nothing.
+        if (Core.Config.DemoMode.CaptureRefusal(App.Services.DemoMode, App.Services.HasLiveSession) is { } refusal)
+        {
+            Log.Error("[capture] {Reason}", refusal);
+            await File.WriteAllTextAsync(Path.Combine(directory, "capture-refused.md"), $"# Capture refused{Environment.NewLine}{Environment.NewLine}{refusal}{Environment.NewLine}");
+            Environment.ExitCode = 2;
+            Application.Current.Exit();
+            return;
+        }
+
         var dark = Application.Current.RequestedTheme == ApplicationTheme.Dark;
         var theme = dark ? ElementTheme.Dark : ElementTheme.Light;
         var report = new StringBuilder();
