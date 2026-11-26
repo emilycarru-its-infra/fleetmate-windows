@@ -1,3 +1,4 @@
+using FleetMate.Core.Shared;
 using System.Windows;
 using FleetMate.GUI.Views.Shared.Widgets;
 using Xunit;

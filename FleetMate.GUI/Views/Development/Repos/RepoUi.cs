@@ -101,16 +101,7 @@ internal static class RepoShell
         return path.StartsWith(home + "\\", StringComparison.OrdinalIgnoreCase) ? "~" + path[home.Length..] : path;
     }
 
-    public static string Relative(DateTimeOffset? date)
-    {
-        if (date is not { } d) return "—";
-        var span = DateTimeOffset.Now - d;
-        if (span.TotalSeconds < 60) return "just now";
-        if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes} min ago";
-        if (span.TotalHours < 24) return $"{(int)span.TotalHours} h ago";
-        if (span.TotalDays < 30) return $"{(int)span.TotalDays} d ago";
-        return d.ToLocalTime().ToString("d MMM yyyy");
-    }
+    public static string Relative(DateTimeOffset? date) => DevelopmentFigures.Relative(date, DateTimeOffset.Now);
 }
 
 /// <summary>

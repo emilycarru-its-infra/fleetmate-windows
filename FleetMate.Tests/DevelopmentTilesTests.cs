@@ -20,9 +20,9 @@ public class DevelopmentTilesTests
     {
         var queue = QueueWith(PullRequestSource.GitHub, "API rate limit exceeded");
 
-        Assert.True(WidgetCatalog.Failed(queue, PullRequestSource.GitHub));
-        Assert.False(WidgetCatalog.Failed(queue, PullRequestSource.AzureDevOps));
-        Assert.True(WidgetCatalog.Failed(queue));
+        Assert.True(DevelopmentFigures.Failed(queue, PullRequestSource.GitHub));
+        Assert.False(DevelopmentFigures.Failed(queue, PullRequestSource.AzureDevOps));
+        Assert.True(DevelopmentFigures.Failed(queue));
     }
 
     [Fact]
@@ -30,14 +30,14 @@ public class DevelopmentTilesTests
     {
         var queue = QueueWith(PullRequestSource.GitHub, "Run gh auth login to sign in");
 
-        Assert.False(WidgetCatalog.Failed(queue, PullRequestSource.GitHub));
-        Assert.False(WidgetCatalog.Failed(queue));
+        Assert.False(DevelopmentFigures.Failed(queue, PullRequestSource.GitHub));
+        Assert.False(DevelopmentFigures.Failed(queue));
     }
 
     [Fact]
     public void AQueueWithNoErrorsHasNoFailures()
     {
-        Assert.False(WidgetCatalog.Failed(new PullRequestQueue()));
-        Assert.False(WidgetCatalog.Failed(null));
+        Assert.False(DevelopmentFigures.Failed(new PullRequestQueue()));
+        Assert.False(DevelopmentFigures.Failed(null));
     }
 }

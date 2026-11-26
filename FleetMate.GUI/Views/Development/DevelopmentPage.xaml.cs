@@ -1,3 +1,4 @@
+using FleetMate.Core.Shared;
 using System.Windows;
 using System.Windows.Controls;
 using FleetMate.GUI.Views.Development.Repos;
@@ -101,7 +102,7 @@ public partial class DevelopmentPage : Page, IWidgetFilterHost, IChromeToolbar, 
         if (Application.Current is not App app) return new();
         var segment = View.CurrentSegment;
         if (segment == DevelopmentSegment.Repos) return new() { InsightsHost() };
-        return WidgetCatalog.Development(app, segment, (category, label) => ApplyWidgetFilter(category, WidgetCatalog.FilterValue(label)));
+        return WidgetCatalog.Development(app, segment, (category, label) => ApplyWidgetFilter(category, ChartSlice.FilterValue(label)));
     }
 
     /// <summary>The Repos strip: the workspace's Insights, kept across redraws so its charts are not reread.</summary>

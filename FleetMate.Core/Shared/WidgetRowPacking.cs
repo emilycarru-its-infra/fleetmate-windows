@@ -10,6 +10,18 @@ namespace FleetMate.Core.Shared;
 /// </summary>
 public static class WidgetRowPacking
 {
+    /// <summary>The narrowest a unit of the strip may be.</summary>
+    public const double MinUnitWidth = 240;
+
+    /// <summary>The space between cards, across and down.</summary>
+    public const double Gap = 12;
+
+    /// <summary>A card's units when it takes a whole row.</summary>
+    public const int FullRow = 1000;
+
+    /// <summary>How many units of at least <see cref="MinUnitWidth"/> fit across <paramref name="width"/>.</summary>
+    public static int UnitsPerRow(double width) => Math.Max(1, (int)Math.Floor((width + Gap) / (MinUnitWidth + Gap)));
+
     public static List<List<int>> Rows(IReadOnlyList<int> spans, int unitsPerRow, int fullRow)
     {
         var cap = Math.Max(1, unitsPerRow);

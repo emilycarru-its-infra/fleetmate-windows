@@ -1,3 +1,4 @@
+using FleetMate.Core.Shared;
 using System.Diagnostics;
 using System.Globalization;
 using System.Windows;
@@ -32,25 +33,25 @@ public static partial class WidgetCatalog
         /// <summary>Inventory: a status type (Deployable, Deployed…), which several status names share.</summary>
         public const string StatusType = "Status Type";
         public const string Priority = "Priority";
-        public const string Repository = "Repository";
+        public const string Repository = GraphCategory.Repository;
 
         /// <summary>Development: open a segment ("Inbox").</summary>
-        public const string Segment = "Segment";
+        public const string Segment = GraphCategory.Segment;
         /// <summary>Development: open Pulls filtered to a source (a <see cref="DevelopmentSourceFilter"/> name).</summary>
-        public const string Source = "Source";
+        public const string Source = GraphCategory.Source;
         /// <summary>Development: open Pipelines filtered to a status (a <see cref="PipelineStatusFilter"/> name).</summary>
-        public const string PipelineStatus = "PipelineStatus";
+        public const string PipelineStatus = GraphCategory.PipelineStatus;
         /// <summary>Development: open Commits filtered to a repository.</summary>
-        public const string CommitRepository = "CommitRepository";
+        public const string CommitRepository = GraphCategory.CommitRepository;
         /// <summary>Development: open Pipelines filtered to a repository.</summary>
-        public const string PipelineRepository = "PipelineRepository";
+        public const string PipelineRepository = GraphCategory.PipelineRepository;
         /// <summary>Development: type a value into the open sub-tab's search field (an author, a pipeline).</summary>
-        public const string Search = "Search";
+        public const string Search = GraphCategory.Search;
         /// <summary>Development: open one pull request in Pulls (its id).</summary>
-        public const string PullRequest = "PullRequest";
+        public const string PullRequest = GraphCategory.PullRequest;
     }
 
-    public const string InboxSegment = "Inbox";
+    public const string InboxSegment = GraphCategory.InboxSegment;
 
     /// <summary>Tabs with no widgets get no section at all.</summary>
     public static bool HasWidgets(string tab) =>
@@ -78,27 +79,6 @@ public static partial class WidgetCatalog
         "Tickets" => new(),
         _ => new(),
     };
-
-    /// <summary>
-    /// Whether a provider failed this load (rate-limited, unreachable). Its
-    /// count is unknown, so the tile shows "--": a 0 would read as nothing open.
-    /// Being signed out of a provider on purpose is not a failure.
-    /// </summary>
-    internal static bool Failed(PullRequestQueue? queue, PullRequestSource? source = null) =>
-        queue?.Errors.Any(e => (source == null || e.Source == source) && !PullRequestQueueView.IsExpectedSignedOut(e)) == true;
-
-    /// <summary>A count, or "--" when its provider failed.</summary>
-    internal static string CountOrUnknown(int value, bool failed) => failed ? "--" : value.ToString("N0");
-
-    /// <summary>
-    /// The value a widget click hands its tab: a label ending in "(count)"
-    /// filters on the name before it, as on the Mac.
-    /// </summary>
-    internal static string FilterValue(string label)
-    {
-        var cut = label.IndexOf(" (", StringComparison.Ordinal);
-        return cut < 0 ? label : label[..cut];
-    }
 
     /// <summary>
     /// The filter values a widget click selects: every value in
