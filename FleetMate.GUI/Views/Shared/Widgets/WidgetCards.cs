@@ -1,3 +1,4 @@
+using FleetMate.Core.Shared;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -19,9 +20,6 @@ namespace FleetMate.GUI.Views.Shared.Widgets;
 /// tile a button.
 /// </summary>
 public sealed record KpiTile(string Title, string Value, string Glyph, string ColorHex, bool Loading = false, Action? Open = null);
-
-/// <summary>One bar or slice; <see cref="Label"/> is also the filter value a click applies.</summary>
-public sealed record ChartSlice(string Label, int Value);
 
 /// <summary>One row in a list card.</summary>
 public sealed record ListRow(string Title, string Detail, Action? Open);

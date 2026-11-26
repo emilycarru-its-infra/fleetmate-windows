@@ -1,3 +1,4 @@
+using FleetMate.Core.Shared;
 using System.Globalization;
 using FleetMate.Core.Models.Projects;
 using FleetMate.GUI.Views.Shared.Widgets;
@@ -13,7 +14,7 @@ public class DevelopmentGraphsTests
     [Fact]
     public void PerWeekIsContinuousAndOldestFirst()
     {
-        var weeks = WidgetCatalog.PerWeek(new DateTime?[] { Today, Today.AddDays(-14), null }, 4, Today);
+        var weeks = DevelopmentFigures.PerWeek(new DateTime?[] { Today, Today.AddDays(-14), null }, 4, Today);
         Assert.Equal(4, weeks.Count);
         Assert.Equal(new[] { 0, 1, 0, 1 }, weeks.Select(w => w.Count));
         Assert.True(weeks[0].Start < weeks[3].Start);
@@ -22,7 +23,7 @@ public class DevelopmentGraphsTests
     [Fact]
     public void WeekdaysFollowTheUsersFirstDay()
     {
-        var days = WidgetCatalog.Weekdays(new DateTime?[] { Today });
+        var days = DevelopmentFigures.Weekdays(new DateTime?[] { Today });
         Assert.Equal(7, days.Count);
         var format = CultureInfo.CurrentCulture.DateTimeFormat;
         Assert.Equal(format.GetAbbreviatedDayName(format.FirstDayOfWeek), days[0].Label);
@@ -33,7 +34,7 @@ public class DevelopmentGraphsTests
     public void FailuresCountFailedAndPartialRunsByPipeline()
     {
         PipelineRun Run(string name, PipelineRunStatus s) => new() { PipelineName = name, Status = s };
-        var slices = WidgetCatalog.FailuresByPipeline(new[]
+        var slices = DevelopmentFigures.FailuresByPipeline(new[]
         {
             Run("A", PipelineRunStatus.Failed), Run("A", PipelineRunStatus.Partial),
             Run("B", PipelineRunStatus.Failed), Run("C", PipelineRunStatus.Succeeded),
@@ -46,7 +47,7 @@ public class DevelopmentGraphsTests
     public void MostDiscussedSkipsUncommentedPullRequests()
     {
         UnifiedPullRequest Pr(int n, int comments) => new() { Number = n, Title = $"PR {n}", CommentCount = comments };
-        var top = WidgetCatalog.MostDiscussed(new[] { Pr(1, 0), Pr(2, 5), Pr(3, 9) });
+        var top = DevelopmentFigures.MostDiscussed(new[] { Pr(1, 0), Pr(2, 5), Pr(3, 9) });
         Assert.Equal(new[] { 3, 2 }, top.Select(p => p.Number));
     }
 

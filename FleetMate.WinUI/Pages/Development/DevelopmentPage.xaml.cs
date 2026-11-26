@@ -159,8 +159,8 @@ public sealed partial class DevelopmentPage : Page, Shell.ICaptureViews
     /// <summary>Every sub-tab, and the detail pane of each that has one, for the QA capture.</summary>
     public IReadOnlyList<string> CaptureViews { get; } = new[]
     {
-        "pulls", "pulls-detail", "pulls-graphs", "commits", "commits-detail", "pipelines", "pipelines-detail",
-        "pipelines-approval", "skills", "skills-detail",
+        "pulls", "pulls-detail", "pulls-graphs", "commits", "commits-detail", "commits-graphs", "pipelines", "pipelines-detail",
+        "pipelines-approval", "pipelines-graphs", "skills", "skills-detail", "skills-graphs",
     };
 
     public async Task ShowCaptureViewAsync(string view)

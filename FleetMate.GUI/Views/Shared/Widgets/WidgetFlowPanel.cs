@@ -18,11 +18,11 @@ namespace FleetMate.GUI.Views.Shared.Widgets;
 /// </summary>
 public sealed class WidgetFlowPanel : Panel
 {
-    public const double MinUnitWidth = 240;
-    public const double Gap = 12;
+    public const double MinUnitWidth = WidgetRowPacking.MinUnitWidth;
+    public const double Gap = WidgetRowPacking.Gap;
 
     /// <summary>A card's units when it takes a whole row.</summary>
-    public const int FullRow = 1000;
+    public const int FullRow = WidgetRowPacking.FullRow;
 
     private bool _equalHeights = true;
     private bool _singleRow;
@@ -48,7 +48,7 @@ public sealed class WidgetFlowPanel : Panel
     public static int GetUnits(UIElement element) => (int)element.GetValue(UnitsProperty);
     public static void SetUnits(UIElement element, int value) => element.SetValue(UnitsProperty, value);
 
-    internal static int UnitsPerRow(double width) => Math.Max(1, (int)Math.Floor((width + Gap) / (MinUnitWidth + Gap)));
+    internal static int UnitsPerRow(double width) => WidgetRowPacking.UnitsPerRow(width);
 
     /// <summary>
     /// Rows of child indices, balanced (see <see cref="WidgetRowPacking"/>).
