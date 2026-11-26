@@ -20,9 +20,6 @@ namespace FleetMate.WinUI.Pages.Development.Graphs;
 /// </summary>
 internal static class GraphCardView
 {
-    /// <summary>The tallest a card grows; the strip itself scrolls past 40% of the page.</summary>
-    public const double CardMaxHeight = 320;
-
     public static FrameworkElement Build(GraphCard card, Action<GraphFilter> open)
     {
         if (card.Kind == GraphCardKind.Kpis) return Kpis(card, open);
@@ -32,8 +29,8 @@ internal static class GraphCardView
         {
             Text = card.Title,
             Style = GraphTheme.Style("BodyStrongTextBlockStyle"),
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            TextWrapping = TextWrapping.NoWrap,
+            TextWrapping = TextWrapping.Wrap,
+            TextTrimming = TextTrimming.None,
         };
         AutomationProperties.SetHeadingLevel(title, AutomationHeadingLevel.Level3);
         header.Children.Add(title);
@@ -62,7 +59,6 @@ internal static class GraphCardView
         var border = new Border
         {
             Style = GraphTheme.Style("CardStyle"),
-            MaxHeight = CardMaxHeight,
             VerticalAlignment = VerticalAlignment.Stretch,
             Child = grid,
         };
@@ -104,7 +100,7 @@ internal static class GraphCardView
         FrameworkElement value = kpi.Loading
             ? Block(56, 24, new Thickness(0, 2, 0, 4))
             : new TextBlock { Text = kpi.Value, Style = GraphTheme.Style("SubtitleTextBlockStyle"), Foreground = GraphTheme.Primary };
-        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { value, GraphTheme.Caption(kpi.Title) } };
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { value, GraphTheme.Caption(kpi.Title, wrap: true) } };
         Grid.SetColumn(text, 1);
         var row = new Grid
         {
@@ -167,7 +163,7 @@ internal static class GraphCardView
                     new() { Width = GridLength.Auto },
                 },
             };
-            var label = GraphTheme.Caption(bar.Label, secondary: false);
+            var label = GraphTheme.Caption(bar.Label, secondary: false, wrap: true);
             var track = new Grid
             {
                 Height = 8,
@@ -208,10 +204,9 @@ internal static class GraphCardView
                 {
                     new TextBlock
                     {
-                        Text = row.Title, Style = GraphTheme.Style("BodyTextBlockStyle"),
-                        TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap,
+                        Text = row.Title, Style = GraphTheme.Style("BodyTextBlockStyle"), TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.None,
                     },
-                    GraphTheme.Caption(row.Detail),
+                    GraphTheme.Caption(row.Detail, wrap: true),
                 },
             };
             stack.Children.Add(Item(content, $"{row.Title}, {row.Detail}", $"{Slug(card.Title)}{i}",
@@ -224,9 +219,8 @@ internal static class GraphCardView
 
     private static FrameworkElement Empty(string message)
     {
-        var text = GraphTheme.Caption(message);
+        var text = GraphTheme.Caption(message, wrap: true);
         text.HorizontalAlignment = HorizontalAlignment.Center;
-        text.TextWrapping = TextWrapping.Wrap;
         text.TextAlignment = TextAlignment.Center;
         text.Margin = new Thickness(0, 20, 0, 20);
         return text;
@@ -239,7 +233,8 @@ internal static class GraphCardView
             Text = title, Style = GraphTheme.Style("BodyStrongTextBlockStyle"),
             HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap,
         };
-        var second = GraphTheme.Caption(detail);
+        var second = GraphTheme.Caption(detail, wrap: true);
+        second.TextAlignment = TextAlignment.Center;
         second.HorizontalAlignment = HorizontalAlignment.Center;
         return new StackPanel
         {

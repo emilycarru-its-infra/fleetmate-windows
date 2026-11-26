@@ -25,9 +25,16 @@ public static class DevelopmentGraphs
     /// </summary>
     public static bool IsShown
     {
-        get => WidgetVisibility.IsShown(Tab);
-        set => WidgetVisibility.SetShown(Tab, value);
+        get => App.Services.DemoMode ? _demoShown ?? WidgetVisibility.ShownByDefault(Tab) : WidgetVisibility.IsShown(Tab);
+        set
+        {
+            // A demo or QA capture never writes the person's own choice.
+            if (App.Services.DemoMode) _demoShown = value;
+            else WidgetVisibility.SetShown(Tab, value);
+        }
     }
+
+    private static bool? _demoShown;
 
     /// <summary>Whether a change to the <paramref name="cacheKey"/> cache redraws <paramref name="segment"/>'s strip.</summary>
     public static bool Follows(DevelopmentSegment segment, string cacheKey) => DevelopmentGraphCards.Follows(segment, cacheKey);

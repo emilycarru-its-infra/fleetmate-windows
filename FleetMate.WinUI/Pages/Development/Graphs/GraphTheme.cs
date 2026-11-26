@@ -43,14 +43,33 @@ internal static class GraphTheme
 
     public static Style Style(string key) => (Style)Application.Current.Resources[key];
 
-    /// <summary>Caption text: the smallest size anything in a card uses.</summary>
-    public static TextBlock Caption(string text, bool secondary = true) => new()
+    /// <summary>
+    /// Caption text: the smallest size anything in a card uses. A label
+    /// (<paramref name="wrap"/>) wraps, inside a long name when it must, so a
+    /// repository or title is never cut off; figures stay on one line.
+    /// </summary>
+    public static TextBlock Caption(string text, bool secondary = true, bool wrap = false) => new()
     {
-        Text = text,
+        Text = wrap ? Breakable(text) : text,
         Style = Style("CaptionTextBlockStyle"),
         Foreground = secondary ? Secondary : Primary,
-        TextTrimming = TextTrimming.CharacterEllipsis,
-        TextWrapping = TextWrapping.NoWrap,
+        TextWrapping = wrap ? TextWrapping.Wrap : TextWrapping.NoWrap,
+        TextTrimming = TextTrimming.None,
         VerticalAlignment = VerticalAlignment.Center,
     };
+
+    /// <summary>
+    /// A name with a line-break opportunity after each '/', '.', '-' and '_',
+    /// so "owner/repo.name" wraps at its parts rather than mid-word.
+    /// </summary>
+    public static string Breakable(string text)
+    {
+        var builder = new System.Text.StringBuilder(text.Length + 8);
+        foreach (var c in text)
+        {
+            builder.Append(c);
+            if (c is '/' or '.' or '-' or '_') builder.Append('\u200B');
+        }
+        return builder.ToString();
+    }
 }

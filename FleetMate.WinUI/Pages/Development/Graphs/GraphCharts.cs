@@ -101,7 +101,7 @@ internal static class GraphCharts
                 ColumnDefinitions = { new() { Width = GridLength.Auto }, new() { Width = new GridLength(1, GridUnitType.Star) }, new() { Width = GridLength.Auto } },
             };
             var swatch = new Ellipse { Width = 8, Height = 8, Fill = GraphTheme.Bar(bar.Tone, i), VerticalAlignment = VerticalAlignment.Center };
-            var label = GraphTheme.Caption(bar.Label, secondary: false);
+            var label = GraphTheme.Caption(bar.Label, secondary: false, wrap: true);
             var count = GraphTheme.Caption(bar.Value.ToString("N0"));
             Grid.SetColumn(label, 1);
             Grid.SetColumn(count, 2);
@@ -220,7 +220,7 @@ internal static class GraphCharts
         {
             var entry = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             entry.Children.Add(new Border { Width = 10, Height = 10, CornerRadius = new CornerRadius(2), Background = GraphTheme.Bar(series.Tone, s), VerticalAlignment = VerticalAlignment.Center });
-            entry.Children.Add(GraphTheme.Caption(series.Name, secondary: false));
+            entry.Children.Add(GraphTheme.Caption(series.Name, secondary: false, wrap: true));
             legend.Children.Add(entry);
         }
         Grid.SetRow(legend, 1);
