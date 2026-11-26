@@ -29,6 +29,15 @@ public sealed record TeamsSearchHit(
 
 public sealed record TeamsSearchResponse(string Query, string? AsOf, int Total, IReadOnlyList<TeamsSearchHit> Results);
 
+public sealed record TeamsBrowseResponse(string? AsOf, string IndexVersion, int Total,
+    IReadOnlyList<TeamsSearchHit> Results, int? NextOffset);
+
+public sealed record TeamsBrowseQuery(string? Team = null, string? Channel = null, string? Author = null,
+    string? Since = null, string? Until = null, int Limit = 20, int Offset = 0);
+
+public sealed record TeamsFeedQuery(IReadOnlyList<string> Channels, string? Q = null, string? Author = null,
+    string? Since = null, string? Until = null, int Limit = 20, int Offset = 0);
+
 public sealed record TeamsAttachment(string Name, string? Url);
 
 public sealed record TeamsMessage(
@@ -95,6 +104,7 @@ public enum TeamsSearchFailure
     NotFound,
     /// <summary>503: the search index has not been built yet.</summary>
     IndexNotReady,
+    AccessNotVerified,
     Http,
     InvalidResponse,
 }
@@ -125,6 +135,8 @@ public sealed class TeamsSearchException : Exception
         403 => new(TeamsSearchFailure.Forbidden,
             "Your account is not authorized for Teams search. Ask your IT administrator for Teams search access.", status),
         404 => new(TeamsSearchFailure.NotFound, "No such Teams thread or channel in the search index.", status),
+        503 when detail.Contains("teams_membership_unavailable", StringComparison.Ordinal) => new(TeamsSearchFailure.AccessNotVerified,
+            "Teams channel membership could not be verified. Try again after access verification is available.", status),
         503 => new(TeamsSearchFailure.IndexNotReady, "The Teams search index is not ready yet. Try again later.", status),
         _ => new(TeamsSearchFailure.Http,
             $"Teams search API returned HTTP {status}" + (detail.Length == 0 ? "." : $": {detail}"), status),
@@ -151,7 +163,15 @@ public sealed class TeamsSearchService : IDisposable
     /// <summary>Sent as <see cref="PurposeHeader"/> on every request unless configured otherwise.</summary>
     public const string DefaultPurpose = "purpose.its_teams_channel_search";
     public const string PurposeHeader = "X-Vantage-Purpose";
+    public const string GraphTokenHeader = "X-Vantage-Teams-Token";
+    public const string GraphTokenScope = "https://graph.microsoft.com/.default";
+    public const string AccessHeader = "X-Vantage-Teams-Access";
+    public const string AccessVersion = "membership-v1";
     private readonly HttpClient? _client;
+    private EntraTokenSource? _ownedSource;
+    private readonly TeamsWorkspaceBinding? _workspaceBinding;
+    public TeamsWorkspaceIdentity? Workspace { get; }
+    public TeamsStorageIdentity? StorageIdentity => _workspaceBinding?.StorageIdentity;
 
     internal static readonly JsonSerializerOptions Json = new()
     {
@@ -164,18 +184,33 @@ public sealed class TeamsSearchService : IDisposable
     public static TeamsSearchService FromConfig(FleetMateConfig config) =>
         new(config.TeamsApiUrl, config.TeamsApiScope, purpose: config.TeamsApiPurpose);
 
+    public static TeamsSearchService ForWorkspace(FleetMateConfig config, string? account)
+    {
+        var source = new EntraTokenSource(config.Graph?.TenantId, config.EntraClientId);
+        var service = new TeamsSearchService(config.TeamsApiUrl, config.TeamsApiScope, tokenSource: () => source,
+            purpose: config.TeamsApiPurpose, workspace: new TeamsWorkspaceIdentity(account ?? "", config.Graph?.TenantId));
+        service._ownedSource = source;
+        if (service._workspaceBinding != null) service._workspaceBinding.CurrentAccount = EntraTokenSource.ResolveWindowsUpn;
+        return service;
+    }
+
     /// <param name="httpHandler">Replaces the HTTP transport under the bearer handler, so a test can stub the API.</param>
     /// <param name="tokenSource">Replaces the shared token source, so a test can stand in for the broker.</param>
     public TeamsSearchService(string? baseUrl, string? scope,
-        HttpMessageHandler? httpHandler = null, Func<EntraTokenSource?>? tokenSource = null, string? purpose = null)
+        HttpMessageHandler? httpHandler = null, Func<EntraTokenSource?>? tokenSource = null, string? purpose = null,
+        TeamsWorkspaceIdentity? workspace = null)
     {
+        Workspace = workspace;
+        _workspaceBinding = workspace == null ? null : new TeamsWorkspaceBinding(workspace);
         _purpose = string.IsNullOrWhiteSpace(purpose) ? DefaultPurpose : purpose.Trim();
         _baseUrl = (baseUrl ?? string.Empty).Trim().TrimEnd('/');
         _scope = (scope ?? string.Empty).Trim();
         if (!IsConfigured) return;
 
-        var bearer = new EntraBearerHandler(_scope, tokenSource);
-        if (httpHandler != null) bearer.InnerHandler = httpHandler;
+        var source = tokenSource ?? (() => EntraTokenSource.Shared);
+        var bearer = new EntraBearerHandler(_scope, source);
+        bearer.InnerHandler?.Dispose();
+        bearer.InnerHandler = new TeamsGraphProofHandler(source, httpHandler, _workspaceBinding);
         _client = new HttpClient(new ActivityLogHandler("Teams", bearer)) { Timeout = TimeSpan.FromSeconds(60) };
     }
 
@@ -189,6 +224,54 @@ public sealed class TeamsSearchService : IDisposable
 
     public Task<TeamsPayload<TeamsChannelsResponse>> GetChannelsAsync(CancellationToken ct = default) =>
         GetAsync<TeamsChannelsResponse>(BuildChannelsUri(), ct);
+
+    public async Task<TeamsPayload<TeamsBrowseResponse>> BrowseAsync(TeamsBrowseQuery query, CancellationToken ct = default)
+    {
+        var payload = await GetAsync<TeamsBrowseResponse>(BuildBrowseUri(query), ct);
+        if (string.IsNullOrWhiteSpace(payload.Value.IndexVersion) || payload.Value.Results == null)
+            throw new TeamsSearchException(TeamsSearchFailure.InvalidResponse, "The channel browse response has no index version or results.");
+        return payload;
+    }
+
+    public async Task<TeamsPayload<TeamsBrowseResponse>> FeedAsync(TeamsFeedQuery query, CancellationToken ct = default)
+    {
+        if (query.Channels == null || query.Channels.Count is < 1 or > 500
+            || query.Channels.Any(string.IsNullOrWhiteSpace)) throw TeamsSearchException.Invalid("Follow between 1 and 500 channels.");
+        var channels = query.Channels.Select(channel => channel.Trim()).ToList();
+        if (channels.Distinct(StringComparer.Ordinal).Count() != channels.Count)
+            throw TeamsSearchException.Invalid("The followed channel IDs must be unique.");
+        if (query.Limit is < 1 or > 100 || query.Offset < 0)
+            throw TeamsSearchException.Invalid("Feed limit must be between 1 and 100 and offset must not be negative.");
+        foreach (var value in new[] { query.Since, query.Until })
+            if (value != null && !IsDay(value)) throw TeamsSearchException.Invalid("Feed dates must use YYYY-MM-DD.");
+        var text = string.IsNullOrWhiteSpace(query.Q) ? null : query.Q.Trim();
+        if (text?.Length > 500) throw TeamsSearchException.Invalid("Feed search must be 500 characters or fewer.");
+        var payload = await SendAsync<TeamsBrowseResponse>(HttpMethod.Post,
+            BuildUri("/v1/teams/feed", Array.Empty<(string, string)>()), query with { Channels = channels, Q = text }, ct);
+        if (string.IsNullOrWhiteSpace(payload.Value.IndexVersion) || payload.Value.Results == null)
+            throw new TeamsSearchException(TeamsSearchFailure.InvalidResponse, "The followed feed response has no index version or results.");
+        return payload;
+    }
+
+    public Uri BuildBrowseUri(TeamsBrowseQuery query)
+    {
+        if (string.IsNullOrWhiteSpace(query.Team) && string.IsNullOrWhiteSpace(query.Channel))
+            throw TeamsSearchException.Invalid("Choose a team or channel to browse.");
+        if (query.Limit is < 1 or > 100 || query.Offset < 0)
+            throw TeamsSearchException.Invalid("Browse limit must be between 1 and 100 and offset must not be negative.");
+        foreach (var value in new[] { query.Since, query.Until })
+            if (value != null && !IsDay(value)) throw TeamsSearchException.Invalid("Browse dates must use YYYY-MM-DD.");
+        var items = new List<(string, string)>();
+        void Add(string name, string? value) { if (!string.IsNullOrWhiteSpace(value)) items.Add((name, value.Trim())); }
+        Add("team", query.Team);
+        Add("channel", query.Channel);
+        Add("author", query.Author);
+        Add("since", query.Since);
+        Add("until", query.Until);
+        items.Add(("limit", query.Limit.ToString(CultureInfo.InvariantCulture)));
+        items.Add(("offset", query.Offset.ToString(CultureInfo.InvariantCulture)));
+        return BuildUri("/v1/teams/threads", items);
+    }
 
     // ── URL building ──
 
@@ -251,15 +334,22 @@ public sealed class TeamsSearchService : IDisposable
 
     // ── Transport ──
 
-    private async Task<TeamsPayload<T>> GetAsync<T>(Uri uri, CancellationToken ct)
+    private Task<TeamsPayload<T>> GetAsync<T>(Uri uri, CancellationToken ct) => SendAsync<T>(HttpMethod.Get, uri, null, ct);
+
+    private async Task<TeamsPayload<T>> SendAsync<T>(HttpMethod method, Uri uri, object? bodyValue, CancellationToken ct)
     {
         if (_client == null) throw TeamsSearchException.NotConfigured();
-        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        using var request = new HttpRequestMessage(method, uri);
+        if (bodyValue != null) request.Content = new StringContent(JsonSerializer.Serialize(bodyValue, Json), Encoding.UTF8, "application/json");
         request.Headers.Accept.ParseAdd("application/json");
         request.Headers.TryAddWithoutValidation(PurposeHeader, _purpose);
-        using var response = await _client.SendAsync(request, ct);
-        var body = await response.Content.ReadAsStringAsync(ct);
+        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         var status = (int)response.StatusCode;
+        if (status is >= 200 and < 300
+            && (!response.Headers.TryGetValues(AccessHeader, out var access) || !access.Any(value => value.Trim() == AccessVersion)))
+            throw new TeamsSearchException(TeamsSearchFailure.AccessNotVerified,
+                "This Teams service did not verify current channel membership. Refresh after the service is updated.", status);
+        var body = await response.Content.ReadAsStringAsync(ct);
         if (status < 200 || status >= 300)
             throw TeamsSearchException.ForStatus(status, Detail(body));
         try
@@ -298,7 +388,13 @@ public sealed class TeamsSearchService : IDisposable
         return text.Length > 300 ? text[..300] : text;
     }
 
-    public void Dispose() => _client?.Dispose();
+    public void InvalidateWorkspaceTokens() => _ownedSource?.Invalidate();
+
+    public void Dispose()
+    {
+        _client?.Dispose();
+        _ownedSource?.Invalidate();
+    }
 }
 
 // ── Display helpers ──────────────────────────────────────────────────────
