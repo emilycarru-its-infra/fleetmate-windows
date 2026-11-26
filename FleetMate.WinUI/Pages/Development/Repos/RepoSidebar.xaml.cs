@@ -31,6 +31,9 @@ public sealed partial class RepoSidebar : UserControl
         UpdateSortTooltip();
     }
 
+    /// <summary>Opens Settings › Repositories; the segment shows it in place of the workspace.</summary>
+    public event EventHandler? SettingsRequested;
+
     public static Visibility Show(bool on) => DevelopmentUi.Show(on);
 
     public void Attach(RepoWorkspaceModel model)
@@ -225,6 +228,8 @@ public sealed partial class RepoSidebar : UserControl
         SortMenu.Items.Add(RowMenus.Item("Add Folder…", ChooseFolders, glyph: "\uE8F4"));
         SortMenu.Items.Add(RowMenus.Item("Find New Clones", model.FindNewClonesAsync, glyph: "\uE721",
             tooltip: "Look for clones that appeared in the watched folders"));
+        SortMenu.Items.Add(RowMenus.Item("Repository Settings…", () => SettingsRequested?.Invoke(this, EventArgs.Empty), glyph: "\uE713",
+            tooltip: "Every repository you can see, where each lives, and which are tracked"));
         if (!_grouped) return;
         SortMenu.Items.Add(new MenuFlyoutSeparator());
         SortMenu.Items.Add(RowMenus.Item("Expand All", () => { _collapsed.Clear(); SaveCollapsed(); Render(); }));

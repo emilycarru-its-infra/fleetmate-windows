@@ -161,7 +161,7 @@ public sealed partial class DevelopmentPage : Page, Shell.ICaptureViews
     {
         "pulls", "pulls-detail", "pulls-graphs", "commits", "commits-detail", "commits-graphs", "pipelines", "pipelines-detail",
         "pipelines-approval", "pipelines-graphs", "skills", "skills-detail", "skills-graphs",
-        "repos", "repos-history", "repos-files", "repos-search", "repos-edit",
+        "repos", "repos-history", "repos-files", "repos-search", "repos-edit", "repos-settings", "repos-graphs",
     };
 
     public async Task ShowCaptureViewAsync(string view)

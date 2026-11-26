@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="FleetMate.WinUI.Pages.Development.Repos.RepositoriesSettingsView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    x:DefaultBindMode="OneTime">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel MaxWidth="900" Padding="0,0,16,16" Spacing="12">
+            <StackPanel Spacing="4">
+                <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Repositories" />
+                <TextBlock
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="Every Azure DevOps and GitHub repository you can see, where each lives on this PC, and which are tracked. Tracked repositories appear in Development › Repos. The same settings drive 'fleetmate repos'."
+                    TextWrapping="Wrap" />
+            </StackPanel>
+
+            <InfoBar
+                x:Name="ErrorBar"
+                AutomationProperties.AutomationId="RepoSettingsError"
+                IsOpen="False"
+                Severity="Warning" />
+
+            <!-- Locations -->
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="8">
+                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Locations" />
+                    <TextBlock
+                        x:Name="LocationsFooter"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        TextWrapping="Wrap" />
+
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox
+                            x:Name="CloneRootBox"
+                            AutomationProperties.AutomationId="RepoSettingsCloneRoot"
+                            Header="Clone into"
+                            PlaceholderText="~\Developer"
+                            TextChanged="CloneRootBox_TextChanged" />
+                        <Button
+                            Grid.Column="1"
+                            VerticalAlignment="Bottom"
+                            AutomationProperties.AutomationId="RepoSettingsChooseCloneRoot"
+                            AutomationProperties.Name="Choose the clone folder"
+                            Click="ChooseCloneRootButton_Click"
+                            Content="Choose…" />
+                    </Grid>
+
+                    <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyStrongTextBlockStyle}" Text="Watched folders" />
+                    <ItemsControl x:Name="ScanRootsList" AutomationProperties.Name="Watched folders" IsTabStop="False">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <Grid Padding="0,2" ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="&#xE8B7;" />
+                                    <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="{x:Bind}" TextTrimming="CharacterEllipsis" />
+                                    <Button
+                                        Grid.Column="2"
+                                        Padding="8,4"
+                                        AutomationProperties.Name="Remove this folder"
+                                        Click="RemoveScanRootButton_Click"
+                                        Style="{StaticResource SubtleButtonStyle}"
+                                        Tag="{x:Bind}"
+                                        ToolTipService.ToolTip="Remove this folder">
+                                        <FontIcon FontSize="12" Glyph="&#xE738;" />
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox
+                            x:Name="NewScanRootBox"
+                            AutomationProperties.AutomationId="RepoSettingsNewScanRoot"
+                            AutomationProperties.Name="Folder to watch"
+                            KeyDown="NewScanRootBox_KeyDown"
+                            PlaceholderText="Folder where you keep clones" />
+                        <Button
+                            Grid.Column="1"
+                            AutomationProperties.AutomationId="RepoSettingsAddScanRoot"
+                            Click="AddScanRootButton_Click"
+                            Content="Add" />
+                        <Button
+                            Grid.Column="2"
+                            AutomationProperties.AutomationId="RepoSettingsChooseScanRoot"
+                            AutomationProperties.Name="Choose a folder to watch"
+                            Click="ChooseScanRootButton_Click"
+                            Content="Choose…" />
+                    </Grid>
+                    <CheckBox
+                        x:Name="AutoTrackBox"
+                        AutomationProperties.AutomationId="ReposAutoTrack"
+                        Click="AutoTrackBox_Click"
+                        Content="Look for new clones in these folders"
+                        ToolTipService.ToolTip="When FleetMate starts or refreshes, the Repos sidebar offers to add clones that appeared in a watched folder" />
+
+                    <Grid Margin="0,4,0,0" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Button
+                            x:Name="DiscoverButton"
+                            AutomationProperties.AutomationId="RepoSettingsDiscover"
+                            Click="DiscoverButton_Click"
+                            ToolTipService.ToolTip="Scan the folders above and link each checkout by its origin">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon FontSize="14" Glyph="&#xE721;" />
+                                <TextBlock Text="Find Existing Clones" />
+                            </StackPanel>
+                        </Button>
+                        <Button
+                            Grid.Column="1"
+                            AutomationProperties.AutomationId="RepoSettingsLinkFolder"
+                            Click="LinkFolderButton_Click"
+                            ToolTipService.ToolTip="Link any git checkout by its origin">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon FontSize="14" Glyph="&#xE71B;" />
+                                <TextBlock Text="Link Folder…" />
+                            </StackPanel>
+                        </Button>
+                        <ProgressRing
+                            x:Name="DiscoverRing"
+                            Grid.Column="2"
+                            Width="16"
+                            Height="16"
+                            AutomationProperties.Name="Finding clones"
+                            IsActive="False" />
+                        <Button
+                            x:Name="SaveButton"
+                            Grid.Column="4"
+                            AutomationProperties.AutomationId="RepoSettingsSave"
+                            Click="SaveButton_Click"
+                            Content="Save"
+                            IsEnabled="False"
+                            Style="{StaticResource AccentButtonStyle}" />
+                    </Grid>
+                    <TextBlock
+                        x:Name="DiscoverySummary"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        TextWrapping="Wrap"
+                        Visibility="Collapsed" />
+                </StackPanel>
+            </Border>
+
+            <!-- Catalog -->
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="8">
+                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Catalog" />
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox
+                            x:Name="QueryBox"
+                            AutomationProperties.AutomationId="RepoSettingsSearch"
+                            AutomationProperties.Name="Search repositories"
+                            PlaceholderText="Search repositories"
+                            TextChanged="QueryBox_TextChanged" />
+                        <Button
+                            x:Name="RefreshButton"
+                            Grid.Column="1"
+                            AutomationProperties.AutomationId="RepoSettingsRefreshCatalog"
+                            Click="RefreshButton_Click"
+                            ToolTipService.ToolTip="Ask Azure DevOps and GitHub for every repository you can see">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon FontSize="14" Glyph="&#xE72C;" />
+                                <TextBlock Text="Refresh" />
+                            </StackPanel>
+                        </Button>
+                        <ProgressRing
+                            x:Name="RefreshRing"
+                            Grid.Column="2"
+                            Width="16"
+                            Height="16"
+                            AutomationProperties.Name="Refreshing the catalog"
+                            IsActive="False" />
+                    </Grid>
+                    <StackPanel x:Name="ProviderErrors" Spacing="2" />
+                    <TextBlock
+                        x:Name="CatalogFooter"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <StackPanel x:Name="GroupsPanel" Spacing="12" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

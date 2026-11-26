@@ -25,6 +25,8 @@ public sealed partial class ReposSegmentView : UserControl, IDevelopmentSegmentV
 {
     private DevelopmentPage? _page;
     private RepoWorkspaceModel? _model;
+    private RepoInsightsView? _insights;
+    private RepositoriesSettingsView? _settings;
     private Task? _ready;
     private bool _shown, _scanned, _isBusy;
     private string _search = "";
@@ -36,6 +38,7 @@ public sealed partial class ReposSegmentView : UserControl, IDevelopmentSegmentV
         _statusTimer = DispatcherQueue.CreateTimer();
         _statusTimer.Interval = TimeSpan.FromSeconds(30);
         _statusTimer.Tick += async (_, _) => { if (_model != null) await _model.RefreshStatusesAsync(); };
+        Sidebar.SettingsRequested += (_, _) => ShowSettings(true);
     }
 
     public DevelopmentSegment Segment => DevelopmentSegment.Repos;
@@ -53,8 +56,8 @@ public sealed partial class ReposSegmentView : UserControl, IDevelopmentSegmentV
 
     public event EventHandler? BusyChanged;
 
-    /// <summary>The selected repository's Insights, for the Graphs strip; they arrive with the Insights port.</summary>
-    public UIElement? Insights => null;
+    /// <summary>The selected repository's Insights, for the Graphs strip; null until the workspace is ready.</summary>
+    public UIElement? Insights => _insights;
 
     public void Attach(DevelopmentPage page)
     {
@@ -99,6 +102,7 @@ public sealed partial class ReposSegmentView : UserControl, IDevelopmentSegmentV
         _model = model;
         Sidebar.Attach(model);
         Workspace.Attach(model);
+        _insights = new RepoInsightsView(model) { OpenFile = OpenFile };
         model.PropertyChanged += OnModelChanged;
         // Settings links, clones or (un)tracks a repository: the list follows at once.
         RepoWorkspaceModel.RegistryChanged += () => DispatcherQueue.TryEnqueue(async () =>
@@ -165,11 +169,13 @@ public sealed partial class ReposSegmentView : UserControl, IDevelopmentSegmentV
         model.ReloadRecords();
         await model.RefreshStatusesAsync();
         await model.LoadSelectedAsync();
+        _settings?.Load();
     }
 
     /// <summary>Open a file from Insights in the Files panel.</summary>
     public void OpenFile(string relativePath)
     {
+        ShowSettings(false);
         Workspace.OpenFile(relativePath);
     }
 
@@ -206,13 +212,15 @@ public sealed partial class ReposSegmentView : UserControl, IDevelopmentSegmentV
 
     /// <summary>
     /// The QA capture's Repos views, on the demo repositories: Changes, History,
-    /// Files with a file open, a content search and the sidebar's edit mode.
+    /// Files with a file open, a content search, the sidebar's edit mode,
+    /// Settings › Repositories, and Insights in the Graphs strip.
     /// </summary>
     public async Task ShowCaptureViewAsync(string view)
     {
         if (_ready != null) await _ready;
         if (_model is not { } model) return;
         await ShowAsync();
+        ShowSettings(view == "repos-settings");
         model.IsEditing = view == "repos-edit";
         model.ClearGrep();
         model.Git.Panel = view switch
@@ -224,8 +232,26 @@ public sealed partial class ReposSegmentView : UserControl, IDevelopmentSegmentV
         await model.LoadSelectedAsync();
         if (view == "repos-files") model.Open("src/Harbor.Core/Tides.cs");
         if (view == "repos-search") await model.GrepAsync("step");
+        if (view == "repos-graphs") _insights?.Load();
         // The diff comes from git after the panel switches; let it arrive and draw before the capture.
         await model.Git.SyncDiffAsync();
         await Task.Delay(1500);
     }
+
+    // MARK: - Settings › Repositories
+
+    private void ShowSettings(bool show)
+    {
+        if (show && _model != null)
+        {
+            _settings ??= new RepositoriesSettingsView(_model.Manager);
+            SettingsContent.Content = _settings;
+            _settings.Load();
+        }
+        SettingsHost.Visibility = DevelopmentUi.Show(show);
+        Workspace.Visibility = DevelopmentUi.Show(!show);
+        if (show) SettingsBackButton.Focus(FocusState.Programmatic);
+    }
+
+    private void SettingsBackButton_Click(object sender, RoutedEventArgs e) => ShowSettings(false);
 }

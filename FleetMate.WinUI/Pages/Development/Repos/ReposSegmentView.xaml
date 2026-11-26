@@ -25,6 +25,33 @@
 
         <local:RepoWorkspaceView x:Name="Workspace" Grid.Column="2" />
 
+        <!-- Settings › Repositories, in place of the workspace until Back. -->
+        <Grid x:Name="SettingsHost" Grid.Column="2" RowSpacing="8" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Button
+                x:Name="SettingsBackButton"
+                AutomationProperties.AutomationId="RepoSettingsBack"
+                Click="SettingsBackButton_Click"
+                ToolTipService.ToolTip="Back to the workspace (Esc)">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon FontSize="14" Glyph="&#xE72B;" />
+                    <TextBlock Text="Back to Repos" />
+                </StackPanel>
+                <Button.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="Escape" />
+                </Button.KeyboardAccelerators>
+            </Button>
+            <ContentControl
+                x:Name="SettingsContent"
+                Grid.Row="1"
+                HorizontalContentAlignment="Stretch"
+                VerticalContentAlignment="Stretch"
+                IsTabStop="False" />
+        </Grid>
+
         <!-- Demo mode builds its fictional repositories first. -->
         <StackPanel
             x:Name="PreparingState"
