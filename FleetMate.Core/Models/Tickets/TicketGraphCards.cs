@@ -16,18 +16,22 @@ public static class TicketGraphCards
     public static List<GraphCard> For(IReadOnlyList<TicketWidgetTile> tiles, IReadOnlyList<TicketWidgetChart> charts, bool loading)
     {
         var waiting = loading && tiles.Count > 0 && tiles[0].Value == 0;
+        // Two cards of three figures rather than one of six: a narrow strip
+        // stacks a card's figures, and three keep a row short enough to show whole.
+        GraphCard Figures(string title, IEnumerable<TicketWidgetTile> group) => new(GraphCardKind.Kpis, title)
+        {
+            Loading = waiting,
+            Kpis = group.Select(t => new GraphKpi(
+                t.IsOn ? $"{t.Title} (on)" : t.Title,
+                t.Value.ToString("N0"),
+                Tone(t.Tone),
+                waiting,
+                new GraphFilter(Figure, t.Title))).ToList(),
+        };
         var cards = new List<GraphCard>
         {
-            new(GraphCardKind.Kpis, "Tickets")
-            {
-                Loading = waiting,
-                Kpis = tiles.Select(t => new GraphKpi(
-                    t.IsOn ? $"{t.Title} (on)" : t.Title,
-                    t.Value.ToString("N0"),
-                    Tone(t.Tone),
-                    waiting,
-                    new GraphFilter(Figure, t.Title))).ToList(),
-            },
+            Figures("Tickets", tiles.Take(3)),
+            Figures("Needs Attention", tiles.Skip(3)),
         };
         foreach (var chart in charts)
         {

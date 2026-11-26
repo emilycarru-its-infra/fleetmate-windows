@@ -47,18 +47,7 @@ public static class ContextPublisher
         })).ToList());
 
     public static void Asset(SnipeAsset? asset) =>
-        File?.SetSelection("asset", asset == null ? Array.Empty<ContextSelection>() : new[]
-        {
-            new ContextSelection("asset", asset.Id.ToString(), new Dictionary<string, string?>
-            {
-                ["name"] = asset.DisplayName,
-                ["tag"] = asset.AssetTag,
-                ["serial"] = asset.Serial,
-                ["model"] = asset.Model?.Name,
-                ["assignedTo"] = asset.AssignedTo?.Name,
-                ["status"] = asset.StatusLabel?.Name,
-            })
-        });
+        File?.SetSelection("asset", FleetMate.Core.Inventory.AssetContext.Selection(asset));
 
     public static void Ticket(TdxTicket? ticket) =>
         File?.SetSelection("ticket", ticket == null ? Array.Empty<ContextSelection>() : new[]

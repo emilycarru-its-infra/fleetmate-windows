@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using FleetMate.Core.Inventory;
 using FleetMate.Core.Models.Inventory;
 using FleetMate.Core.Services.Inventory;
 using FleetMate.Core.Shared;
@@ -37,32 +38,6 @@ public partial class AssetDetailPanel : UserControl
     /// <summary>Raised after any successful save so the page can refresh its list.</summary>
     public event EventHandler? Changed;
 
-    // ── Field group taxonomy ─────────────────────────────────────────────
-    // The six groups the Snipe-IT fork seeds, in its render order. The
-    // server's field_group slug on each custom field wins when present; this
-    // mirror only decides where a field lands when the API doesn't say.
-
-    private sealed record FieldGroupDef(string Slug, string Title, string Glyph, bool Mono, string[] Fields);
-
-    private static readonly FieldGroupDef[] FieldGroups =
-    {
-        new("inventory", "Inventory", "", false,
-            new[] { "Device Management Service", "Fleet", "Catalog" }),
-        new("specs", "Specs", "", false,
-            new[] { "Platform", "Colour", "Display", "Display Resolution", "Memory",
-                    "Storage", "Chip", "CPU", "GPU", "NPU", "Architecture", "Cellular", "Version" }),
-        new("management", "Management", "", false, Array.Empty<string>()),
-        new("networking", "Networking", "", false,
-            new[] { "Hostname", "Address", "Driver", "Queue(s)", "Virtual Queue",
-                    "Toner Contract", "Options" }),
-        new("procurement", "Procurement", "", false, new[] { "License Type" }),
-        new("identity", "Identity", "", true,
-            new[] { "Entra ID", "Intune ID", "Defender ID", "Object ID", "Micro ID",
-                    "Identifier", "IMEI", "Enrollment Status" }),
-    };
-
-    private static readonly HashSet<string> HiddenFields = new(StringComparer.OrdinalIgnoreCase) { "Username" };
-
     public AssetDetailPanel()
     {
         InitializeComponent();
@@ -85,14 +60,12 @@ public partial class AssetDetailPanel : UserControl
     {
         if (_asset is not { } asset) return;
 
-        CategoryIcon.Glyph = CategoryGlyph(asset.Category?.Name);
+        CategoryIcon.Glyph = AssetDetailLayout.CategoryGlyph(asset.Category?.Name);
         NameText.Text = asset.DisplayName;
         ModelText.Text = asset.Model?.Name ?? "";
         ModelText.Visibility = string.IsNullOrEmpty(asset.Model?.Name) ? Visibility.Collapsed : Visibility.Visible;
 
-        ReAllocateButton.Visibility =
-            asset.AssignedTo != null || asset.StatusLabel?.StatusMeta == "deployable"
-                ? Visibility.Visible : Visibility.Collapsed;
+        ReAllocateButton.Visibility = AssetDetailLayout.CanReAllocate(asset) ? Visibility.Visible : Visibility.Collapsed;
 
         RenderChips(asset);
         RenderWhoWhere(asset);
@@ -114,41 +87,17 @@ public partial class AssetDetailPanel : UserControl
     private void RenderWhoWhere(SnipeAsset asset)
     {
         WhoWhereRow.Children.Clear();
-
-        // An asset checked out to a room is not "assigned to a person named
-        // R404" — when the assignee IS a location, the person line would
-        // duplicate the pin line verbatim.
-        var assignedToLocation = asset.AssignedTo?.Type == "location";
-        if (asset.AssignedTo?.Name is { Length: > 0 } who && !assignedToLocation)
-            WhoWhereRow.Children.Add(IconLabel("", who));
-
-        var place = asset.LocationName ?? (assignedToLocation ? asset.AssignedTo?.Name : null);
-        if (!string.IsNullOrEmpty(place))
-            WhoWhereRow.Children.Add(IconLabel("", place!));
-
+        var (person, place) = AssetDetailLayout.WhoWhere(asset);
+        if (person != null) WhoWhereRow.Children.Add(IconLabel(AssetDetailLayout.PersonGlyph, person));
+        if (place != null) WhoWhereRow.Children.Add(IconLabel(AssetDetailLayout.PlaceGlyph, place));
         WhoWhereRow.Visibility = WhoWhereRow.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void RenderLifecycle(SnipeAsset asset)
     {
         LifecycleHost.Children.Clear();
-
-        var purchase = ParseDate(asset.PurchaseDate?.Date);
-        var eol = ParseDate(asset.AssetEolDate?.Date);
-        var warranty = ParseDate(asset.WarrantyExpires?.Date);
-
-        if (LifecycleFraction(purchase, eol) is { } eolFraction && eol is { } eolDate)
-        {
-            var monthsLeft = Math.Abs(((eolDate.Year - DateTime.Today.Year) * 12) + eolDate.Month - DateTime.Today.Month);
-            LifecycleHost.Children.Add(LifecycleBar(
-                "Device EOL", $"{monthsLeft} months left · {(int)(eolFraction * 100)}%", eolFraction));
-        }
-        if (LifecycleFraction(purchase, warranty) is { } wFraction)
-        {
-            LifecycleHost.Children.Add(LifecycleBar(
-                "Warranty", $"{asset.WarrantyExpires?.Formatted ?? ""} · {(int)(wFraction * 100)}%", wFraction));
-        }
-
+        foreach (var bar in AssetDetailLayout.Lifecycle(asset, DateTime.Today))
+            LifecycleHost.Children.Add(LifecycleBar(bar.Title, bar.Trailing, bar.Fraction));
         LifecycleHost.Visibility = LifecycleHost.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -182,18 +131,20 @@ public partial class AssetDetailPanel : UserControl
         rightStack.Children.Add(StatusCard(asset));
         if (asset.AssignedTo != null)
         {
-            var assignment = AssignmentCard(asset);
+            var assignment = RowsCard("Assignment", AssetDetailLayout.AssignmentGlyph, AssetDetailLayout.AssignmentRows(asset));
             assignment.Margin = new Thickness(0, 12, 0, 0);
             rightStack.Children.Add(assignment);
         }
-        AddCardRow(InventoryCard(asset), rightStack);
+        var inventory = AssetDetailLayout.Group("inventory");
+        AddCardRow(RowsCard(inventory.Title, inventory.Glyph, AssetDetailLayout.InventoryRows(asset)), rightStack);
 
-        AddCardRow(HardwareCard(asset), ProcurementCard(asset));
+        AddCardRow(RowsCard("Hardware", AssetDetailLayout.HardwareGlyph, AssetDetailLayout.HardwareRows(asset)),
+            RowsCard("Procurement", AssetDetailLayout.Group("procurement").Glyph, AssetDetailLayout.ProcurementRows(asset), 150));
 
         var management = GroupCard(asset, "management");
         if (management != null) AddFullCard(management);
 
-        // Networking is short, Identity is GUID-wide — share a row 1:2.
+        // Networking is short, Identity is GUID-wide: they share a row 1:2.
         var networking = GroupCard(asset, "networking");
         var identity = GroupCard(asset, "identity");
         if (networking != null || identity != null)
@@ -201,7 +152,7 @@ public partial class AssetDetailPanel : UserControl
 
         if (!string.IsNullOrEmpty(asset.Notes))
         {
-            var notes = Card("Notes", "");
+            var notes = Card("Notes", AssetDetailLayout.NotesGlyph);
             ((StackPanel)notes.Child!).Children.Add(new TextBlock
             {
                 Text = asset.Notes,
@@ -212,42 +163,17 @@ public partial class AssetDetailPanel : UserControl
             AddFullCard(notes);
         }
 
-        var other = UnmappedFields(asset);
-        if (other.Count > 0)
-        {
-            var card = Card("Other", "");
-            var host = (StackPanel)card.Child!;
-            foreach (var (name, field) in other)
-                AddRow(host, name, field.Value, copyable: true, editKey: field.Field);
-            AddFullCard(card);
-        }
+        var other = AssetDetailLayout.OtherRows(asset);
+        if (other.Count > 0) AddFullCard(RowsCard("Other", AssetDetailLayout.OtherGlyph, other));
 
-        AddFullCard(MetadataCard(asset));
+        AddFullCard(RowsCard("Metadata", AssetDetailLayout.MetadataGlyph, AssetDetailLayout.MetadataRows(asset, DateTime.Today)));
 
         if (HandbookCard(asset) is { } handbook) AddFullCard(handbook);
     }
 
-    private Border InventoryCard(SnipeAsset asset)
-    {
-        var group = FieldGroups.First(g => g.Slug == "inventory");
-        var card = Card(group.Title, group.Glyph);
-        var host = (StackPanel)card.Child!;
-        foreach (var (name, field) in FieldsInGroup(asset, group))
-        {
-            AddRow(host, name, field.Value, copyable: true, editKey: field.Field, alwaysShow: true);
-            // Web order: Location sits between Catalog and Usage.
-            if (name == "Catalog")
-                AddRow(host, "Location", asset.RtdLocation?.Name, alwaysShow: true);
-        }
-        // Native since the fork's F2 migration, like the lease cluster.
-        AddRow(host, "Usage", asset.LeaseUsage, copyable: true, editKey: "lease_usage", alwaysShow: true);
-        AddRow(host, "Area", asset.LeaseArea, copyable: true, editKey: "lease_area", alwaysShow: true);
-        return card;
-    }
-
     private Border StatusCard(SnipeAsset asset)
     {
-        var card = Card("Status", "");
+        var card = Card("Status", AssetDetailLayout.StatusGlyph);
         var host = (StackPanel)card.Child!;
 
         if (_statusLabels.Count > 0)
@@ -277,153 +203,28 @@ public partial class AssetDetailPanel : UserControl
         }
         else
         {
-            AddRow(host, "Status", asset.StatusLabel?.Name, alwaysShow: true);
+            AddRow(host, new AssetDetailRow("Status", asset.StatusLabel?.Name, AlwaysShow: true));
         }
 
-        AddRow(host, "Status Type", asset.StatusLabel?.StatusMeta, alwaysShow: true);
+        AddRow(host, new AssetDetailRow("Status Type", asset.StatusLabel?.StatusMeta, AlwaysShow: true));
         return card;
     }
 
-    private Border AssignmentCard(SnipeAsset asset)
+    private Border RowsCard(string title, string glyph, IEnumerable<AssetDetailRow> rows, double labelWidth = 110)
     {
-        var card = Card("Assignment", "");
+        var card = Card(title, glyph);
         var host = (StackPanel)card.Child!;
-        AddRow(host, "Assigned To", asset.AssignedTo?.Name);
-        AddRow(host, "Email", asset.AssignedTo?.Email, copyable: true);
-        AddRow(host, "Employee #", asset.AssignedTo?.EmployeeNumber);
-        return card;
-    }
-
-    private Border HardwareCard(SnipeAsset asset)
-    {
-        var card = Card("Hardware", "");
-        var host = (StackPanel)card.Child!;
-        AddRow(host, "Serial", asset.Serial, copyable: true, mono: true, editKey: "serial");
-        AddRow(host, "Model", asset.Model?.Name);
-        AddRow(host, "Category", asset.Category?.Name);
-        AddRow(host, "Manufacturer", asset.Manufacturer?.Name);
-        var specs = FieldGroups.First(g => g.Slug == "specs");
-        foreach (var (name, field) in FieldsInGroup(asset, specs))
-            AddRow(host, name, field.Value, copyable: true, editKey: field.Field, alwaysShow: true);
-        return card;
-    }
-
-    private Border ProcurementCard(SnipeAsset asset)
-    {
-        var card = Card("Procurement", "");
-        var host = (StackPanel)card.Child!;
-        var rows = new (string Label, string? Value, string? EditKey)[]
-        {
-            ("Ownership Type", asset.OwnershipType, "ownership_type"),
-            ("Lease Contract ID", asset.LeaseContractId, "lease_contract_id"),
-            ("Lease Contract Name", asset.LeaseContractName, "lease_contract_name"),
-            ("Lease End Date", asset.LeaseEndDate?.Formatted, "lease_end_date"),
-            ("Lease Rent", asset.LeaseRent?.Formatted, "lease_rent"),
-            ("Buyout Cost", asset.BuyoutCost?.Formatted, "buyout_cost"),
-            ("Invoice Number", asset.InvoiceNumber, "invoice_number"),
-            ("PO Number", asset.PoNumber, "po_number"),
-            ("Warranty/Soft Cost", asset.WarrantySoftCost?.Formatted, "warranty_soft_cost"),
-            ("Decommission Date", asset.DecommissionDate?.Formatted, "decommission_date"),
-            ("Book Value", asset.LeaseBookValue?.Formatted ?? asset.BookValue, null),
-            ("Purchase Cost", asset.PurchaseCost, "purchase_cost"),
-            ("Purchase Date", asset.PurchaseDate?.Formatted, "purchase_date"),
-        };
-        foreach (var (label, value, editKey) in rows)
-            AddRow(host, label, value, copyable: true, editKey: editKey, alwaysShow: true, labelWidth: 150);
-        var group = FieldGroups.First(g => g.Slug == "procurement");
-        foreach (var (name, field) in FieldsInGroup(asset, group))
-            AddRow(host, name, field.Value, copyable: true, editKey: field.Field, alwaysShow: true, labelWidth: 150);
+        foreach (var row in rows) AddRow(host, row, labelWidth);
         return card;
     }
 
     /// <summary>One taxonomy group as a card; null when it has no fields.</summary>
     private Border? GroupCard(SnipeAsset asset, string slug)
     {
-        var group = FieldGroups.First(g => g.Slug == slug);
-        var fields = FieldsInGroup(asset, group);
-        if (fields.Count == 0) return null;
-
-        var card = Card(group.Title, group.Glyph);
-        var host = (StackPanel)card.Child!;
-        foreach (var (name, field) in fields)
-            AddRow(host, name, field.Value, copyable: true, mono: group.Mono,
-                editKey: field.Field, alwaysShow: true);
-        return card;
-    }
-
-    private Border MetadataCard(SnipeAsset asset)
-    {
-        var card = Card("Metadata", "");
-        var host = (StackPanel)card.Child!;
-        AddRow(host, "Last Checkout", asset.LastCheckout?.Formatted, alwaysShow: true);
-        AddRow(host, "Expected Checkin", asset.ExpectedCheckin?.Formatted, alwaysShow: true);
-        AddRow(host, "Last Audit", asset.LastAuditDate?.Formatted, alwaysShow: true);
-        AddRow(host, "Next Audit", asset.NextAuditDate?.Formatted, alwaysShow: true);
-        AddRow(host, "Supplier", asset.Supplier?.Name, alwaysShow: true);
-        AddRow(host, "Device EOL", DeviceEolText(asset), alwaysShow: true);
-        AddRow(host, "BYOD", asset.Byod == true ? "Yes" : "No");
-        AddRow(host, "Requestable", asset.Requestable == true ? "Yes" : "No");
-        AddRow(host, "Created", asset.CreatedAt?.Formatted);
-        AddRow(host, "Updated", asset.UpdatedAt?.Formatted);
-        return card;
-    }
-
-    /// <summary>"2029-07-22 — 2 years 10 months from now", like the web's EOL row.</summary>
-    private static string? DeviceEolText(SnipeAsset asset)
-    {
-        var formatted = asset.AssetEolDate?.Formatted;
-        if (string.IsNullOrEmpty(formatted)) return null;
-        if (ParseDate(asset.AssetEolDate?.Date) is not { } eol) return formatted;
-
-        var now = DateTime.Today;
-        var (from, to) = eol > now ? (now, eol) : (eol, now);
-        var months = ((to.Year - from.Year) * 12) + to.Month - from.Month;
-        if (to.Day < from.Day) months--;
-        var years = months / 12;
-        months %= 12;
-
-        var span = new List<string>();
-        if (years > 0) span.Add($"{years} year{(years == 1 ? "" : "s")}");
-        if (months > 0) span.Add($"{months} month{(months == 1 ? "" : "s")}");
-        if (span.Count == 0) return formatted;
-        return $"{formatted} — {string.Join(" ", span)} {(eol > now ? "from now" : "ago")}";
-    }
-
-    // ── Custom field grouping ────────────────────────────────────────────
-
-    /// <summary>Group slug for a field: the server's word when the fork's API
-    /// sends field_group, else the mirrored seed taxonomy, else "other".</summary>
-    private static string GroupSlug(string name, SnipeCustomField field)
-    {
-        if (!string.IsNullOrEmpty(field.FieldGroup)) return field.FieldGroup!;
-        return FieldGroups.FirstOrDefault(g => g.Fields.Contains(name))?.Slug ?? "other";
-    }
-
-    private static List<(string Name, SnipeCustomField Field)> FieldsInGroup(SnipeAsset asset, FieldGroupDef group)
-    {
-        if (asset.CustomFields == null) return new();
-        return asset.CustomFields
-            .Where(kvp => GroupSlug(kvp.Key, kvp.Value) == group.Slug && !HiddenFields.Contains(kvp.Key))
-            .OrderBy(kvp =>
-            {
-                var index = Array.IndexOf(group.Fields, kvp.Key);
-                return index < 0 ? int.MaxValue : index;
-            })
-            .ThenBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(kvp => (kvp.Key, kvp.Value))
-            .ToList();
-    }
-
-    private static List<(string Name, SnipeCustomField Field)> UnmappedFields(SnipeAsset asset)
-    {
-        if (asset.CustomFields == null) return new();
-        return asset.CustomFields
-            .Where(kvp => GroupSlug(kvp.Key, kvp.Value) == "other"
-                && !string.IsNullOrEmpty(kvp.Value.Value)
-                && !HiddenFields.Contains(kvp.Key))
-            .OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(kvp => (kvp.Key, kvp.Value))
-            .ToList();
+        var rows = AssetDetailLayout.GroupRows(asset, slug);
+        if (rows.Count == 0) return null;
+        var group = AssetDetailLayout.Group(slug);
+        return RowsCard(group.Title, group.Glyph, rows);
     }
 
     // ── Building blocks ──────────────────────────────────────────────────
@@ -490,10 +291,10 @@ public partial class AssetDetailPanel : UserControl
     /// hover. Rows with an editKey PATCH that API field inline; listbox fields
     /// edit as the dropdown they are on the web.
     /// </summary>
-    private void AddRow(StackPanel host, string label, string? value, bool copyable = false,
-        bool mono = false, string? editKey = null, bool alwaysShow = false, double labelWidth = 110)
+    private void AddRow(StackPanel host, AssetDetailRow field, double labelWidth = 110)
     {
-        if (!alwaysShow && string.IsNullOrEmpty(value)) return;
+        if (!field.Shows) return;
+        var (label, value, copyable, mono, editKey) = (field.Label, field.Value, field.Copyable, field.Mono, field.EditKey);
 
         var row = new Grid { Margin = new Thickness(0, 2, 0, 2), Background = Brushes.Transparent };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(labelWidth) });
@@ -581,9 +382,7 @@ public partial class AssetDetailPanel : UserControl
         // dropdown it is on the web, not as free text.
         if (_listboxOptions.TryGetValue(editKey, out var options) && options.Count > 0)
         {
-            var items = new List<string> { "" };
-            if (current.Length > 0 && !options.Contains(current)) items.Add(current);
-            items.AddRange(options);
+            var items = AssetDetailLayout.EditChoices(current, options);
             var combo = new ComboBox { ItemsSource = items, SelectedItem = current, FontSize = 12, MinWidth = 140 };
             input = combo;
             readValue = () => combo.SelectedItem as string ?? "";
@@ -700,12 +499,11 @@ public partial class AssetDetailPanel : UserControl
 
     private FrameworkElement StatusBadge(SnipeStatusLabel? status)
     {
-        var color = status?.StatusMeta switch
+        var color = AssetDetailLayout.StatusTone(status) switch
         {
-            "deployed" => "#27ae60",
-            "deployable" => "#3182CE",
-            "pending" => "#d69e2e",
-            "archived" => "#718096",
+            AssetStatusTone.Deployed => "#27ae60",
+            AssetStatusTone.Deployable => "#3182CE",
+            AssetStatusTone.Pending => "#d69e2e",
             _ => "#718096"
         };
         var panel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -788,35 +586,6 @@ public partial class AssetDetailPanel : UserControl
 
     private Brush Secondary() => (Brush)FindResource("SystemControlForegroundBaseMediumBrush");
 
-    private static DateTime? ParseDate(string? raw)
-    {
-        if (string.IsNullOrEmpty(raw) || raw!.Length < 10) return null;
-        return DateTime.TryParseExact(raw[..10], "yyyy-MM-dd", null,
-            System.Globalization.DateTimeStyles.None, out var date) ? date : null;
-    }
-
-    /// <summary>Elapsed share of the purchase→milestone span, clamped 0…1.</summary>
-    private static double? LifecycleFraction(DateTime? start, DateTime? end)
-    {
-        if (start is not { } from || end is not { } to || to <= from) return null;
-        var elapsed = (DateTime.Today - from).TotalDays / (to - from).TotalDays;
-        return Math.Min(Math.Max(elapsed, 0), 1);
-    }
-
-    private static string CategoryGlyph(string? category)
-    {
-        var name = (category ?? "").ToLowerInvariant();
-        if (name.Contains("laptop")) return "";
-        if (name.Contains("display") || name.Contains("monitor")) return "";
-        if (name.Contains("desktop")) return "";
-        if (name.Contains("phone")) return "";
-        if (name.Contains("printer")) return "";
-        if (name.Contains("camera")) return "";
-        if (name.Contains("audio") || name.Contains("speaker")) return "";
-        if (name.Contains("network") || name.Contains("switch") || name.Contains("router")) return "";
-        return "";
-    }
-
     private async Task EnsureOptionsAsync()
     {
         if (_service == null) return;
@@ -835,18 +604,7 @@ public partial class AssetDetailPanel : UserControl
         if (!_optionsLoaded)
         {
             _optionsLoaded = true;
-            var defs = await _service.GetFieldDefinitionsAsync();
-            var options = new Dictionary<string, List<string>>();
-            foreach (var def in defs)
-            {
-                if (!string.IsNullOrEmpty(def.DbColumnName)
-                    && string.Equals(def.Type, "listbox", StringComparison.OrdinalIgnoreCase)
-                    && def.FieldValuesArray is { Count: > 0 } values)
-                {
-                    options[def.DbColumnName!] = values;
-                }
-            }
-            _listboxOptions = options;
+            _listboxOptions = AssetDetailLayout.ListboxOptions(await _service.GetFieldDefinitionsAsync());
         }
     }
 
@@ -882,7 +640,7 @@ public partial class AssetDetailPanel : UserControl
         if (_asset == null || _service == null) return;
         try
         {
-            Process.Start(new ProcessStartInfo($"{_service.BaseUrl}/hardware/{_asset.Id}") { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo(AssetDetailLayout.WebUrl(_service.BaseUrl, _asset.Id)) { UseShellExecute = true });
         }
         catch { }
     }
