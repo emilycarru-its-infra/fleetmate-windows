@@ -22,21 +22,16 @@ public partial class SettingsPage
     private void BuildModulesPanel(FleetMateConfig config)
     {
         ModulesPanel.Children.Clear();
-        var hidden = UserPreferences.HiddenModules;
-        var enrollmentOrganizations = HasEnrollmentOrganizations();
-        foreach (var module in AppModules.All)
+        foreach (var module in ModuleRows.Build(config, UserPreferences.HiddenModules, HasEnrollmentOrganizations()))
         {
-            var shown = !hidden.Contains(module.Tag);
-            var configured = AppModules.IsConfigured(module.Tag, config, enrollmentOrganizations);
+            var shown = module.Shown;
             var row = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
 
             var toggle = new CheckBox
             {
                 IsChecked = shown,
                 VerticalAlignment = VerticalAlignment.Center,
-                ToolTip = module.IsTab
-                    ? (shown ? $"Hide the {module.Title} tab" : $"Show the {module.Title} tab")
-                    : (shown ? $"Stop reading {module.Title.ToLowerInvariant()} records" : $"Read {module.Title.ToLowerInvariant()} records"),
+                ToolTip = module.ToggleTip,
             };
             System.Windows.Automation.AutomationProperties.SetAutomationId(toggle, $"SettingsModule{module.Tag}");
             System.Windows.Automation.AutomationProperties.SetName(toggle, module.Title);
@@ -52,9 +47,8 @@ public partial class SettingsPage
 
             // Switched on but missing what it needs: offer the way to set it up
             // instead of leaving an empty tab.
-            if (shown && !configured)
+            if (module.ConfigurePane is { } pane)
             {
-                var pane = ConfigurePane(module.Tag);
                 var configure = new Button
                 {
                     Content = "Configure…",
@@ -78,9 +72,7 @@ public partial class SettingsPage
             text.Children.Add(new TextBlock { Text = module.Title, FontWeight = FontWeights.SemiBold });
             text.Children.Add(new TextBlock
             {
-                Text = shown && !configured
-                    ? $"{module.Subtitle}. {AppModules.NeedsMessage(module.Tag)}"
-                    : module.Subtitle,
+                Text = module.Subtitle,
                 FontSize = 11,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = (Brush)FindResource("SystemControlForegroundBaseMediumBrush"),
@@ -91,12 +83,7 @@ public partial class SettingsPage
     }
 
     /// <summary>The Settings pane that sets a module up.</summary>
-    private static string ConfigurePane(string tag) => tag switch
-    {
-        "Manage" => "Manage",
-        AppModules.Enrollment => "Enrollment",
-        _ => "Authentication",
-    };
+    private static string ConfigurePane(string tag) => ModuleRows.ConfigurePane(tag);
 
     private bool HasEnrollmentOrganizations()
     {

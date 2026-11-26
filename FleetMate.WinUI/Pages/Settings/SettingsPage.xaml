@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="FleetMate.WinUI.Pages.Settings.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:FleetMate.WinUI.Pages.Settings">
+
+    <Page.Resources>
+        <Style x:Key="SettingsCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{StaticResource OverlayCornerRadius}" />
+            <Setter Property="Padding" Value="16" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+    </Page.Resources>
+
+    <Grid Padding="24,16,24,0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Settings" />
+
+        <SelectorBar
+            x:Name="Sections"
+            Grid.Row="1"
+            Margin="-12,8,0,8"
+            AutomationProperties.Name="Settings sections"
+            SelectionChanged="Sections_SelectionChanged">
+            <SelectorBarItem x:Name="GeneralItem" IsSelected="True" Tag="General" Text="General" AutomationProperties.AutomationId="SettingsGeneralTab" />
+            <SelectorBarItem Tag="Authentication" Text="Authentication" AutomationProperties.AutomationId="SettingsAuthenticationTab" />
+            <SelectorBarItem Tag="Appearance" Text="Appearance" AutomationProperties.AutomationId="SettingsAppearanceTab" />
+            <SelectorBarItem Tag="About" Text="About" AutomationProperties.AutomationId="SettingsAboutTab" />
+        </SelectorBar>
+
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+            <Grid MaxWidth="860" Margin="0,0,0,24" HorizontalAlignment="Left">
+
+                <!-- General -->
+                <StackPanel x:Name="GeneralPanel">
+                    <InfoBar
+                        Margin="0,0,0,8"
+                        IsClosable="False"
+                        IsOpen="True"
+                        Severity="Informational"
+                        Message="Manage, Enrollment, Terminal and Repositories settings, and editing connections, are still in the WPF app." />
+                    <InfoBar
+                        Margin="0,0,0,8"
+                        IsClosable="False"
+                        IsOpen="{x:Bind ViewModel.IsDemo}"
+                        Severity="Warning"
+                        Message="Demo mode: changes here apply to this window only and are not saved." />
+                    <Border Style="{StaticResource SettingsCardStyle}" Visibility="{x:Bind ViewModel.ShowsModules}">
+                        <StackPanel Spacing="4">
+                            <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Enabled modules" />
+                            <TextBlock
+                                Margin="0,0,0,8"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Style="{StaticResource BodyTextBlockStyle}"
+                                Text="Switched-off modules are hidden from the tab bar and stop loading. Their settings are kept, so switching one back on picks up where it left off." />
+                            <ItemsRepeater ItemsSource="{x:Bind ViewModel.Modules}">
+                                <ItemsRepeater.Layout>
+                                    <StackLayout Spacing="4" />
+                                </ItemsRepeater.Layout>
+                                <ItemsRepeater.ItemTemplate>
+                                    <DataTemplate x:DataType="local:ModuleRowViewModel">
+                                        <Grid Padding="0,6" ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="32" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <FontIcon VerticalAlignment="Center" FontSize="18" Glyph="{x:Bind Glyph}" />
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Title}" />
+                                                <TextBlock
+                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                                    Text="{x:Bind Subtitle}"
+                                                    TextWrapping="Wrap" />
+                                            </StackPanel>
+                                            <ToggleSwitch
+                                                Grid.Column="2"
+                                                MinWidth="0"
+                                                AutomationProperties.AutomationId="{x:Bind AutomationId}"
+                                                AutomationProperties.Name="{x:Bind Title}"
+                                                IsOn="{x:Bind Shown, Mode=TwoWay}"
+                                                OffContent=""
+                                                OnContent=""
+                                                ToolTipService.ToolTip="{x:Bind ToggleTip}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsRepeater.ItemTemplate>
+                            </ItemsRepeater>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource SettingsCardStyle}">
+                        <StackPanel Spacing="4">
+                            <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Configuration" />
+                            <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="Desktop configuration store" />
+                            <TextBox AutomationProperties.Name="Desktop configuration store" IsReadOnly="True" Text="{x:Bind ViewModel.ConfigurationStore}" />
+                            <TextBlock
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="Only non-secret endpoints and identifiers are read here. Tokens are acquired from the signed-in Windows user."
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Authentication -->
+                <StackPanel x:Name="AuthenticationPanel" Visibility="Collapsed">
+                    <Border Style="{StaticResource SettingsCardStyle}">
+                        <StackPanel Spacing="8">
+                            <Grid>
+                                <TextBlock VerticalAlignment="Center" Style="{StaticResource BodyStrongTextBlockStyle}" Text="Sign-in status" />
+                                <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8">
+                                    <Button
+                                        AutomationProperties.AutomationId="SettingsTdxSignIn"
+                                        Command="{x:Bind ViewModel.SignInToTeamDynamixCommand}"
+                                        Content="Sign in to TeamDynamix"
+                                        Visibility="{x:Bind ViewModel.CanSignInToTeamDynamix}" />
+                                    <Button
+                                        AutomationProperties.AutomationId="SettingsAuthRefresh"
+                                        AutomationProperties.Name="Refresh sign-in status"
+                                        Command="{x:Bind ViewModel.RefreshAuthCommand}"
+                                        ToolTipService.ToolTip="Refresh">
+                                        <FontIcon FontSize="14" Glyph="&#xE72C;" />
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+                            <ItemsRepeater ItemsSource="{x:Bind ViewModel.AuthSystems}">
+                                <ItemsRepeater.Layout>
+                                    <StackLayout Spacing="8" />
+                                </ItemsRepeater.Layout>
+                                <ItemsRepeater.ItemTemplate>
+                                    <DataTemplate x:DataType="local:AuthRow">
+                                        <StackPanel>
+                                            <TextBlock Style="{StaticResource BodyTextBlockStyle}" Text="{x:Bind Name}" />
+                                            <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Detail}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsRepeater.ItemTemplate>
+                            </ItemsRepeater>
+                            <TextBlock
+                                x:Name="NoAuthText"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Style="{StaticResource BodyTextBlockStyle}"
+                                Text="Nothing is configured."
+                                Visibility="Collapsed" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Appearance -->
+                <StackPanel x:Name="AppearancePanel" Visibility="Collapsed">
+                    <Border Style="{StaticResource SettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Theme" />
+                                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="Changes are applied immediately." />
+                            </StackPanel>
+                            <ComboBox
+                                Grid.Column="1"
+                                MinWidth="200"
+                                VerticalAlignment="Center"
+                                AutomationProperties.AutomationId="SettingsTheme"
+                                AutomationProperties.Name="Theme"
+                                SelectedIndex="{x:Bind ViewModel.ThemeIndex, Mode=TwoWay}">
+                                <ComboBoxItem Content="Use system setting" />
+                                <ComboBoxItem Content="Light" />
+                                <ComboBoxItem Content="Dark" />
+                            </ComboBox>
+                        </Grid>
+                    </Border>
+                    <Border Style="{StaticResource SettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Ticket Inbox badges" />
+                                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="Show counts of new ticket activity in this app." TextWrapping="Wrap" />
+                            </StackPanel>
+                            <ToggleSwitch
+                                Grid.Column="1"
+                                MinWidth="0"
+                                AutomationProperties.AutomationId="SettingsTicketBadges"
+                                AutomationProperties.Name="Ticket Inbox badges"
+                                IsOn="{x:Bind ViewModel.TicketBadges, Mode=TwoWay}"
+                                OffContent=""
+                                OnContent="" />
+                        </Grid>
+                    </Border>
+                </StackPanel>
+
+                <!-- About -->
+                <StackPanel x:Name="AboutPanel" Spacing="12" Visibility="Collapsed">
+                    <StackPanel Spacing="2">
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="{x:Bind ViewModel.AppName}" />
+                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource BodyTextBlockStyle}" Text="{x:Bind ViewModel.Tagline}" />
+                        <HyperlinkButton Margin="-12,0,0,0" Content="{x:Bind ViewModel.Repository}" NavigateUri="{x:Bind ViewModel.RepositoryUri}" />
+                    </StackPanel>
+                    <Border Style="{StaticResource SettingsCardStyle}">
+                        <Grid ColumnSpacing="16" RowSpacing="6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="80" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Version" />
+                            <TextBlock Grid.Column="1" AutomationProperties.AutomationId="AboutVersionText" IsTextSelectionEnabled="True" Text="{x:Bind ViewModel.Version}" />
+                            <TextBlock Grid.Row="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Platform" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" IsTextSelectionEnabled="True" Text="{x:Bind ViewModel.Platform}" TextWrapping="Wrap" />
+                            <TextBlock Grid.Row="2" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text=".NET" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" IsTextSelectionEnabled="True" Text="{x:Bind ViewModel.Runtime}" />
+                            <Button Grid.Row="3" Grid.Column="1" Margin="0,6,0,0" AutomationProperties.AutomationId="AboutCopyVersion" Command="{x:Bind ViewModel.CopyVersionInfoCommand}" Content="Copy version info" />
+                        </Grid>
+                    </Border>
+                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Related projects" />
+                    <ItemsRepeater ItemsSource="{x:Bind ViewModel.RelatedProjects}">
+                        <ItemsRepeater.Layout>
+                            <StackLayout Spacing="4" />
+                        </ItemsRepeater.Layout>
+                        <ItemsRepeater.ItemTemplate>
+                            <DataTemplate x:DataType="local:RelatedProject">
+                                <StackPanel>
+                                    <HyperlinkButton Margin="-12,0,0,0" Content="{x:Bind Name}" NavigateUri="{x:Bind Url}" />
+                                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Description}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsRepeater.ItemTemplate>
+                    </ItemsRepeater>
+                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Author" />
+                    <StackPanel Spacing="2">
+                        <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind ViewModel.AuthorName}" />
+                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind ViewModel.AuthorDetails}" TextWrapping="Wrap" />
+                        <ItemsRepeater ItemsSource="{x:Bind ViewModel.AuthorLinks}">
+                            <ItemsRepeater.Layout>
+                                <StackLayout Orientation="Horizontal" Spacing="16" />
+                            </ItemsRepeater.Layout>
+                            <ItemsRepeater.ItemTemplate>
+                                <DataTemplate x:DataType="local:RelatedProject">
+                                    <HyperlinkButton Content="{x:Bind Description}" NavigateUri="{x:Bind Url}" ToolTipService.ToolTip="{x:Bind Name}" />
+                                </DataTemplate>
+                            </ItemsRepeater.ItemTemplate>
+                        </ItemsRepeater>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </ScrollViewer>
+    </Grid>
+</Page>

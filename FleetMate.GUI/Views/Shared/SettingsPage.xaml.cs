@@ -176,8 +176,7 @@ public partial class SettingsPage : Page
             _ => null
         };
 
-        using var key = Registry.CurrentUser.CreateSubKey(RegistryPath);
-        key?.SetValue("UiTheme", theme);
+        UserPreferences.SetUiTheme(theme);
     }
 
     // ── Save ────────────────────────────────────────────────────────────────

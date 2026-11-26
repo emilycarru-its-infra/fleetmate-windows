@@ -17,22 +17,14 @@ namespace FleetMate.GUI.Views.Shared;
 /// </summary>
 public partial class SettingsPage
 {
-    private const string Repository = "github.com/emilycarru-its-infra/fleetmate-windows";
+    private const string Repository = AppAbout.Repository;
 
-    internal static readonly (string Name, string Description, string Url)[] RelatedProjects =
-    {
-        ("ReportMate", "Unified reporting + visibility for Mac + Windows fleets", "https://github.com/reportmate"),
-        ("BootstrapMate", "Provisioning + bootstrap tooling with a DevOps-first workflow", "https://github.com/bootstrapmate"),
-        ("Cimian", "Managed software deployment for MSI(X), EXE, NUPKG, and PWSH on Windows", "https://github.com/windowsadmins/cimian"),
-        ("ASBMUtil", "Apple School & Business Manager CLI + GUI", "https://github.com/rodchristiansen/asbmutil"),
-    };
+    /// <summary>The projects About lists, shared with the WinUI app (<see cref="AppAbout"/>).</summary>
+    internal static readonly (string Name, string Description, string Url)[] RelatedProjects = AppAbout.RelatedProjects;
 
-    private static string DisplayVersion => AppVersionDisplay.For(typeof(App).Assembly);
-
-    /// <summary>"Windows 11 Enterprise 10.0.26200", as close to what the system reports as .NET gives.</summary>
-    private static string Platform => $"{RuntimeInformation.OSDescription.Trim()} ({RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant()})";
-
-    private static string Runtime => RuntimeInformation.FrameworkDescription;
+    private static string DisplayVersion => AppAbout.Version(typeof(App).Assembly);
+    private static string Platform => AppAbout.Platform;
+    private static string Runtime => AppAbout.Runtime;
 
     private void BuildAboutPanel()
     {
@@ -41,9 +33,7 @@ public partial class SettingsPage
 
         var identity = new StackPanel { Margin = new Thickness(0, 0, 0, 14) };
         identity.Children.Add(new TextBlock { Text = name, FontSize = 20, FontWeight = FontWeights.SemiBold });
-        identity.Children.Add(Caption(AppEdition.Current.IsTicketsOnly
-            ? "Service desk tickets for Windows"
-            : "Unified fleet management for Windows", top: 2));
+        identity.Children.Add(Caption(AppAbout.Tagline(AppEdition.Current), top: 2));
         identity.Children.Add(LinkLine(Repository, "https://" + Repository));
         AboutPanel.Children.Add(identity);
 
@@ -80,7 +70,7 @@ public partial class SettingsPage
         var copy = new MenuItem { Header = "Copy Version Info" };
         copy.Click += (_, _) =>
         {
-            try { Clipboard.SetText($"{name} {DisplayVersion} · {Platform} · {Runtime}"); }
+            try { Clipboard.SetText(AppAbout.VersionInfo(AppEdition.Current, typeof(App).Assembly)); }
             catch (Exception ex) { Serilog.Log.Debug(ex, "[settings] Could not copy version info"); }
         };
         AboutPanel.ContextMenu = new ContextMenu { Items = { copy } };
@@ -100,16 +90,10 @@ public partial class SettingsPage
 
         AboutPanel.Children.Add(new Separator { Margin = new Thickness(0, 10, 0, 10) });
         AboutPanel.Children.Add(SectionLabel("Author"));
-        AboutPanel.Children.Add(new TextBlock { Text = "Rod Christiansen", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 0) });
-        AboutPanel.Children.Add(Caption("Devices Administrator Lead", top: 1));
-        AboutPanel.Children.Add(Caption("Vancouver, BC, Canada", top: 1));
-        AboutPanel.Children.Add(Caption("Managing a fleet of 1000+ computers. Focused on infrastructure, DevOps architecture, CI/CD pipelines, and automating at scale.", top: 1));
+        AboutPanel.Children.Add(new TextBlock { Text = AppAbout.AuthorName, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 0) });
+        foreach (var authorLine in AppAbout.AuthorLines) AboutPanel.Children.Add(Caption(authorLine, top: 1));
         var links = new WrapPanel { Margin = new Thickness(0, 6, 0, 10) };
-        foreach (var (label, display, url) in new[]
-                 {
-                     ("GitHub", "github.com/rodchristiansen", "https://github.com/rodchristiansen"),
-                     ("Blog", "blog.focused.systems", "https://blog.focused.systems"),
-                 })
+        foreach (var (label, display, url) in AppAbout.AuthorLinks)
         {
             var pair = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 14, 0) };
             pair.Children.Add(new TextBlock { Text = label + " ", FontWeight = FontWeights.SemiBold });
