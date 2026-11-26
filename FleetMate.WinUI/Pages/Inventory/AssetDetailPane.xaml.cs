@@ -312,7 +312,7 @@ public sealed partial class AssetDetailPane : UserControl
         var actions = new List<Button>();
         if (field.Copyable && !empty)
         {
-            var copy = RowButton(AssetDetailLayout.CopyGlyph, $"Copy {field.Label}");
+            var copy = RowButton(AssetDetailLayout.CopyGlyph, $"Copy {field.Label}", $"InventoryCopy{Id(field.Label)}");
             copy.Click += (_, _) => DevelopmentUi.Copy(value.Text);
             Grid.SetColumn(copy, 2);
             row.Children.Add(copy);
@@ -320,7 +320,7 @@ public sealed partial class AssetDetailPane : UserControl
         }
         if (field.EditKey is { } editKey && CanEdit)
         {
-            var edit = RowButton(AssetDetailLayout.EditGlyph, $"Edit {field.Label}");
+            var edit = RowButton(AssetDetailLayout.EditGlyph, $"Edit {field.Label}", $"InventoryEdit{Id(field.Label)}");
             edit.Click += (_, _) => BeginEdit(row, value, field, editKey);
             Grid.SetColumn(edit, 3);
             row.Children.Add(edit);
@@ -343,7 +343,10 @@ public sealed partial class AssetDetailPane : UserControl
         host.Children.Add(row);
     }
 
-    private static Button RowButton(string glyph, string name)
+    /// <summary>A label as an AutomationId part: "Employee #" becomes "Employee".</summary>
+    private static string Id(string label) => new(label.Where(char.IsLetterOrDigit).ToArray());
+
+    private static Button RowButton(string glyph, string name, string automationId)
     {
         var button = new Button
         {
@@ -356,6 +359,7 @@ public sealed partial class AssetDetailPane : UserControl
             Style = InventoryUi.Style("SubtleButtonStyle"),
         };
         AutomationProperties.SetName(button, name);
+        AutomationProperties.SetAutomationId(button, automationId);
         ToolTipService.SetToolTip(button, name);
         return button;
     }
@@ -492,6 +496,7 @@ public sealed partial class AssetDetailPane : UserControl
             Padding = new Thickness(8, 4, 8, 4),
         };
         AutomationProperties.SetName(chip, $"Copy {what} {value}");
+        AutomationProperties.SetAutomationId(chip, $"InventoryCopy{Id(what)}Chip");
         ToolTipService.SetToolTip(chip, $"Copy {what}");
         chip.Click += (_, _) => DevelopmentUi.Copy(value);
         return chip;

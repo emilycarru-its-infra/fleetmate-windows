@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using FleetMate.Core.Inventory;
 using FleetMate.Core.Models.Inventory;
-using Microsoft.UI.Xaml;
 
 namespace FleetMate.WinUI.Pages.Inventory;
 
@@ -53,22 +52,22 @@ public sealed partial class AssetColumnLayout : INotifyPropertyChanged
         return true;
     }
 
-    private Visibility V(string header) => _columns.IsVisible(header) ? Visibility.Visible : Visibility.Collapsed;
+    private bool V(string header) => _columns.IsVisible(header);
 
-    public Visibility AssetTag => V("Asset Tag");
-    public Visibility Name => V("Name");
-    public Visibility Serial => V("Serial");
-    public Visibility Model => V("Model");
-    public Visibility Status => V("Status");
-    public Visibility AssignedTo => V("Assigned To");
-    public Visibility Category => V("Category");
-    public Visibility Platform => V("Platform");
-    public Visibility Manufacturer => V("Manufacturer");
-    public Visibility Usage => V("Usage");
-    public Visibility Catalog => V("Catalog");
-    public Visibility Area => V("Area");
-    public Visibility Location => V("Location");
-    public Visibility LastActivity => V("Last Activity");
+    public bool AssetTag => V("Asset Tag");
+    public bool Name => V("Name");
+    public bool Serial => V("Serial");
+    public bool Model => V("Model");
+    public bool Status => V("Status");
+    public bool AssignedTo => V("Assigned To");
+    public bool Category => V("Category");
+    public bool Platform => V("Platform");
+    public bool Manufacturer => V("Manufacturer");
+    public bool Usage => V("Usage");
+    public bool Catalog => V("Catalog");
+    public bool Area => V("Area");
+    public bool Location => V("Location");
+    public bool LastActivity => V("Last Activity");
 }
 
 /// <summary>One list row: an asset's cells, read through <see cref="AssetListQuery.Cell"/>.</summary>

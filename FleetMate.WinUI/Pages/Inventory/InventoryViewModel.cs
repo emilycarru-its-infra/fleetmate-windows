@@ -3,7 +3,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using FleetMate.Core.Inventory;
 using FleetMate.Core.Models.Inventory;
 using FleetMate.Core.Shared;
-using Microsoft.UI.Xaml;
 
 namespace FleetMate.WinUI.Pages.Inventory;
 
@@ -150,8 +149,4 @@ public sealed partial class InventoryViewModel : ObservableObject
             : _assets.Count == 0 ? "No assets found in Snipe-IT."
             : "No assets match the search and filters.";
     }
-
-    public Visibility ClearFiltersVisibility => HasActiveFilters ? Visibility.Visible : Visibility.Collapsed;
-
-    partial void OnHasActiveFiltersChanged(bool value) => OnPropertyChanged(nameof(ClearFiltersVisibility));
 }

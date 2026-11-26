@@ -16,24 +16,24 @@
 
         <!-- One row: every column, each shown or hidden by the Columns menu. -->
         <DataTemplate x:Key="AssetRowTemplate" x:DataType="local:AssetRow">
-            <StackPanel Height="32" Orientation="Horizontal" AutomationProperties.Name="{x:Bind Description}">
-                <TextBlock Width="112" Style="{StaticResource CellStyle}" Text="{x:Bind AssetTag}" Visibility="{x:Bind Columns.AssetTag, Mode=OneWay}" />
-                <TextBlock Width="200" Style="{StaticResource CellStyle}" Text="{x:Bind Name}" Visibility="{x:Bind Columns.Name, Mode=OneWay}" />
-                <TextBlock Width="132" FontFamily="Cascadia Mono, Consolas" Style="{StaticResource CellStyle}" Text="{x:Bind Serial}" Visibility="{x:Bind Columns.Serial, Mode=OneWay}" />
-                <TextBlock Width="200" Style="{StaticResource CellStyle}" Text="{x:Bind Model}" Visibility="{x:Bind Columns.Model, Mode=OneWay}" />
+            <StackPanel Height="32" Orientation="Horizontal" AutomationProperties.Name="{x:Bind Description, Mode=OneTime}">
+                <TextBlock Width="112" Style="{StaticResource CellStyle}" Text="{x:Bind AssetTag, Mode=OneTime}" Visibility="{x:Bind Columns.AssetTag, Mode=OneWay}" />
+                <TextBlock Width="200" Style="{StaticResource CellStyle}" Text="{x:Bind Name, Mode=OneTime}" Visibility="{x:Bind Columns.Name, Mode=OneWay}" />
+                <TextBlock Width="132" FontFamily="Cascadia Mono, Consolas" Style="{StaticResource CellStyle}" Text="{x:Bind Serial, Mode=OneTime}" Visibility="{x:Bind Columns.Serial, Mode=OneWay}" />
+                <TextBlock Width="200" Style="{StaticResource CellStyle}" Text="{x:Bind Model, Mode=OneTime}" Visibility="{x:Bind Columns.Model, Mode=OneWay}" />
                 <StackPanel Width="128" Orientation="Horizontal" Spacing="6" Visibility="{x:Bind Columns.Status, Mode=OneWay}">
-                    <Ellipse Width="8" Height="8" VerticalAlignment="Center" Fill="{x:Bind StatusBrush}" />
-                    <TextBlock MaxWidth="110" Style="{StaticResource CellStyle}" Text="{x:Bind Status}" />
+                    <Ellipse Width="8" Height="8" VerticalAlignment="Center" Fill="{x:Bind StatusBrush, Mode=OneTime}" />
+                    <TextBlock MaxWidth="110" Style="{StaticResource CellStyle}" Text="{x:Bind Status, Mode=OneTime}" />
                 </StackPanel>
-                <TextBlock Width="148" Style="{StaticResource CellStyle}" Text="{x:Bind AssignedTo}" Visibility="{x:Bind Columns.AssignedTo, Mode=OneWay}" />
-                <TextBlock Width="112" Style="{StaticResource CellStyle}" Text="{x:Bind Category}" Visibility="{x:Bind Columns.Category, Mode=OneWay}" />
-                <TextBlock Width="108" Style="{StaticResource CellStyle}" Text="{x:Bind Platform}" Visibility="{x:Bind Columns.Platform, Mode=OneWay}" />
-                <TextBlock Width="120" Style="{StaticResource CellStyle}" Text="{x:Bind Manufacturer}" Visibility="{x:Bind Columns.Manufacturer, Mode=OneWay}" />
-                <TextBlock Width="96" Style="{StaticResource CellStyle}" Text="{x:Bind Usage}" Visibility="{x:Bind Columns.Usage, Mode=OneWay}" />
-                <TextBlock Width="96" Style="{StaticResource CellStyle}" Text="{x:Bind Catalog}" Visibility="{x:Bind Columns.Catalog, Mode=OneWay}" />
-                <TextBlock Width="96" Style="{StaticResource CellStyle}" Text="{x:Bind Area}" Visibility="{x:Bind Columns.Area, Mode=OneWay}" />
-                <TextBlock Width="128" Style="{StaticResource CellStyle}" Text="{x:Bind Location}" Visibility="{x:Bind Columns.Location, Mode=OneWay}" />
-                <TextBlock Width="152" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CellStyle}" Text="{x:Bind LastActivity}" Visibility="{x:Bind Columns.LastActivity, Mode=OneWay}" />
+                <TextBlock Width="148" Style="{StaticResource CellStyle}" Text="{x:Bind AssignedTo, Mode=OneTime}" Visibility="{x:Bind Columns.AssignedTo, Mode=OneWay}" />
+                <TextBlock Width="112" Style="{StaticResource CellStyle}" Text="{x:Bind Category, Mode=OneTime}" Visibility="{x:Bind Columns.Category, Mode=OneWay}" />
+                <TextBlock Width="108" Style="{StaticResource CellStyle}" Text="{x:Bind Platform, Mode=OneTime}" Visibility="{x:Bind Columns.Platform, Mode=OneWay}" />
+                <TextBlock Width="120" Style="{StaticResource CellStyle}" Text="{x:Bind Manufacturer, Mode=OneTime}" Visibility="{x:Bind Columns.Manufacturer, Mode=OneWay}" />
+                <TextBlock Width="96" Style="{StaticResource CellStyle}" Text="{x:Bind Usage, Mode=OneTime}" Visibility="{x:Bind Columns.Usage, Mode=OneWay}" />
+                <TextBlock Width="96" Style="{StaticResource CellStyle}" Text="{x:Bind Catalog, Mode=OneTime}" Visibility="{x:Bind Columns.Catalog, Mode=OneWay}" />
+                <TextBlock Width="96" Style="{StaticResource CellStyle}" Text="{x:Bind Area, Mode=OneTime}" Visibility="{x:Bind Columns.Area, Mode=OneWay}" />
+                <TextBlock Width="128" Style="{StaticResource CellStyle}" Text="{x:Bind Location, Mode=OneTime}" Visibility="{x:Bind Columns.Location, Mode=OneWay}" />
+                <TextBlock Width="152" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CellStyle}" Text="{x:Bind LastActivity, Mode=OneTime}" Visibility="{x:Bind Columns.LastActivity, Mode=OneWay}" />
             </StackPanel>
         </DataTemplate>
 
@@ -41,8 +41,8 @@
             <ComboBox
                 MinWidth="200"
                 HorizontalAlignment="Stretch"
-                AutomationProperties.AutomationId="{x:Bind AutomationId}"
-                Header="{x:Bind Label}"
+                AutomationProperties.AutomationId="{x:Bind AutomationId, Mode=OneTime}"
+                Header="{x:Bind Label, Mode=OneTime}"
                 ItemsSource="{x:Bind Options, Mode=OneWay}"
                 SelectedItem="{x:Bind Selected, Mode=TwoWay}" />
         </DataTemplate>
@@ -92,7 +92,7 @@
                 AutomationProperties.Name="Clear filters"
                 Click="ClearFiltersButton_Click"
                 ToolTipService.ToolTip="Clear every filter (Ctrl+Shift+K)"
-                Visibility="{x:Bind ViewModel.ClearFiltersVisibility, Mode=OneWay}">
+                Visibility="{x:Bind ViewModel.HasActiveFilters, Mode=OneWay}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon FontSize="16" Foreground="{ThemeResource SystemFillColorCautionBrush}" Glyph="&#xE894;" />
                     <TextBlock Text="Clear Filters" />
@@ -112,7 +112,7 @@
                 <DropDownButton.Flyout>
                     <Flyout Placement="BottomEdgeAlignedRight">
                         <ScrollViewer MaxHeight="560" Padding="0,0,12,0" VerticalScrollBarVisibility="Auto">
-                            <ItemsRepeater ItemTemplate="{StaticResource FilterTemplate}" ItemsSource="{x:Bind ViewModel.Filters}">
+                            <ItemsRepeater ItemTemplate="{StaticResource FilterTemplate}" ItemsSource="{x:Bind ViewModel.Filters, Mode=OneTime}">
                                 <ItemsRepeater.Layout>
                                     <UniformGridLayout MaximumRowsOrColumns="2" MinColumnSpacing="12" MinItemWidth="200" MinRowSpacing="8" ItemsStretch="Fill" />
                                 </ItemsRepeater.Layout>
@@ -211,7 +211,7 @@
                             AutomationProperties.AutomationId="InventoryAssetList"
                             AutomationProperties.Name="Assets"
                             ItemTemplate="{StaticResource AssetRowTemplate}"
-                            ItemsSource="{x:Bind ViewModel.Rows}"
+                            ItemsSource="{x:Bind ViewModel.Rows, Mode=OneTime}"
                             SelectionChanged="AssetList_SelectionChanged"
                             SelectionMode="Single">
                             <ListView.ItemContainerStyle>
