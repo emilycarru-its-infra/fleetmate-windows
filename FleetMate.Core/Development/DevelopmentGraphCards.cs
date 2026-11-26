@@ -65,7 +65,12 @@ public sealed record GraphColumn(DateTime Start, string Axis, string Description
 /// <summary>One row of a list card.</summary>
 public sealed record GraphListRow(string Title, string Detail, GraphFilter? Open);
 
-public enum GraphCardKind { Kpis, Donut, Bars, Columns, List }
+/// <summary>
+/// The kind of chart a card draws. A <see cref="Treemap"/> sizes tiles by
+/// share (<see cref="TreemapLayout"/>); <see cref="Bars"/> with
+/// <see cref="GraphCard.Kpis"/> shows those figures as small stats above the bars.
+/// </summary>
+public enum GraphCardKind { Kpis, Donut, Bars, Columns, List, Treemap }
 
 /// <summary>What a card's body shows: its chart, a loading placeholder, an empty message or an all-clear.</summary>
 public enum GraphCardBody { Chart, Loading, Empty, AllClear }
