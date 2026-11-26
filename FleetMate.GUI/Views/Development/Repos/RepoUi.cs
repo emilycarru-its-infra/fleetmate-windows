@@ -1,107 +1,16 @@
-using System.IO;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Media;
-using FleetMate.Core.Config;
-using Microsoft.Win32;
 
 namespace FleetMate.GUI.Views.Development.Repos;
 
-/// <summary>Property-change plumbing for the Repos models.</summary>
-public abstract class RepoObservable : INotifyPropertyChanged
+/// <summary>The clipboard for the Repos views.</summary>
+internal static class RepoClipboard
 {
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    protected bool Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
-    {
-        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
-        field = value;
-        Raise(name);
-        return true;
-    }
-
-    protected void Raise([CallerMemberName] string? name = null) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-}
-
-/// <summary>
-/// The Repos workspace's remembered choices — panel, sidebar sort, grouping,
-/// filter, collapsed groups, Insights period — beside FleetMate's other
-/// per-user preferences in the registry.
-/// </summary>
-internal static class RepoWorkspacePreferences
-{
-    /// <summary>Tests point this at a throwaway key so they never touch the person's own choices.</summary>
-    internal static string? KeyPathOverride { get; set; }
-
-    private static string KeyPath => KeyPathOverride ?? AppEdition.Current.UserRegistryPath;
-
-    public static string? Read(string name)
-    {
-        try
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(KeyPath);
-            return key?.GetValue("repos." + name) as string;
-        }
-        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
-        {
-            return null;
-        }
-    }
-
-    public static void Write(string name, string? value)
-    {
-        try
-        {
-            using var key = Registry.CurrentUser.CreateSubKey(KeyPath);
-            if (value == null) key.DeleteValue("repos." + name, throwOnMissingValue: false);
-            else key.SetValue("repos." + name, value);
-        }
-        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
-        {
-            // A preference that cannot be stored is simply not remembered.
-        }
-    }
-
-    public static T ReadEnum<T>(string name, T fallback) where T : struct, Enum =>
-        Enum.TryParse<T>(Read(name), out var value) ? value : fallback;
-}
-
-/// <summary>Explorer, clipboard and path display for the Repos views.</summary>
-internal static class RepoShell
-{
-    /// <summary>Opens Explorer with <paramref name="path"/> selected, or the folder itself.</summary>
-    public static void Reveal(string path)
-    {
-        try
-        {
-            var start = File.Exists(path)
-                ? new ProcessStartInfo("explorer.exe") { ArgumentList = { "/select," + path } }
-                : new ProcessStartInfo("explorer.exe") { ArgumentList = { path } };
-            start.UseShellExecute = false;
-            Process.Start(start)?.Dispose();
-        }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-        }
-    }
-
     public static void Copy(string text)
     {
         try { Clipboard.SetText(text); }
         catch (System.Runtime.InteropServices.COMException) { }
     }
-
-    /// <summary><c>C:\Users\me\Developer\x</c> → <c>~\Developer\x</c>.</summary>
-    public static string Abbreviate(string path)
-    {
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return path.StartsWith(home + "\\", StringComparison.OrdinalIgnoreCase) ? "~" + path[home.Length..] : path;
-    }
-
-    public static string Relative(DateTimeOffset? date) => DevelopmentFigures.Relative(date, DateTimeOffset.Now);
 }
 
 /// <summary>

@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using FleetMate.Core.Shared;
+using FleetMate.Core.Services.Repos;
 
 namespace FleetMate.GUI.Views.Development.Repos;
 

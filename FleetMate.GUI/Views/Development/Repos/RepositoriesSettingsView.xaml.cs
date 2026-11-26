@@ -136,9 +136,7 @@ public partial class RepositoriesSettingsView : UserControl
         DiscoverButton.IsEnabled = _scanRoots.Count > 0 && DiscoverRing.Visibility != Visibility.Visible;
         SaveButton.IsEnabled = CloneRootBox.Text.Trim() != _saved.CloneRoot || !_scanRoots.SequenceEqual(_saved.ScanRoots)
             || (AutoTrackBox.IsChecked == true) != _saved.AutoTrackNewClones;
-        LocationsFooter.Text =
-            $@"New clones go to <clone root>\AzDevOps\<Project>\<Repo> or <clone root>\GitHub\<owner>\<repo>. " +
-            $"FleetMate looks for clones in the watched folders, {_saved.ScanDepth} levels deep, and links each one by its origin.";
+        LocationsFooter.Text = RepoWorkspaceText.LocationsFooter(_saved.ScanDepth);
     }
 
     private void OnSettingsEdited(object sender, TextChangedEventArgs e)
@@ -230,12 +228,7 @@ public partial class RepositoriesSettingsView : UserControl
         try
         {
             var results = await _manager.DiscoverAsync(track: false, settings: Edited());
-            var linked = results.Count(r => r.Action == DiscoveryAction.Linked);
-            var existing = results.Count(r => r.Action == DiscoveryAction.AlreadyLinked);
-            var duplicates = results.Count(r => r.Action == DiscoveryAction.Duplicate);
-            var parts = new List<string> { $"Linked {linked} new", $"{existing} already linked" };
-            if (duplicates > 0) parts.Add($"{duplicates} second copies left alone");
-            DiscoverySummary.Text = string.Join(" · ", parts) + ". Turn on Track for the ones you work in.";
+            DiscoverySummary.Text = RepoWorkspaceText.DiscoverySummary(results);
             DiscoverySummary.Visibility = Visibility.Visible;
             RegistryChanged();
         }
@@ -299,10 +292,7 @@ public partial class RepositoriesSettingsView : UserControl
 
     private void RenderGroups()
     {
-        var local = _records.Count(r => r.IsLocal);
-        var tracked = _records.Count(r => r.IsTracked);
-        CatalogFooter.Text = $"{_records.Count} repositories, {local} on this PC, {tracked} tracked." +
-                             (_fetchedAt is { } at ? $" Catalog updated {RepoShell.Relative(at)}." : " Refresh to list what the providers hold.");
+        CatalogFooter.Text = RepoWorkspaceText.CatalogFooter(_records, _fetchedAt);
         GroupsPanel.Children.Clear();
         var query = QueryBox.Text.Trim();
         var groups = RepoRecordGroup.Groups(_records, query);
@@ -310,9 +300,7 @@ public partial class RepositoriesSettingsView : UserControl
         {
             GroupsPanel.Children.Add(new TextBlock
             {
-                Text = _records.Count == 0
-                    ? "No repositories yet. Refresh the catalog, find existing clones, or link a folder."
-                    : $"No repositories match “{query}”.",
+                Text = RepoWorkspaceText.CatalogEmpty(_records.Count, query),
                 Opacity = 0.7,
                 Margin = new Thickness(4),
             });

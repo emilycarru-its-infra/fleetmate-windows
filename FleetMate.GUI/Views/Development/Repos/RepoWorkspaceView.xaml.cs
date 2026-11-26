@@ -33,7 +33,7 @@ public sealed record ChangeRow(GitStatusEntry Entry, string Root)
     public string Side => Entry.Staged ? "staged" : "";
     public string StageLabel => Entry.Staged ? "Unstage" : "Stage";
     public bool CanDiscard => !Entry.Staged;
-    public string Tooltip => Entry.OriginalPath is { } from ? $"{from} → {Entry.RelativePath}" : Entry.RelativePath;
+    public string Tooltip => RepoWorkspaceText.ChangeTooltip(Entry);
     public string AbsolutePath => System.IO.Path.Combine(Root, Entry.RelativePath.Replace('/', '\\'));
 
     public Brush LetterBrush => Entry.Kind switch
@@ -53,7 +53,7 @@ public sealed record HistoryRow(GitCommit Commit, GraphRow? Graph, int LaneCount
 {
     public string Sha => Commit.Sha;
     public string Subject => Commit.Subject;
-    public string Byline => $"{Commit.ShortSha} · {Commit.Author} · {RepoShell.Relative(Commit.Date)}";
+    public string Byline => RepoWorkspaceText.CommitByline(Commit);
 
     public IReadOnlyList<RefBadge> Refs => Commit.Refs
         .Where(r => r.Kind != GitRefKind.Head)
@@ -61,7 +61,7 @@ public sealed record HistoryRow(GitCommit Commit, GraphRow? Graph, int LaneCount
         {
             GitRefKind.Tag => new RefBadge(r.Name, Brushes.Transparent, RepoBrushes.Series[3], RepoBrushes.Series[3]),
             GitRefKind.RemoteBranch => new RefBadge(r.Name, Brushes.Transparent, RepoBrushes.Secondary, RepoBrushes.Secondary),
-            _ => new RefBadge(r.IsHead ? "HEAD → " + r.Name : r.Name, RepoBrushes.Accent, RepoBrushes.Accent, Brushes.White),
+            _ => new RefBadge(RepoWorkspaceText.RefLabel(r), RepoBrushes.Accent, RepoBrushes.Accent, Brushes.White),
         })
         .ToList();
 }
@@ -140,7 +140,7 @@ public partial class RepoWorkspaceView : UserControl
     public void Attach(RepoWorkspaceModel model)
     {
         _model = model;
-        model.Git.Confirm = Confirm;
+        model.Git.Confirm = (title, message, action) => Task.FromResult(Confirm(title, message, action));
         model.ErrorReported += ShowError;
         model.PropertyChanged += OnModelChanged;
         model.Git.PropertyChanged += OnGitChanged;
@@ -245,13 +245,10 @@ public partial class RepoWorkspaceView : UserControl
         var git = _model.Git;
         BranchLabel.Text = git.CurrentBranch ?? "(detached)";
         DirtyDot.Visibility = git.Files.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        SyncLabel.Text = (git.Ahead > 0 ? $"↑{git.Ahead} " : "") + (git.Behind > 0 ? $"↓{git.Behind}" : "");
+        SyncLabel.Text = RepoWorkspaceText.SyncLabel(git);
         BranchButton.ToolTip = "Switch branch, or create one at HEAD";
-        PushButton.ToolTip = git.IsOnProtectedBranch
-            ? $"'{git.CurrentBranch}' is protected: pushing it is refused. Push a branch and open a pull request."
-            : "git push (P)";
-        var hasAgents = _model.SelectedStatus?.AgentsFile != null
-                        || (_model.SelectedPath is { } root && File.Exists(System.IO.Path.Combine(root, "AGENTS.md")));
+        PushButton.ToolTip = RepoWorkspaceText.PushTooltip(git);
+        var hasAgents = RepoWorkspaceText.HasAgentsFile(_model);
         AgentsButton.Visibility = hasAgents ? Visibility.Visible : Visibility.Collapsed;
         NoAgentsLabel.Visibility = hasAgents ? Visibility.Collapsed : Visibility.Visible;
         RevealButton.ToolTip = _model.SelectedPath is { } path ? $"Reveal {RepoShell.Abbreviate(path)} in Explorer" : null;
@@ -291,21 +288,13 @@ public partial class RepoWorkspaceView : UserControl
         CommitPushButton.IsEnabled = canCommit;
         StageAllButton.IsEnabled = git.Files.Count > 0;
         BusyRing.Visibility = git.IsBusy ? Visibility.Visible : Visibility.Collapsed;
-        if (git.StatusMessage is { } message)
+        StatusText.Text = RepoWorkspaceText.ComposerStatus(git);
+        StatusText.Foreground = git.StatusMessage == null ? RepoBrushes.Secondary : git.StatusKind switch
         {
-            StatusText.Text = (git.StatusKind == GitStatusKind.Success ? "✓ " : git.StatusKind == GitStatusKind.Error ? "⚠ " : "") + message;
-            StatusText.Foreground = git.StatusKind switch
-            {
-                GitStatusKind.Success => RepoBrushes.Success,
-                GitStatusKind.Error => RepoBrushes.Warning,
-                _ => RepoBrushes.Secondary,
-            };
-        }
-        else
-        {
-            StatusText.Text = git.LastRefreshedAt is { } at ? $"Refreshed {RepoShell.Relative(at)}" : "";
-            StatusText.Foreground = RepoBrushes.Secondary;
-        }
+            GitStatusKind.Success => RepoBrushes.Success,
+            GitStatusKind.Error => RepoBrushes.Warning,
+            _ => RepoBrushes.Secondary,
+        };
         OutputText.Text = git.ProcessOutput;
         OutputPanel.Visibility = git.ProcessOutput.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -359,11 +348,9 @@ public partial class RepoWorkspaceView : UserControl
         GrepList.Visibility = showFiles && searching ? Visibility.Visible : Visibility.Collapsed;
         ShowFilesButton.Visibility = searching ? Visibility.Visible : Visibility.Collapsed;
         SearchRing.Visibility = _model.IsSearching ? Visibility.Visible : Visibility.Collapsed;
-        FilesTitle.Text = searching ? $"Search: {_model.GrepQuery}" : "Files";
+        FilesTitle.Text = RepoWorkspaceText.FilesTitle(_model);
         var filter = _model.FileFilter.Trim();
-        FilesHint.Text = searching
-            ? $"{_model.GrepResults.Count} match{(_model.GrepResults.Count == 1 ? "" : "es")}"
-            : filter.Length > 0 ? "Press Enter to search contents" : $"{_model.Files.Count:N0} files";
+        FilesHint.Text = RepoWorkspaceText.FilesHint(_model);
         if (!showFiles) return;
 
         if (searching)
@@ -389,18 +376,7 @@ public partial class RepoWorkspaceView : UserControl
     private void RenderListEmpty()
     {
         if (_model == null) return;
-        string? text = _model.Git.Panel switch
-        {
-            RepoPanel.Changes when _model.Git.FilteredFiles.Count == 0 =>
-                _model.Git.Files.Count == 0 ? "No changes. The working tree matches HEAD." : "No changes match the filter.",
-            RepoPanel.History when _model.Git.FilteredCommits.Count == 0 =>
-                _model.Git.Commits.Count == 0 ? "No commits yet." : "No commits match the filter.",
-            RepoPanel.Files when _model.GrepQuery != null && _model.GrepResults.Count == 0 && !_model.IsSearching =>
-                $"Nothing in this repository contains “{_model.GrepQuery}”.",
-            RepoPanel.Files when _model.GrepQuery == null && _model.Tree.Count == 0 => "Loading…",
-            RepoPanel.Files when _model.GrepQuery == null && FilesList.Items.Count == 0 => "No file names match.",
-            _ => null,
-        };
+        var text = RepoWorkspaceText.ListEmpty(_model, FilesList.Items.Count);
         ListEmpty.Text = text ?? "";
         ListEmpty.Visibility = text != null ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -428,9 +404,7 @@ public partial class RepoWorkspaceView : UserControl
         if (reload) Editor.Show(document);
         EditorEmpty.Visibility = document == null ? Visibility.Visible : Visibility.Collapsed;
         Editor.Visibility = document == null ? Visibility.Hidden : Visibility.Visible;
-        EditorTitle.Text = document == null
-            ? "Editor"
-            : document.Path + (_model.IsDirty ? "  · Edited" : "") + (document.IsReadOnly ? "  · Read only" : "");
+        EditorTitle.Text = RepoWorkspaceText.EditorTitle(_model);
         RevertButton.IsEnabled = _model.IsDirty;
         CloseButton.Visibility = document == null ? Visibility.Collapsed : Visibility.Visible;
         RevertButton.Visibility = CloseButton.Visibility;
@@ -473,7 +447,7 @@ public partial class RepoWorkspaceView : UserControl
         var menu = new ContextMenu { PlacementTarget = BranchButton, Placement = PlacementMode.Bottom };
         foreach (var branch in _model.Git.Branches)
         {
-            var title = branch.UpstreamName is { } upstream ? $"{branch.Name}   →  {upstream}" : branch.Name;
+            var title = RepoWorkspaceText.BranchTitle(branch);
             var item = new MenuItem { Header = title, IsCheckable = false, IsChecked = branch.IsCurrent };
             var name = branch.Name;
             item.Click += async (_, _) => { if (!branch.IsCurrent) await _model.Git.SwitchBranchAsync(name); };
@@ -554,7 +528,7 @@ public partial class RepoWorkspaceView : UserControl
     private async void OnCommit(object sender, RoutedEventArgs e) { if (_model != null) await _model.Git.CommitAsync(); }
     private async void OnCommitAndPush(object sender, RoutedEventArgs e) { if (_model != null) await _model.Git.CommitAndPushAsync(); }
 
-    private void OnCopyOutput(object sender, RoutedEventArgs e) => RepoShell.Copy(OutputText.Text);
+    private void OnCopyOutput(object sender, RoutedEventArgs e) => RepoClipboard.Copy(OutputText.Text);
 
     // ── Changes list ────────────────────────────────────────────────────
 
@@ -586,7 +560,7 @@ public partial class RepoWorkspaceView : UserControl
     private void OnChangeOpenExternal(object sender, RoutedEventArgs e)
     {
         if (ChangeOf(sender) is not { } row || !File.Exists(row.AbsolutePath)) return;
-        try { Process.Start(new ProcessStartInfo(row.AbsolutePath) { UseShellExecute = true })?.Dispose(); }
+        try { RepoShell.OpenWithDefaultApp(row.AbsolutePath); }
         catch (System.ComponentModel.Win32Exception ex) { ShowError("Could not open the file", ex.Message); }
     }
 
@@ -597,12 +571,12 @@ public partial class RepoWorkspaceView : UserControl
 
     private void OnChangeCopyPath(object sender, RoutedEventArgs e)
     {
-        if (ChangeOf(sender) is { } row) RepoShell.Copy(row.AbsolutePath);
+        if (ChangeOf(sender) is { } row) RepoClipboard.Copy(row.AbsolutePath);
     }
 
     private void OnChangeCopyRelative(object sender, RoutedEventArgs e)
     {
-        if (ChangeOf(sender) is { } row) RepoShell.Copy(row.Entry.RelativePath);
+        if (ChangeOf(sender) is { } row) RepoClipboard.Copy(row.Entry.RelativePath);
     }
 
     private async void OnChangeToggleStage(object sender, RoutedEventArgs e)
@@ -664,18 +638,18 @@ public partial class RepoWorkspaceView : UserControl
 
     private void OnCommitCopyHash(object sender, RoutedEventArgs e)
     {
-        if (CommitOf(sender) is { } commit) RepoShell.Copy(commit.Sha);
+        if (CommitOf(sender) is { } commit) RepoClipboard.Copy(commit.Sha);
     }
 
     private void OnCommitCopySubject(object sender, RoutedEventArgs e)
     {
-        if (CommitOf(sender) is { } commit) RepoShell.Copy(commit.Subject);
+        if (CommitOf(sender) is { } commit) RepoClipboard.Copy(commit.Subject);
     }
 
     private async void OnCommitCopyPatch(object sender, RoutedEventArgs e)
     {
         if (_model != null && CommitOf(sender) is { } commit && await _model.Git.PatchAsync(commit) is { Length: > 0 } patch)
-            RepoShell.Copy(patch);
+            RepoClipboard.Copy(patch);
     }
 
     // ── Files ───────────────────────────────────────────────────────────

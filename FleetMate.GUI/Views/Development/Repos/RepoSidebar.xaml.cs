@@ -41,32 +41,12 @@ public sealed record SidebarRepoRow(RepoRecord Record, RepoStatus? Status, bool 
     public Visibility ScopeVisibility => ShowScope ? Visibility.Visible : Visibility.Collapsed;
     public Visibility FetchingVisibility => IsFetching ? Visibility.Visible : Visibility.Collapsed;
     public Thickness Indent => new(Depth * 14 + 4, 3, 2, 3);
-    public string Tooltip
-    {
-        get
-        {
-            var where = Record.Local is { } local ? RepoShell.Abbreviate(local.Path) : Record.Key.DisplayName;
-            return Status?.Error is { } error ? $"{where}\n\n{error.Trim()}" : where;
-        }
-    }
+    public string Tooltip => RepoWorkspaceText.SidebarTooltip(Record, Status);
 
     /// <summary>Copy Error shows only while git status failed for this row.</summary>
     public Visibility ErrorVisibility => Status?.Error != null ? Visibility.Visible : Visibility.Collapsed;
 
-    public string Metadata
-    {
-        get
-        {
-            if (Status is null) return Record.Key.Scope;
-            if (Status.Error is { } error) return "⚠ " + RepoStatusError.Summarize(error);
-            var parts = new List<string> { "⎇ " + (Status.Branch ?? "detached") };
-            var sync = (Status.Ahead > 0 ? $"↑{Status.Ahead}" : "") + (Status.Behind > 0 ? (Status.Ahead > 0 ? " " : "") + $"↓{Status.Behind}" : "");
-            if (sync.Length > 0) parts.Add(sync);
-            if (Status.ChangedCount > 0) parts.Add($"{Status.ChangedCount} changed");
-            else if (Status.IsClean) parts.Add("clean");
-            return string.Join("   ", parts);
-        }
-    }
+    public string Metadata => RepoWorkspaceText.SidebarMetadata(Record, Status);
 
     public Brush MetadataBrush => Status?.Error != null ? RepoBrushes.Warning : RepoBrushes.Secondary;
 }
@@ -346,17 +326,17 @@ public partial class RepoSidebar : UserControl
 
     private void OnCopyPath(object sender, RoutedEventArgs e)
     {
-        if (RowOf(sender)?.Record.Local is { } local) RepoShell.Copy(local.Path);
+        if (RowOf(sender)?.Record.Local is { } local) RepoClipboard.Copy(local.Path);
     }
 
     private void OnCopyName(object sender, RoutedEventArgs e)
     {
-        if (RowOf(sender) is { } row) RepoShell.Copy(row.Record.Key.DisplayName);
+        if (RowOf(sender) is { } row) RepoClipboard.Copy(row.Record.Key.DisplayName);
     }
 
     private void OnCopyError(object sender, RoutedEventArgs e)
     {
-        if (RowOf(sender)?.Status?.Error is { } error) RepoShell.Copy(error.Trim());
+        if (RowOf(sender)?.Status?.Error is { } error) RepoClipboard.Copy(error.Trim());
     }
 
     // ── Choose Folder, edit mode ────────────────────────────────────────
@@ -405,26 +385,8 @@ public partial class RepoSidebar : UserControl
         var clones = _model!.NewClones;
         NewClonesBar.Visibility = clones.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         if (clones.Count == 0) return;
-        NewClonesText.Text = $"{clones.Count} new {(clones.Count == 1 ? "repository" : "repositories")} found in {NewClonesPlace(clones)}";
+        NewClonesText.Text = RepoWorkspaceText.NewClonesSummary(clones, RepoWorkspaceText.ScanRoots(_model.Manager));
         NewClonesBar.ToolTip = string.Join("\n", clones.Select(c => c.Key?.DisplayName ?? c.Path));
-    }
-
-    /// <summary>The watched folder the new clones are in, or "your watched folders" when they span several.</summary>
-    private string NewClonesPlace(IReadOnlyList<DiscoveredCheckout> clones)
-    {
-        List<string> roots;
-        try { roots = _model!.Manager.Settings().ScanRoots; }
-        catch (Exception) { return "your watched folders"; }
-        var places = clones.Select(c => roots.FirstOrDefault(r =>
-        {
-            try
-            {
-                var root = RepoSettings.Normalize(r);
-                return c.Path.StartsWith(root + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
-            }
-            catch (Exception) { return false; }
-        })).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        return places.Count == 1 && places[0] != null ? places[0]! : "your watched folders";
     }
 
     /// <summary>

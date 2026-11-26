@@ -1,8 +1,7 @@
 using System.IO;
-using FleetMate.Core.Services.Repos;
 using FleetMate.Core.Shared;
 
-namespace FleetMate.GUI.Views.Development.Repos;
+namespace FleetMate.Core.Services.Repos;
 
 /// <summary>What the Repos workspace shows for the selected repository.</summary>
 public enum RepoPanel { Changes, History, Files }
@@ -135,9 +134,10 @@ public sealed class GitPaneModel : RepoObservable
 
     /// <summary>
     /// Asks the person before anything destructive: title, message, the
-    /// destructive button's label. The view answers with a dialog.
+    /// destructive button's label. The view answers with a dialog; until one
+    /// is attached, nothing destructive runs.
     /// </summary>
-    public Func<string, string, string, bool> Confirm { get; set; } = (_, _, _) => false;
+    public Func<string, string, string, Task<bool>> Confirm { get; set; } = (_, _, _) => Task.FromResult(false);
 
     // ── Navigation (j / k, Tab) ─────────────────────────────────────────
 
@@ -310,7 +310,7 @@ public sealed class GitPaneModel : RepoObservable
     /// <summary>Throws away one chunk of working-tree changes, after the person confirms.</summary>
     public async Task DiscardChunkAsync(DiffFile file, DiffHunk hunk)
     {
-        if (!Confirm($"Discard this chunk of {file.DisplayPath}?", "This is irreversible.", "Discard")) return;
+        if (!await Confirm($"Discard this chunk of {file.DisplayPath}?", "This is irreversible.", "Discard")) return;
         var patch = file.PatchForHunk(hunk);
         await MutateAsync("Discard chunk", null, c => c.ApplyPatchAsync(patch, cached: false, reverse: true));
     }
@@ -325,7 +325,7 @@ public sealed class GitPaneModel : RepoObservable
         var message = paths.Count == 1
             ? "This is irreversible. A new, untracked file is deleted."
             : "This is irreversible. New, untracked files are deleted. Files:\n\n" + string.Join("\n", paths);
-        if (!Confirm(title, message, "Discard")) return;
+        if (!await Confirm(title, message, "Discard")) return;
         await MutateAsync("Discard", null, c => c.DiscardAsync(paths));
         if (_statusKind != GitStatusKind.Error)
             Note(paths.Count == 1 ? $"Discarded {paths[0]}" : $"Discarded {paths.Count} files", GitStatusKind.Success);
@@ -403,20 +403,20 @@ public sealed class GitPaneModel : RepoObservable
             OnError("Checkout skipped", "Save or revert your unsaved edits first.");
             return;
         }
-        if (!Confirm($"Check out {commit.ShortSha}?",
+        if (!await Confirm($"Check out {commit.ShortSha}?",
                 "HEAD will be detached at this commit. Git refuses if it would overwrite your local changes.", "Check Out")) return;
         await MutateAsync("Checkout", null, c => c.CheckoutCommitAsync(commit.Sha));
     }
 
     public async Task CherryPickAsync(GitCommit commit)
     {
-        if (!Confirm($"Cherry-pick {commit.ShortSha} onto {CurrentBranch ?? "HEAD"}?", commit.Subject, "Cherry-Pick")) return;
+        if (!await Confirm($"Cherry-pick {commit.ShortSha} onto {CurrentBranch ?? "HEAD"}?", commit.Subject, "Cherry-Pick")) return;
         await MutateAsync("Cherry-pick", null, c => c.CherryPickAsync(commit.Sha));
     }
 
     public async Task RevertAsync(GitCommit commit)
     {
-        if (!Confirm($"Revert {commit.ShortSha}?", $"A new commit on {CurrentBranch ?? "HEAD"} undoes “{commit.Subject}”.", "Revert")) return;
+        if (!await Confirm($"Revert {commit.ShortSha}?", $"A new commit on {CurrentBranch ?? "HEAD"} undoes “{commit.Subject}”.", "Revert")) return;
         await MutateAsync("Revert", null, c => c.RevertAsync(commit.Sha));
     }
 
@@ -449,7 +449,7 @@ public sealed class GitPaneModel : RepoObservable
             {
                 OnError($"{action} failed", $"{lockPath} is still held:\n\n{holders}\n\nWait for that process to finish, then try again.");
             }
-            else if (Confirm("Git index is locked",
+            else if (await Confirm("Git index is locked",
                          $"{action} could not take {lockPath}. Nothing has it open, so a crashed git command most likely left it behind. Delete it and retry?",
                          "Delete Lock File"))
             {
