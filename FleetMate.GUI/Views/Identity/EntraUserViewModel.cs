@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Media;
+using FleetMate.Core.Identity;
 using FleetMate.Core.Models.Identity;
 
 namespace FleetMate.GUI.Views.Identity;
@@ -75,12 +76,7 @@ public sealed class EntraUserViewModel
     /// and null has to read as "unknown" rather than silently picking a side. A
     /// hardcoded "Active" hid exactly this — the badge was decoration, not data.
     /// </summary>
-    public string AccountBadgeText => User.AccountEnabled switch
-    {
-        true => "● Active",
-        false => "● Disabled",
-        null => "● Unknown",
-    };
+    public string AccountBadgeText => "● " + EntraUserProfile.StateText(EntraUserProfile.State(User));
 
     public Brush AccountBadgeBrush => User.AccountEnabled switch
     {
@@ -90,87 +86,16 @@ public sealed class EntraUserViewModel
     };
 
     /// <summary>Up to two letters for the avatar bubble.</summary>
-    public string Initials
-    {
-        get
-        {
-            var letters = DisplayName
-                .Split(new[] { ' ', '.', '-', '_' }, StringSplitOptions.RemoveEmptyEntries)
-                .Take(2)
-                .Select(part => part[0])
-                .ToArray();
+    /// <summary>The rules are <see cref="EntraUserProfile"/>'s, shared with the WinUI app.</summary>
+    public string Initials => EntraUserProfile.Initials(DisplayName);
 
-            return letters.Length == 0 ? "?" : new string(letters).ToUpperInvariant();
-        }
-    }
+    public string Subtitle => EntraUserProfile.Subtitle(User);
 
-    /// <summary>Subtitle under the name: job title and department, whichever exist.</summary>
-    public string Subtitle
-    {
-        get
+    public List<UserPropertySection> Sections => EntraUserProfile.Sections(User)
+        .Select(section => new UserPropertySection
         {
-            var parts = new[] { User.JobTitle, User.Department }
-                .Where(p => !string.IsNullOrWhiteSpace(p));
-
-            return string.Join(" · ", parts);
-        }
-    }
-
-    public List<UserPropertySection> Sections =>
-    [
-        new()
-        {
-            Title = "Identity",
-            Rows =
-            [
-                new() { Label = "Display name", Value = User.DisplayName },
-                new() { Label = "User principal name", Value = User.UserPrincipalName },
-                new() { Label = "Object ID", Value = User.Id },
-                new() { Label = "Given name", Value = User.GivenName },
-                new() { Label = "Surname", Value = User.Surname },
-            ],
-        },
-        new()
-        {
-            Title = "Job information",
-            Rows =
-            [
-                new() { Label = "Job title", Value = User.JobTitle },
-                new() { Label = "Department", Value = User.Department },
-                new() { Label = "Company", Value = User.CompanyName },
-                new() { Label = "Employee ID", Value = User.EmployeeId },
-                new() { Label = "Employee type", Value = User.EmployeeType },
-                new() { Label = "Office", Value = User.OfficeLocation },
-            ],
-        },
-        new()
-        {
-            Title = "Contact information",
-            Rows =
-            [
-                new() { Label = "Mail", Value = User.Mail },
-                new() { Label = "Mobile", Value = User.MobilePhone },
-            ],
-        },
-        new()
-        {
-            Title = "Settings",
-            Rows =
-            [
-                new() { Label = "Account enabled", Value = User.AccountEnabled?.ToString() },
-                new() { Label = "Usage location", Value = User.UsageLocation },
-                new() { Label = "Created", Value = User.CreatedDateTime?.ToString("yyyy-MM-dd") },
-            ],
-        },
-        new()
-        {
-            Title = "On-premises",
-            Rows =
-            [
-                new() { Label = "SAM account name", Value = User.OnPremisesSamAccountName },
-                new() { Label = "Distinguished name", Value = User.OnPremisesDistinguishedName },
-                new() { Label = "Sync enabled", Value = User.OnPremisesSyncEnabled?.ToString() },
-            ],
-        },
-    ];
+            Title = section.Title,
+            Rows = section.Rows.Select(row => new UserPropertyRow { Label = row.Label, Value = row.Value }).ToList(),
+        })
+        .ToList();
 }

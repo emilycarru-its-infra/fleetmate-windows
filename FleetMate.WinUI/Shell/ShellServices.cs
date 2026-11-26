@@ -75,6 +75,7 @@ public sealed partial class ShellServices : IDisposable
         // app runs after it is not in the WinUI shell yet.
         TdxSession = new TdxSessionCoordinator(config.Tdx, Tdx, Auth, TdxSessionCoordinator.HttpOnly);
         InitializeDevelopment(config);
+        InitializeIdentity(config);
     }
 
     /// <summary>
@@ -89,7 +90,7 @@ public sealed partial class ShellServices : IDisposable
     /// write screenshots while this is true.
     /// </summary>
     public bool HasLiveSession =>
-        Tdx != null || TdxSession.IsSignedIn
+        Tdx != null || Graph != null || TdxSession.IsSignedIn
         || Auth.Systems.Values.Any(s => s.State.Kind is AuthStateKind.Valid or AuthStateKind.ServicePrincipal);
 
     public FleetMateConfig Config { get; }
@@ -159,6 +160,7 @@ public sealed partial class ShellServices : IDisposable
     public void Dispose()
     {
         DisposeDevelopment();
+        DisposeIdentity();
         TdxSession.Dispose();
         Tdx?.Dispose();
     }
