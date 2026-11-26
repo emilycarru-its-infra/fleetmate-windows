@@ -47,7 +47,13 @@ public sealed partial class MainWindow : Window
     /// <summary>List or Board, from the Tickets tab's selector.</summary>
     public static event EventHandler<string>? ViewModeChanged;
 
-    public static string ViewMode { get; private set; } = "list";
+    /// <summary>Board, as in FleetMate.GUI and on the Mac, until the selector changes it.</summary>
+    public static string ViewMode { get; private set; } = "board";
+
+    private static event Action<string>? ViewModeRequested;
+
+    /// <summary>Select List or Board from a page: Assigned to Me switches to the list, as on Mac.</summary>
+    public static void RequestViewMode(string mode) => ViewModeRequested?.Invoke(mode);
 
     private readonly AppEdition _edition = AppEdition.Current;
     private IReadOnlyList<string> _tabs = Array.Empty<string>();
@@ -66,6 +72,11 @@ public sealed partial class MainWindow : Window
         var iconFile = _edition.IsTicketsOnly ? "TicketsMate.ico" : "FleetMate.ico";
         AppTitleBar.IconSource = new ImageIconSource { ImageSource = new BitmapImage(new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", iconFile))) };
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", iconFile));
+
+        ViewModeRequested += mode =>
+        {
+            if (ViewModeBar.Items.FirstOrDefault(i => Equals(i.Tag, mode)) is { } item) ViewModeBar.SelectedItem = item;
+        };
 
         BuildTabs();
         AddSettingsShortcut();
@@ -338,7 +349,7 @@ public sealed partial class MainWindow : Window
 
     private void ViewModeBar_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
-        ViewMode = sender.SelectedItem?.Tag as string ?? "list";
+        ViewMode = sender.SelectedItem?.Tag as string ?? "board";
         ViewModeChanged?.Invoke(this, ViewMode);
     }
 

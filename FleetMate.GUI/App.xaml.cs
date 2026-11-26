@@ -55,7 +55,11 @@ public partial class App : Application, IDevelopmentHost
     /// The date window the cached tickets were loaded for. Held here so the
     /// startup preload, the dashboard and the Tickets board all agree on it.
     /// </summary>
-    public TicketDateRangePreset TicketDatePreset { get; set; } = TicketDateRangePreset.CurrentTerm;
+    public TicketDateRangePreset TicketDatePreset
+    {
+        get => TicketCache.Preset;
+        set => TicketCache.Preset = value;
+    }
 
     /// <summary>The TeamDynamix sign-in in flight, or a completed task when there is none.</summary>
     public Task TdxSignInSettled => _tdxSsoInFlight ?? Task.CompletedTask;
@@ -264,7 +268,11 @@ public partial class App : Application, IDevelopmentHost
     
     public List<IntuneDevice> CachedDevices { get; set; } = new();
     public List<SnipeAsset> CachedAssets { get; set; } = new();
-    public List<TdxTicket> CachedTickets { get; set; } = new();
+    public List<TdxTicket> CachedTickets
+    {
+        get => TicketCache.Tickets;
+        set => TicketCache.Tickets = value;
+    }
     public List<EntraUser> CachedUsers { get; set; } = new();
     public List<EntraGroup> CachedGroups { get; set; } = new();
     public List<WorkItem> CachedWorkItems
@@ -297,7 +305,6 @@ public partial class App : Application, IDevelopmentHost
     // Cache timestamps
     private DateTime? _devicesCacheTime;
     private DateTime? _assetsCacheTime;
-    private DateTime? _ticketsCacheTime;
     private DateTime? _usersCacheTime;
     private DateTime? _groupsCacheTime;
     
@@ -313,8 +320,7 @@ public partial class App : Application, IDevelopmentHost
         DateTime.Now - _assetsCacheTime.Value < CacheDuration;
     
     /// <summary>Check if tickets cache is valid</summary>
-    public bool IsTicketsCacheValid => _ticketsCacheTime.HasValue && 
-        DateTime.Now - _ticketsCacheTime.Value < CacheDuration;
+    public bool IsTicketsCacheValid => TicketCache.IsValid;
     
     /// <summary>Check if users cache is valid</summary>
     public bool IsUsersCacheValid => _usersCacheTime.HasValue && 
@@ -356,16 +362,7 @@ public partial class App : Application, IDevelopmentHost
     }
 
     /// <summary>Update tickets cache</summary>
-    public void UpdateTicketsCache(List<TdxTicket> tickets)
-    {
-        CachedTickets = tickets;
-        _ticketsCacheTime = DateTime.Now;
-        NotifyCacheChanged("Tickets");
-        SetTdxLaunchStep(null);
-        // Helpers and windows write only their confirmed service/person/query scope.
-        if (_ticketWorkspace is { } workspace && workspace.IsCurrent(this))
-            _ = workspace.Snapshot.SaveInBackground(tickets);
-    }
+    public void UpdateTicketsCache(List<TdxTicket> tickets) => TicketCache.Update(tickets);
 
 
     private bool _isInboxAgent;
@@ -390,7 +387,7 @@ public partial class App : Application, IDevelopmentHost
         _unhookDevelopmentSync?.Invoke();
         _unhookDevelopmentSync = null;
         _developmentSync?.Dispose();
-        _ticketWorkspace?.Dispose();
+        _ticketCache?.Dispose();
         _developmentSync = null;
         DevelopmentPullRequests = null;
         DevelopmentCommits = null;
@@ -402,7 +399,7 @@ public partial class App : Application, IDevelopmentHost
         FleetMate.Core.Services.Projects.GitHubSync.RequestFullResync();
         _devicesCacheTime = null;
         _assetsCacheTime = null;
-        _ticketsCacheTime = null;
+        TicketCache.Invalidate();
         _usersCacheTime = null;
         _groupsCacheTime = null;
         CachedDevices.Clear();
@@ -610,7 +607,7 @@ public partial class App : Application, IDevelopmentHost
             Log.Warning("[tdx-sso] Could not check the saved session; using it: {Reason}", ex.Message);
         }
 
-        _ticketsCacheTime = null;
+        TicketCache.Invalidate();
         AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Valid(session.UserName, session.ExpiryUtc));
         Log.Information("[tdx-sso] Reused the saved session for {UserName}", session.UserName ?? "(unknown)");
         _tdxWindowCts?.Cancel();
@@ -646,7 +643,7 @@ public partial class App : Application, IDevelopmentHost
             BaseUrl = TdxSession.NormalizeBaseUrl(Config.Tdx?.BaseUrl),
         });
         _ = SaveTdxMeAsync(result.Token!);
-        _ticketsCacheTime = null;
+        TicketCache.Invalidate();
         AuthManager.Update(AuthSystemId.Tdx, AuthTokenState.Valid(result.UserName, result.Expiry));
         Log.Information("[tdx-sso] ✓ Silent SSO successful — user={UserName}", result.UserName ?? "(unknown)");
         NotifyTdxSignInChanged();
@@ -1324,7 +1321,7 @@ public partial class App : Application, IDevelopmentHost
         _unhookDevelopmentSync?.Invoke();
         _unhookDevelopmentSync = null;
         _developmentSync?.Dispose();
-        _ticketWorkspace?.Dispose();
+        _ticketCache?.Dispose();
         StopTdxSessionKeeper();
         FleetMate.Core.Links.LinkHost.Stop();
         GraphService?.Dispose();

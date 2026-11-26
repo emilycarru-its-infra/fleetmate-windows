@@ -1,4 +1,5 @@
 using System.Windows;
+using FleetMate.Core.Models.Tickets;
 using FleetMate.Core.Services.Tickets;
 using Serilog;
 
@@ -71,25 +72,16 @@ public partial class TicketsPage
         if (reason == TicketsEmptyReason.None) return;
 
         var narrowed = _filters.HasActiveFilters || _app?.TicketDatePreset != TicketDateRangePreset.CurrentTerm;
-        (string glyph, string title, string description) = reason switch
-        {
-            TicketsEmptyReason.NotSignedIn => ("", "Not Signed In", "Sign in to TeamDynamix to see tickets."),
-            TicketsEmptyReason.LoadFailed => ("", "Tickets Didn't Load", _ticketsLoadError ?? ""),
-            TicketsEmptyReason.NoTickets => ("", "No Tickets", "There are no tickets in this date range."),
-            TicketsEmptyReason.Search => ("", "No Results", $"No tickets match “{SearchBox?.Text?.Trim()}”."),
-            TicketsEmptyReason.AssignedToMe => ("", "No Matching Tickets", "No open tickets are assigned to you."),
-            _ => ("", "No Matching Tickets", "No tickets match the current filters."),
-        };
-        EmptyStateIcon.Glyph = glyph;
-        EmptyStateTitle.Text = title;
-        EmptyStateDescription.Text = description;
+        var state = TicketsPageSync.EmptyState(reason, _ticketsLoadError, SearchBox?.Text, narrowed, _showClosed);
+        EmptyStateIcon.Glyph = state.Glyph;
+        EmptyStateTitle.Text = state.Title;
+        EmptyStateDescription.Text = state.Description;
 
-        var filtering = reason is TicketsEmptyReason.AssignedToMe or TicketsEmptyReason.Filters;
-        Show(EmptyStateSignInButton, reason == TicketsEmptyReason.NotSignedIn);
-        Show(EmptyStateRetryButton, reason is TicketsEmptyReason.NotSignedIn or TicketsEmptyReason.LoadFailed);
-        Show(EmptyStateShowAllButton, reason == TicketsEmptyReason.AssignedToMe);
-        Show(EmptyStateClearFiltersButton, filtering && narrowed);
-        Show(EmptyStateShowClosedButton, filtering && !_showClosed);
+        Show(EmptyStateSignInButton, state.ShowsSignIn);
+        Show(EmptyStateRetryButton, state.ShowsRetry);
+        Show(EmptyStateShowAllButton, state.ShowsShowAll);
+        Show(EmptyStateClearFiltersButton, state.ShowsClearFilters);
+        Show(EmptyStateShowClosedButton, state.ShowsShowClosed);
 
         static void Show(UIElement element, bool visible) =>
             element.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;

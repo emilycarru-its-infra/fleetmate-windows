@@ -1,290 +1,686 @@
 using System.ComponentModel;
 using FleetMate.Core.Models.Tickets;
-using FleetMate.WinUI.Data;
+using FleetMate.Core.Services.Tickets;
+using FleetMate.WinUI.Pages.Tickets;
+using FleetMate.WinUI.Shell.Widgets;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using Microsoft.UI.Xaml.Shapes;
+using Serilog;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
+using Windows.System;
+using Windows.UI.Core;
 using Path = Microsoft.UI.Xaml.Shapes.Path;
 
 namespace FleetMate.WinUI.Pages;
 
-public sealed partial class TicketsPage : Page, INotifyPropertyChanged
+/// <summary>
+/// The Tickets tab, and the whole of TicketsMate: the widgets, the list and
+/// the board over the shared ticket cache, and the open ticket beside them.
+/// The state and rules live in <see cref="TicketsViewModel"/> and Core; this
+/// draws the charts, builds the Filters flyout and handles input.
+/// </summary>
+public sealed partial class TicketsPage : Page
 {
-    private static readonly string[] BoardColumns = ["New", "In Process", "Awaiting Input", "On Hold"];
+    private static readonly TicketListColumn[] HeaderColumns =
+    [
+        TicketListColumn.Id, TicketListColumn.Title, TicketListColumn.Status, TicketListColumn.Priority,
+        TicketListColumn.Requestor, TicketListColumn.Responsible, TicketListColumn.Age, TicketListColumn.Modified,
+    ];
 
-    private readonly List<TicketRow> _all = SampleTickets.Tickets.Select(t => new TicketRow(t)).ToList();
-    private List<FeedItem> _feed = [];
-    private string _query = string.Empty;
-    private TicketRow? _selected;
+    private readonly Dictionary<TicketListColumn, (Button Button, FontIcon Arrow)> _headers = new();
+    private readonly Dictionary<TicketFilterSection, ListViewItem> _sectionItems = new();
+    private TicketFilterSection _filterSection = TicketFiltersPopoverRules.Sections[0];
+    private bool _detailOpen;
+    private bool _syncingSelection;
+    private bool _syncingDateRange;
+    private int? _linkAwaitingSignIn;
 
     public TicketsPage()
     {
+        EnsureResources();
+        ViewModel = new TicketsViewModel(App.Services);
         InitializeComponent();
-        MainWindow.SearchChanged += (_, q) => { _query = q; Refresh(); };
-        MainWindow.ViewModeChanged += (_, _) => ApplyViewMode();
-    }
 
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    /// <summary>The ticket in the detail pane.</summary>
-    public TicketRow? Selected
-    {
-        get => _selected;
-        private set
-        {
-            if (ReferenceEquals(_selected, value) || value is null) return;
-            _selected = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Selected)));
-            _feed = SampleTickets.FeedFor(value.Ticket).Select(e => new FeedItem(e)).ToList();
-            TaskRepeater.ItemsSource = SampleTickets.TasksFor(value.Ticket);
-            TasksExpander.Header = $"Tasks  ·  {SampleTickets.TasksFor(value.Ticket).Count(t => t.Done)} of 3 done";
-            ApplyFeedFilter();
-        }
-    }
-
-    protected override void OnNavigatedTo(NavigationEventArgs e)
-    {
-        base.OnNavigatedTo(e);
-        if (_selected is null) Refresh();
-        ApplyViewMode();
-    }
-
-    private void Filter_Changed(object sender, SelectionChangedEventArgs e)
-    {
-        if (IsLoaded) Refresh();
-    }
-
-    private IEnumerable<TicketRow> Visible()
-    {
-        var activeOnly = StateBox.SelectedIndex != 1;
-        return _all.Where(r =>
-            (!activeOnly || !TicketStats.IsClosed(r.Ticket))
-            && QueueBox.SelectedIndex switch
-            {
-                1 => r.Responsible == "Jordan Lee",
-                2 => r.IsUnassigned,
-                _ => true,
-            }
-            && r.Matches(_query));
-    }
-
-    private void Refresh()
-    {
-        var rows = Visible()
-            .OrderByDescending(r => r.Ticket.IsSlaViolated)
-            .ThenBy(r => r.Ticket.DaysOld)
+        BuildListHeader();
+        BuildFilterSections();
+        var now = DateTime.Now;
+        DateRangeBox.ItemsSource = Enum.GetValues<TicketDateRangePreset>()
+            .Select(p => new DateRangeOption(p, TicketBoardQuery.Label(p, now)))
             .ToList();
 
-        TicketList.ItemsSource = rows;
-        if (rows.Count > 0)
-        {
-            TicketList.SelectedItem = rows.Contains(_selected!) ? _selected : rows[0];
-        }
+        ViewModel.PropertyChanged += ViewModel_PropertyChanged;
+        ViewModel.Redrawn += OnRedrawn;
+        ViewModel.SignedIn += OnSignedIn;
+        Detail.LoadFailed += message => ShowAction(message, InfoBarSeverity.Warning);
 
-        var stats = new TicketStats(rows.Select(r => r.Ticket));
-        ShowingText.Text = $"{stats.Total} shown · sample data";
-        ShowingValue.Text = stats.Total.ToString();
-        OpenValue.Text = stats.Open.ToString();
-        OnHoldValue.Text = stats.OnHold.ToString();
-        UnassignedValue.Text = stats.UnassignedCount.ToString();
-        SlaValue.Text = stats.SlaViolated.ToString();
-        AgingValue.Text = stats.Aging.ToString();
-
-        DrawDonut(stats.ByStatus, stats.Total);
-        FillBars(PriorityBars, stats.ByPriority);
-        FillBars(AgeBars, stats.ByAge);
-        FillBars(ResponsibleBars, stats.ByResponsible);
-        FillBars(GroupBars, stats.ByGroup);
-        FillBoard(rows);
+        MainWindow.SearchChanged += (_, text) => ViewModel.Search = text;
+        MainWindow.ViewModeChanged += (_, mode) => ViewModel.IsBoard = mode == "board";
+        ViewModel.IsBoard = MainWindow.ViewMode == "board";
+        ApplyViewMode();
+        WidgetStrip.Changed += tab => { if (tab == "Tickets") DrawWidgets(); };
     }
 
-    private void TicketList_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
-        Selected = TicketList.SelectedItem as TicketRow;
+    public TicketsViewModel ViewModel { get; }
 
-    private void FeedFilter_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args) =>
-        ApplyFeedFilter();
+    public TicketDetailViewModel Detail { get; } = new();
 
-    private void ApplyFeedFilter()
+    public TicketListLayout Layout => TicketListLayout.Current;
+
+    /// <summary>The Tickets tones live in their own dictionary; merged into the app once so code and templates find them.</summary>
+    private static void EnsureResources()
     {
-        var tag = FeedFilter.SelectedItem?.Tag as string ?? "All";
-        FeedRepeater.ItemsSource = tag == "All"
-            ? _feed
-            : _feed.Where(f => f.Kind.ToString() == tag).ToList();
+        var resources = Application.Current.Resources;
+        if (resources.ContainsKey("TicketToneBlueBrush")) return;
+        resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("ms-appx:///Pages/Tickets/TicketResources.xaml") });
+    }
+
+    protected override async void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        await ViewModel.EnsureLoadedAsync();
+        // A link checks on every visit: the page is cached.
+        if (App.Services.PendingTicketId is { } linked)
+        {
+            App.Services.PendingTicketId = null;
+            await OpenLinkedTicketAsync(linked);
+        }
+    }
+
+    // MARK: - View model changes
+
+    private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        switch (e.PropertyName)
+        {
+            case nameof(TicketsViewModel.Charts):
+                DrawWidgets();
+                break;
+            case nameof(TicketsViewModel.EmptyState):
+            case nameof(TicketsViewModel.ShowsLoading):
+                ShowEmptyState();
+                break;
+            case nameof(TicketsViewModel.LaunchProgress):
+                LaunchProgressBar.Visibility = ViewModel.LaunchProgress is null ? Visibility.Collapsed : Visibility.Visible;
+                LoadingRing.Visibility = ViewModel.LaunchProgress is null ? Visibility.Visible : Visibility.Collapsed;
+                LaunchProgressBar.Value = ViewModel.LaunchProgress ?? 0;
+                break;
+            case nameof(TicketsViewModel.IsBoard):
+                ApplyViewMode();
+                FitToolbar(Math.Max(0, ActualWidth - PageRoot.Padding.Left - PageRoot.Padding.Right));
+                if (!ViewModel.IsBoard) MainWindow.RequestViewMode("list");
+                break;
+            case nameof(TicketsViewModel.SortField):
+            case nameof(TicketsViewModel.SortAscending):
+                UpdateHeaderArrows();
+                break;
+            case nameof(TicketsViewModel.ActiveFilterCount):
+                UpdateFilterSectionBadges();
+                if (FiltersFlyout.IsOpen) RefreshFilterValues();
+                break;
+            case nameof(TicketsViewModel.Preset):
+                SyncDateRange();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// The rows were rebuilt, which drops the list's selection: select the
+    /// open ticket again without reopening it, so the pane is left as it is.
+    /// </summary>
+    private void OnRedrawn()
+    {
+        if (Detail.Ticket is not { } open) return;
+        var row = ViewModel.Rows.FirstOrDefault(r => r.Id == open.Id);
+        if (row == null || ReferenceEquals(TicketList.SelectedItem, row)) return;
+        _syncingSelection = true;
+        TicketList.SelectedItem = row;
+        _syncingSelection = false;
     }
 
     private void ApplyViewMode()
     {
-        var board = MainWindow.ViewMode == "board";
+        var board = ViewModel.IsBoard;
         ListCard.Visibility = board ? Visibility.Collapsed : Visibility.Visible;
-        BoardGrid.Visibility = board ? Visibility.Visible : Visibility.Collapsed;
+        BoardScroller.Visibility = board ? Visibility.Visible : Visibility.Collapsed;
+        ShowEmptyState();
     }
 
-    // Donut: one arc per status, a 2px surface gap between segments, the total in the hole.
-    private void DrawDonut(IReadOnlyList<TicketStats.Count> counts, int total)
+    private void ShowEmptyState()
     {
-        DonutCanvas.Children.Clear();
-        StatusLegend.Children.Clear();
-        DonutTotal.Text = total.ToString();
-        if (total == 0) return;
+        var state = ViewModel.ShowsLoading ? null : ViewModel.EmptyState;
+        EmptyPanel.Visibility = state == null ? Visibility.Collapsed : Visibility.Visible;
+        var listed = state == null ? Visibility.Visible : Visibility.Collapsed;
+        if (ViewModel.IsBoard) BoardScroller.Visibility = listed; else ListCard.Visibility = listed;
+        if (state == null) return;
+        EmptyIcon.Glyph = state.Glyph;
+        EmptyTitle.Text = state.Title;
+        EmptyDescription.Text = state.Description;
+        AutomationProperties.SetName(EmptyPanel, $"{state.Title}. {state.Description}");
+        EmptySignIn.Visibility = Show(state.ShowsSignIn);
+        EmptyRetry.Visibility = Show(state.ShowsRetry);
+        EmptyShowAll.Visibility = Show(state.ShowsShowAll);
+        EmptyClearFilters.Visibility = Show(state.ShowsClearFilters);
+        EmptyShowClosed.Visibility = Show(state.ShowsShowClosed);
+    }
 
-        const double size = 104, thickness = 14;
-        var radius = (size - thickness) / 2;
-        var center = new Point(size / 2, size / 2);
-        var gap = counts.Count > 1 ? 2.0 / radius : 0;
-        var start = -Math.PI / 2;
+    private static Visibility Show(bool visible) => visible ? Visibility.Visible : Visibility.Collapsed;
 
-        foreach (var c in counts)
+    private async void EmptySignIn_Click(object sender, RoutedEventArgs e) => await App.Services.TdxSession.RetryAsync();
+
+    private async void EmptyRetry_Click(object sender, RoutedEventArgs e) => await ViewModel.RefreshAsync();
+
+    private void EmptyShowAll_Click(object sender, RoutedEventArgs e) => ViewModel.AssignedToMe = false;
+
+    private void EmptyShowClosed_Click(object sender, RoutedEventArgs e) => ViewModel.ShowClosed = true;
+
+    private async void RefreshAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        if (ViewModel.RefreshEnabled) await ViewModel.RefreshAsync();
+    }
+
+    // MARK: - List header
+
+    /// <summary>One button per column; clicking sorts by it, a second click flips the direction.</summary>
+    private void BuildListHeader()
+    {
+        for (var i = 0; i < HeaderColumns.Length; i++)
         {
-            var brush = TicketRow.SeriesBrush(TicketRow.StatusSlot(c.Label));
-            var sweep = 2 * Math.PI * c.Value / total;
-            if (counts.Count == 1)
+            var column = HeaderColumns[i];
+            var arrow = new FontIcon { FontSize = 10, Glyph = "", Visibility = Visibility.Collapsed };
+            var label = new TextBlock
             {
-                var ring = new Ellipse { Width = size - thickness, Height = size - thickness, Stroke = brush, StrokeThickness = thickness };
-                Canvas.SetLeft(ring, thickness / 2);
-                Canvas.SetTop(ring, thickness / 2);
-                DonutCanvas.Children.Add(ring);
-            }
-            else
+                Text = TicketListColumns.Header(column),
+                Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = TicketBrushes.Text("TextFillColorSecondaryBrush"),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Children = { label, arrow } };
+            var button = new Button
             {
-                var a0 = start + gap / 2;
-                var a1 = start + sweep - gap / 2;
-                var figure = new PathFigure { StartPoint = PointAt(center, radius, a0), IsClosed = false };
-                figure.Segments.Add(new ArcSegment
-                {
-                    Point = PointAt(center, radius, a1),
-                    Size = new Size(radius, radius),
-                    IsLargeArc = a1 - a0 > Math.PI,
-                    SweepDirection = SweepDirection.Clockwise,
-                });
-                var geometry = new PathGeometry();
-                geometry.Figures.Add(figure);
-                var path = new Path { Data = geometry, Stroke = brush, StrokeThickness = thickness };
-                ToolTipService.SetToolTip(path, $"{c.Label}: {c.Value}");
-                DonutCanvas.Children.Add(path);
-            }
-            start += sweep;
-
-            StatusLegend.Children.Add(LegendRow(brush, c.Label, c.Value));
+                Content = content,
+                Style = (Style)Resources["ColumnHeaderButtonStyle"],
+                Margin = new Thickness(-6, 0, 0, 0),
+            };
+            if (column == TicketListColumn.Age) button.HorizontalContentAlignment = HorizontalAlignment.Right;
+            button.Click += (_, _) => ViewModel.SortByColumn(column);
+            Grid.SetColumn(button, i);
+            ListHeader.Children.Add(button);
+            _headers[column] = (button, arrow);
         }
-        AutomationProperties.SetName(DonutCanvas,
-            "By status: " + string.Join(", ", counts.Select(c => $"{c.Label} {c.Value}")));
+        UpdateHeaderArrows();
     }
 
-    private static Point PointAt(Point center, double radius, double angle) =>
-        new(center.X + radius * Math.Cos(angle), center.Y + radius * Math.Sin(angle));
-
-    private static Grid LegendRow(Brush swatch, string label, int value)
+    private void UpdateHeaderArrows()
     {
-        var row = new Grid { ColumnSpacing = 8 };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        row.Children.Add(new Ellipse { Width = 8, Height = 8, Fill = swatch, VerticalAlignment = VerticalAlignment.Center });
-        var name = Caption(label, "TextFillColorPrimaryBrush");
-        Grid.SetColumn(name, 1);
-        row.Children.Add(name);
-        var count = Caption(value.ToString(), "TextFillColorSecondaryBrush");
-        Grid.SetColumn(count, 2);
-        row.Children.Add(count);
-        return row;
-    }
-
-    // Horizontal bars: one hue, label left, value right, a faint track behind each bar.
-    private static void FillBars(StackPanel host, IReadOnlyList<TicketStats.Count> counts)
-    {
-        host.Children.Clear();
-        if (counts.Count == 0)
+        var sorted = TicketListSort.ColumnFor(ViewModel.SortField);
+        foreach (var (column, (button, arrow)) in _headers)
         {
-            host.Children.Add(Caption("Nothing to show", "TextFillColorTertiaryBrush"));
+            arrow.Visibility = Show(sorted == column);
+            arrow.Glyph = ViewModel.SortAscending ? "" : "";
+            AutomationProperties.SetName(button, TicketListSort.SpokenHeader(column, ViewModel.SortField, ViewModel.SortAscending));
+            ToolTipService.SetToolTip(button, $"Sort by {TicketListColumns.Header(column)}");
+        }
+    }
+
+    // MARK: - Widgets
+
+    /// <summary>Draw the shared widget strip from the current figures, or nothing when Graphs hides it.</summary>
+    private void DrawWidgets()
+    {
+        WidgetHost.Content = WidgetStrip.IsShown("Tickets")
+            ? WidgetStrip.Build("Tickets", TicketGraphCards.For(ViewModel.Tiles, ViewModel.Charts, ViewModel.IsLoading),
+                filter => TicketGraphCards.Apply(filter, ViewModel.Tiles, ViewModel.Filters))
+            : null;
+    }
+
+    // MARK: - Filters flyout
+
+    /// <summary>The categories on the left, each with a count of what is picked in it.</summary>
+    private void BuildFilterSections()
+    {
+        foreach (var section in TicketFiltersPopoverRules.Sections)
+        {
+            var badge = new InfoBadge { Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Center };
+            var title = new TextBlock { Text = section.Title, VerticalAlignment = VerticalAlignment.Center };
+            var row = new Grid { ColumnSpacing = 8 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.Children.Add(title);
+            Grid.SetColumn(badge, 1);
+            row.Children.Add(badge);
+            var item = new ListViewItem { Content = row, Tag = section, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+            AutomationProperties.SetName(item, section.Title);
+            _sectionItems[section] = item;
+            FilterSectionsList.Items.Add(item);
+        }
+        FilterSectionsList.SelectedItem = _sectionItems[_filterSection];
+    }
+
+    private void UpdateFilterSectionBadges()
+    {
+        foreach (var (section, item) in _sectionItems)
+        {
+            var count = TicketFiltersPopoverRules.SectionCount(section, ViewModel.Filters, ViewModel.ShowClosed, ViewModel.IsDefaultDateRange);
+            var row = (Grid)item.Content;
+            var badge = (InfoBadge)row.Children[1];
+            badge.Value = count;
+            badge.Visibility = Show(count > 0);
+            ((TextBlock)row.Children[0]).FontWeight = count > 0 ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal;
+            AutomationProperties.SetName(item, TicketFiltersPopoverRules.SectionName(section.Title, count));
+        }
+    }
+
+    private void FiltersFlyout_Opening(object sender, object e)
+    {
+        FilterValueSearchBox.Text = "";
+        UpdateFilterSectionBadges();
+        SyncDateRange();
+        ShowFilterSection(_filterSection);
+    }
+
+    private void FilterSections_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (FilterSectionsList.SelectedItem is not ListViewItem { Tag: TicketFilterSection section } || section == _filterSection) return;
+        _filterSection = section;
+        FilterValueSearchBox.Text = "";
+        ShowFilterSection(section);
+    }
+
+    private void FilterValueSearch_TextChanged(object sender, TextChangedEventArgs e) => RefreshFilterValues(rebuild: true);
+
+    private void ShowFilterSection(TicketFilterSection section)
+    {
+        FilterSectionsList.SelectedItem = _sectionItems[section];
+        FilterTimePeriodPanel.Visibility = Show(section.IsTimePeriod);
+        FilterValuesPanel.Visibility = Show(!section.IsTimePeriod);
+        RefreshFilterValues(rebuild: true);
+    }
+
+    /// <summary>
+    /// The chosen category's values as checkboxes. Rebuilt when the category,
+    /// the search or the values change; otherwise only the ticks follow, so
+    /// focus stays on the box just toggled.
+    /// </summary>
+    private void RefreshFilterValues(bool rebuild = false)
+    {
+        if (_filterSection.Category is not { } category)
+        {
+            FilterValuesList.Children.Clear();
+            return;
+        }
+        var selected = ViewModel.Filters.Selected(category);
+        var available = TicketFilters.AvailableValues(ViewModel.Loaded.ToList(), category, DateTime.UtcNow);
+        var values = TicketFiltersPopoverRules.Search(TicketFiltersPopoverRules.Values(available, selected), FilterValueSearchBox.Text);
+        var boxes = FilterValuesList.Children.OfType<CheckBox>().ToList();
+        if (!rebuild && values.SequenceEqual(boxes.Select(b => (string)b.Tag)))
+        {
+            foreach (var box in boxes) box.IsChecked = selected.Contains((string)box.Tag);
+            return;
+        }
+        FilterValuesList.Children.Clear();
+        foreach (var value in values)
+        {
+            var box = new CheckBox { Content = value, Tag = value, IsChecked = selected.Contains(value), MinWidth = 0 };
+            AutomationProperties.SetName(box, value);
+            box.Click += (_, _) => ViewModel.Filters.Toggle(category, value);
+            FilterValuesList.Children.Add(box);
+        }
+        FilterNoValuesText.Visibility = Show(values.Count == 0);
+    }
+
+    private void SyncDateRange()
+    {
+        if (DateRangeBox.ItemsSource is not IEnumerable<DateRangeOption> options) return;
+        _syncingDateRange = true;
+        DateRangeBox.SelectedItem = options.FirstOrDefault(o => o.Preset == ViewModel.Preset);
+        _syncingDateRange = false;
+    }
+
+    private async void DateRange_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingDateRange || DateRangeBox.SelectedItem is not DateRangeOption option) return;
+        await ViewModel.SetPresetAsync(option.Preset);
+    }
+
+    // MARK: - Opening tickets
+
+    private void TicketList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingSelection || TicketList.SelectedItem is not TicketListItem row) return;
+        // A rebuilt list selecting the open ticket again is not a new pick.
+        if (TicketsPageSync.IsSameOpenTicket(row.Id, Detail.Ticket?.Id, _detailOpen)) return;
+        _ = OpenTicketAsync(row.Ticket);
+    }
+
+    private void BoardCard_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is TicketListItem card) _ = OpenTicketAsync(card.Ticket);
+    }
+
+    /// <summary>Show a ticket in the detail pane: at once from the list, then fresh from TeamDynamix.</summary>
+    private async Task OpenTicketAsync(TdxTicket ticket)
+    {
+        if (Reader is not { } reader) return;
+        ActionInfo.IsOpen = false;
+        SetDetailOpen(true);
+        await Detail.OpenAsync(reader, ticket, fresh => App.Services.TicketCache.Replace(fresh));
+    }
+
+    /// <summary>TeamDynamix, or the fictional fixtures in demo mode; null when neither is there.</summary>
+    private TicketReader? Reader => ViewModel.IsDemo ? TicketReader.Demo : ViewModel.Tdx is { } service ? TicketReader.For(service) : null;
+
+    /// <summary>A <c>fleetmate:</c> link: open the ticket even when the filters hide it, fetching one not loaded.</summary>
+    private async Task OpenLinkedTicketAsync(int ticketId)
+    {
+        if (Reader is not { } reader) return;
+        _linkAwaitingSignIn = null;
+        try
+        {
+            var ticket = ViewModel.Loaded.FirstOrDefault(t => t.Id == ticketId) ?? await reader.Ticket(ticketId);
+            if (ticket != null)
+            {
+                ViewModel.Reveal(ticketId);
+                await OpenTicketAsync(ticket);
+                if (ViewModel.Rows.FirstOrDefault(r => r.Id == ticketId) is { } row) TicketList.ScrollIntoView(row);
+            }
+            else if (!HoldLinkForSignIn(ticketId)) ShowAction($"Ticket #{ticketId} could not be opened.", InfoBarSeverity.Warning, open: true);
+        }
+        catch (Exception ex)
+        {
+            if (!HoldLinkForSignIn(ticketId)) ShowAction($"Error opening ticket #{ticketId}: {ex.Message}", InfoBarSeverity.Warning, open: true);
+        }
+    }
+
+    /// <summary>Hold a linked ticket until sign-in, when that is why it could not be fetched.</summary>
+    private bool HoldLinkForSignIn(int ticketId)
+    {
+        var session = App.Services.TdxSession;
+        if (!TicketsPageSync.HoldLinkForSignIn(session.IsEnabled, session.IsSignedIn)) return false;
+        _linkAwaitingSignIn = ticketId;
+        Log.Information("[tickets] Ticket #{Id} opens once TeamDynamix sign-in finishes", ticketId);
+        ShowAction($"Ticket #{ticketId} opens once TeamDynamix sign-in finishes.", InfoBarSeverity.Informational, open: true);
+        return true;
+    }
+
+    private async void OnSignedIn()
+    {
+        if (_linkAwaitingSignIn is { } linked)
+        {
+            await OpenLinkedTicketAsync(linked);
+            return;
+        }
+        if (Detail.Ticket is { } open && _detailOpen) await OpenTicketAsync(open);
+    }
+
+    // MARK: - Detail pane
+
+    private void SetDetailOpen(bool open)
+    {
+        _detailOpen = open;
+        DetailsToggle.IsChecked = open;
+        DetailCard.Visibility = Show(open);
+        FitColumns(ActualWidth);
+    }
+
+    private void DetailsToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (_detailOpen) CloseTicket();
+        else if (TicketList.SelectedItem is TicketListItem row) _ = OpenTicketAsync(row.Ticket);
+        else if (Detail.Ticket is { } last) _ = OpenTicketAsync(last);
+        else DetailsToggle.IsChecked = false;
+    }
+
+    private void CloseDetail_Click(object sender, RoutedEventArgs e) => CloseTicket();
+
+    /// <summary>Esc closes the open ticket, unless a flyout or text box has it.</summary>
+    private void EscapeAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        if (!_detailOpen || FocusManager.GetFocusedElement(XamlRoot) is TextBox) return;
+        args.Handled = true;
+        CloseTicket();
+    }
+
+    /// <summary>Close the ticket; the selection clears too, so picking it again opens it again.</summary>
+    private void CloseTicket()
+    {
+        Detail.Close();
+        _syncingSelection = true;
+        TicketList.SelectedItem = null;
+        _syncingSelection = false;
+        SetDetailOpen(false);
+    }
+
+    private async void RefreshDetail_Click(object sender, RoutedEventArgs e)
+    {
+        if (Detail.Ticket is { } open) await OpenTicketAsync(open);
+    }
+
+    private void FeedFilter_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    {
+        if (sender.SelectedItem?.Tag is string tag && Enum.TryParse<TicketFeedFilter>(tag, out var filter)) Detail.FeedFilter = filter;
+    }
+
+    private void CopyNumber_Click(object sender, RoutedEventArgs e)
+    {
+        if (Detail.Ticket is { } open) Copy(open.Id.ToString(), "Ticket number copied");
+    }
+
+    private void CopyLink_Click(object sender, RoutedEventArgs e)
+    {
+        if (Detail.Ticket is { } open) CopyLink(open.Id);
+    }
+
+    private async void OpenInBrowser_Click(object sender, RoutedEventArgs e)
+    {
+        if (Detail.Ticket is { } open) await OpenInBrowserAsync(open.Id);
+    }
+
+    private void CopyDescription_Click(object sender, RoutedEventArgs e)
+    {
+        if (Detail.Description.Length > 0) Copy(Detail.Description, "Description copied");
+    }
+
+    /// <summary>The ticket's TDNext page, built from the configured base URL, never from a hardcoded host.</summary>
+    private void CopyLink(int ticketId)
+    {
+        if (App.Services.Config.Tdx?.GetTicketWebUrl(ticketId) is { } url) Copy(url, "Ticket link copied");
+        else ShowAction("No TeamDynamix URL is configured.", InfoBarSeverity.Warning, open: true);
+    }
+
+    private async Task OpenInBrowserAsync(int ticketId)
+    {
+        if (App.Services.Config.Tdx?.GetTicketBrowserUrl(ticketId) is not { } url || !Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            ShowAction("No TeamDynamix URL is configured.", InfoBarSeverity.Warning, open: true);
+            return;
+        }
+        if (!await Launcher.LaunchUriAsync(uri)) ShowAction("The browser could not be opened.", InfoBarSeverity.Warning, open: true);
+    }
+
+    private void Copy(string text, string done)
+    {
+        var package = new DataPackage();
+        package.SetText(text);
+        Clipboard.SetContent(package);
+        ShowAction(done, InfoBarSeverity.Success);
+    }
+
+    /// <summary>Report on the open ticket; with <paramref name="open"/>, open the pane to say it even with no ticket.</summary>
+    private void ShowAction(string message, InfoBarSeverity severity, bool open = false)
+    {
+        if (open && !_detailOpen) SetDetailOpen(true);
+        ActionInfo.Severity = severity;
+        ActionInfo.Message = message;
+        ActionInfo.IsOpen = true;
+    }
+
+    // MARK: - Folding and the row menu
+
+    /// <summary>Fold or unfold a parent; Alt-click folds or unfolds every parent, as Option-click does on the Mac.</summary>
+    private void Fold_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: TicketListItem row }) return;
+        var alt = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Menu).HasFlag(CoreVirtualKeyStates.Down);
+        ViewModel.ToggleFold(row.Id, alt);
+    }
+
+    private void Row_ContextRequested(UIElement sender, ContextRequestedEventArgs args)
+    {
+        if (sender is not FrameworkElement { Tag: TicketListItem row } element) return;
+        args.Handled = true;
+        var menu = new MenuFlyout();
+        menu.Items.Add(Item("Open", "", () => _ = OpenTicketAsync(row.Ticket)));
+        menu.Items.Add(Item("Open in Browser", "", () => _ = OpenInBrowserAsync(row.Id)));
+        menu.Items.Add(new MenuFlyoutSeparator());
+        menu.Items.Add(Item("Copy Ticket Number", "", () => Copy(row.Id.ToString(), "Ticket number copied")));
+        menu.Items.Add(Item("Copy Link", "", () => CopyLink(row.Id)));
+        menu.Items.Add(new MenuFlyoutSeparator());
+        menu.Items.Add(Item("Expand All", "", ViewModel.ExpandAll));
+        menu.Items.Add(Item("Collapse All", "", ViewModel.CollapseAll));
+        if (args.TryGetPosition(element, out var point)) menu.ShowAt(element, point);
+        else menu.ShowAt(element);
+
+        static MenuFlyoutItem Item(string text, string glyph, Action action)
+        {
+            var item = new MenuFlyoutItem { Text = text, Icon = new FontIcon { Glyph = glyph } };
+            item.Click += (_, _) => action();
+            return item;
+        }
+    }
+
+    // MARK: - Board drag and drop
+
+    private const string TicketDragFormat = "FleetMateTicketId";
+
+    private void BoardCards_DragItemsStarting(object sender, DragItemsStartingEventArgs e)
+    {
+        if (e.Items.FirstOrDefault() is not TicketListItem card) return;
+        e.Data.SetData(TicketDragFormat, card.Id.ToString());
+        e.Data.SetText($"#{card.Id} {card.Title}");
+        e.Data.RequestedOperation = DataPackageOperation.Move;
+    }
+
+    private void BoardColumn_DragOver(object sender, DragEventArgs e)
+    {
+        if (!e.DataView.Contains(TicketDragFormat) || sender is not Panel column) return;
+        e.AcceptedOperation = DataPackageOperation.Move;
+        e.DragUIOverride.Caption = $"Move to {column.Tag}";
+        column.Background = TicketBrushes.Text("SubtleFillColorTertiaryBrush");
+    }
+
+    private void BoardColumn_DragLeave(object sender, DragEventArgs e)
+    {
+        if (sender is Panel column) column.Background = TicketBrushes.Text("SubtleFillColorSecondaryBrush");
+    }
+
+    /// <summary>
+    /// Dropping a card on a column changes the grouped field, as the macOS
+    /// board does. It writes to a shared service desk, so it asks first.
+    /// </summary>
+    private async void BoardColumn_Drop(object sender, DragEventArgs e)
+    {
+        if (sender is not Panel { Tag: string columnKey } column) return;
+        column.Background = TicketBrushes.Text("SubtleFillColorSecondaryBrush");
+        if (!e.DataView.Contains(TicketDragFormat)) return;
+        var deferral = e.GetDeferral();
+        string? raw;
+        try { raw = await e.DataView.GetDataAsync(TicketDragFormat) as string; }
+        finally { deferral.Complete(); }
+        if (!int.TryParse(raw, out var ticketId)) return;
+
+        var groupBy = ViewModel.BoardGroupBy;
+        var ticket = ViewModel.Loaded.FirstOrDefault(t => t.Id == ticketId);
+        if (ticket == null || TicketBoardLayout.DropUpdates(ViewModel.Loaded, ticket, groupBy, columnKey) is not { } updates) return;
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = "Move Ticket",
+            Content = new TextBlock { Text = TicketBoardLayout.DropConfirmation(ticket, groupBy, columnKey), TextWrapping = TextWrapping.Wrap },
+            PrimaryButtonText = "Move",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+        if (ViewModel.IsDemo || ViewModel.Tdx is not { } service)
+        {
+            ShowAction("Demo data can't be changed.", InfoBarSeverity.Informational, open: true);
             return;
         }
 
-        var max = counts.Max(c => c.Value);
-        foreach (var c in counts)
+        var updated = await service.UpdateTicketAsync(ticketId, updates);
+        if (updated == null)
         {
-            var row = new Grid { ColumnSpacing = 8, Height = 16 };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
-
-            var label = Caption(c.Label, c.Label == TicketStats.Unassigned ? "TextFillColorTertiaryBrush" : "TextFillColorPrimaryBrush");
-            row.Children.Add(label);
-
-            var track = new Grid
-            {
-                Height = 8,
-                VerticalAlignment = VerticalAlignment.Center,
-                Background = (Brush)Application.Current.Resources["BarTrackBrush"],
-                CornerRadius = new CornerRadius(4),
-            };
-            track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(c.Value, GridUnitType.Star) });
-            track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(max - c.Value, GridUnitType.Star) });
-            track.Children.Add(new Border { Background = TicketRow.SeriesBrush(1), CornerRadius = new CornerRadius(4) });
-            Grid.SetColumn(track, 1);
-            ToolTipService.SetToolTip(track, $"{c.Label}: {c.Value}");
-            row.Children.Add(track);
-
-            var value = Caption(c.Value.ToString(), "TextFillColorSecondaryBrush");
-            value.HorizontalAlignment = HorizontalAlignment.Right;
-            Grid.SetColumn(value, 2);
-            row.Children.Add(value);
-
-            AutomationProperties.SetName(row, $"{c.Label}: {c.Value}");
-            host.Children.Add(row);
+            Log.Warning("Board drop: failed to update ticket {Id} ({Field})", ticketId, groupBy);
+            ShowAction($"TeamDynamix did not accept the {TicketBoardLayout.FieldLabel(groupBy)} for #{ticketId}. See the log for the response.",
+                InfoBarSeverity.Warning, open: true);
+            return;
         }
+        ViewModel.Replace(updated);
+        if (Detail.Ticket?.Id == ticketId) await Detail.OpenAsync(TicketReader.For(service), updated);
     }
 
-    private static TextBlock Caption(string text, string brushKey) => new()
-    {
-        Text = text,
-        Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
-        Foreground = (Brush)Application.Current.Resources[brushKey],
-        TextTrimming = TextTrimming.CharacterEllipsis,
-        MaxLines = 1,
-        VerticalAlignment = VerticalAlignment.Center,
-    };
+    // MARK: - Layout
 
-    // Board: one column per active status, each its own vertical list. Columns share the width.
-    private void FillBoard(List<TicketRow> rows)
+    private void Page_SizeChanged(object sender, SizeChangedEventArgs e) => FitColumns(e.NewSize.Width);
+
+    /// <summary>
+    /// The open ticket takes two fifths, at least 400 wide. Below 900 there is
+    /// no room for both, so the ticket covers the list until it is closed.
+    /// </summary>
+    private void FitColumns(double pageWidth)
     {
-        BoardGrid.Children.Clear();
-        BoardGrid.ColumnDefinitions.Clear();
-        for (var i = 0; i < BoardColumns.Length; i++)
+        var available = Math.Max(0, pageWidth - PageRoot.Padding.Left - PageRoot.Padding.Right);
+        var overlay = _detailOpen && available < 900;
+        if (!_detailOpen)
         {
-            var status = BoardColumns[i];
-            var items = rows.Where(r => r.Status == status).ToList();
-            BoardGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-            var column = new Grid { RowSpacing = 8 };
-            column.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            column.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
-            var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(4, 0, 0, 0) };
-            header.Children.Add(new Ellipse { Width = 8, Height = 8, Fill = TicketRow.SeriesBrush(TicketRow.StatusSlot(status)), VerticalAlignment = VerticalAlignment.Center });
-            header.Children.Add(new TextBlock { Text = status, Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"] });
-            header.Children.Add(Caption(items.Count.ToString(), "TextFillColorSecondaryBrush"));
-            column.Children.Add(header);
-
-            var list = new ListView
-            {
-                ItemsSource = items,
-                ItemTemplate = (DataTemplate)Resources["BoardCardTemplate"],
-                SelectionMode = ListViewSelectionMode.None,
-                IsItemClickEnabled = true,
-            };
-            ScrollViewer.SetHorizontalScrollMode(list, ScrollMode.Disabled);
-            ScrollViewer.SetHorizontalScrollBarVisibility(list, ScrollBarVisibility.Disabled);
-            list.ItemClick += (_, e) => Selected = e.ClickedItem as TicketRow;
-            AutomationProperties.SetName(list, status);
-            Grid.SetRow(list, 1);
-            column.Children.Add(list);
-
-            Grid.SetColumn(column, i);
-            BoardGrid.Children.Add(column);
+            ListColumn.Width = new GridLength(1, GridUnitType.Star);
+            DetailColumn.Width = new GridLength(0);
+            ContentGrid.ColumnSpacing = 0;
         }
+        else if (overlay)
+        {
+            ListColumn.Width = new GridLength(0);
+            DetailColumn.Width = new GridLength(1, GridUnitType.Star);
+            ContentGrid.ColumnSpacing = 0;
+        }
+        else
+        {
+            ListColumn.Width = new GridLength(3, GridUnitType.Star);
+            DetailColumn.Width = new GridLength(Math.Max(400, available * 0.4));
+            ContentGrid.ColumnSpacing = 12;
+        }
+        var listWidth = !_detailOpen ? available : overlay ? 0 : available - DetailColumn.Width.Value - 12;
+        Layout.Fit(listWidth);
+        FitToolbar(available);
     }
+
+    /// <summary>
+    /// Below this width the toolbar's labels drop to icons; the tooltips and
+    /// accessible names keep the words. The board adds the column and sort
+    /// pickers, so it needs more room, as on the Mac.
+    /// </summary>
+    private void FitToolbar(double width)
+    {
+        var compact = TicketsToolbarRules.UsesCompactLabels(width, ViewModel.ViewMode);
+        var labels = Show(!compact);
+        FiltersLabel.Visibility = labels;
+        AssignedToMeLabel.Visibility = labels;
+        DetailsLabel.Visibility = labels;
+        RefreshLabel.Visibility = labels;
+    }
+
 }
+
+/// <summary>A date-range choice for the Filters flyout's Time Period.</summary>
+public sealed record DateRangeOption(TicketDateRangePreset Preset, string Label);

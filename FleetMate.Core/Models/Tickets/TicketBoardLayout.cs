@@ -86,4 +86,87 @@ public static class TicketBoardLayout
         "Group" => "responsible group",
         _ => "responsible person",
     };
+
+    /// <summary>The board's column dimensions, as the Mac's BoardGroupBy offers them; Responsible is the default.</summary>
+    public static readonly IReadOnlyList<string> GroupByOptions = new[] { "Status", "Responsible", "Priority", "Group" };
+
+    public const string DefaultGroupBy = "Responsible";
+
+    /// <summary>
+    /// The board's blocks for <paramref name="groupBy"/>: Status and Priority
+    /// in their workflow order, Group alphabetical with No Group last, and
+    /// Responsible as people inside their group's block. Every mode but
+    /// Responsible is one headerless block.
+    /// </summary>
+    public static List<TicketBoardBlock> Blocks(IEnumerable<TdxTicket> tickets, string groupBy)
+    {
+        var list = tickets as IReadOnlyCollection<TdxTicket> ?? tickets.ToList();
+        return groupBy switch
+        {
+            "Status" => new() { new(null, list.GroupBy(StatusKey).OrderBy(g => StatusOrder(g.Key))
+                .Select(g => new TicketBoardColumn(g.Key, g.ToList())).ToList()) },
+            "Priority" => new() { new(null, list.GroupBy(PriorityKey).OrderBy(g => PriorityOrder(g.Key))
+                .Select(g => new TicketBoardColumn(g.Key, g.ToList())).ToList()) },
+            "Group" => new() { new(null, Columns(list, GroupKey, NoGroup)) },
+            _ => ResponsibleBlocks(list),
+        };
+    }
+
+    /// <summary>Where a status sits on the board, left to right: new work first, finished work last.</summary>
+    public static int StatusOrder(string status) => status.ToLowerInvariant() switch
+    {
+        "new" => 0,
+        "open" => 1,
+        "in progress" or "in process" => 2,
+        "awaiting response" => 3,
+        "on hold" => 4,
+        "resolved" => 5,
+        "closed" => 6,
+        "cancelled" or "canceled" => 7,
+        _ => 5,
+    };
+
+    /// <summary>Where a priority sits on the board, most urgent first.</summary>
+    public static int PriorityOrder(string priority) => priority.ToLowerInvariant() switch
+    {
+        "emergency" => 0,
+        "high" => 1,
+        "medium" => 2,
+        "low" => 3,
+        _ => 4,
+    };
+
+    /// <summary>
+    /// The update a drop on <paramref name="columnKey"/> sends, as the macOS
+    /// board does: StatusID, PriorityID, ResponsibleGroupID or ResponsibleUid,
+    /// with the id read from a loaded ticket that already holds the value. Null
+    /// when nothing would change or no loaded ticket carries the value's id.
+    /// </summary>
+    public static Dictionary<string, object?>? DropUpdates(
+        IEnumerable<TdxTicket> loaded, TdxTicket ticket, string groupBy, string columnKey)
+    {
+        if (!IsMove(ticket, groupBy, columnKey)) return null;
+        var all = loaded as IReadOnlyCollection<TdxTicket> ?? loaded.ToList();
+        switch (groupBy)
+        {
+            case "Status":
+                var statusId = all.FirstOrDefault(t => t.StatusName == columnKey)?.StatusId;
+                return statusId is null or 0 ? null : new() { ["StatusID"] = statusId };
+            case "Priority":
+                var priorityId = all.FirstOrDefault(t => t.PriorityName == columnKey)?.PriorityId;
+                return priorityId == null ? null : new() { ["PriorityID"] = priorityId };
+            case "Group":
+                if (columnKey == NoGroup) return new() { ["ResponsibleGroupID"] = 0 };
+                var groupId = all.FirstOrDefault(t => t.ResponsibleGroupName == columnKey)?.ResponsibleGroupId;
+                return groupId == null ? null : new() { ["ResponsibleGroupID"] = groupId };
+            default:
+                if (columnKey == Unassigned) return new() { ["ResponsibleUid"] = "" };
+                var uid = all.FirstOrDefault(t => t.ResponsibleFullName == columnKey)?.ResponsibleUid;
+                return uid == null ? null : new() { ["ResponsibleUid"] = uid };
+        }
+    }
+
+    /// <summary>The question a drop asks before it writes to the shared service desk.</summary>
+    public static string DropConfirmation(TdxTicket ticket, string groupBy, string columnKey) =>
+        $"Change the {FieldLabel(groupBy)} of #{ticket.Id} from {ColumnKey(ticket, groupBy)} to {columnKey}?\n\n{ticket.Title}";
 }

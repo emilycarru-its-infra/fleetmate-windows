@@ -105,12 +105,12 @@
                             x:Name="ViewModeBar"
                             AutomationProperties.Name="View mode"
                             SelectionChanged="ViewModeBar_SelectionChanged">
-                            <SelectorBarItem IsSelected="True" Tag="list" Text="List">
+                            <SelectorBarItem Tag="list" Text="List">
                                 <SelectorBarItem.Icon>
                                     <FontIcon Glyph="&#xE8FD;" />
                                 </SelectorBarItem.Icon>
                             </SelectorBarItem>
-                            <SelectorBarItem Tag="board" Text="Board">
+                            <SelectorBarItem IsSelected="True" Tag="board" Text="Board">
                                 <SelectorBarItem.Icon>
                                     <FontIcon Glyph="&#xF0E2;" />
                                 </SelectorBarItem.Icon>

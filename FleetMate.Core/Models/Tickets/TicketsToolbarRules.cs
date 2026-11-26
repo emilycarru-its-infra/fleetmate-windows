@@ -1,4 +1,4 @@
-namespace FleetMate.GUI.Views.Tickets;
+namespace FleetMate.Core.Models.Tickets;
 
 /// <summary>Which of the three Tickets views is showing.</summary>
 public enum TicketsViewMode
@@ -13,7 +13,7 @@ public enum TicketsViewMode
 /// from the page so the rules are testable without a window. They follow the
 /// Mac's TicketsView toolbar.
 /// </summary>
-internal static class TicketsToolbarRules
+public static class TicketsToolbarRules
 {
     /// <summary>
     /// Below these toolbar widths the button labels drop to icons, as the

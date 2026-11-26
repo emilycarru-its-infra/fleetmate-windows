@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
-using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -407,44 +406,12 @@ private bool _isInitialLoadDone;
     /// <paramref name="ignoring"/>'s selections, unsorted. The widgets count
     /// each category this way, so its other values stay clickable.
     /// </summary>
-    private List<TdxTicket> TicketsMatching(TicketFilterCategory? ignoring)
-    {
-        var filtered = _allTickets.AsEnumerable();
+    private List<TdxTicket> TicketsMatching(TicketFilterCategory? ignoring) =>
+        TicketListQuery.Matching(_allTickets, ListOptions, ignoring);
 
-        // Filter show closed (hide when unchecked)
-        if (!_showClosed)
-        {
-            filtered = filtered.Where(t => 
-                t.StatusName?.ToLower() != "closed" && 
-                t.StatusName?.ToLower() != "cancelled" &&
-                t.StatusName?.ToLower() != "canceled");
-        }
-
-        // Assigned to Me: the signed-in TDX person is the responsible one.
-        if (_assignedToMe && _me is { } me)
-        {
-            filtered = filtered.Where(t => TicketFilters.IsAssignedTo(t, me));
-        }
-
-        // Filter row and widget selections
-        if (_filters.HasActiveFilters)
-        {
-            var now = DateTime.UtcNow;
-            filtered = filtered.Where(t => _filters.Matches(t, ignoring, now));
-        }
-
-        // Filter by search text
-        var searchText = SearchBox?.Text?.Trim();
-        if (!string.IsNullOrEmpty(searchText))
-        {
-            filtered = filtered.Where(t =>
-                (t.Title?.Contains(searchText, StringComparison.OrdinalIgnoreCase) == true) ||
-                (t.RequestorName?.Contains(searchText, StringComparison.OrdinalIgnoreCase) == true) ||
-                t.Id.ToString().Contains(searchText));
-        }
-
-        return filtered.ToList();
-    }
+    /// <summary>What narrows the list now: Show Closed, Assigned to Me, the filters and the search.</summary>
+    private TicketListOptions ListOptions =>
+        new(_filters, _showClosed, _assignedToMe ? _me : null, SearchBox?.Text);
 
     private void ApplyFiltersAndSort()
     {
@@ -470,7 +437,7 @@ private bool _isInitialLoadDone;
 
         // Count the tickets, not the visible rows — a folded subtree must not
         // read as work that disappeared.
-        TicketCountText.Text = $"{_filteredTickets.Count} of {_allTickets.Count}";
+        TicketCountText.Text = TicketListQuery.CountLabel(_filteredTickets.Count, _allTickets.Count);
         
         // Update board view if active
         if (_isBoardView)
@@ -710,47 +677,8 @@ private bool _isInitialLoadDone;
             MessageBoxResult.Cancel);
         if (confirm != MessageBoxResult.OK) return;
 
-        var updates = new Dictionary<string, object?>();
-        switch (_boardGroupBy)
-        {
-            case "Status":
-                var statusId = _allTickets.FirstOrDefault(t => t.StatusName == columnKey)?.StatusId;
-                if (statusId is null or 0) return;
-                updates["StatusID"] = statusId;
-                break;
-
-            case "Priority":
-                var priorityId = _allTickets.FirstOrDefault(t => t.PriorityName == columnKey)?.PriorityId;
-                if (priorityId == null) return;
-                updates["PriorityID"] = priorityId;
-                break;
-
-            case "Group":
-                if (columnKey == "No Group")
-                {
-                    updates["ResponsibleGroupID"] = 0;
-                }
-                else
-                {
-                    var groupId = _allTickets.FirstOrDefault(t => t.ResponsibleGroupName == columnKey)?.ResponsibleGroupId;
-                    if (groupId == null) return;
-                    updates["ResponsibleGroupID"] = groupId;
-                }
-                break;
-
-            default: // Responsible
-                if (columnKey == "Unassigned")
-                {
-                    updates["ResponsibleUid"] = "";
-                }
-                else
-                {
-                    var uid = _allTickets.FirstOrDefault(t => t.ResponsibleFullName == columnKey)?.ResponsibleUid;
-                    if (uid == null) return;
-                    updates["ResponsibleUid"] = uid;
-                }
-                break;
-        }
+        var updates = TicketBoardLayout.DropUpdates(_allTickets, ticket, _boardGroupBy, columnKey);
+        if (updates == null) return;
 
         var updated = await _tdxService.UpdateTicketAsync(ticketId, updates);
         if (updated == null)
@@ -787,81 +715,23 @@ private bool _isInitialLoadDone;
                     .ToList(),
             };
         }
-        List<BoardBlock> blocks;
-        switch (_boardGroupBy)
-        {
-            case "Status":
-                blocks = new()
-                {
-                    new BoardBlock(null, _filteredTickets
-                        .GroupBy(t => t.StatusName ?? "Unknown")
-                        .OrderBy(g => GetStatusOrder(g.Key))
-                        .Select(g => ToColumn(g.Key, g, GetStatusColor(g.Key)))
-                        .ToList()),
-                };
-                break;
-
-            case "Priority":
-                blocks = new()
-                {
-                    new BoardBlock(null, _filteredTickets
-                        .GroupBy(t => t.PriorityName ?? "No Priority")
-                        .OrderBy(g => GetPriorityOrder(g.Key))
-                        .Select(g => ToColumn(g.Key, g, NeutralColumnDot))
-                        .ToList()),
-                };
-                break;
-
-            case "Group":
-                blocks = new()
-                {
-                    new BoardBlock(null, TicketBoardLayout
-                        .Columns(_filteredTickets, TicketBoardLayout.GroupKey, TicketBoardLayout.NoGroup)
-                        .Select(c => ToColumn(c.Key, c.Tickets, NeutralColumnDot))
-                        .ToList()),
-                };
-                break;
-
-            default: // Responsible: people inside their group's block
-                blocks = TicketBoardLayout.ResponsibleBlocks(_filteredTickets)
-                    .Select(b => new BoardBlock(b.Header, b.Columns
-                        .Select(c => ToColumn(c.Key, c.Tickets, NeutralColumnDot))
-                        .ToList()))
-                    .ToList();
-                break;
-        }
+        // Only Status mode gives the header dot a colour; the others leave it grey, as on Mac.
+        var blocks = TicketBoardLayout.Blocks(_filteredTickets, _boardGroupBy)
+            .Select(b => new BoardBlock(b.Header, b.Columns
+                .Select(c => ToColumn(c.Key, c.Tickets, _boardGroupBy == "Status" ? GetStatusColor(c.Key) : NeutralColumnDot))
+                .ToList()))
+            .ToList();
 
         BoardColumnsControl.ItemsSource = blocks;
     }
 
     private static readonly SolidColorBrush NeutralColumnDot = new(Color.FromRgb(0x8E, 0x8E, 0x93));
 
-    private static int GetPriorityOrder(string priority) => priority.ToLower() switch
-    {
-        "emergency" => 0, "high" => 1, "medium" => 2, "low" => 3, _ => 4
-    };
-
     private static SolidColorBrush GetStatusColor(string status)
     {
         return StatusColors.TryGetValue(status, out var color) 
             ? color 
             : new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80));
-    }
-    
-    private static int GetStatusOrder(string status)
-    {
-        return status.ToLower() switch
-        {
-            "new" => 0,
-            "open" => 1,
-            "in progress" or "in process" => 2,
-            "awaiting response" => 3,
-            "on hold" => 4,
-            "resolved" => 5,
-            "closed" => 6,
-            "cancelled" or "canceled" => 7,
-            _ => 5
-        };
     }
     
     private async void OnBoardCardClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -1685,23 +1555,18 @@ private bool _isInitialLoadDone;
     {
         _backgroundFeedRenderPending = false;
         // Filter feed based on current filter mode
-        IEnumerable<TdxFeedEntry> filteredFeed = _feedFilter switch
-        {
-            "Comments" => _ticketFeed.Where(f => f.CreatedFullName != "System" && !string.IsNullOrWhiteSpace(f.Body)),
-            "Activity" => _ticketFeed.Where(f => f.CreatedFullName != "System"),
-            "All" => _ticketFeed,
-            _ => _ticketFeed.Where(f => f.CreatedFullName != "System" && !string.IsNullOrWhiteSpace(f.Body))
-        };
+        var filteredFeed = TicketFeedView.Filter(_ticketFeed,
+            Enum.TryParse<TicketFeedFilter>(_feedFilter, out var filter) ? filter : TicketFeedFilter.Comments);
 
         var feedList = filteredFeed.ToList();
         
         if (feedList.Count > 0)
         {
-            FeedHeaderText.Text = $"Activity ({feedList.Count})";
+            FeedHeaderText.Text = TicketFeedView.Header(feedList.Count);
             
             // Convert feed entries for display
             // Each comment carries its thread: replies and the reply composer.
-            var displayFeed = feedList.Take(20).Select(ToDisplayItem).ToList();
+            var displayFeed = feedList.Take(TicketFeedView.MaxShown).Select(ToDisplayItem).ToList();
             
             FeedItemsControl.ItemsSource = displayFeed;
             FeedSection.Visibility = Visibility.Visible;
@@ -2171,56 +2036,12 @@ private bool _isInitialLoadDone;
                          : new SolidColorBrush(Color.FromRgb(0xC0, 0xFF, 0xC0)));
     }
 
-    private static string FormatDate(DateTime? dateTime)
-    {
-        if (dateTime == null) return "-";
-        
-        var dt = dateTime.Value;
-        var localDt = dt.Kind == DateTimeKind.Utc ? dt.ToLocalTime() : dt;
-        return localDt.ToString("MMM d 'at' h:mm tt");
-    }
+    private static string FormatDate(DateTime? dateTime) => TicketFeedView.FormatDate(dateTime);
 
-    private static string FormatDate(DateTime dateTime)
-    {
-        var localDt = dateTime.Kind == DateTimeKind.Utc ? dateTime.ToLocalTime() : dateTime;
-        return localDt.ToString("MMM d 'at' h:mm tt");
-    }
+    private static string FormatDate(DateTime dateTime) => TicketFeedView.FormatDate(dateTime);
 
-    private static string StripHtml(string html)
-    {
-        return Regex.Replace(html, "<[^>]+>", "");
-    }
-
-    /// <summary>
-    /// Decode HTML entities and convert line breaks for display
-    /// </summary>
-    private static string DecodeHtml(string html)
-    {
-        if (string.IsNullOrEmpty(html)) return "";
-        
-        var result = html;
-        
-        // Convert <br> and </p> to newlines before stripping tags
-        result = Regex.Replace(result, @"<br\s*/?>", "\n", RegexOptions.IgnoreCase);
-        result = Regex.Replace(result, @"</p>", "\n", RegexOptions.IgnoreCase);
-        
-        // Strip all remaining HTML tags
-        result = Regex.Replace(result, @"<[^>]+>", "");
-        
-        // Decode common HTML entities
-        result = result.Replace("&nbsp;", " ");
-        result = result.Replace("&amp;", "&");
-        result = result.Replace("&lt;", "<");
-        result = result.Replace("&gt;", ">");
-        result = result.Replace("&quot;", "\"");
-        result = result.Replace("&#39;", "'");
-        result = result.Replace("&apos;", "'");
-        
-        // Clean up multiple consecutive newlines
-        result = Regex.Replace(result, @"\n{3,}", "\n\n");
-        
-        return result.Trim();
-    }
+    /// <summary>TeamDynamix HTML as plain text; see <see cref="TicketFeedView.PlainText"/>.</summary>
+    private static string DecodeHtml(string html) => TicketFeedView.PlainText(html);
 }
 
 /// <summary>A date-range choice for the Tickets toolbar.</summary>
