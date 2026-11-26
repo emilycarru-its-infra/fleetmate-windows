@@ -1,8 +1,7 @@
 using System.IO;
 using System.Text;
-using FleetMate.Core.Services.Repos;
 
-namespace FleetMate.GUI.Views.Development.Repos;
+namespace FleetMate.Core.Services.Repos;
 
 /// <summary>
 /// A file open in the editor. A reference type, so typing does not publish a

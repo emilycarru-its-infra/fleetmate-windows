@@ -6,7 +6,7 @@ using System.Windows.Media;
 using FleetMate.Core.Services.Repos;
 using FleetMate.GUI.Views.Shared.Widgets;
 using ModernWpf.Controls;
-using static FleetMate.GUI.Views.Development.Repos.RepoInsightsModel;
+using static FleetMate.Core.Services.Repos.RepoInsightsModel;
 
 namespace FleetMate.GUI.Views.Development.Repos;
 
@@ -119,12 +119,8 @@ public sealed class RepoInsightsView : UserControl
     private void UpdateCaption()
     {
         if (_model == null) return;
-        var since = SinceArgument(_model.Insights.Period);
-        var cli = _model.Insights.Scope == InsightsScope.All
-            ? $"fleetmate repos stats --since {since}"
-            : $"fleetmate repos stats {_model.Selected?.Key.DisplayName ?? "<repo>"} --since {since}";
-        _caption.Text = "origin/main · Merge commits excluded · " + cli + " --ref " + HistoryReference;
-        _caption.ToolTip = cli + " --ref " + HistoryReference;
+        _caption.Text = RepoWorkspaceText.InsightsCaption(_model);
+        _caption.ToolTip = RepoWorkspaceText.InsightsCommand(_model);
     }
 
     private void Placeholder(string text)
@@ -401,7 +397,7 @@ public sealed class RepoInsightsView : UserControl
             var open = new MenuItem { Header = "Open in Files" };
             open.Click += (_, _) => OpenFile?.Invoke(file.Path);
             var copy = new MenuItem { Header = "Copy Path" };
-            copy.Click += (_, _) => RepoShell.Copy(file.Path);
+            copy.Click += (_, _) => RepoClipboard.Copy(file.Path);
             menu.Items.Add(open);
             menu.Items.Add(copy);
             text.ContextMenu = menu;
