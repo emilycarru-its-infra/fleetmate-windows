@@ -299,7 +299,7 @@
             </Grid.ColumnDefinitions>
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <Button
-                    x:Name="FiltersButton"
+                    x:Name="FiltersButton" AutomationProperties.AutomationId="TicketsFiltersButton"
                     Height="32"
                     AutomationProperties.Name="{x:Bind ViewModel.FiltersButtonName, Mode=OneWay}"
                     ToolTipService.ToolTip="{x:Bind ViewModel.FiltersButtonToolTip, Mode=OneWay}">
@@ -333,7 +333,7 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <ListView
-                                        x:Name="FilterSectionsList"
+                                        x:Name="FilterSectionsList" AutomationProperties.AutomationId="TicketsFilterSectionsList"
                                         AutomationProperties.Name="Filter categories"
                                         SelectionChanged="FilterSections_SelectionChanged"
                                         SelectionMode="Single" />
@@ -345,7 +345,7 @@
                                             <RowDefinition Height="*" />
                                         </Grid.RowDefinitions>
                                         <TextBox
-                                            x:Name="FilterValueSearchBox"
+                                            x:Name="FilterValueSearchBox" AutomationProperties.AutomationId="TicketsFilterValueSearchBox"
                                             AutomationProperties.Name="Search values"
                                             PlaceholderText="Search"
                                             TextChanged="FilterValueSearch_TextChanged" />
@@ -361,13 +361,13 @@
                                     </Grid>
                                     <StackPanel x:Name="FilterTimePeriodPanel" Grid.Column="2" Spacing="12" Visibility="Collapsed">
                                         <ComboBox
-                                            x:Name="DateRangeBox"
+                                            x:Name="DateRangeBox" AutomationProperties.AutomationId="TicketsDateRangeBox"
                                             HorizontalAlignment="Stretch"
                                             DisplayMemberPath="Label"
                                             Header="Created"
                                             SelectionChanged="DateRange_SelectionChanged" />
                                         <CheckBox
-                                            x:Name="ShowClosedBox"
+                                            x:Name="ShowClosedBox" AutomationProperties.AutomationId="TicketsShowClosedBox"
                                             Content="Show Closed"
                                             IsChecked="{x:Bind ViewModel.ShowClosed, Mode=TwoWay}" />
                                     </StackPanel>
@@ -377,7 +377,7 @@
                     </Button.Flyout>
                 </Button>
                 <Button
-                    AutomationProperties.Name="Clear Filters"
+                    AutomationProperties.AutomationId="TicketsClearFilters" AutomationProperties.Name="Clear Filters"
                     Command="{x:Bind ViewModel.ClearAllFiltersCommand}"
                     Style="{StaticResource ToolbarIconButtonStyle}"
                     ToolTipService.ToolTip="Clear Filters"
@@ -385,7 +385,7 @@
                     <FontIcon FontSize="14" Glyph="&#xE894;" />
                 </Button>
                 <ToggleButton
-                    x:Name="AssignedToMeToggle"
+                    x:Name="AssignedToMeToggle" AutomationProperties.AutomationId="TicketsAssignedToMeToggle"
                     Height="32"
                     AutomationProperties.Name="Assigned to Me"
                     IsChecked="{x:Bind ViewModel.AssignedToMe, Mode=TwoWay}"
@@ -399,21 +399,21 @@
                 <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind ViewModel.ShowsBoardControls, Mode=OneWay}">
                     <AppBarSeparator />
                     <ComboBox
-                        x:Name="BoardGroupBox"
+                        x:Name="BoardGroupBox" AutomationProperties.AutomationId="TicketsBoardGroupBox"
                         MinWidth="140"
                         AutomationProperties.Name="Group board columns by"
                         ItemsSource="{x:Bind ViewModel.BoardGroupByOptions}"
                         SelectedItem="{x:Bind ViewModel.BoardGroupBy, Mode=TwoWay}"
                         ToolTipService.ToolTip="Group board columns by" />
                     <ComboBox
-                        x:Name="SortBox"
+                        x:Name="SortBox" AutomationProperties.AutomationId="TicketsSortBox"
                         MinWidth="132"
                         AutomationProperties.Name="Sort by"
                         ItemsSource="{x:Bind ViewModel.SortFields}"
                         SelectedItem="{x:Bind ViewModel.SortField, Mode=TwoWay}"
                         ToolTipService.ToolTip="Sort by" />
                     <Button
-                        AutomationProperties.Name="Sort direction"
+                        AutomationProperties.AutomationId="TicketsSortDirection" AutomationProperties.Name="Sort direction"
                         AutomationProperties.ItemStatus="{x:Bind ViewModel.SortDirectionName, Mode=OneWay}"
                         Command="{x:Bind ViewModel.ToggleSortDirectionCommand}"
                         Style="{StaticResource ToolbarIconButtonStyle}"
@@ -431,7 +431,7 @@
                     Style="{StaticResource BodyTextBlockStyle}"
                     Text="{x:Bind ViewModel.CountLabel, Mode=OneWay}" />
                 <ToggleButton
-                    x:Name="DetailsToggle"
+                    x:Name="DetailsToggle" AutomationProperties.AutomationId="TicketsDetailsToggle"
                     Height="32"
                     AutomationProperties.Name="Details"
                     Click="DetailsToggle_Click"
@@ -443,7 +443,7 @@
                 </ToggleButton>
                 <Button
                     Height="32"
-                    AutomationProperties.Name="Refresh"
+                    AutomationProperties.AutomationId="TicketsRefresh" AutomationProperties.Name="Refresh"
                     Command="{x:Bind ViewModel.RefreshCommand}"
                     IsEnabled="{x:Bind ViewModel.RefreshEnabled, Mode=OneWay}"
                     ToolTipService.ToolTip="Refresh (Ctrl+R)">
@@ -587,7 +587,7 @@
                         </Grid.ColumnDefinitions>
                     </Grid>
                     <ListView
-                        x:Name="TicketList"
+                        x:Name="TicketList" AutomationProperties.AutomationId="TicketsTicketList"
                         Grid.Row="1"
                         Padding="0,4"
                         AutomationProperties.Name="Tickets"
@@ -649,11 +649,11 @@
                     <TextBlock x:Name="EmptyTitle" HorizontalAlignment="Center" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Center" TextWrapping="Wrap" />
                     <TextBlock x:Name="EmptyDescription" HorizontalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
                     <StackPanel Margin="0,8,0,0" HorizontalAlignment="Center" Orientation="Horizontal" Spacing="8">
-                        <Button x:Name="EmptySignIn" Click="EmptySignIn_Click" Content="Sign In" Style="{StaticResource AccentButtonStyle}" />
-                        <Button x:Name="EmptyRetry" Click="EmptyRetry_Click" Content="Try Again" />
-                        <Button x:Name="EmptyShowAll" Click="EmptyShowAll_Click" Content="Show All Tickets" />
-                        <Button x:Name="EmptyClearFilters" Command="{x:Bind ViewModel.ClearAllFiltersCommand}" Content="Clear Filters" />
-                        <Button x:Name="EmptyShowClosed" Click="EmptyShowClosed_Click" Content="Show Closed" />
+                        <Button x:Name="EmptySignIn" AutomationProperties.AutomationId="TicketsEmptySignIn" Click="EmptySignIn_Click" Content="Sign In" Style="{StaticResource AccentButtonStyle}" />
+                        <Button x:Name="EmptyRetry" AutomationProperties.AutomationId="TicketsEmptyRetry" Click="EmptyRetry_Click" Content="Try Again" />
+                        <Button x:Name="EmptyShowAll" AutomationProperties.AutomationId="TicketsEmptyShowAll" Click="EmptyShowAll_Click" Content="Show All Tickets" />
+                        <Button x:Name="EmptyClearFilters" AutomationProperties.AutomationId="TicketsEmptyClearFilters" Command="{x:Bind ViewModel.ClearAllFiltersCommand}" Content="Clear Filters" />
+                        <Button x:Name="EmptyShowClosed" AutomationProperties.AutomationId="TicketsEmptyShowClosed" Click="EmptyShowClosed_Click" Content="Show Closed" />
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -672,7 +672,7 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <Button
-                            AutomationProperties.Name="Close the ticket"
+                            AutomationProperties.AutomationId="TicketsCloseTheTicket" AutomationProperties.Name="Close the ticket"
                             Click="CloseDetail_Click"
                             Style="{StaticResource TitleBarIconButtonStyle}"
                             ToolTipService.ToolTip="Close the ticket (Esc)">
@@ -681,20 +681,20 @@
                         <Button
                             Grid.Column="1"
                             Padding="6,2"
-                            AutomationProperties.Name="Copy the ticket number"
+                            AutomationProperties.AutomationId="TicketsCopyTheTicketNumber" AutomationProperties.Name="Copy the ticket number"
                             Click="CopyNumber_Click"
                             Style="{StaticResource SubtleButtonStyle}"
                             ToolTipService.ToolTip="Copy the ticket number">
                             <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="{x:Bind Detail.IdLabel, Mode=OneWay}" />
                         </Button>
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2">
-                            <Button AutomationProperties.Name="Copy link" Click="CopyLink_Click" Style="{StaticResource TitleBarIconButtonStyle}" ToolTipService.ToolTip="Copy link">
+                            <Button AutomationProperties.AutomationId="TicketsCopyLink" AutomationProperties.Name="Copy link" Click="CopyLink_Click" Style="{StaticResource TitleBarIconButtonStyle}" ToolTipService.ToolTip="Copy link">
                                 <FontIcon FontSize="14" Glyph="&#xE71B;" />
                             </Button>
-                            <Button AutomationProperties.Name="Open in browser" Click="OpenInBrowser_Click" Style="{StaticResource TitleBarIconButtonStyle}" ToolTipService.ToolTip="Open in browser">
+                            <Button AutomationProperties.AutomationId="TicketsOpenInBrowser" AutomationProperties.Name="Open in browser" Click="OpenInBrowser_Click" Style="{StaticResource TitleBarIconButtonStyle}" ToolTipService.ToolTip="Open in browser">
                                 <FontIcon FontSize="14" Glyph="&#xE774;" />
                             </Button>
-                            <Button AutomationProperties.Name="Refresh the ticket" Click="RefreshDetail_Click" Style="{StaticResource TitleBarIconButtonStyle}" ToolTipService.ToolTip="Refresh the ticket">
+                            <Button AutomationProperties.AutomationId="TicketsRefreshTheTicket" AutomationProperties.Name="Refresh the ticket" Click="RefreshDetail_Click" Style="{StaticResource TitleBarIconButtonStyle}" ToolTipService.ToolTip="Refresh the ticket">
                                 <FontIcon FontSize="14" Glyph="&#xE72C;" />
                             </Button>
                         </StackPanel>
@@ -803,7 +803,7 @@
                                         <TextBlock VerticalAlignment="Center" AutomationProperties.HeadingLevel="Level3" Style="{StaticResource CardHeaderTextStyle}" Margin="0" Text="Description" />
                                         <Button
                                             HorizontalAlignment="Right"
-                                            AutomationProperties.Name="Copy the description"
+                                            AutomationProperties.AutomationId="TicketsCopyTheDescription" AutomationProperties.Name="Copy the description"
                                             Click="CopyDescription_Click"
                                             Style="{StaticResource TitleBarIconButtonStyle}"
                                             ToolTipService.ToolTip="Copy the description">
@@ -825,7 +825,7 @@
                                         <TextBlock VerticalAlignment="Center" AutomationProperties.HeadingLevel="Level3" Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Detail.FeedHeader, Mode=OneWay}" />
                                         <ProgressRing Width="16" Height="16" IsActive="{x:Bind Detail.IsLoadingFeed, Mode=OneWay}" />
                                     </StackPanel>
-                                    <SelectorBar x:Name="FeedFilterBar" Grid.Column="1" AutomationProperties.Name="Show" SelectionChanged="FeedFilter_SelectionChanged">
+                                    <SelectorBar x:Name="FeedFilterBar" AutomationProperties.AutomationId="TicketsFeedFilterBar" Grid.Column="1" AutomationProperties.Name="Show" SelectionChanged="FeedFilter_SelectionChanged">
                                         <SelectorBarItem IsSelected="True" Tag="Comments" Text="Comments" />
                                         <SelectorBarItem Tag="Activity" Text="Activity" />
                                         <SelectorBarItem Tag="All" Text="All" />
