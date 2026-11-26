@@ -110,13 +110,7 @@ public sealed class PipelineLogSectionViewModel
     /// <summary>Failed sections open; on a run with no failure, only the last one.</summary>
     public static List<PipelineLogSectionViewModel> From(PipelineRunLog log)
     {
-        var rows = log.Sections.Select(s => new PipelineLogSectionViewModel
-        {
-            Section = s,
-            IsExpanded = s.Status is PipelineRunStatus.Failed or PipelineRunStatus.Partial,
-        }).ToList();
-
-        if (rows.Count > 0 && rows.All(r => !r.IsExpanded)) rows[^1].IsExpanded = true;
-        return rows;
+        var open = PipelineRunDetailText.ExpandedSections(log);
+        return log.Sections.Select((s, i) => new PipelineLogSectionViewModel { Section = s, IsExpanded = open[i] }).ToList();
     }
 }

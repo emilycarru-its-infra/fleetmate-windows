@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentDialog
+    x:Class="FleetMate.WinUI.Pages.Development.Pipelines.ApprovalReviewDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    CloseButtonText="Cancel"
+    DefaultButton="Primary"
+    PrimaryButtonText="Approve"
+    SecondaryButtonText="Reject"
+    PreviewKeyDown="Dialog_PreviewKeyDown"
+    Style="{StaticResource DefaultContentDialogStyle}">
+
+    <!--
+        The review: the pipeline's instructions, who may approve and since when,
+        an optional comment, then Approve (Ctrl+Enter) or Reject. Reject asks
+        once more, in place, because it stops the run.
+    -->
+    <Grid MinWidth="420" MaxWidth="560">
+        <StackPanel x:Name="ApprovalPanel" Spacing="10">
+            <TextBlock
+                x:Name="MetaText"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                TextWrapping="Wrap" />
+            <TextBox
+                x:Name="InstructionsBox"
+                MinHeight="120"
+                MaxHeight="320"
+                AcceptsReturn="True"
+                AutomationProperties.AutomationId="ApprovalInstructions"
+                Header="Instructions"
+                IsReadOnly="True"
+                ScrollViewer.VerticalScrollBarVisibility="Auto"
+                TextWrapping="Wrap" />
+            <TextBox
+                x:Name="CommentBox"
+                MinHeight="56"
+                MaxHeight="110"
+                AcceptsReturn="True"
+                AutomationProperties.AutomationId="ApprovalComment"
+                Header="Comment (optional)"
+                ScrollViewer.VerticalScrollBarVisibility="Auto"
+                TextWrapping="Wrap" />
+            <InfoBar
+                x:Name="ErrorBar"
+                IsClosable="False"
+                Severity="Error" />
+            <InfoBar
+                x:Name="RejectBar"
+                Title="Reject this run?"
+                IsClosable="False"
+                Severity="Warning" />
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    x:Name="MoreText"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    TextWrapping="Wrap" />
+                <ProgressRing
+                    x:Name="Working"
+                    Grid.Column="1"
+                    Width="16"
+                    Height="16"
+                    AutomationProperties.Name="Sending"
+                    IsActive="False" />
+            </Grid>
+        </StackPanel>
+
+        <TextBlock
+            x:Name="NothingText"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            TextWrapping="Wrap"
+            Visibility="Collapsed" />
+    </Grid>
+</ContentDialog>

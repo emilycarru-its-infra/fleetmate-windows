@@ -50,7 +50,7 @@ public partial class PipelineRunView : UserControl
         {
             LoadingPanel.Visibility = Visibility.Collapsed;
             ContentScroller.Visibility = SectionsList.ItemsSource != null ? Visibility.Visible : Visibility.Collapsed;
-            ErrorText.Text = "Log loading paused. Reload to fetch the latest log.";
+            ErrorText.Text = PipelineRunDetailText.LogPaused;
             ErrorText.Visibility = Visibility.Visible;
         }
     }
@@ -91,22 +91,9 @@ public partial class PipelineRunView : UserControl
         StatusText.Text = row.StatusLabel;
         RenderApprovals(run);
 
-        var sha = run.CommitSha is { Length: > 8 } s ? s[..8] : run.CommitSha;
-        DetailsText.Text = string.Join(" · ", new[]
-        {
-            sha,
-            run.TriggeredBy,
-            run.StartedAt?.ToLocalTime().ToString("d MMM, HH:mm"),
-            PipelineRunRowViewModel.FormatDuration(run.Duration),
-        }.Where(x => !string.IsNullOrEmpty(x)));
-
-        // Cancel only while it can still be cancelled; rerun once it has
-        // finished and there is something to rerun it from.
-        CancelButton.Visibility = run.Status.IsActive() ? Visibility.Visible : Visibility.Collapsed;
-        RerunButton.Visibility = !run.Status.IsActive()
-                                 && (run.Source == PullRequestSource.GitHub || run.PipelineId != null)
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        DetailsText.Text = PipelineRunDetailText.Details(run);
+        CancelButton.Visibility = PipelineRunDetailText.CanCancel(run) ? Visibility.Visible : Visibility.Collapsed;
+        RerunButton.Visibility = PipelineRunDetailText.CanRerun(run) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private async Task LoadLogAsync()
@@ -135,7 +122,7 @@ public partial class PipelineRunView : UserControl
             {
                 ContentScroller.Visibility = Visibility.Collapsed;
                 ErrorText.Visibility = Visibility.Visible;
-                ErrorText.Text = run.Status.IsActive() ? "No log yet — the run has not started a job." : "This run has no log.";
+                ErrorText.Text = PipelineRunDetailText.EmptyLog(run);
             }
         }
         catch (OperationCanceledException) when (request.IsCancellationRequested) { }
@@ -154,19 +141,10 @@ public partial class PipelineRunView : UserControl
         }
     }
 
-    private static async Task<PipelineRunLog> FetchLogAsync(PipelineRun run, CancellationToken ct)
+    private static Task<PipelineRunLog> FetchLogAsync(PipelineRun run, CancellationToken ct)
     {
         var app = Application.Current as App ?? throw new InvalidOperationException("Application is not available");
-
-        if (run.Source == PullRequestSource.AzureDevOps)
-        {
-            if (app.Config.AzureDevOps is not { } ado) throw new InvalidOperationException("Azure DevOps is not configured");
-            using var devops = new AzureDevOpsService(ado, ct);
-            return await devops.GetPipelineRunLogAsync(run.Container, run.RunId);
-        }
-
-        using var actions = new GitHubActionsService(app.Config.GitHubProviderOrDefault());
-        return await actions.GetPipelineRunLogAsync(run.Container, run.Repository ?? "", run.RunId, ct);
+        return CommitsAndPipelinesService.RunLogAsync(app.Config, run, ct);
     }
 
     private async void OnReloadClicked(object sender, RoutedEventArgs e) => await LoadLogAsync();
@@ -180,50 +158,29 @@ public partial class PipelineRunView : UserControl
     private async void OnRerunClicked(object sender, RoutedEventArgs e)
     {
         if (_run is not { } run) return;
-        if (!Confirm("Rerun pipeline?", $"{run.PipelineName} #{run.RunNumber}\n\nThis queues the run again on {run.Branch ?? "its branch"}."))
-            return;
-
-        await RunActionAsync("Rerun",
-            gh => gh.RerunAsync(run.Container, run.Repository ?? "", run.RunId),
-            ado => ado.RerunPipelineAsync(run.Container, run.PipelineId ?? 0, run.Branch));
+        if (!Confirm("Rerun pipeline?", PipelineRunDetailText.RerunPrompt(run))) return;
+        await RunActionAsync("Rerun", CommitsAndPipelinesService.RerunAsync);
     }
 
     private async void OnCancelClicked(object sender, RoutedEventArgs e)
     {
         if (_run is not { } run) return;
-        if (!Confirm("Cancel run?", $"{run.PipelineName} #{run.RunNumber}\n\nThis stops the run where it is."))
-            return;
-
-        await RunActionAsync("Cancel",
-            gh => gh.CancelAsync(run.Container, run.Repository ?? "", run.RunId),
-            ado => ado.CancelPipelineAsync(run.Container, run.RunId));
+        if (!Confirm("Cancel run?", PipelineRunDetailText.CancelPrompt(run))) return;
+        await RunActionAsync("Cancel", CommitsAndPipelinesService.CancelAsync);
     }
 
-    private async Task RunActionAsync(
-        string action,
-        Func<GitHubActionsService, Task<PullRequestActionResult>> github,
-        Func<AzureDevOpsService, Task<PullRequestActionResult>> devops)
+    private async Task RunActionAsync(string action,
+        Func<FleetMate.Core.Config.FleetMateConfig, PipelineRun, Task<PullRequestActionResult?>> act)
     {
         if (_run is not { } run || Application.Current is not App app) return;
 
         RerunButton.IsEnabled = CancelButton.IsEnabled = false;
         try
         {
-            PullRequestActionResult result;
-            if (run.Source == PullRequestSource.GitHub)
-            {
-                using var service = new GitHubActionsService(app.Config.GitHubProviderOrDefault());
-                result = await github(service);
-            }
-            else
-            {
-                if (app.Config.AzureDevOps is not { } ado) return;
-                using var service = new AzureDevOpsService(ado);
-                result = await devops(service);
-            }
+            if (await act(app.Config, run) is not { } result) return;
 
             ActionStatus.Visibility = Visibility.Visible;
-            ActionStatus.Text = result.Success ? $"{action} requested." : $"{action} failed: {result.Error}";
+            ActionStatus.Text = PipelineRunDetailText.ActionResult(action, result);
             ActionStatus.Foreground = result.Success
                 ? (Brush)FindResource("SystemControlForegroundBaseMediumBrush")
                 : new SolidColorBrush(Color.FromRgb(0xE0, 0x7A, 0x1F));
@@ -266,14 +223,10 @@ public partial class PipelineRunView : UserControl
     /// <summary>Opening a run re-reads its project's approvals, so the banner is current.</summary>
     private static async Task RefreshApprovalsForAsync(PipelineRun run)
     {
-        if (run.Source != PullRequestSource.AzureDevOps || !run.Status.IsActive()) return;
-        if (Application.Current is not App app || app.Config.AzureDevOps is not { } ado) return;
+        if (Application.Current is not App app) return;
         try
         {
-            using var service = new AzureDevOpsService(ado);
-            var runs = app.DevelopmentRuns ?? new List<PipelineRun> { run };
-            if (!runs.Any(r => PipelineRunCache.Key(r) == PipelineRunCache.Key(run))) runs = runs.Append(run).ToList();
-            await app.PipelineApprovals.RefreshAsync(runs, service, new[] { run.Container });
+            await CommitsAndPipelinesService.RefreshApprovalsAsync(app.Config, app.PipelineApprovals, app.DevelopmentRuns, run);
         }
         catch (Exception ex)
         {

@@ -24,7 +24,7 @@ public partial class ApprovalReviewWindow : Window
         _run = run;
         _approvals = approvals;
         InitializeComponent();
-        Title = $"Review {run.PipelineName} #{run.RunNumber}";
+        Title = ApprovalReviewText.Title(run);
         HeadingText.Text = Title;
         Render();
         Loaded += (_, _) => CommentBox.Focus();
@@ -43,8 +43,8 @@ public partial class ApprovalReviewWindow : Window
         }
 
         MetaText.Text = ApprovalReviewText.Meta(approval);
-        InstructionsBox.Text = string.IsNullOrWhiteSpace(approval.Instructions) ? "No instructions given." : approval.Instructions;
-        MoreText.Text = approvals.Count > 1 ? $"{approvals.Count - 1} more after this one" : "";
+        InstructionsBox.Text = ApprovalReviewText.Instructions(approval);
+        MoreText.Text = ApprovalReviewText.More(approvals.Count);
     }
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
@@ -62,7 +62,7 @@ public partial class ApprovalReviewWindow : Window
 
     private async void OnRejectClicked(object sender, RoutedEventArgs e)
     {
-        var answer = MessageBox.Show(this, "The run stops at this step.", $"Reject {_run.PipelineName} #{_run.RunNumber}?",
+        var answer = MessageBox.Show(this, ApprovalReviewText.RejectMessage, ApprovalReviewText.RejectTitle(_run),
             MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel);
         if (answer == MessageBoxResult.OK) await RespondAsync(approve: false);
     }
@@ -112,16 +112,4 @@ public partial class ApprovalReviewWindow : Window
         ErrorText.Text = message;
         ErrorText.Visibility = Visibility.Visible;
     }
-}
-
-/// <summary>Text for the review dialog, kept out of the window so it can be tested.</summary>
-public static class ApprovalReviewText
-{
-    /// <summary>"Waiting since 3 Nov, 14:05 · Approvers: Release managers".</summary>
-    public static string Meta(PipelineApproval approval) =>
-        string.Join(" · ", new[]
-        {
-            approval.CreatedOn is { } created ? $"Waiting since {created.ToLocalTime():d MMM, HH:mm}" : null,
-            approval.Approvers.Count > 0 ? $"Approvers: {string.Join(", ", approval.Approvers)}" : null,
-        }.Where(s => s != null));
 }
