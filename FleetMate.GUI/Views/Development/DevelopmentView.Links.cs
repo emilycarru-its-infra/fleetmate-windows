@@ -219,21 +219,7 @@ public partial class DevelopmentView
         if (app.DevelopmentCommits is null) await LoadCommitsAsync();
         else RenderCommits();
 
-        var (source, container, repo) = link.Source switch
-        {
-            FleetMateLink.AzureDevOps a => (PullRequestSource.AzureDevOps, a.Project, a.Repo),
-            FleetMateLink.GitHub g => (PullRequestSource.GitHub, g.Owner, g.Repo),
-            _ => (PullRequestSource.GitHub, "", ""),
-        };
-
-        var repository = app.DevelopmentCommits?.FirstOrDefault(r =>
-            r.Source == source && Same(r.Container, container) && Same(r.Repository, repo));
-        var commit = repository?.Commits.FirstOrDefault(c => c.Id.StartsWith(link.Sha, StringComparison.OrdinalIgnoreCase));
-
-        // Not in the recent list: open it by sha. Azure DevOps accepts the
-        // repository name where an id is expected.
-        repository ??= new RepositoryCommits { Source = source, Container = container, Repository = repo, RepositoryId = repo };
-        commit ??= new PullRequestCommit { Id = link.Sha };
+        var (repository, commit) = DevelopmentLinkTargets.Commit(app.DevelopmentCommits, link);
 
         ShowDetail(CommitView);
         await CommitView.ShowAsync(repository, commit);
@@ -248,17 +234,7 @@ public partial class DevelopmentView
         else RenderRuns();
 
         var loaded = app.DevelopmentRuns ?? new List<PipelineRun>();
-        var run = link switch
-        {
-            FleetMateLink.AzureDevOpsRun r => loaded.FirstOrDefault(x =>
-                x.Source == PullRequestSource.AzureDevOps && x.RunId == r.RunId && Same(x.Container, r.Project)),
-            FleetMateLink.AzureDevOpsPipeline d => loaded
-                .Where(x => x.Source == PullRequestSource.AzureDevOps && x.PipelineId == d.DefinitionId && Same(x.Container, d.Project))
-                .OrderByDescending(x => x.SortDate).FirstOrDefault(),
-            FleetMateLink.GitHubRun g => loaded.FirstOrDefault(x =>
-                x.Source == PullRequestSource.GitHub && x.RunId == g.RunId && Same(x.Container, g.Owner) && Same(x.Repository, g.Repo)),
-            _ => null,
-        };
+        var run = DevelopmentLinkTargets.Run(loaded, link);
 
         var row = (PipelinesList.ItemsSource as System.Collections.IEnumerable)?
             .OfType<PipelineRunRowViewModel>().FirstOrDefault(r => run != null && r.Run.Id == run.Id);
@@ -282,21 +258,8 @@ public partial class DevelopmentView
         await RunView.ShowAsync(run);
     }
 
-    private static async Task<PipelineRun?> FetchRunAsync(App app, FleetMateLink link)
-    {
-        switch (link)
-        {
-            case FleetMateLink.AzureDevOpsRun r when app.DevOpsService != null:
-                return await app.DevOpsService.GetPipelineRunAsync(r.Project, r.RunId);
-            case FleetMateLink.AzureDevOpsPipeline d when app.DevOpsService != null:
-                return await app.DevOpsService.GetLatestPipelineRunAsync(d.Project, d.DefinitionId);
-            case FleetMateLink.GitHubRun g:
-                using (var actions = new GitHubActionsService(app.Config.GitHubProviderOrDefault()))
-                    return await actions.GetPipelineRunAsync(g.Owner, g.Repo, g.RunId);
-            default:
-                return null;
-        }
-    }
+    private static Task<PipelineRun?> FetchRunAsync(App app, FleetMateLink link) =>
+        CommitsAndPipelinesService.RunForLinkAsync(app.Config, app.DevOpsService, link);
 
     /// <summary>A fetch that threw counts as not found; the caller decides whether sign-in explains it.</summary>
     private static async Task<T?> FetchOrNullAsync<T>(Func<Task<T?>> fetch, FleetMateLink link) where T : class

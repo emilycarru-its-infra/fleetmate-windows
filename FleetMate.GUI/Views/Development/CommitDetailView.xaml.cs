@@ -44,8 +44,7 @@ public partial class CommitDetailView : UserControl
         AgentButton.Context = AgentContexts.Commit(commit, repository);
 
         SubjectText.Text = commit.Subject;
-        BylineText.Text = $"{commit.AuthorName ?? "unknown"} · {commit.ShortSha} · " +
-                          $"{commit.Date?.ToLocalTime():d MMM yyyy, HH:mm} · {repository.DisplayName}";
+        BylineText.Text = CommitDetailText.Byline(commit, repository);
 
         LoadingPanel.Visibility = Visibility.Visible;
         ErrorPanel.Visibility = Visibility.Collapsed;
@@ -110,24 +109,10 @@ public partial class CommitDetailView : UserControl
             ShowWaiting(null);
     }
 
-    private static async Task<CommitDetail> FetchAsync(RepositoryCommits repository, PullRequestCommit commit)
+    private static Task<CommitDetail> FetchAsync(RepositoryCommits repository, PullRequestCommit commit)
     {
         var app = Application.Current as App ?? throw new InvalidOperationException("Application is not available");
-
-        if (repository.Source == PullRequestSource.AzureDevOps)
-        {
-            // The app's service carries the sign-in token; a fresh one could only
-            // use the broker, which misses a sign-in made through az CLI or the
-            // hidden browser.
-            if (app.DevOpsService is { } shared)
-                return await shared.GetCommitDetailAsync(repository.RepositoryId ?? repository.Repository, commit.Id, repository.Container);
-            if (app.Config.AzureDevOps is not { } ado) throw new InvalidOperationException("Azure DevOps is not configured");
-            using var devops = new AzureDevOpsService(ado);
-            return await devops.GetCommitDetailAsync(repository.RepositoryId ?? repository.Repository, commit.Id, repository.Container);
-        }
-
-        using var github = new GitHubPullRequestService(app.Config.GitHubProviderOrDefault());
-        return await github.GetCommitDetailAsync(repository.Container, repository.Repository, commit.Id);
+        return CommitsAndPipelinesService.CommitDetailAsync(app.Config, app.DevOpsService, repository, commit);
     }
 
     /// <summary>The diff on screen, kept so a layout change can redraw it.</summary>
@@ -151,8 +136,7 @@ public partial class CommitDetailView : UserControl
         ContentScroller.ScrollToTop();
 
         // The subject is already the title; show the message body only when there is one.
-        var newline = detail.Message.IndexOfAny(new[] { '\n', '\r' });
-        var body = newline < 0 ? "" : detail.Message[newline..].Trim();
+        var body = CommitDetailText.Body(detail.Message);
         BodySection.Visibility = body.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         BodyText.Text = body;
 
@@ -163,10 +147,7 @@ public partial class CommitDetailView : UserControl
         ChangesCard.Visibility = hasDiffs || detail.Changes.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         ChangesList.ItemsSource = hasDiffs ? null : detail.Changes;
 
-        var count = hasDiffs ? detail.Files.Count : detail.Changes.Count;
-        ChangesHeader.Text = hasDiffs
-            ? $"Changes ({count} files, +{detail.Additions} −{detail.Deletions})"
-            : $"Changes ({count} files)";
+        ChangesHeader.Text = CommitDetailText.ChangesHeader(detail);
 
         TruncationNotice.Visibility = detail.Truncated ? Visibility.Visible : Visibility.Collapsed;
     }
