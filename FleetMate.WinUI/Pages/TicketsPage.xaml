@@ -246,6 +246,10 @@
                             <TextBlock IsTextSelectionEnabled="True" Style="{StaticResource BodyTextBlockStyle}" Text="{x:Bind Body}" TextWrapping="Wrap" />
                         </Border>
                         <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Notified}" TextWrapping="Wrap" Visibility="{x:Bind NotifiedVisibility}" />
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Padding="8,2" Click="ReplyInThread_Click" Content="Reply" Style="{StaticResource SubtleButtonStyle}" Tag="{x:Bind}" ToolTipService.ToolTip="Reply in this comment's thread" />
+                            <Button Padding="8,2" Click="QuoteEntry_Click" Content="Quote" Style="{StaticResource SubtleButtonStyle}" Tag="{x:Bind}" ToolTipService.ToolTip="Quote in a new comment" />
+                        </StackPanel>
                     </StackPanel>
                 </Grid>
                 <ItemsRepeater ItemsSource="{x:Bind Replies}" Visibility="{x:Bind RepliesVisibility}">
@@ -266,6 +270,7 @@
                                         <TextBlock VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind When}" />
                                     </StackPanel>
                                     <TextBlock IsTextSelectionEnabled="True" Style="{StaticResource BodyTextBlockStyle}" Text="{x:Bind Body}" TextWrapping="Wrap" />
+                                    <Button Padding="8,2" Click="DeleteReply_Click" Content="Delete" Style="{StaticResource SubtleButtonStyle}" Tag="{x:Bind}" ToolTipService.ToolTip="Delete your reply" Visibility="{x:Bind DeleteVisibility}" />
                                 </StackPanel>
                             </Grid>
                         </DataTemplate>
@@ -278,6 +283,7 @@
     <Page.KeyboardAccelerators>
         <KeyboardAccelerator Key="R" Invoked="RefreshAccelerator_Invoked" Modifiers="Control" />
         <KeyboardAccelerator Key="Escape" Invoked="EscapeAccelerator_Invoked" />
+        <KeyboardAccelerator Key="Enter" Invoked="SaveAccelerator_Invoked" Modifiers="Control" />
     </Page.KeyboardAccelerators>
 
     <Grid x:Name="PageRoot" Padding="16,12,16,16" RowSpacing="12">
@@ -616,7 +622,85 @@
 
                             <InfoBar x:Name="ActionInfo" IsClosable="True" />
 
-                            <!-- Fields, as on the Mac: two equal columns. -->
+                            <!-- Unsaved picks: Discard and Save, as on the Mac. Ctrl+Enter saves. -->
+                            <Grid ColumnSpacing="8" Visibility="{x:Bind Detail.HasEdits, Mode=OneWay}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Unsaved changes" />
+                                <Button Grid.Column="1" AutomationProperties.AutomationId="TicketsDiscardEdits" Command="{x:Bind Detail.DiscardCommand}" Content="Discard" />
+                                <Button Grid.Column="2" AutomationProperties.AutomationId="TicketsSaveEdits" Command="{x:Bind Detail.SaveCommand}" Content="Save" IsEnabled="{x:Bind Detail.CanSave, Mode=OneWay}" Style="{StaticResource AccentButtonStyle}" ToolTipService.ToolTip="Save (Ctrl+Enter)" />
+                            </Grid>
+
+                            <!-- Responsible actions, held with the other picks until Save. -->
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button AutomationProperties.AutomationId="TicketsAssignToMe" Command="{x:Bind Detail.AssignToMeCommand}" IsEnabled="{x:Bind Detail.CanAssignToMe, Mode=OneWay}" ToolTipService.ToolTip="Make me the responsible">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon FontSize="14" Glyph="&#xE77B;" />
+                                        <TextBlock Text="Assign to Me" />
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="ReassignButton" AutomationProperties.AutomationId="TicketsReassign" IsEnabled="{x:Bind Detail.CanEdit, Mode=OneWay}" ToolTipService.ToolTip="Reassign to someone else">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon FontSize="14" Glyph="&#xE748;" />
+                                        <TextBlock Text="Reassign" />
+                                    </StackPanel>
+                                    <Button.Flyout>
+                                        <Flyout x:Name="ReassignFlyout" Opening="ReassignFlyout_Opening" Placement="BottomEdgeAlignedLeft">
+                                            <StackPanel Width="340" Spacing="8">
+                                                <TextBox x:Name="ReassignSearchBox" AutomationProperties.AutomationId="TicketsReassignSearch" AutomationProperties.Name="Search people and groups" KeyDown="ReassignSearch_KeyDown" PlaceholderText="Search people and groups" TextChanged="ReassignSearch_TextChanged" />
+                                                <TextBlock x:Name="ReassignStatusText" AutomationProperties.LiveSetting="Polite" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                                <ListView x:Name="ReassignResults" MaxHeight="260" AutomationProperties.AutomationId="TicketsReassignResults" AutomationProperties.Name="People and groups" IsItemClickEnabled="True" ItemClick="ReassignResults_ItemClick" SelectionMode="Single">
+                                                    <ListView.ItemTemplate>
+                                                        <DataTemplate x:DataType="tickets:ReassignCandidate">
+                                                            <Grid Padding="0,6" AutomationProperties.Name="{x:Bind SpokenName}" ColumnSpacing="10">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <FontIcon FontSize="14" Glyph="{x:Bind Glyph}" />
+                                                                <StackPanel Grid.Column="1">
+                                                                    <TextBlock MaxLines="1" Text="{x:Bind DisplayName}" TextTrimming="CharacterEllipsis" />
+                                                                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" MaxLines="1" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Subtitle}" TextTrimming="CharacterEllipsis" />
+                                                                </StackPanel>
+                                                                <FontIcon Grid.Column="2" FontSize="12" Glyph="&#xE73E;" Visibility="{x:Bind CurrentVisibility}" />
+                                                            </Grid>
+                                                        </DataTemplate>
+                                                    </ListView.ItemTemplate>
+                                                </ListView>
+                                                <CheckBox AutomationProperties.AutomationId="TicketsReassignNotify" Content="Notify new responsible" IsChecked="{x:Bind Detail.NotifyNewResponsible, Mode=TwoWay}" />
+                                            </StackPanel>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
+                                <Button AutomationProperties.AutomationId="TicketsUnassign" Command="{x:Bind Detail.UnassignCommand}" IsEnabled="{x:Bind Detail.CanUnassign, Mode=OneWay}" ToolTipService.ToolTip="Clear the responsible person">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon FontSize="14" Glyph="&#xE711;" />
+                                        <TextBlock Text="Unassign" />
+                                    </StackPanel>
+                                </Button>
+                                <Button AutomationProperties.AutomationId="TicketsParentMenu" AutomationProperties.Name="Parent" IsEnabled="{x:Bind Detail.CanEdit, Mode=OneWay}" ToolTipService.ToolTip="Set, clear or create this ticket's parent">
+                                    <FontIcon FontSize="14" Glyph="&#xE8B7;" />
+                                    <Button.Flyout>
+                                        <Flyout x:Name="ParentFlyout" Opening="ParentFlyout_Opening" Placement="BottomEdgeAlignedRight">
+                                            <StackPanel Width="320" Spacing="8">
+                                                <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Set Parent" />
+                                                <TextBox x:Name="ParentIdBox" AutomationProperties.AutomationId="TicketsParentId" AutomationProperties.Name="Parent ticket number" KeyDown="ParentIdBox_KeyDown" PlaceholderText="Ticket number, or empty to clear" />
+                                                <Button AutomationProperties.AutomationId="TicketsSetParent" Click="SetParent_Click" Content="Set Parent" />
+                                                <TextBlock Margin="0,8,0,0" Style="{StaticResource BodyStrongTextBlockStyle}" Text="Create Parent" />
+                                                <TextBox x:Name="ParentTitleBox" AutomationProperties.AutomationId="TicketsParentTitle" AutomationProperties.Name="Parent title" KeyDown="ParentTitleBox_KeyDown" PlaceholderText="Parent title" />
+                                                <Button AutomationProperties.AutomationId="TicketsCreateParent" Click="CreateParent_Click" Content="Create Parent" />
+                                                <TextBlock x:Name="ParentHintText" AutomationProperties.LiveSetting="Polite" Foreground="{ThemeResource SystemFillColorCautionBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </StackPanel>
+
+                            <!-- Fields, as on the Mac: two equal columns. Picks wait for Save. -->
                             <Grid ColumnSpacing="24" RowSpacing="12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
@@ -631,53 +715,29 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
-                                <StackPanel>
-                                    <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Status" />
-                                    <StackPanel Margin="0,2,0,0" Orientation="Horizontal" Spacing="8">
-                                        <Ellipse Width="8" Height="8" Fill="{x:Bind Detail.StatusBrush, Mode=OneWay}" />
-                                        <TextBlock Style="{StaticResource FieldValueStyle}" Margin="0" Text="{x:Bind Detail.Status, Mode=OneWay}" />
-                                    </StackPanel>
-                                </StackPanel>
+                                <ComboBox AutomationProperties.AutomationId="TicketsFieldStatus" HorizontalAlignment="Stretch" DisplayMemberPath="Value" Header="Status" IsEnabled="{x:Bind Detail.StatusPicker.IsEnabled, Mode=OneWay}" ItemsSource="{x:Bind Detail.StatusPicker.Choices, Mode=OneWay}" PlaceholderText="{x:Bind Detail.Status, Mode=OneWay}" SelectedValue="{x:Bind Detail.StatusPicker.SelectedValue, Mode=TwoWay}" SelectedValuePath="Key" ToolTipService.ToolTip="{x:Bind Detail.StatusPicker.PendingText, Mode=OneWay}" />
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Requestor" />
                                     <TextBlock IsTextSelectionEnabled="True" Style="{StaticResource FieldValueStyle}" Text="{x:Bind Detail.Requestor, Mode=OneWay}" />
                                 </StackPanel>
-                                <StackPanel Grid.Row="1">
-                                    <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Priority" />
-                                    <TextBlock Style="{StaticResource FieldValueStyle}" Text="{x:Bind Detail.Priority, Mode=OneWay}" />
-                                </StackPanel>
+                                <ComboBox Grid.Row="1" AutomationProperties.AutomationId="TicketsFieldPriority" HorizontalAlignment="Stretch" DisplayMemberPath="Value" Header="Priority" IsEnabled="{x:Bind Detail.PriorityPicker.IsEnabled, Mode=OneWay}" ItemsSource="{x:Bind Detail.PriorityPicker.Choices, Mode=OneWay}" PlaceholderText="{x:Bind Detail.Priority, Mode=OneWay}" SelectedValue="{x:Bind Detail.PriorityPicker.SelectedValue, Mode=TwoWay}" SelectedValuePath="Key" ToolTipService.ToolTip="{x:Bind Detail.PriorityPicker.PendingText, Mode=OneWay}" />
                                 <StackPanel Grid.Row="1" Grid.Column="1">
                                     <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Email" />
                                     <TextBlock IsTextSelectionEnabled="True" Style="{StaticResource FieldValueStyle}" Text="{x:Bind Detail.RequestorEmail, Mode=OneWay}" />
                                 </StackPanel>
-                                <StackPanel Grid.Row="2">
-                                    <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Classification" />
-                                    <TextBlock Style="{StaticResource FieldValueStyle}" Text="{x:Bind Detail.Classification, Mode=OneWay}" />
-                                </StackPanel>
-                                <StackPanel Grid.Row="2" Grid.Column="1">
-                                    <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Group" />
-                                    <TextBlock Style="{StaticResource FieldValueStyle}" Text="{x:Bind Detail.Group, Mode=OneWay}" />
-                                </StackPanel>
-                                <StackPanel Grid.Row="3">
-                                    <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Form" />
-                                    <TextBlock Style="{StaticResource FieldValueStyle}" Text="{x:Bind Detail.Form, Mode=OneWay}" />
-                                </StackPanel>
+                                <ComboBox Grid.Row="2" AutomationProperties.AutomationId="TicketsFieldClassification" HorizontalAlignment="Stretch" DisplayMemberPath="Value" Header="Classification" IsEnabled="{x:Bind Detail.ClassificationPicker.IsEnabled, Mode=OneWay}" ItemsSource="{x:Bind Detail.ClassificationPicker.Choices, Mode=OneWay}" PlaceholderText="{x:Bind Detail.Classification, Mode=OneWay}" SelectedValue="{x:Bind Detail.ClassificationPicker.SelectedValue, Mode=TwoWay}" SelectedValuePath="Key" ToolTipService.ToolTip="{x:Bind Detail.ClassificationPicker.PendingText, Mode=OneWay}" />
+                                <ComboBox Grid.Row="2" Grid.Column="1" AutomationProperties.AutomationId="TicketsFieldGroup" HorizontalAlignment="Stretch" DisplayMemberPath="Value" Header="Group" IsEnabled="{x:Bind Detail.GroupPicker.IsEnabled, Mode=OneWay}" ItemsSource="{x:Bind Detail.GroupPicker.Choices, Mode=OneWay}" PlaceholderText="{x:Bind Detail.Group, Mode=OneWay}" SelectedValue="{x:Bind Detail.GroupPicker.SelectedValue, Mode=TwoWay}" SelectedValuePath="Key" ToolTipService.ToolTip="{x:Bind Detail.GroupPicker.PendingText, Mode=OneWay}" />
+                                <ComboBox Grid.Row="3" AutomationProperties.AutomationId="TicketsFieldForm" HorizontalAlignment="Stretch" DisplayMemberPath="Value" Header="Form" IsEnabled="{x:Bind Detail.FormPicker.IsEnabled, Mode=OneWay}" ItemsSource="{x:Bind Detail.FormPicker.Choices, Mode=OneWay}" PlaceholderText="{x:Bind Detail.Form, Mode=OneWay}" SelectedValue="{x:Bind Detail.FormPicker.SelectedValue, Mode=TwoWay}" SelectedValuePath="Key" ToolTipService.ToolTip="{x:Bind Detail.FormPicker.PendingText, Mode=OneWay}" />
                                 <StackPanel Grid.Row="3" Grid.Column="1">
                                     <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Responsible" />
-                                    <TextBlock Foreground="{x:Bind Detail.ResponsibleForeground, Mode=OneWay}" Style="{StaticResource FieldValueStyle}" Text="{x:Bind Detail.Responsible, Mode=OneWay}" />
+                                    <TextBlock AutomationProperties.HelpText="{x:Bind Detail.ResponsibleToolTip, Mode=OneWay}" Style="{StaticResource FieldValueStyle}" Text="{x:Bind Detail.ShownResponsible, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind Detail.ResponsibleToolTip, Mode=OneWay}" />
                                 </StackPanel>
-                                <StackPanel Grid.Row="4">
-                                    <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Service" />
-                                    <TextBlock Style="{StaticResource FieldValueStyle}" Text="{x:Bind Detail.Service, Mode=OneWay}" />
-                                </StackPanel>
+                                <ComboBox Grid.Row="4" AutomationProperties.AutomationId="TicketsFieldService" HorizontalAlignment="Stretch" DisplayMemberPath="Value" Header="Service" IsEnabled="{x:Bind Detail.ServicePicker.IsEnabled, Mode=OneWay}" ItemsSource="{x:Bind Detail.ServicePicker.Choices, Mode=OneWay}" PlaceholderText="{x:Bind Detail.Service, Mode=OneWay}" SelectedValue="{x:Bind Detail.ServicePicker.SelectedValue, Mode=TwoWay}" SelectedValuePath="Key" ToolTipService.ToolTip="{x:Bind Detail.ServicePicker.PendingText, Mode=OneWay}" />
                                 <StackPanel Grid.Row="4" Grid.Column="1">
                                     <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Created" />
                                     <TextBlock Style="{StaticResource FieldValueStyle}" Text="{x:Bind Detail.Created, Mode=OneWay}" />
                                 </StackPanel>
-                                <StackPanel Grid.Row="5">
-                                    <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Type" />
-                                    <TextBlock Style="{StaticResource FieldValueStyle}" Text="{x:Bind Detail.Type, Mode=OneWay}" />
-                                </StackPanel>
+                                <ComboBox Grid.Row="5" AutomationProperties.AutomationId="TicketsFieldType" HorizontalAlignment="Stretch" DisplayMemberPath="Value" Header="Type" IsEnabled="{x:Bind Detail.TypePicker.IsEnabled, Mode=OneWay}" ItemsSource="{x:Bind Detail.TypePicker.Choices, Mode=OneWay}" PlaceholderText="{x:Bind Detail.Type, Mode=OneWay}" SelectedValue="{x:Bind Detail.TypePicker.SelectedValue, Mode=TwoWay}" SelectedValuePath="Key" ToolTipService.ToolTip="{x:Bind Detail.TypePicker.PendingText, Mode=OneWay}" />
                                 <StackPanel Grid.Row="5" Grid.Column="1">
                                     <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Modified" />
                                     <TextBlock Style="{StaticResource FieldValueStyle}" Text="{x:Bind Detail.Modified, Mode=OneWay}" />
@@ -704,17 +764,26 @@
                                 <StackPanel Spacing="6">
                                     <Grid>
                                         <TextBlock VerticalAlignment="Center" AutomationProperties.HeadingLevel="Level3" Style="{StaticResource CardHeaderTextStyle}" Margin="0" Text="Description" />
-                                        <Button
-                                            HorizontalAlignment="Right"
-                                            AutomationProperties.AutomationId="TicketsCopyTheDescription" AutomationProperties.Name="Copy the description"
-                                            Click="CopyDescription_Click"
-                                            Style="{StaticResource TitleBarIconButtonStyle}"
-                                            ToolTipService.ToolTip="Copy the description">
-                                            <FontIcon FontSize="12" Glyph="&#xE8C8;" />
-                                        </Button>
+                                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="2">
+                                            <Button AutomationProperties.AutomationId="TicketsEditDescription" AutomationProperties.Name="Edit the description" Command="{x:Bind Detail.EditDescriptionCommand}" IsEnabled="{x:Bind Detail.CanEdit, Mode=OneWay}" Style="{StaticResource TitleBarIconButtonStyle}" ToolTipService.ToolTip="Edit the description">
+                                                <FontIcon FontSize="12" Glyph="&#xE70F;" />
+                                            </Button>
+                                            <Button AutomationProperties.AutomationId="TicketsCopyTheDescription" AutomationProperties.Name="Copy the description" Click="CopyDescription_Click" Style="{StaticResource TitleBarIconButtonStyle}" ToolTipService.ToolTip="Copy the description">
+                                                <FontIcon FontSize="12" Glyph="&#xE8C8;" />
+                                            </Button>
+                                        </StackPanel>
                                     </Grid>
-                                    <TextBlock IsTextSelectionEnabled="True" Style="{StaticResource BodyTextBlockStyle}" Text="{x:Bind Detail.Description, Mode=OneWay}" TextWrapping="Wrap" Visibility="{x:Bind Detail.DescriptionVisibility, Mode=OneWay}" />
-                                    <TextBlock FontStyle="Italic" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="No description" Visibility="{x:Bind Detail.NoDescriptionVisibility, Mode=OneWay}" />
+                                    <StackPanel Spacing="6" Visibility="{x:Bind DescriptionReadVisibility(Detail.IsEditingDescription), Mode=OneWay}">
+                                        <TextBlock IsTextSelectionEnabled="True" Style="{StaticResource BodyTextBlockStyle}" Text="{x:Bind Detail.Description, Mode=OneWay}" TextWrapping="Wrap" Visibility="{x:Bind Detail.DescriptionVisibility, Mode=OneWay}" />
+                                        <TextBlock FontStyle="Italic" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="No description" Visibility="{x:Bind Detail.NoDescriptionVisibility, Mode=OneWay}" />
+                                    </StackPanel>
+                                    <StackPanel Spacing="8" Visibility="{x:Bind Detail.IsEditingDescription, Mode=OneWay}">
+                                        <TextBox x:Name="DescriptionEditor" MinHeight="120" AcceptsReturn="True" AutomationProperties.AutomationId="TicketsDescriptionEditor" AutomationProperties.Name="Description" KeyDown="DescriptionEditor_KeyDown" Text="{x:Bind Detail.DescriptionDraft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" />
+                                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8">
+                                            <Button AutomationProperties.AutomationId="TicketsCancelDescription" Command="{x:Bind Detail.CancelDescriptionCommand}" Content="Cancel" />
+                                            <Button AutomationProperties.AutomationId="TicketsSaveDescription" Command="{x:Bind Detail.SaveDescriptionCommand}" Content="Save" Style="{StaticResource AccentButtonStyle}" ToolTipService.ToolTip="Save (Ctrl+Enter)" />
+                                        </StackPanel>
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
 
@@ -727,6 +796,12 @@
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <TextBlock VerticalAlignment="Center" AutomationProperties.HeadingLevel="Level3" Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Detail.FeedHeader, Mode=OneWay}" />
                                         <ProgressRing Width="16" Height="16" IsActive="{x:Bind Detail.IsLoadingFeed, Mode=OneWay}" />
+                                        <Button AutomationProperties.AutomationId="TicketsAddComment" Command="{x:Bind Detail.ToggleComposeCommand}" ToolTipService.ToolTip="Write a comment">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <FontIcon FontSize="12" Glyph="&#xE710;" />
+                                                <TextBlock Text="{x:Bind Detail.AddCommentLabel, Mode=OneWay}" />
+                                            </StackPanel>
+                                        </Button>
                                     </StackPanel>
                                     <SelectorBar x:Name="FeedFilterBar" AutomationProperties.AutomationId="TicketsFeedFilterBar" Grid.Column="1" AutomationProperties.Name="Show" SelectionChanged="FeedFilter_SelectionChanged">
                                         <SelectorBarItem IsSelected="True" Tag="Comments" Text="Comments" />
@@ -734,6 +809,39 @@
                                         <SelectorBarItem Tag="All" Text="All" />
                                     </SelectorBar>
                                 </Grid>
+
+                                <!-- Compose: under the Activity bar, above the feed it adds to. Cancel keeps the draft. -->
+                                <StackPanel Spacing="8" Visibility="{x:Bind Detail.IsComposeOpen, Mode=OneWay}">
+                                    <TextBox x:Name="CommentBox" MinHeight="96" AcceptsReturn="True" AutomationProperties.AutomationId="TicketsCommentBox" AutomationProperties.Name="Comment" KeyDown="CommentBox_KeyDown" PlaceholderText="Write a comment" Text="{x:Bind Detail.CommentText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button AutomationProperties.AutomationId="TicketsPostComment" Command="{x:Bind Detail.PostCommentCommand}" Content="Post Comment" IsEnabled="{x:Bind Detail.CanPost, Mode=OneWay}" Style="{StaticResource AccentButtonStyle}" ToolTipService.ToolTip="Post (Ctrl+Enter)" />
+                                        <Button AutomationProperties.AutomationId="TicketsCancelComment" Command="{x:Bind Detail.ToggleComposeCommand}" Content="Cancel" />
+                                        <CheckBox AutomationProperties.AutomationId="TicketsPrivateComment" Content="Private" IsChecked="{x:Bind Detail.IsPrivate, Mode=TwoWay}" />
+                                    </StackPanel>
+                                    <StackPanel Spacing="4" Visibility="{x:Bind Detail.HasRecipients, Mode=OneWay}">
+                                        <TextBlock Style="{StaticResource FieldLabelStyle}" Text="Notify" />
+                                        <ItemsRepeater ItemsSource="{x:Bind Detail.Recipients}">
+                                            <ItemsRepeater.Layout>
+                                                <StackLayout Spacing="0" />
+                                            </ItemsRepeater.Layout>
+                                            <ItemsRepeater.ItemTemplate>
+                                                <DataTemplate x:DataType="tickets:NotifyChoice">
+                                                    <CheckBox Content="{x:Bind Label}" IsChecked="{x:Bind IsChecked, Mode=TwoWay}" ToolTipService.ToolTip="{x:Bind Emails}" />
+                                                </DataTemplate>
+                                            </ItemsRepeater.ItemTemplate>
+                                        </ItemsRepeater>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <!-- Reply in thread: TeamDynamix threads are one level deep. -->
+                                <StackPanel x:Name="ReplyComposer" Spacing="8" Visibility="Collapsed">
+                                    <TextBlock x:Name="ReplyHeader" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                    <TextBox x:Name="ReplyBox" MinHeight="72" AcceptsReturn="True" AutomationProperties.AutomationId="TicketsReplyBox" AutomationProperties.Name="Reply" KeyDown="ReplyBox_KeyDown" PlaceholderText="Write a reply" Text="{x:Bind Detail.ReplyText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button AutomationProperties.AutomationId="TicketsPostReply" Click="PostReply_Click" Content="Reply" Style="{StaticResource AccentButtonStyle}" ToolTipService.ToolTip="Reply (Ctrl+Enter)" />
+                                        <Button AutomationProperties.AutomationId="TicketsCancelReply" Click="CancelReply_Click" Content="Cancel" />
+                                    </StackPanel>
+                                </StackPanel>
                                 <ItemsRepeater ItemTemplate="{StaticResource FeedItemTemplate}" ItemsSource="{x:Bind Detail.Feed, Mode=OneWay}">
                                     <ItemsRepeater.Layout>
                                         <StackLayout Spacing="12" />

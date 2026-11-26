@@ -76,6 +76,8 @@ public sealed partial class TicketDetailViewModel : ObservableObject
     public async Task OpenAsync(TicketReader reader, TdxTicket ticket, Action<TdxTicket>? fresh = null)
     {
         var load = _loads.Begin(ticket.Id);
+        _reader = reader;
+        SwitchTo(ticket);
         Ticket = ticket;
         _feed = new();
         ShowFeed();
@@ -90,6 +92,7 @@ public sealed partial class TicketDetailViewModel : ObservableObject
                 Ticket = latest;
                 fresh?.Invoke(latest);
             }
+            Followed(Ticket!);
             var feed = await reader.Feed(ticket.Id);
             if (!_loads.IsCurrent(load)) return;
             _feed = feed;
@@ -113,6 +116,7 @@ public sealed partial class TicketDetailViewModel : ObservableObject
     /// <summary>Close the ticket; a read still in flight for it no longer paints.</summary>
     public void Close()
     {
+        SwitchTo(null);
         _loads.Invalidate();
         Ticket = null;
         _feed = new();
@@ -124,7 +128,9 @@ public sealed partial class TicketDetailViewModel : ObservableObject
     {
         var shown = TicketFeedView.Filter(_feed, FeedFilter);
         FeedHeader = TicketFeedView.Header(shown.Count);
-        Feed = shown.Take(TicketFeedView.MaxShown).Select(e => new TicketFeedItem(e)).ToList();
+        var items = shown.Take(TicketFeedView.MaxShown).Select(e => new TicketFeedItem(e)).ToList();
+        foreach (var reply in items.SelectMany(i => i.Replies)) reply.CanDelete = CanDelete(reply);
+        Feed = items;
     }
 }
 
@@ -147,8 +153,16 @@ public sealed class TicketFeedItem
     {
         Entry = entry;
         IsReply = isReply;
-        Replies = isReply ? Array.Empty<TicketFeedItem>() : entry.ReplyList.Select(r => new TicketFeedItem(r, isReply: true)).ToList();
+        Replies = isReply ? Array.Empty<TicketFeedItem>() : entry.ReplyList.Select(r => new TicketFeedItem(r, isReply: true) { Thread = this }).ToList();
     }
+
+    /// <summary>The comment a reply belongs to; null for a comment.</summary>
+    public TicketFeedItem? Thread { get; private init; }
+
+    /// <summary>The signed-in person's own reply, which they may delete.</summary>
+    public bool CanDelete { get; set; }
+
+    public Visibility DeleteVisibility => CanDelete ? Visibility.Visible : Visibility.Collapsed;
 
     public TdxFeedEntry Entry { get; }
     public bool IsReply { get; }
