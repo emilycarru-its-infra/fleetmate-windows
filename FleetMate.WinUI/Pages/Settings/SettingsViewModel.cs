@@ -32,6 +32,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>Raised after a module is switched on or off, so the tab bar can rebuild.</summary>
     public static event Action? ModulesChanged;
 
+    /// <summary>Tell the tab bar the modules changed, as the setup wizard does after saving.</summary>
+    internal static void RaiseModulesChanged() => ModulesChanged?.Invoke();
+
     /// <summary>Raised with Light, Dark or System when the theme changes.</summary>
     public static event Action<string>? ThemeChanged;
 
@@ -84,6 +87,14 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         await _services.TdxSession.RetryAsync();
         RefreshAuth();
+    }
+
+    /// <summary>Open the setup wizard over the window.</summary>
+    [RelayCommand]
+    private async Task RunSetupWizardAsync(Microsoft.UI.Xaml.XamlRoot root)
+    {
+        await new SetupWizardDialog(_services.Config, _services.DemoMode) { XamlRoot = root }.ShowAsync();
+        RefreshModules();
     }
 
     [RelayCommand]
