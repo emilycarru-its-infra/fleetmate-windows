@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="FleetMate.WinUI.Pages.Inventory.InventoryPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:FleetMate.WinUI.Pages.Inventory"
+    NavigationCacheMode="Required">
+
+    <Page.Resources>
+        <Style x:Key="CellStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Padding" Value="0,0,12,0" />
+        </Style>
+
+        <!-- One row: every column, each shown or hidden by the Columns menu. -->
+        <DataTemplate x:Key="AssetRowTemplate" x:DataType="local:AssetRow">
+            <StackPanel Height="32" Orientation="Horizontal" AutomationProperties.Name="{x:Bind Description}">
+                <TextBlock Width="112" Style="{StaticResource CellStyle}" Text="{x:Bind AssetTag}" Visibility="{x:Bind Columns.AssetTag, Mode=OneWay}" />
+                <TextBlock Width="200" Style="{StaticResource CellStyle}" Text="{x:Bind Name}" Visibility="{x:Bind Columns.Name, Mode=OneWay}" />
+                <TextBlock Width="132" FontFamily="Cascadia Mono, Consolas" Style="{StaticResource CellStyle}" Text="{x:Bind Serial}" Visibility="{x:Bind Columns.Serial, Mode=OneWay}" />
+                <TextBlock Width="200" Style="{StaticResource CellStyle}" Text="{x:Bind Model}" Visibility="{x:Bind Columns.Model, Mode=OneWay}" />
+                <StackPanel Width="128" Orientation="Horizontal" Spacing="6" Visibility="{x:Bind Columns.Status, Mode=OneWay}">
+                    <Ellipse Width="8" Height="8" VerticalAlignment="Center" Fill="{x:Bind StatusBrush}" />
+                    <TextBlock MaxWidth="110" Style="{StaticResource CellStyle}" Text="{x:Bind Status}" />
+                </StackPanel>
+                <TextBlock Width="148" Style="{StaticResource CellStyle}" Text="{x:Bind AssignedTo}" Visibility="{x:Bind Columns.AssignedTo, Mode=OneWay}" />
+                <TextBlock Width="112" Style="{StaticResource CellStyle}" Text="{x:Bind Category}" Visibility="{x:Bind Columns.Category, Mode=OneWay}" />
+                <TextBlock Width="108" Style="{StaticResource CellStyle}" Text="{x:Bind Platform}" Visibility="{x:Bind Columns.Platform, Mode=OneWay}" />
+                <TextBlock Width="120" Style="{StaticResource CellStyle}" Text="{x:Bind Manufacturer}" Visibility="{x:Bind Columns.Manufacturer, Mode=OneWay}" />
+                <TextBlock Width="96" Style="{StaticResource CellStyle}" Text="{x:Bind Usage}" Visibility="{x:Bind Columns.Usage, Mode=OneWay}" />
+                <TextBlock Width="96" Style="{StaticResource CellStyle}" Text="{x:Bind Catalog}" Visibility="{x:Bind Columns.Catalog, Mode=OneWay}" />
+                <TextBlock Width="96" Style="{StaticResource CellStyle}" Text="{x:Bind Area}" Visibility="{x:Bind Columns.Area, Mode=OneWay}" />
+                <TextBlock Width="128" Style="{StaticResource CellStyle}" Text="{x:Bind Location}" Visibility="{x:Bind Columns.Location, Mode=OneWay}" />
+                <TextBlock Width="152" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CellStyle}" Text="{x:Bind LastActivity}" Visibility="{x:Bind Columns.LastActivity, Mode=OneWay}" />
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="FilterTemplate" x:DataType="local:AssetFilterChoice">
+            <ComboBox
+                MinWidth="200"
+                HorizontalAlignment="Stretch"
+                AutomationProperties.AutomationId="{x:Bind AutomationId}"
+                Header="{x:Bind Label}"
+                ItemsSource="{x:Bind Options, Mode=OneWay}"
+                SelectedItem="{x:Bind Selected, Mode=TwoWay}" />
+        </DataTemplate>
+    </Page.Resources>
+
+    <Page.KeyboardAccelerators>
+        <KeyboardAccelerator Key="F5" Invoked="RefreshAccelerator_Invoked" />
+        <KeyboardAccelerator Key="R" Modifiers="Control" Invoked="RefreshAccelerator_Invoked" />
+        <KeyboardAccelerator Key="K" Modifiers="Control,Shift" Invoked="ClearFiltersAccelerator_Invoked" />
+    </Page.KeyboardAccelerators>
+
+    <Grid x:Name="Root" Padding="16,8,16,16" RowSpacing="8" SizeChanged="Root_SizeChanged">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- The count, then Clear Filters, Filters, Columns and Refresh, as on Mac; the toolbar owns Graphs. -->
+        <Grid ColumnSpacing="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock
+                x:Name="CountText"
+                VerticalAlignment="Center"
+                AutomationProperties.AutomationId="InventoryCount"
+                AutomationProperties.LiveSetting="Polite"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Style="{StaticResource BodyTextBlockStyle}"
+                Text="{x:Bind ViewModel.CountText, Mode=OneWay}"
+                TextTrimming="CharacterEllipsis"
+                TextWrapping="NoWrap" />
+
+            <Button
+                x:Name="ClearFiltersButton"
+                Grid.Column="2"
+                AutomationProperties.AutomationId="InventoryClearFiltersButton"
+                AutomationProperties.Name="Clear filters"
+                Click="ClearFiltersButton_Click"
+                ToolTipService.ToolTip="Clear every filter (Ctrl+Shift+K)"
+                Visibility="{x:Bind ViewModel.ClearFiltersVisibility, Mode=OneWay}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon FontSize="16" Foreground="{ThemeResource SystemFillColorCautionBrush}" Glyph="&#xE894;" />
+                    <TextBlock Text="Clear Filters" />
+                </StackPanel>
+            </Button>
+
+            <DropDownButton
+                x:Name="FiltersButton"
+                Grid.Column="3"
+                AutomationProperties.AutomationId="InventoryFiltersButton"
+                AutomationProperties.Name="Filters"
+                ToolTipService.ToolTip="Filter the assets">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon FontSize="16" Glyph="&#xE71C;" />
+                    <TextBlock Text="Filters" />
+                </StackPanel>
+                <DropDownButton.Flyout>
+                    <Flyout Placement="BottomEdgeAlignedRight">
+                        <ScrollViewer MaxHeight="560" Padding="0,0,12,0" VerticalScrollBarVisibility="Auto">
+                            <ItemsRepeater ItemTemplate="{StaticResource FilterTemplate}" ItemsSource="{x:Bind ViewModel.Filters}">
+                                <ItemsRepeater.Layout>
+                                    <UniformGridLayout MaximumRowsOrColumns="2" MinColumnSpacing="12" MinItemWidth="200" MinRowSpacing="8" ItemsStretch="Fill" />
+                                </ItemsRepeater.Layout>
+                            </ItemsRepeater>
+                        </ScrollViewer>
+                    </Flyout>
+                </DropDownButton.Flyout>
+            </DropDownButton>
+
+            <DropDownButton
+                x:Name="ColumnsButton"
+                Grid.Column="4"
+                AutomationProperties.AutomationId="InventoryColumnsButton"
+                AutomationProperties.Name="Columns"
+                ToolTipService.ToolTip="Show or hide columns">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon FontSize="16" Glyph="&#xE8A9;" />
+                    <TextBlock Text="Columns" />
+                </StackPanel>
+                <DropDownButton.Flyout>
+                    <MenuFlyout x:Name="ColumnsMenu" Placement="BottomEdgeAlignedRight" Opening="ColumnsMenu_Opening" />
+                </DropDownButton.Flyout>
+            </DropDownButton>
+
+            <Button
+                x:Name="RefreshButton"
+                Grid.Column="5"
+                AutomationProperties.AutomationId="InventoryRefreshButton"
+                AutomationProperties.Name="Refresh"
+                Click="RefreshButton_Click"
+                ToolTipService.ToolTip="Refresh the assets (F5)">
+                <FontIcon FontSize="16" Glyph="&#xE72C;" />
+            </Button>
+
+            <ProgressRing
+                x:Name="LoadingRing"
+                Grid.Column="6"
+                Width="16"
+                Height="16"
+                Margin="4,0,0,0"
+                AutomationProperties.Name="Loading assets"
+                IsActive="False" />
+        </Grid>
+
+        <!-- The graphs: Assets, Deployed, Unassigned, Assets by Category and Asset Status. -->
+        <ScrollViewer
+            x:Name="GraphsScroller"
+            Grid.Row="1"
+            HorizontalScrollMode="Disabled"
+            VerticalScrollBarVisibility="Auto"
+            Visibility="Collapsed">
+            <ContentControl x:Name="GraphsHost" HorizontalContentAlignment="Stretch" IsTabStop="False" />
+        </ScrollViewer>
+
+        <InfoBar
+            x:Name="MessageBar"
+            Grid.Row="2"
+            AutomationProperties.AutomationId="InventoryMessage"
+            IsClosable="False"
+            IsOpen="False" />
+
+        <!-- The list beside the selected asset's detail: 60/40, as on Mac. -->
+        <Grid x:Name="ContentGrid" Grid.Row="3" ColumnSpacing="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="ListColumn" Width="*" />
+                <ColumnDefinition x:Name="DetailColumn" Width="0" />
+            </Grid.ColumnDefinitions>
+
+            <Border x:Name="ListPane" Style="{StaticResource CardStyle}" Padding="0">
+                <ScrollViewer
+                    x:Name="ListScroller"
+                    HorizontalScrollBarVisibility="Auto"
+                    HorizontalScrollMode="Auto"
+                    VerticalScrollMode="Disabled"
+                    VerticalScrollBarVisibility="Disabled">
+                    <Grid x:Name="ListTable" HorizontalAlignment="Left">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Border
+                            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                            BorderThickness="0,0,0,1"
+                            Background="{ThemeResource LayerFillColorDefaultBrush}">
+                            <StackPanel
+                                x:Name="HeaderRow"
+                                Height="36"
+                                Padding="12,0,12,0"
+                                AutomationProperties.AutomationId="InventoryColumnHeaders"
+                                AutomationProperties.Name="Columns"
+                                Orientation="Horizontal" />
+                        </Border>
+                        <ListView
+                            x:Name="AssetList"
+                            Grid.Row="1"
+                            AutomationProperties.AutomationId="InventoryAssetList"
+                            AutomationProperties.Name="Assets"
+                            ItemTemplate="{StaticResource AssetRowTemplate}"
+                            ItemsSource="{x:Bind ViewModel.Rows}"
+                            SelectionChanged="AssetList_SelectionChanged"
+                            SelectionMode="Single">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                                    <Setter Property="MinHeight" Value="32" />
+                                    <Setter Property="Padding" Value="12,0,12,0" />
+                                </Style>
+                            </ListView.ItemContainerStyle>
+                        </ListView>
+                        <TextBlock
+                            x:Name="EmptyText"
+                            Grid.Row="1"
+                            Margin="16,24,16,0"
+                            HorizontalAlignment="Left"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource BodyTextBlockStyle}"
+                            Text="{x:Bind ViewModel.EmptyMessage, Mode=OneWay}"
+                            TextWrapping="Wrap" />
+                    </Grid>
+                </ScrollViewer>
+            </Border>
+
+            <ProgressRing
+                x:Name="FirstLoadRing"
+                Width="40"
+                Height="40"
+                AutomationProperties.Name="Loading assets"
+                IsActive="False"
+                Visibility="Collapsed" />
+
+            <Border
+                x:Name="DetailPane"
+                Grid.Column="1"
+                Margin="12,0,0,0"
+                Padding="0"
+                Style="{StaticResource CardStyle}"
+                Visibility="Collapsed">
+                <local:AssetDetailPane x:Name="Detail" />
+            </Border>
+        </Grid>
+    </Grid>
+</Page>

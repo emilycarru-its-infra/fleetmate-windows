@@ -339,6 +339,7 @@ public sealed partial class MainWindow : Window
         Log.Information("Opening {Link}", parsed.ToLink());
         LinkBanner.IsOpen = false;
         if (parsed is FleetMateLink.Ticket ticket) App.Services.PendingTicketId = ticket.Id;
+        if (parsed is FleetMateLink.Asset asset) App.Services.RequestAssetLink(asset.Id);
         var tab = LinkRoutes.TabFor(parsed);
         if (tab == "Development") App.Services.RequestDevelopmentLink(parsed);
         NavigateToTab(tab);
