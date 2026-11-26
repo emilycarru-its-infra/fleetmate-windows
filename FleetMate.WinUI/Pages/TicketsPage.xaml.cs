@@ -59,6 +59,7 @@ public sealed partial class TicketsPage : Page
         ViewModel.Redrawn += OnRedrawn;
         ViewModel.SignedIn += OnSignedIn;
         Detail.LoadFailed += message => ShowAction(message, InfoBarSeverity.Warning);
+        AttachEditing();
 
         MainWindow.SearchChanged += (_, text) => ViewModel.Search = text;
         MainWindow.ViewModeChanged += (_, mode) => ViewModel.IsBoard = mode == "board";
@@ -632,7 +633,13 @@ public sealed partial class TicketsPage : Page
 
     // MARK: - Layout
 
-    private void Page_SizeChanged(object sender, SizeChangedEventArgs e) => FitColumns(e.NewSize.Width);
+    private void Page_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        FitColumns(e.NewSize.Width);
+        // The strip stacks its cards when narrow; capped, it scrolls inside
+        // itself rather than pushing the list and board off the window.
+        WidgetScroller.MaxHeight = Math.Max(160, e.NewSize.Height * 0.4);
+    }
 
     /// <summary>
     /// The open ticket takes two fifths, at least 400 wide. Below 900 there is
