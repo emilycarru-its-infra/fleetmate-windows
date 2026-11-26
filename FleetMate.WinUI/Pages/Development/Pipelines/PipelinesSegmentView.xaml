@@ -2,12 +2,218 @@
 <UserControl
     x:Class="FleetMate.WinUI.Pages.Development.Pipelines.PipelinesSegmentView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:dev="using:FleetMate.WinUI.Pages.Development"
+    xmlns:local="using:FleetMate.WinUI.Pages.Development.Pipelines"
+    xmlns:shared="using:FleetMate.WinUI.Pages.Development.Shared">
 
-    <!-- Placeholder until the Pipelines sub-tab is ported. -->
-    <TextBlock
-        HorizontalAlignment="Center"
-        VerticalAlignment="Center"
-        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-        Text="Pipelines is not ported to this app yet." />
+    <UserControl.Resources>
+        <Style x:Key="ChipStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
+            <Setter Property="Padding" Value="12,4" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="CornerRadius" Value="15" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid x:Name="Root">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition x:Name="ListColumn" Width="400" MinWidth="280" />
+            <ColumnDefinition x:Name="DetailColumn" Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- The list: source and status chips, the repository menu, the count line, then the runs. -->
+        <Grid x:Name="ListPane" Padding="0,0,12,0" RowSpacing="8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <shared:ChipWrapPanel AutomationProperties.Name="Filters">
+                <ToggleButton
+                    x:Name="SourceAll"
+                    AutomationProperties.AutomationId="PipelinesSourceAll"
+                    Click="Source_Click"
+                    Content="All"
+                    IsChecked="True"
+                    Style="{StaticResource ChipStyle}"
+                    Tag="All" />
+                <ToggleButton
+                    x:Name="SourceDevOps"
+                    AutomationProperties.AutomationId="PipelinesSourceDevOps"
+                    Click="Source_Click"
+                    Content="DevOps"
+                    Style="{StaticResource ChipStyle}"
+                    Tag="DevOps" />
+                <ToggleButton
+                    x:Name="SourceGitHub"
+                    AutomationProperties.AutomationId="PipelinesSourceGitHub"
+                    Click="Source_Click"
+                    Content="GitHub"
+                    Style="{StaticResource ChipStyle}"
+                    Tag="GitHub" />
+                <!-- Shown only while runs wait for an approval. -->
+                <ToggleButton
+                    x:Name="StatusApproval"
+                    AutomationProperties.AutomationId="PipelinesStatusApproval"
+                    Click="Status_Click"
+                    Content="Approval"
+                    Style="{StaticResource ChipStyle}"
+                    Tag="break"
+                    ToolTipService.ToolTip="Runs waiting for an approval"
+                    Visibility="Collapsed" />
+                <ToggleButton
+                    x:Name="StatusRunning"
+                    AutomationProperties.AutomationId="PipelinesStatusRunning"
+                    Click="Status_Click"
+                    Content="Running"
+                    Style="{StaticResource ChipStyle}"
+                    Tag="break" />
+                <ToggleButton
+                    x:Name="StatusFailed"
+                    AutomationProperties.AutomationId="PipelinesStatusFailed"
+                    Click="Status_Click"
+                    Content="Failed"
+                    Style="{StaticResource ChipStyle}" />
+                <ToggleButton
+                    x:Name="StatusSucceeded"
+                    AutomationProperties.AutomationId="PipelinesStatusSucceeded"
+                    Click="Status_Click"
+                    Content="Succeeded"
+                    Style="{StaticResource ChipStyle}" />
+            </shared:ChipWrapPanel>
+
+            <dev:RepositoryFilterButton
+                x:Name="RepoFilter"
+                Grid.Row="1"
+                MinWidth="200"
+                MaxWidth="360"
+                HorizontalAlignment="Left"
+                AutomationProperties.AutomationId="PipelinesRepositoryFilter"
+                SelectionChanged="RepoFilter_SelectionChanged" />
+
+            <TextBlock
+                x:Name="CountText"
+                Grid.Row="2"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="Pipelines"
+                TextWrapping="Wrap" />
+
+            <Grid Grid.Row="3">
+                <ListView
+                    x:Name="RunsList"
+                    AutomationProperties.AutomationId="PipelinesList"
+                    AutomationProperties.Name="Pipeline runs"
+                    ContextRequested="RunsList_ContextRequested"
+                    SelectionChanged="RunsList_SelectionChanged"
+                    SelectionMode="Single">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="local:PipelineRunItem">
+                            <Grid Padding="0,6" ColumnSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <local:RunStatusIcon
+                                    Margin="0,2,0,0"
+                                    VerticalAlignment="Top"
+                                    AwaitingApproval="{x:Bind AwaitingApproval}"
+                                    Status="{x:Bind Status}"
+                                    ToolTipService.ToolTip="{x:Bind StatusLabel}" />
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <Grid ColumnSpacing="6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border
+                                            Padding="6,1"
+                                            VerticalAlignment="Center"
+                                            Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                            BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="4">
+                                            <TextBlock Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind SourceLabel}" />
+                                        </Border>
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            VerticalAlignment="Center"
+                                            Style="{StaticResource BodyStrongTextBlockStyle}"
+                                            Text="{x:Bind Title}"
+                                            TextTrimming="CharacterEllipsis"
+                                            ToolTipService.ToolTip="{x:Bind Title}" />
+                                    </Grid>
+                                    <TextBlock
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        MaxLines="1"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        Text="{x:Bind Subtitle}"
+                                        TextTrimming="CharacterEllipsis" />
+                                    <TextBlock
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        MaxLines="1"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        Text="{x:Bind Byline, Mode=OneWay}"
+                                        TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+                <TextBlock
+                    x:Name="EmptyText"
+                    Margin="16"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextAlignment="Center"
+                    TextWrapping="Wrap"
+                    Visibility="Collapsed" />
+            </Grid>
+        </Grid>
+
+        <!-- The selected run. -->
+        <Grid
+            x:Name="DetailPane"
+            Grid.Column="1"
+            Padding="16,0,0,0"
+            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+            BorderThickness="1,0,0,0"
+            RowSpacing="8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Button
+                x:Name="BackButton"
+                AutomationProperties.AutomationId="PipelinesBackButton"
+                AutomationProperties.Name="Back to pipeline runs"
+                Style="{StaticResource SubtleButtonStyle}"
+                ToolTipService.ToolTip="Back to pipeline runs"
+                Visibility="Collapsed">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon FontSize="14" Glyph="&#xE72B;" />
+                    <TextBlock Text="Pipelines" />
+                </StackPanel>
+            </Button>
+            <Grid Grid.Row="1">
+                <TextBlock
+                    x:Name="Placeholder"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="Select a run to see its jobs and log."
+                    TextWrapping="Wrap" />
+                <local:PipelineRunPane x:Name="RunPane" Visibility="Collapsed" />
+                <ContentControl
+                    x:Name="WaitHost"
+                    HorizontalContentAlignment="Stretch"
+                    VerticalContentAlignment="Stretch"
+                    IsTabStop="False"
+                    Visibility="Collapsed" />
+            </Grid>
+        </Grid>
+    </Grid>
 </UserControl>
