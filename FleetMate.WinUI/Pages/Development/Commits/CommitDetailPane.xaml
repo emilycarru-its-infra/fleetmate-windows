@@ -54,6 +54,14 @@
                 </AppBarButton.Icon>
             </AppBarButton>
             <AppBarButton
+                x:Name="SendToAgentButton"
+                AutomationProperties.AutomationId="CommitSendToAgentButton"
+                Label="Send to Agent">
+                <AppBarButton.Icon>
+                    <FontIcon Glyph="&#xE724;" />
+                </AppBarButton.Icon>
+            </AppBarButton>
+            <AppBarButton
                 AutomationProperties.AutomationId="CommitCopyForAgentButton"
                 Click="CopyForAgent_Click"
                 Label="Copy for Agent"

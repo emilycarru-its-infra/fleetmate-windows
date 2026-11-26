@@ -1,36 +1,43 @@
-using System.IO;
-using System.Windows;
 using FleetMate.Core.Config;
 using FleetMate.Core.Models;
-using FleetMate.Core.Services.Agent;
 using FleetMate.Core.Services.Repos;
-using FleetMate.Core.Services.Terminal;
 using Serilog;
 
-namespace FleetMate.GUI.Views.Terminal;
+namespace FleetMate.Core.Services.Terminal;
 
 /// <summary>
 /// What the terminal needs from the rest of the app before a session starts:
 /// where it should open, the brief that tells its agent what FleetMate is and
 /// where it is, and agent CLIs kept current so the session opens straight on
-/// the agent rather than on its updater.
+/// the agent rather than on its updater. Both desktop apps build one at launch.
 /// </summary>
-public sealed class AgentSessions
+public sealed class AgentSessionHost
 {
-    private readonly App _app;
+    private readonly Func<TerminalSettings> _settings;
+    private readonly Func<AuthManager?> _auth;
+    private readonly SynchronizationContext? _ui;
     private bool _started;
 
-    public AgentSessions(App app)
+    /// <param name="context">The FLEETMATE_CONTEXT file every session points at.</param>
+    /// <param name="settings">Settings ▸ Terminal as it is now.</param>
+    /// <param name="auth">The sign-ins as they are now; read for the context file's backends.</param>
+    /// <param name="ui">The UI thread, where environment changes are published. Defaults to the caller's.</param>
+    public AgentSessionHost(AppContextFile context, Func<TerminalSettings> settings, Func<AuthManager?> auth,
+        SynchronizationContext? ui = null)
     {
-        _app = app;
+        Context = context;
+        _settings = settings;
+        _auth = auth;
+        _ui = ui ?? SynchronizationContext.Current;
         Brief = new AgentBriefStore(AgentBriefStore.DefaultDirectory);
-        Updater = new AgentCliUpdateModel(() => Settings.KeepClisCurrent);
+        Updater = new AgentCliUpdateModel(() => Settings.KeepClisCurrent, _ui);
     }
 
+    public AppContextFile Context { get; }
     public AgentBriefStore Brief { get; }
     public AgentCliUpdateModel Updater { get; }
 
-    private TerminalSettings Settings => _app.Config.Terminal;
+    private TerminalSettings Settings => _settings();
 
     /// <summary>
     /// Generate the brief ahead of the first session, clear session briefs a
@@ -55,7 +62,12 @@ public sealed class AgentSessions
         });
         Updater.Start();
         PublishEnvironment();
-        _app.AuthManager.PropertyChanged += (_, _) => _app.Dispatcher.BeginInvoke(PublishEnvironment);
+        if (_auth() is { } auth)
+            auth.PropertyChanged += (_, _) =>
+            {
+                if (_ui == null) PublishEnvironment();
+                else _ui.Post(_ => PublishEnvironment(), null);
+            };
     }
 
     /// <summary>The installed fleetmate.exe, or one built beside the app.</summary>
@@ -70,7 +82,7 @@ public sealed class AgentSessions
     /// </summary>
     public string StartDirectory()
     {
-        var context = _app.Context.Current;
+        var context = Context.Current;
         if (context.Tab == "Development"
             && context.Selection.TryGetValue("pullRequest", out var pulls) && pulls.FirstOrDefault() is { } pr
             && pr.Fields.TryGetValue("repository", out var name) && name != null)
@@ -121,7 +133,7 @@ public sealed class AgentSessions
         var workspace = WorkspaceDirectory();
         var prepared = AgentSessionLaunch.Prepare(command, brief, managed, false, AgentCommands.FindOnPath,
             new[] { workspace, Brief.Directory });
-        var instructions = AgentWorkspace.Prepare(workspace, Brief.BriefPath, _app.Context.Path);
+        var instructions = AgentWorkspace.Prepare(workspace, Brief.BriefPath, Context.Path);
         PrivateFile.EnsureDirectory(AgentSessionMetadata.Directory);
         var metadata = AgentSessionMetadata.FilePath(sessionId);
         PrivateFile.Write(metadata, "{}");
@@ -148,7 +160,7 @@ public sealed class AgentSessions
     /// <summary>The app as it is now. Call on the UI thread.</summary>
     public AgentWhereabouts Whereabouts()
     {
-        var context = _app.Context.Current;
+        var context = Context.Current;
         AgentWhereabouts.Selected? selected = null;
         if (SelectionKinds.TryGetValue(context.Tab, out var kind)
             && context.Selection.TryGetValue(kind, out var items) && items.Count > 0)
@@ -166,7 +178,7 @@ public sealed class AgentSessions
     /// <summary>Rewrite the context file's tracked repositories and sign-ins.</summary>
     public void PublishEnvironment()
     {
-        try { _app.Context.SetEnvironment(TrackedRepositories(), Backends()); }
+        try { Context.SetEnvironment(TrackedRepositories(), Backends()); }
         catch (Exception ex) { Log.Debug(ex, "Agent context: could not publish the environment"); }
     }
 
@@ -194,8 +206,10 @@ public sealed class AgentSessions
     /// failure detail and anything token-like stay out: an agent needs to
     /// know a sign-in is missing, not whose it is or why.
     /// </summary>
-    private List<AgentBackend> Backends() =>
-        _app.AuthManager.Systems.Values.ToList()
+    private List<AgentBackend> Backends() => Backends(_auth());
+
+    internal static List<AgentBackend> Backends(AuthManager? auth) =>
+        (auth?.Systems.Values.ToList() ?? new())
             .Where(s => s.State.Kind != AuthStateKind.NotConfigured)
             .OrderBy(s => s.SystemId.DisplayName())
             .Select(s => new AgentBackend(s.SystemId.DisplayName(), s.State.Kind switch

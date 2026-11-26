@@ -1,3 +1,5 @@
+using FleetMate.Core.Shared;
+using FleetMate.WinUI.Shell;
 using FleetMate.Core.Development;
 using FleetMate.Core.Links;
 using FleetMate.Core.Models.Projects;
@@ -42,6 +44,7 @@ public sealed partial class PipelinesSegmentView : UserControl, IDevelopmentSegm
     public PipelinesSegmentView()
     {
         InitializeComponent();
+        AgentHandOff.AttachDrag(RunsList, item => item is PipelineRunItem row ? AgentContexts.PipelineRun(row.Run) : null);
         _layout = new ListDetailLayout(Root, ListColumn, DetailColumn, ListPane, DetailPane, BackButton);
         _statusChips = new()
         {
@@ -295,6 +298,7 @@ public sealed partial class PipelinesSegmentView : UserControl, IDevelopmentSegm
         copy.Click += (_, _) => DevelopmentUi.Copy(row.Run.WebUrl);
         menu.Items.Add(open);
         menu.Items.Add(copy);
+        AgentHandOff.Prepend(menu, () => [AgentContexts.PipelineRun(row.Run)], container);
         if (args.TryGetPosition(container, out var point)) menu.ShowAt(container, new FlyoutShowOptions { Position = point });
         else menu.ShowAt(container);
     }

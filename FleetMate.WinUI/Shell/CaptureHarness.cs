@@ -87,6 +87,25 @@ internal static class CaptureHarness
             .AppendLine();
 
         var panels = window.Tabs.Append(ShellPages.Settings).ToList();
+
+        // One capture: the root at each scale, then what a reviewer would catch by eye.
+        async Task CaptureAsync(string name, string sizeName, int width, int height)
+        {
+            report.AppendLine($"## {name}, {theme}, {sizeName} ({width}x{height})").AppendLine();
+            foreach (var scale in Scales)
+            {
+                var file = FileName(name, theme, sizeName, scale);
+                await RenderAsync(window.CaptureRoot, Path.Combine(directory, file), scale, dark);
+                report.AppendLine($"![{file}]({file})");
+            }
+            var issues = Inspect(window.CaptureRoot).ToList();
+            issues.AddRange(TitleBarOverlaps(window));
+            findings += issues.Count;
+            report.AppendLine();
+            if (issues.Count == 0) report.AppendLine("No clipped text or unnamed controls.");
+            foreach (var issue in issues) report.AppendLine($"- {issue}");
+            report.AppendLine();
+        }
         try
         {
             foreach (var (sizeName, width, height) in Sizes)
@@ -113,22 +132,22 @@ internal static class CaptureHarness
                                 await ((ICaptureViews)window.CurrentPage!).ShowCaptureViewAsync(view);
                                 await Task.Delay(Settle);
                             }
-                            var name = view == null ? panel : $"{panel}-{view}";
-                            report.AppendLine($"## {name}, {theme}, {sizeName} ({width}x{height})").AppendLine();
-                            foreach (var scale in Scales)
-                            {
-                                var file = FileName(name, theme, sizeName, scale);
-                                await RenderAsync(window.CaptureRoot, Path.Combine(directory, file), scale, dark);
-                                report.AppendLine($"![{file}]({file})");
-                            }
-                            var issues = Inspect(window.CaptureRoot).ToList();
-                            issues.AddRange(TitleBarOverlaps(window));
-                            findings += issues.Count;
-                            report.AppendLine();
-                            if (issues.Count == 0) report.AppendLine("No clipped text or unnamed controls.");
-                            foreach (var issue in issues) report.AppendLine($"- {issue}");
-                            report.AppendLine();
+                            await CaptureAsync(view == null ? panel : $"{panel}-{view}", sizeName, width, height);
                         }
+                    }
+
+                    // The Agent Terminal over the first tab, split and full
+                    // window, on demo mode's fictional sessions.
+                    if (window.CapturesTerminal && window.Tabs.Count > 0)
+                    {
+                        window.ShowPanel(window.Tabs[0]);
+                        foreach (var (name, full) in new[] { ("terminal", false), ("terminal-full", true) })
+                        {
+                            window.ShowTerminalForCapture(full);
+                            await Task.Delay(Settle * 2);
+                            await CaptureAsync(name, sizeName, width, height);
+                        }
+                        window.ShowTerminalForCapture(null);
                     }
                 }
             }

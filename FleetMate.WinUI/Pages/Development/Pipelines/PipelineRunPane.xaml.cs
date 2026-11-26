@@ -1,3 +1,4 @@
+using FleetMate.WinUI.Shell;
 using FleetMate.Core.Development;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
@@ -23,6 +24,7 @@ public sealed partial class PipelineRunPane : UserControl
     public PipelineRunPane()
     {
         InitializeComponent();
+        AgentHandOff.AttachButton(SendToAgentButton, () => _run is { } run ? AgentContexts.PipelineRun(run) : null);
         Unloaded += (_, _) => CancelPendingLog();
     }
 
@@ -144,7 +146,7 @@ public sealed partial class PipelineRunPane : UserControl
 
     private void CopyForAgent_Click(object sender, RoutedEventArgs e)
     {
-        if (_run is { } run) DevelopmentUi.Copy(AgentContexts.PipelineRun(run).Markdown);
+        if (_run is { } run) AgentHandOff.Copy([AgentContexts.PipelineRun(run)], sender as FrameworkElement);
     }
 
     private async void Rerun_Click(object sender, RoutedEventArgs e)

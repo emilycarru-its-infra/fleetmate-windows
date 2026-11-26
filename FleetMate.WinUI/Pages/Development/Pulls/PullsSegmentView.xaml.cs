@@ -1,3 +1,5 @@
+using FleetMate.Core.Shared;
+using FleetMate.WinUI.Shell;
 using FleetMate.Core.Config;
 using FleetMate.Core.Development;
 using FleetMate.Core.Links;
@@ -44,6 +46,7 @@ public sealed partial class PullsSegmentView : UserControl, IDevelopmentSegmentV
     public PullsSegmentView()
     {
         InitializeComponent();
+        AgentHandOff.AttachDrag(List, item => item is PullRequestRow row ? AgentContexts.PullRequest(row.PullRequest) : null);
         PullGroupCollapse.Load(UserPreferences.PullsCollapsedGroups);
         UpdateSortTip();
         Detail.StateChanged += async (_, _) => await RefreshAsync();
@@ -498,6 +501,7 @@ public sealed partial class PullsSegmentView : UserControl, IDevelopmentSegmentV
         menu.Items.Add(Item("Open in Browser", () => DevelopmentUi.OpenUrl(pr.WebUrl), ""));
         menu.Items.Add(Item("Copy Link", () => DevelopmentUi.Copy(pr.WebUrl), ""));
         menu.Items.Add(Item(row.CopyIdLabel, () => DevelopmentUi.Copy(pr.Number.ToString()), ""));
+        AgentHandOff.Prepend(menu, () => [AgentContexts.PullRequest(pr)], args.OriginalSource as FrameworkElement);
         ShowMenu(menu, args.OriginalSource as UIElement ?? sender, args);
     }
 

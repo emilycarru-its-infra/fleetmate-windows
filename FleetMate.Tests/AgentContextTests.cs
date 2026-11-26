@@ -356,7 +356,7 @@ public class AgentContextTests
     [Fact]
     public void Paste_IsOneBracketedBlockWithNoReturn()
     {
-        var paste = TerminalView.Paste("line one\r\nline two\u001b[201~\r");
+        var paste = FleetMate.Core.Services.Terminal.TerminalPaneController.Paste("line one\r\nline two\u001b[201~\r");
         Assert.StartsWith("\u001b[200~", paste);
         Assert.EndsWith("\u001b[201~", paste);
         var inner = paste["\u001b[200~".Length..^"\u001b[201~".Length];

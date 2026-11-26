@@ -79,6 +79,7 @@ public sealed partial class ShellServices : IDisposable
         InitializeInventory(config);
         InitializeDevelopment(config);
         InitializeIdentity(config);
+        InitializeTerminal(config);
         TicketCache.Updated += TdxSession.TicketsLoaded;
         TdxSession.SignInChanged += OnTdxSignInChanged;
     }
@@ -95,7 +96,7 @@ public sealed partial class ShellServices : IDisposable
     /// write screenshots while this is true.
     /// </summary>
     public bool HasLiveSession =>
-        Tdx != null || Graph != null || TdxSession.IsSignedIn
+        Tdx != null || Graph != null || TdxSession.IsSignedIn || AgentHost != null
         || Auth.Systems.Values.Any(s => s.State.Kind is AuthStateKind.Valid or AuthStateKind.ServicePrincipal);
 
     public FleetMateConfig Config { get; }
@@ -158,6 +159,7 @@ public sealed partial class ShellServices : IDisposable
         _ = StartSignInAsync();
         StartInventory();
         StartDevelopment();
+        StartTerminal();
     }
 
     private async Task StartSignInAsync()

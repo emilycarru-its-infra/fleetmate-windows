@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="FleetMate.WinUI.Shell.Terminal.TerminalPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:FleetMate.WinUI.Shell.Terminal"
+    AutomationProperties.AutomationId="TerminalPanel"
+    AutomationProperties.Name="Agent Terminal">
+    <UserControl.Resources>
+        <Style x:Key="TerminalIconButtonStyle" TargetType="Button" BasedOn="{StaticResource SubtleButtonStyle}">
+            <Setter Property="Padding" Value="7,5" />
+            <Setter Property="MinWidth" Value="30" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <!-- Secondary text in rows, as styles so each follows the panel's own theme. -->
+        <Style x:Key="TerminalSecondaryTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+        </Style>
+        <Style x:Key="TerminalSecondaryIconStyle" TargetType="FontIcon">
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Style>
+    </UserControl.Resources>
+
+    <!--
+        The Agent Terminal, below the tab's page on every tab: sessions down
+        the left (people run ten or more at once), the selected session's
+        panes on the right. The list is TerminalSessionList's, in
+        FleetMate.Core, shared with FleetMate.GUI; this draws it.
+    -->
+    <Border
+        Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+        BorderThickness="0,1,0,0">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="ListColumn" Width="230" MinWidth="180" MaxWidth="520" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="0,0,1,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Margin="4">
+                        <StackPanel x:Name="HeaderWide" Orientation="Horizontal">
+                            <Button
+                                AutomationProperties.AutomationId="TerminalWorkspacesButton"
+                                AutomationProperties.Name="Workspaces"
+                                Style="{StaticResource TerminalIconButtonStyle}"
+                                ToolTipService.ToolTip="Workspaces: open, save, and choose the one FleetMate opens at launch">
+                                <FontIcon FontSize="12" Glyph="&#xE8F1;" />
+                                <Button.Flyout>
+                                    <MenuFlyout x:Name="WorkspacesMenu" Opening="WorkspacesMenu_Opening" Placement="BottomEdgeAlignedLeft" />
+                                </Button.Flyout>
+                            </Button>
+                            <Button
+                                AutomationProperties.AutomationId="TerminalNewButton"
+                                AutomationProperties.Name="New session"
+                                Click="NewSession_Click"
+                                Style="{StaticResource TerminalIconButtonStyle}"
+                                ToolTipService.ToolTip="New session (Ctrl+Shift+T)">
+                                <FontIcon FontSize="12" Glyph="&#xE710;" />
+                            </Button>
+                            <Button
+                                Padding="2,5,4,5"
+                                AutomationProperties.AutomationId="TerminalNewMenuButton"
+                                AutomationProperties.Name="New session menu"
+                                Style="{StaticResource TerminalIconButtonStyle}"
+                                MinWidth="20"
+                                ToolTipService.ToolTip="New session…">
+                                <FontIcon FontSize="10" Glyph="&#xE70D;" />
+                                <Button.Flyout>
+                                    <MenuFlyout x:Name="NewMenu" Opening="NewMenu_Opening" Placement="BottomEdgeAlignedLeft" />
+                                </Button.Flyout>
+                            </Button>
+                            <Button
+                                x:Name="NewSectionButton"
+                                AutomationProperties.AutomationId="TerminalNewSectionButton"
+                                AutomationProperties.Name="New section"
+                                Click="NewSection_Click"
+                                Style="{StaticResource TerminalIconButtonStyle}"
+                                ToolTipService.ToolTip="New section">
+                                <FontIcon FontSize="12" Glyph="&#xE8F4;" />
+                            </Button>
+                            <Button
+                                AutomationProperties.AutomationId="TerminalSplitButton"
+                                AutomationProperties.Name="Split"
+                                Click="Split_Click"
+                                Style="{StaticResource TerminalIconButtonStyle}"
+                                ToolTipService.ToolTip="Split (Alt+Shift+D)">
+                                <FontIcon FontSize="12" Glyph="&#xE89F;" />
+                            </Button>
+                            <Button
+                                AutomationProperties.AutomationId="TerminalCollapseButton"
+                                AutomationProperties.Name="Collapse the list"
+                                Click="Collapse_Click"
+                                Style="{StaticResource TerminalIconButtonStyle}"
+                                ToolTipService.ToolTip="Collapse the list (Ctrl+Shift+S)">
+                                <FontIcon FontSize="12" Glyph="&#xE76B;" />
+                            </Button>
+                            <Button
+                                x:Name="FullWindowButton"
+                                AutomationProperties.AutomationId="TerminalFullWindowButton"
+                                Click="FullWindow_Click"
+                                Style="{StaticResource TerminalIconButtonStyle}">
+                                <FontIcon x:Name="FullWindowGlyph" FontSize="12" Glyph="&#xE740;" />
+                            </Button>
+                            <Button
+                                x:Name="HideButton"
+                                AutomationProperties.AutomationId="TerminalHideButton"
+                                Click="Hide_Click"
+                                Style="{StaticResource TerminalIconButtonStyle}">
+                                <FontIcon FontSize="12" Glyph="&#xE70D;" />
+                            </Button>
+                        </StackPanel>
+
+                        <StackPanel
+                            x:Name="FilterRow"
+                            Margin="0,4,0,0"
+                            Orientation="Horizontal"
+                            Spacing="2">
+                            <Button
+                                x:Name="SortButton"
+                                AutomationProperties.AutomationId="TerminalSortButton"
+                                AutomationProperties.Name="Sort sessions"
+                                Style="{StaticResource TerminalIconButtonStyle}">
+                                <FontIcon x:Name="SortGlyph" FontSize="12" Glyph="&#xE8CB;" />
+                                <Button.Flyout>
+                                    <MenuFlyout x:Name="SortMenu" Opening="SortMenu_Opening" Placement="BottomEdgeAlignedLeft" />
+                                </Button.Flyout>
+                            </Button>
+                        </StackPanel>
+
+                        <TextBox
+                            x:Name="SearchBox"
+                            Margin="4,6,4,0"
+                            AutomationProperties.AutomationId="TerminalSessionSearch"
+                            AutomationProperties.Name="Search sessions"
+                            FontSize="12"
+                            KeyDown="SearchBox_KeyDown"
+                            PlaceholderText="Search sessions"
+                            TextChanged="SearchBox_TextChanged" />
+
+                        <StackPanel x:Name="HeaderNarrow" Visibility="Collapsed">
+                            <Button
+                                AutomationProperties.AutomationId="TerminalExpandButton"
+                                AutomationProperties.Name="Expand the list"
+                                Click="Expand_Click"
+                                Style="{StaticResource TerminalIconButtonStyle}"
+                                ToolTipService.ToolTip="Expand the list (Ctrl+Shift+S)">
+                                <FontIcon FontSize="12" Glyph="&#xE76C;" />
+                            </Button>
+                            <Button
+                                AutomationProperties.AutomationId="TerminalNewButtonCollapsed"
+                                AutomationProperties.Name="New session"
+                                Click="NewSession_Click"
+                                Style="{StaticResource TerminalIconButtonStyle}"
+                                ToolTipService.ToolTip="New session (Ctrl+Shift+T)">
+                                <FontIcon FontSize="12" Glyph="&#xE710;" />
+                            </Button>
+                            <Button
+                                x:Name="FullWindowButtonNarrow"
+                                AutomationProperties.AutomationId="TerminalFullWindowButtonCollapsed"
+                                Click="FullWindow_Click"
+                                Style="{StaticResource TerminalIconButtonStyle}">
+                                <FontIcon x:Name="FullWindowGlyphNarrow" FontSize="12" Glyph="&#xE740;" />
+                            </Button>
+                            <Button
+                                x:Name="HideButtonNarrow"
+                                AutomationProperties.AutomationId="TerminalHideButtonCollapsed"
+                                Click="Hide_Click"
+                                Style="{StaticResource TerminalIconButtonStyle}">
+                                <FontIcon FontSize="12" Glyph="&#xE70D;" />
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <ScrollViewer
+                        Grid.Row="1"
+                        AutomationProperties.AutomationId="TerminalSessionList"
+                        AutomationProperties.Name="Sessions"
+                        HorizontalScrollMode="Disabled"
+                        VerticalScrollBarVisibility="Auto">
+                        <StackPanel
+                            x:Name="Rows"
+                            Padding="0,0,0,8"
+                            XYFocusKeyboardNavigation="Enabled" />
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+
+            <!-- Drag to resize the session list; double-click to collapse or expand it. -->
+            <local:ResizeHandle
+                x:Name="ListSplitter"
+                Grid.Column="1"
+                Width="5"
+                AutomationProperties.AutomationId="TerminalSessionListSplitter"
+                AutomationProperties.Name="Session list divider"
+                DoubleTapped="ListSplitter_DoubleTapped"
+                PointerCaptureLost="ListSplitter_PointerCaptureLost"
+                PointerMoved="ListSplitter_PointerMoved"
+                PointerPressed="ListSplitter_PointerPressed"
+                PointerReleased="ListSplitter_PointerReleased"
+                ToolTipService.ToolTip="Drag to resize the session list; double-click to collapse or expand it" />
+
+            <Grid x:Name="Body" Grid.Column="2" />
+        </Grid>
+    </Border>
+</UserControl>

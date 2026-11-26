@@ -22,7 +22,7 @@ public sealed class AgentContextButton : Button
 
     public AgentContextButton()
     {
-        Content = new FontIcon { Glyph = "", FontSize = 13 };
+        Content = new FontIcon { Glyph = AgentContextLabels.AgentGlyph, FontSize = 13 };
         AutomationProperties.SetAutomationId(this, "AgentContextButton");
         AutomationProperties.SetName(this, "Agent");
         IsEnabled = false;
@@ -70,11 +70,5 @@ public sealed class AgentContextButton : Button
 
     private static bool CopyOnly => AppEdition.Current.IsTicketsOnly;
 
-    internal static string ToolTipFor(AgentContext.ContextKind? kind, bool copyOnly)
-    {
-        var noun = kind is { } k ? AgentContext.Label(k).ToLowerInvariant() : "item";
-        return copyOnly
-            ? $"Copy this {noun} for an agent"
-            : $"Send this {noun} to the running agent, or copy it when none is running; right-click to copy";
-    }
+    internal static string ToolTipFor(AgentContext.ContextKind? kind, bool copyOnly) => AgentContextLabels.ButtonToolTip(kind, copyOnly);
 }

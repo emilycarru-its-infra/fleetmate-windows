@@ -3,6 +3,7 @@
     x:Class="FleetMate.WinUI.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:terminal="using:FleetMate.WinUI.Shell.Terminal"
     Title="FleetMate">
     <Window.SystemBackdrop>
         <MicaBackdrop />
@@ -13,7 +14,9 @@
             <RowDefinition Height="48" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
+            <RowDefinition x:Name="ContentRow" Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition x:Name="TerminalRow" Height="Auto" />
         </Grid.RowDefinitions>
         <Grid.KeyboardAccelerators>
             <KeyboardAccelerator Key="F" Modifiers="Control" Invoked="SearchAccelerator_Invoked" />
@@ -33,6 +36,21 @@
             IsPaneToggleButtonVisible="False">
             <TitleBar.LeftHeader>
                 <StackPanel x:Name="TitleBarLeft" Margin="4,0,0,0" Orientation="Horizontal">
+                    <!-- Agent first on every tab, as on FleetMate.GUI: Ctrl+J or Ctrl+` shows and hides the terminal. -->
+                    <ToggleButton
+                        x:Name="TerminalToggleButton"
+                        Margin="0,0,6,0"
+                        VerticalAlignment="Center"
+                        AutomationProperties.AutomationId="TerminalToggleButton"
+                        AutomationProperties.Name="Agent"
+                        Click="TerminalToggleButton_Click"
+                        CornerRadius="14"
+                        ToolTipService.ToolTip="Show Agent (Ctrl+J or Ctrl+`)">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon x:Name="TerminalToggleGlyph" FontSize="14" Glyph="&#xE756;" />
+                            <TextBlock Text="Agent" />
+                        </StackPanel>
+                    </ToggleButton>
                     <Button
                         x:Name="BackButton"
                         AutomationProperties.Name="Back"
@@ -229,5 +247,30 @@
             SelectionChanged="NavView_SelectionChanged">
             <Frame x:Name="NavFrame" Navigated="NavFrame_Navigated" />
         </NavigationView>
+
+        <!--
+            The Agent Terminal, reachable from every tab. Drag the divider to
+            size it: near the top it fills the window, released near the
+            bottom it closes; double-click closes it. Full window, the
+            divider is not drawn.
+        -->
+        <terminal:ResizeHandle
+            x:Name="TerminalDivider"
+            Grid.Row="4"
+            Height="5"
+            AutomationProperties.AutomationId="TerminalDivider"
+            AutomationProperties.Name="Agent Terminal divider"
+            DoubleTapped="TerminalDivider_DoubleTapped"
+            IsVertical="True"
+            PointerCaptureLost="TerminalDivider_PointerCaptureLost"
+            PointerMoved="TerminalDivider_PointerMoved"
+            PointerPressed="TerminalDivider_PointerPressed"
+            PointerReleased="TerminalDivider_PointerReleased"
+            ToolTipService.ToolTip="Drag to resize; drag to the bottom or double-click to close (Ctrl+`)"
+            Visibility="Collapsed" />
+        <terminal:TerminalPanel
+            x:Name="Terminal"
+            Grid.Row="5"
+            Visibility="Collapsed" />
     </Grid>
 </Window>

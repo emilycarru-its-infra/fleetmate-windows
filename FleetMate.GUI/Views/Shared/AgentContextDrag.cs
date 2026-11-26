@@ -18,16 +18,14 @@ namespace FleetMate.GUI.Views.Shared;
 public static class AgentContextDrag
 {
     /// <summary>The block's own format, beside the plain text.</summary>
-    public const string Format = "FleetMateAgentContext";
-
-    /// <summary>How long after a drag ends its drop may still arrive from the terminal page.</summary>
-    internal static readonly TimeSpan Grace = TimeSpan.FromSeconds(10);
-
-    private static string? _text;
-    private static DateTime _endedAt = DateTime.MaxValue;
+    public const string Format = AgentContextDragState.Format;
 
     /// <summary>A drag of a block started (true) or ended (false); the terminal shows the copy cursor only meanwhile.</summary>
-    public static event Action<bool>? ActiveChanged;
+    public static event Action<bool>? ActiveChanged
+    {
+        add => AgentContextDragState.ActiveChanged += value;
+        remove => AgentContextDragState.ActiveChanged -= value;
+    }
 
     // ── Sources ──────────────────────────────────────────────────────────
 
@@ -91,34 +89,10 @@ public static class AgentContextDrag
 
     // ── The terminal's side ──────────────────────────────────────────────
 
-    internal static void Begin(string text)
-    {
-        _text = text;
-        _endedAt = DateTime.MaxValue;
-        ActiveChanged?.Invoke(true);
-    }
+    internal static void Begin(string text) => AgentContextDragState.Begin(text);
 
-    internal static void End(DateTime now)
-    {
-        _endedAt = now;
-        ActiveChanged?.Invoke(false);
-    }
+    internal static void End(DateTime now) => AgentContextDragState.End(now);
 
-    /// <summary>
-    /// The block for text dropped on the terminal: the current (or just
-    /// ended) drag's own block, taken once, when <paramref name="dropped"/>
-    /// is that block; null for anything else, so a drop from another app is
-    /// ignored. The block FleetMate rendered is returned, not the page's copy.
-    /// </summary>
-    public static string? Claim(string? dropped, DateTime now)
-    {
-        var text = _text;
-        if (text == null || string.IsNullOrEmpty(dropped)) return null;
-        if (_endedAt != DateTime.MaxValue && now - _endedAt > Grace) { _text = null; return null; }
-        if (Normalize(dropped) != Normalize(text)) return null;
-        _text = null;
-        return text;
-    }
-
-    private static string Normalize(string text) => text.Replace("\r\n", "\n").Replace('\r', '\n').TrimEnd('\n');
+    /// <summary>The block for text dropped on the terminal; see <see cref="AgentContextDragState.Claim"/>.</summary>
+    public static string? Claim(string? dropped, DateTime now) => AgentContextDragState.Claim(dropped, now);
 }

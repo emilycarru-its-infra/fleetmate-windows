@@ -60,6 +60,9 @@
   <ItemGroup>
     <None Remove="Sign-DevBuild.ps1" />
     <Content Include="Assets\**\*.*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The Agent Terminal's page and xterm.js (MIT, see LICENSE.xterm.txt),
+         shared with FleetMate.GUI, served to WebView2 from a private virtual host. -->
+    <Content Include="..\FleetMate.Core\Assets\Terminal\*.*" Link="Assets\Terminal\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
 

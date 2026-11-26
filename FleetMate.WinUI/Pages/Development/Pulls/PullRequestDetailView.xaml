@@ -96,6 +96,9 @@
                         TextWrapping="Wrap" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" VerticalAlignment="Top" Orientation="Horizontal" Spacing="4">
+                    <Button x:Name="SendToAgentButton" AutomationProperties.AutomationId="PullRequestSendToAgent" AutomationProperties.Name="Send to Agent">
+                        <FontIcon FontSize="14" Glyph="&#xE756;" />
+                    </Button>
                     <Button AutomationProperties.AutomationId="PullRequestCopyLink" AutomationProperties.Name="Copy title and link" Click="CopyLink_Click" ToolTipService.ToolTip="Copy title and link">
                         <FontIcon FontSize="14" Glyph="&#xE8C8;" />
                     </Button>

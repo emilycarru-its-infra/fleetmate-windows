@@ -260,8 +260,9 @@ public partial class App : Application, IDevelopmentHost
         new(FleetMate.Core.Services.Terminal.AppContextFile.DefaultPath);
 
     /// <summary>The agent brief, where sessions open, and the agent CLIs kept current.</summary>
-    public FleetMate.GUI.Views.Terminal.AgentSessions Agent => _agent ??= new(this);
-    private FleetMate.GUI.Views.Terminal.AgentSessions? _agent;
+    public FleetMate.Core.Services.Terminal.AgentSessionHost Agent => _agent ??= new(Context, () => Config.Terminal,
+        () => AuthManager, new System.Windows.Threading.DispatcherSynchronizationContext(Dispatcher));
+    private FleetMate.Core.Services.Terminal.AgentSessionHost? _agent;
     
     // MARK: - Cached Data
     // Data caches with timestamps to avoid reloading on tab switches

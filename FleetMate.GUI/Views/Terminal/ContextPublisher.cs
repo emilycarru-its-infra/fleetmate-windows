@@ -10,7 +10,8 @@ namespace FleetMate.GUI.Views.Terminal;
 /// <summary>
 /// Pages report what is selected here, and the FLEETMATE_CONTEXT file every
 /// terminal session points at is rewritten to match, so an agent can ask
-/// "what is the operator looking at" by reading one JSON file.
+/// "what is the operator looking at" by reading one JSON file. The shape of
+/// each selection is <see cref="AppContextSelections"/>'s, shared with the WinUI app.
 /// </summary>
 public static class ContextPublisher
 {
@@ -21,55 +22,14 @@ public static class ContextPublisher
     /// <summary>The segment a tab shows (Development: Pulls, Inbox, Commits, ...).</summary>
     public static void Segment(string tab, string? segment) => File?.SetSegment(tab, segment);
 
-    public static void PullRequest(UnifiedPullRequest? pr) =>
-        File?.SetSelection("pullRequest", pr == null ? Array.Empty<ContextSelection>() : new[]
-        {
-            new ContextSelection("pullRequest", $"{pr.Repository}#{pr.Number}", new Dictionary<string, string?>
-            {
-                ["title"] = pr.Title,
-                ["repository"] = string.IsNullOrEmpty(pr.Container) ? pr.Repository : $"{pr.Container}/{pr.Repository}",
-                ["sourceBranch"] = pr.SourceBranch,
-                ["targetBranch"] = pr.TargetBranch,
-                ["author"] = pr.AuthorName,
-                ["url"] = pr.WebUrl,
-                ["source"] = pr.Source.ToString(),
-            })
-        });
+    public static void PullRequest(UnifiedPullRequest? pr) => File?.SetSelection("pullRequest", AppContextSelections.PullRequest(pr));
 
-    public static void Devices(IEnumerable<IntuneDevice> devices) =>
-        File?.SetSelection("device", devices.Select(d => new ContextSelection("device", d.Id, new Dictionary<string, string?>
-        {
-            ["name"] = d.DeviceName,
-            ["serial"] = d.SerialNumber,
-            ["user"] = d.UserPrincipalName,
-            ["os"] = d.OperatingSystem,
-            ["compliance"] = d.ComplianceState,
-        })).ToList());
+    public static void Devices(IEnumerable<IntuneDevice> devices) => File?.SetSelection("device", AppContextSelections.Devices(devices));
 
     public static void Asset(SnipeAsset? asset) =>
         File?.SetSelection("asset", FleetMate.Core.Inventory.AssetContext.Selection(asset));
 
-    public static void Ticket(TdxTicket? ticket) =>
-        File?.SetSelection("ticket", ticket == null ? Array.Empty<ContextSelection>() : new[]
-        {
-            new ContextSelection("ticket", ticket.Id.ToString(), new Dictionary<string, string?>
-            {
-                ["title"] = ticket.Title,
-                ["status"] = ticket.StatusName,
-                ["requestor"] = ticket.RequestorName,
-                ["responsible"] = ticket.ResponsibleFullName,
-            })
-        });
+    public static void Ticket(TdxTicket? ticket) => File?.SetSelection("ticket", AppContextSelections.Ticket(ticket));
 
-    public static void WorkItem(UnifiedTask? task) =>
-        File?.SetSelection("workItem", task == null ? Array.Empty<ContextSelection>() : new[]
-        {
-            new ContextSelection("workItem", task.Id, new Dictionary<string, string?>
-            {
-                ["title"] = task.Title,
-                ["provider"] = task.Provider,
-                ["state"] = task.State.ToString(),
-                ["assignees"] = string.Join(", ", task.Assignees),
-            })
-        });
+    public static void WorkItem(UnifiedTask? task) => File?.SetSelection("workItem", AppContextSelections.WorkItem(task));
 }

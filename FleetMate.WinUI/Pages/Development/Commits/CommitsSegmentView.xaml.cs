@@ -1,3 +1,5 @@
+using FleetMate.Core.Shared;
+using FleetMate.WinUI.Shell;
 using FleetMate.Core.Development;
 using FleetMate.Core.Links;
 using FleetMate.Core.Models.Projects;
@@ -32,6 +34,7 @@ public sealed partial class CommitsSegmentView : UserControl, IDevelopmentSegmen
     public CommitsSegmentView()
     {
         InitializeComponent();
+        AgentHandOff.AttachDrag(CommitsList, item => item is CommitRowItem row ? AgentContexts.Commit(row.Commit, row.Repository) : null);
         _layout = new ListDetailLayout(Root, ListColumn, DetailColumn, ListPane, DetailPane, BackButton);
     }
 
@@ -194,7 +197,7 @@ public sealed partial class CommitsSegmentView : UserControl, IDevelopmentSegmen
         await Detail.ShowAsync(repository, commit);
     }
 
-    /// <summary>Right-click, Shift+F10 or the context key on a commit row: Open in Browser, Copy SHA.</summary>
+    /// <summary>Right-click, Shift+F10 or the context key on a commit row: Copy and Send for Agent, Open in Browser, Copy SHA.</summary>
     private void CommitsList_ContextRequested(UIElement sender, ContextRequestedEventArgs args)
     {
         if (RowFrom(args.OriginalSource, out var container) is not { } row) return;
@@ -206,6 +209,7 @@ public sealed partial class CommitsSegmentView : UserControl, IDevelopmentSegmen
         copy.Click += (_, _) => DevelopmentUi.Copy(row.Commit.Id);
         menu.Items.Add(open);
         menu.Items.Add(copy);
+        AgentHandOff.Prepend(menu, () => [AgentContexts.Commit(row.Commit, row.Repository)], container);
         if (args.TryGetPosition(container, out var point)) menu.ShowAt(container, new FlyoutShowOptions { Position = point });
         else menu.ShowAt(container);
     }

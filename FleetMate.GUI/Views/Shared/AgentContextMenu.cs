@@ -89,13 +89,13 @@ public static class AgentContextMenu
     internal static IEnumerable<MenuItem> Items(Func<IReadOnlyList<AgentContext>> contexts, bool ticketsOnly)
     {
         if (ticketsOnly) yield break;
-        var copy = new MenuItem { Header = "Copy for Agent", Icon = new FontIcon { Glyph = "" }, Tag = AgentTag };
+        var copy = new MenuItem { Header = AgentContextLabels.CopyHeader, Icon = new FontIcon { Glyph = AgentContextLabels.CopyGlyph }, Tag = AgentTag };
         AutomationProperties.SetAutomationId(copy, "CopyForAgentMenuItem");
         copy.Click += (_, _) => Copy(contexts(), CopyFeedback.Anchor(copy));
         yield return copy;
-        var send = new MenuItem { Header = "Send to Agent", Icon = new FontIcon { Glyph = "" }, Tag = AgentTag };
+        var send = new MenuItem { Header = AgentContextLabels.SendHeader, Icon = new FontIcon { Glyph = AgentContextLabels.SendGlyph }, Tag = AgentTag };
         AutomationProperties.SetAutomationId(send, "SendToAgentMenuItem");
-        send.ToolTip = "Paste into the running agent's input without pressing Return; with none running, copy and open the terminal";
+        send.ToolTip = AgentContextLabels.SendToolTip;
         send.Click += (_, _) => Send(contexts(), CopyFeedback.Anchor(send));
         yield return send;
     }

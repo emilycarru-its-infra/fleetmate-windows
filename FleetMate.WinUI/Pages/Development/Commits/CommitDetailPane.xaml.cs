@@ -1,3 +1,4 @@
+using FleetMate.WinUI.Shell;
 using FleetMate.Core.Development;
 using FleetMate.Core.Links;
 using FleetMate.Core.Models.Projects;
@@ -23,6 +24,7 @@ public sealed partial class CommitDetailPane : UserControl
     public CommitDetailPane()
     {
         InitializeComponent();
+        AgentHandOff.AttachButton(SendToAgentButton, Context);
         Loaded += (_, _) => App.Services.DevOpsSignedIn += OnDevOpsSignedIn;
         Unloaded += (_, _) => App.Services.DevOpsSignedIn -= OnDevOpsSignedIn;
     }
@@ -129,8 +131,12 @@ public sealed partial class CommitDetailPane : UserControl
 
     private void OpenInBrowser_Click(object sender, RoutedEventArgs e) => DevelopmentUi.OpenUrl(_commit?.Url);
 
+    /// <summary>The commit shown, as the block Send and Copy for Agent hand over; null while none is.</summary>
+    private AgentContext? Context() =>
+        _commit is { } commit && _repository is { } repository ? AgentContexts.Commit(commit, repository) : null;
+
     private void CopyForAgent_Click(object sender, RoutedEventArgs e)
     {
-        if (_commit is { } commit && _repository is { } repository) DevelopmentUi.Copy(AgentContexts.Commit(commit, repository).Markdown);
+        if (Context() is { } context) AgentHandOff.Copy([context], sender as FrameworkElement);
     }
 }
