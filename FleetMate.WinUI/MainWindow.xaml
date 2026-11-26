@@ -8,7 +8,7 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <Grid x:Name="RootGrid">
+    <Grid x:Name="RootGrid" SizeChanged="RootGrid_SizeChanged">
         <Grid.RowDefinitions>
             <RowDefinition Height="48" />
             <RowDefinition Height="Auto" />
@@ -32,7 +32,7 @@
             IsBackButtonVisible="False"
             IsPaneToggleButtonVisible="False">
             <TitleBar.LeftHeader>
-                <StackPanel Margin="4,0,0,0" Orientation="Horizontal">
+                <StackPanel x:Name="TitleBarLeft" Margin="4,0,0,0" Orientation="Horizontal">
                     <Button
                         x:Name="BackButton"
                         AutomationProperties.Name="Back"
@@ -62,7 +62,7 @@
 
             <AutoSuggestBox
                 x:Name="SearchBox"
-                MinWidth="320"
+                MinWidth="200"
                 MaxWidth="480"
                 VerticalAlignment="Center"
                 AutomationProperties.Name="Search"
@@ -75,10 +75,26 @@
 
             <TitleBar.RightHeader>
                 <StackPanel
+                    x:Name="TitleBarRight"
                     Margin="0,0,8,0"
                     VerticalAlignment="Center"
                     Orientation="Horizontal"
                     Spacing="4">
+                    <!-- Below the breakpoint the search field folds into this button's flyout. -->
+                    <Button
+                        x:Name="SearchButton"
+                        AutomationProperties.AutomationId="ToolbarSearchButton"
+                        AutomationProperties.Name="Search"
+                        Style="{StaticResource TitleBarIconButtonStyle}"
+                        ToolTipService.ToolTip="Search (Ctrl+F)"
+                        Visibility="Collapsed">
+                        <FontIcon FontSize="16" Glyph="&#xE721;" />
+                        <Button.Flyout>
+                            <Flyout x:Name="SearchFlyout" Placement="Bottom">
+                                <Border x:Name="SearchFlyoutHost" Width="360" />
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
                     <!-- The Tickets tab's own controls; hidden on every other tab. -->
                     <StackPanel
                         x:Name="TicketsTools"
