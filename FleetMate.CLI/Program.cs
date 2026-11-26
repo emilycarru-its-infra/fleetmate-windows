@@ -23,6 +23,9 @@ class Program
 {
     static async Task<int> Main(string[] args)
     {
+        // Print UTF-8 so separators such as "·" are not garbled in the console.
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+
         // Load configuration
         var config = FleetMateConfig.Load();
 
