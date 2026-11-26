@@ -33,6 +33,9 @@
             SelectionChanged="Sections_SelectionChanged">
             <SelectorBarItem x:Name="GeneralItem" IsSelected="True" Tag="General" Text="General" AutomationProperties.AutomationId="SettingsGeneralTab" />
             <SelectorBarItem Tag="Authentication" Text="Authentication" AutomationProperties.AutomationId="SettingsAuthenticationTab" />
+            <SelectorBarItem Tag="Connections" Text="Connections" AutomationProperties.AutomationId="SettingsConnectionsTab" />
+            <SelectorBarItem Tag="Manage" Text="Manage" AutomationProperties.AutomationId="SettingsManageTab" />
+            <SelectorBarItem Tag="Terminal" Text="Terminal" AutomationProperties.AutomationId="SettingsTerminalTab" />
             <SelectorBarItem Tag="Appearance" Text="Appearance" AutomationProperties.AutomationId="SettingsAppearanceTab" />
             <SelectorBarItem Tag="About" Text="About" AutomationProperties.AutomationId="SettingsAboutTab" />
         </SelectorBar>
@@ -47,7 +50,7 @@
                         IsClosable="False"
                         IsOpen="True"
                         Severity="Informational"
-                        Message="Manage, Enrollment, Terminal and Repositories settings, and editing connections, are still in the WPF app." />
+                        Message="Enrollment and Repositories settings, text size and the setup wizard are still in the WPF app." />
                     <InfoBar
                         Margin="0,0,0,8"
                         IsClosable="False"
@@ -154,6 +157,80 @@
                                 Visibility="Collapsed" />
                         </StackPanel>
                     </Border>
+                </StackPanel>
+
+                <!-- Connections, Manage and Terminal: the same cards, filled per section -->
+                <StackPanel x:Name="EditPanel" Spacing="8" Visibility="Collapsed">
+                    <TextBlock
+                        x:Name="SshKeyStatusText"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="{x:Bind Edit.SshKeyStatus}"
+                        TextWrapping="Wrap"
+                        Visibility="Collapsed" />
+                    <ItemsRepeater x:Name="EditCards">
+                        <ItemsRepeater.Layout>
+                            <StackLayout Spacing="8" />
+                        </ItemsRepeater.Layout>
+                        <ItemsRepeater.ItemTemplate>
+                            <DataTemplate x:DataType="local:SettingsCard">
+                                <Border Style="{StaticResource SettingsCardStyle}">
+                                    <StackPanel Spacing="10">
+                                        <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Title}" />
+                                        <ItemsRepeater ItemsSource="{x:Bind Fields}">
+                                            <ItemsRepeater.Layout>
+                                                <StackLayout Spacing="10" />
+                                            </ItemsRepeater.Layout>
+                                            <ItemsRepeater.ItemTemplate>
+                                                <DataTemplate x:DataType="local:SettingsFieldViewModel">
+                                                    <TextBox
+                                                        MinHeight="{x:Bind MinHeight}"
+                                                        AcceptsReturn="{x:Bind Multiline}"
+                                                        AutomationProperties.AutomationId="{x:Bind AutomationId}"
+                                                        Header="{x:Bind Label}"
+                                                        PlaceholderText="{x:Bind Placeholder}"
+                                                        Text="{x:Bind Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                        TextWrapping="Wrap" />
+                                                </DataTemplate>
+                                            </ItemsRepeater.ItemTemplate>
+                                        </ItemsRepeater>
+                                        <ItemsRepeater ItemsSource="{x:Bind Toggles}">
+                                            <ItemsRepeater.Layout>
+                                                <StackLayout Spacing="4" />
+                                            </ItemsRepeater.Layout>
+                                            <ItemsRepeater.ItemTemplate>
+                                                <DataTemplate x:DataType="local:SettingsToggleViewModel">
+                                                    <CheckBox
+                                                        AutomationProperties.AutomationId="{x:Bind AutomationId}"
+                                                        Content="{x:Bind Label}"
+                                                        IsChecked="{x:Bind IsOn, Mode=TwoWay}" />
+                                                </DataTemplate>
+                                            </ItemsRepeater.ItemTemplate>
+                                        </ItemsRepeater>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsRepeater.ItemTemplate>
+                    </ItemsRepeater>
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button
+                            AutomationProperties.AutomationId="SettingsSave"
+                            Command="{x:Bind Edit.SaveCommand}"
+                            Content="Save"
+                            IsEnabled="{x:Bind Edit.CanSave}"
+                            Style="{StaticResource AccentButtonStyle}" />
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="{x:Bind Edit.Status, Mode=OneWay}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="Empty connection fields keep their current value. Empty Handbook, Teams, Manage and Terminal fields fall back to your organization's setting or the default."
+                        TextWrapping="Wrap" />
                 </StackPanel>
 
                 <!-- Appearance -->
