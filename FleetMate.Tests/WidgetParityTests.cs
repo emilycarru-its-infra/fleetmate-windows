@@ -1,3 +1,4 @@
+using FleetMate.Core.Shared;
 using System.Windows;
 using FleetMate.Core.Models.Devices;
 using FleetMate.Core.Models.Inventory;
@@ -122,7 +123,7 @@ public class WidgetParityTests
     [InlineData("deployed (3)", "deployed")]
     [InlineData("Platform/Repo", "Platform/Repo")]
     public void FilterValue_DropsTheCountSuffix(string label, string expected) =>
-        Assert.Equal(expected, WidgetCatalog.FilterValue(label));
+        Assert.Equal(expected, ChartSlice.FilterValue(label));
 
     // MARK: - Inventory
 
@@ -191,7 +192,7 @@ public class WidgetParityTests
         var options = assets.Select(WidgetCatalog.AssetStatusTypeFilterValue).Distinct().ToList();
 
         var wedge = WidgetCatalog.AssetStatusSlices(assets).Single(s => s.Label.StartsWith("deployable"));
-        var selected = WidgetCatalog.MatchFilterValues(WidgetCatalog.FilterValue(wedge.Label), options).Single();
+        var selected = WidgetCatalog.MatchFilterValues(ChartSlice.FilterValue(wedge.Label), options).Single();
 
         Assert.Equal("Deployable", selected);
         Assert.Equal(2, assets.Count(a => WidgetCatalog.AssetStatusTypeFilterValue(a) == selected));
@@ -252,22 +253,22 @@ public class WidgetParityTests
     [Fact]
     public void PullAge_BucketsByCreationDay()
     {
-        Assert.Equal("Today", WidgetCatalog.AgeBucket(Now.AddHours(-2), Now));
-        Assert.Equal("1–7 days", WidgetCatalog.AgeBucket(Now.AddDays(-7), Now));
-        Assert.Equal("8–30 days", WidgetCatalog.AgeBucket(Now.AddDays(-30), Now));
-        Assert.Equal("Over 30 days", WidgetCatalog.AgeBucket(Now.AddDays(-31), Now));
-        Assert.Equal(4, WidgetCatalog.AgeSlices(Array.Empty<UnifiedPullRequest>(), Now).Count);
+        Assert.Equal("Today", DevelopmentFigures.AgeBucket(Now.AddHours(-2), Now));
+        Assert.Equal("1–7 days", DevelopmentFigures.AgeBucket(Now.AddDays(-7), Now));
+        Assert.Equal("8–30 days", DevelopmentFigures.AgeBucket(Now.AddDays(-30), Now));
+        Assert.Equal("Over 30 days", DevelopmentFigures.AgeBucket(Now.AddDays(-31), Now));
+        Assert.Equal(4, DevelopmentFigures.AgeSlices(Array.Empty<UnifiedPullRequest>(), Now).Count);
     }
 
     [Fact]
     public void ReviewState_CountsEachPullRequestOnceInPrecedenceOrder()
     {
         PullRequestReviewer Vote(PullRequestReviewVote v) => new() { Vote = v };
-        Assert.Equal("Draft", WidgetCatalog.ReviewState(new UnifiedPullRequest { State = PullRequestState.Draft, HasConflicts = true }));
-        Assert.Equal("Conflicts", WidgetCatalog.ReviewState(new UnifiedPullRequest { HasConflicts = true, Reviewers = new[] { Vote(PullRequestReviewVote.Approved) } }));
-        Assert.Equal("Changes Requested", WidgetCatalog.ReviewState(new UnifiedPullRequest { Reviewers = new[] { Vote(PullRequestReviewVote.Approved), Vote(PullRequestReviewVote.WaitingForAuthor) } }));
-        Assert.Equal("Approved", WidgetCatalog.ReviewState(new UnifiedPullRequest { Reviewers = new[] { Vote(PullRequestReviewVote.ApprovedWithSuggestions) } }));
-        Assert.Equal("Awaiting Review", WidgetCatalog.ReviewState(new UnifiedPullRequest()));
+        Assert.Equal("Draft", DevelopmentFigures.ReviewState(new UnifiedPullRequest { State = PullRequestState.Draft, HasConflicts = true }));
+        Assert.Equal("Conflicts", DevelopmentFigures.ReviewState(new UnifiedPullRequest { HasConflicts = true, Reviewers = new[] { Vote(PullRequestReviewVote.Approved) } }));
+        Assert.Equal("Changes Requested", DevelopmentFigures.ReviewState(new UnifiedPullRequest { Reviewers = new[] { Vote(PullRequestReviewVote.Approved), Vote(PullRequestReviewVote.WaitingForAuthor) } }));
+        Assert.Equal("Approved", DevelopmentFigures.ReviewState(new UnifiedPullRequest { Reviewers = new[] { Vote(PullRequestReviewVote.ApprovedWithSuggestions) } }));
+        Assert.Equal("Awaiting Review", DevelopmentFigures.ReviewState(new UnifiedPullRequest()));
     }
 
     [Fact]
@@ -278,7 +279,7 @@ public class WidgetParityTests
             Container = "Org", Repository = "R",
             Commits = new() { new PullRequestCommit { Date = Now }, new PullRequestCommit { Date = Now.AddHours(-1) }, new PullRequestCommit { Date = Now.AddDays(-13) }, new PullRequestCommit { Date = Now.AddDays(-20) } },
         };
-        var days = WidgetCatalog.CommitsPerDay(new[] { repo }, Now);
+        var days = DevelopmentFigures.CommitsPerDay(new[] { repo }, Now);
         Assert.Equal(14, days.Count);
         Assert.Equal(Now.Date, days[^1].Day);
         Assert.Equal(2, days[^1].Count);
@@ -289,15 +290,15 @@ public class WidgetParityTests
     public void SuccessRate_CountsOnlyRunsWithAVerdict()
     {
         PipelineRun Run(PipelineRunStatus s) => new() { Status = s };
-        Assert.Null(WidgetCatalog.SuccessRate(new[] { Run(PipelineRunStatus.Running), Run(PipelineRunStatus.Cancelled) }));
-        Assert.Equal(67, WidgetCatalog.SuccessRate(new[] { Run(PipelineRunStatus.Succeeded), Run(PipelineRunStatus.Succeeded), Run(PipelineRunStatus.Failed), Run(PipelineRunStatus.Cancelled) }));
+        Assert.Null(DevelopmentFigures.SuccessRate(new[] { Run(PipelineRunStatus.Running), Run(PipelineRunStatus.Cancelled) }));
+        Assert.Equal(67, DevelopmentFigures.SuccessRate(new[] { Run(PipelineRunStatus.Succeeded), Run(PipelineRunStatus.Succeeded), Run(PipelineRunStatus.Failed), Run(PipelineRunStatus.Cancelled) }));
     }
 
     [Fact]
     public void SlowestPipelines_UseTheMedianFinishedRun()
     {
         PipelineRun Run(string name, int minutes) => new() { PipelineName = name, Status = PipelineRunStatus.Succeeded, StartedAt = Now, FinishedAt = Now.AddMinutes(minutes) };
-        var slices = WidgetCatalog.SlowestPipelines(new[] { Run("A", 2), Run("A", 4), Run("A", 60), Run("B", 10) });
+        var slices = DevelopmentFigures.SlowestPipelines(new[] { Run("A", 2), Run("A", 4), Run("A", 60), Run("B", 10) });
         Assert.Equal(("B", 10), (slices[0].Label, slices[0].Value));
         Assert.Equal(("A", 4), (slices[1].Label, slices[1].Value));
     }
@@ -306,7 +307,7 @@ public class WidgetParityTests
     [InlineData(4, false, "4")]
     [InlineData(0, true, "--")]
     public void Counts_ReadUnknownWhenTheProviderFailed(int value, bool failed, string expected) =>
-        Assert.Equal(expected, WidgetCatalog.CountOrUnknown(value, failed));
+        Assert.Equal(expected, DevelopmentFigures.CountOrUnknown(value, failed));
 
     [Fact]
     public void RepositorySlices_MostFirst_TopEight()
@@ -315,7 +316,7 @@ public class WidgetParityTests
             .SelectMany(i => Enumerable.Range(0, i + 1).Select(_ => new UnifiedPullRequest { Container = "Org", Repository = $"R{i}" }))
             .ToList();
 
-        var slices = WidgetCatalog.RepositorySlices(prs);
+        var slices = DevelopmentFigures.RepositorySlices(prs);
 
         Assert.Equal(8, slices.Count);
         Assert.Equal("Org/R9", slices[0].Label);
