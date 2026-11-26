@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using FleetMate.Core.Devices;
 using FleetMate.Core.Models.Devices;
 using FleetMate.Core.Services;
 using ModernWpf.Controls.Primitives;
@@ -20,35 +21,34 @@ public partial class IntunePage
     {
         var tag = AutopilotGroupTagBox.Text.Trim();
         var identities = SelectedIdentities();
-        var what = tag.Length == 0 ? "clear the group tag on" : $"set group tag \"{tag}\" on";
-        if (!Confirm($"Do you want to {what} {identities.Count} Autopilot identit{(identities.Count == 1 ? "y" : "ies")}?", "Set Group Tag")) return;
+        if (!Confirm(DeviceActionText.AutopilotConfirm(AutopilotAction.SetGroupTag, identities.Count, tag))) return;
         await RunAutopilotAsync("Setting group tag", identities, id => _graphService!.SetAutopilotGroupTagAsync(id.Id, tag));
     }
 
     private async void OnAutopilotAssignUserClicked(object sender, RoutedEventArgs e)
     {
         var upn = AutopilotUserBox.Text.Trim();
-        if (!upn.Contains('@'))
+        if (!DeviceActionText.IsUserPrincipalName(upn))
         {
             ShowActionMessage("Enter the user's principal name (user@domain).", isError: true);
             return;
         }
         var identities = SelectedIdentities();
-        if (!Confirm($"Assign {upn} to {identities.Count} Autopilot identit{(identities.Count == 1 ? "y" : "ies")}?", "Assign User")) return;
+        if (!Confirm(DeviceActionText.AutopilotConfirm(AutopilotAction.AssignUser, identities.Count, upn))) return;
         await RunAutopilotAsync("Assigning user", identities, id => _graphService!.AssignAutopilotUserAsync(id.Id, upn));
     }
 
     private async void OnAutopilotUnassignUserClicked(object sender, RoutedEventArgs e)
     {
         var identities = SelectedIdentities();
-        if (!Confirm($"Remove the assigned user from {identities.Count} Autopilot identit{(identities.Count == 1 ? "y" : "ies")}?", "Unassign User")) return;
+        if (!Confirm(DeviceActionText.AutopilotConfirm(AutopilotAction.UnassignUser, identities.Count))) return;
         await RunAutopilotAsync("Unassigning user", identities, id => _graphService!.UnassignAutopilotUserAsync(id.Id));
     }
 
     private async void OnAutopilotSyncClicked(object sender, RoutedEventArgs e)
     {
         if (_graphService == null) return;
-        if (!Confirm("Sync Intune with the Autopilot service? This applies to the whole tenant.", "Sync Autopilot")) return;
+        if (!Confirm(DeviceActionText.AutopilotConfirm(AutopilotAction.Sync, 0))) return;
         ShowActionMessage("Syncing Autopilot...", isLoading: true);
         var result = await _graphService.SyncAutopilotAsync();
         ShowActionMessage(result.Success ? "Autopilot sync requested." : $"Autopilot sync failed: {result.Message}", isError: !result.Success);
@@ -57,9 +57,7 @@ public partial class IntunePage
     private async void OnAutopilotDeleteClicked(object sender, RoutedEventArgs e)
     {
         var identities = SelectedIdentities();
-        if (!Confirm($"Delete {identities.Count} Autopilot identit{(identities.Count == 1 ? "y" : "ies")}? " +
-                     "The devices are untouched but stop receiving an Autopilot profile. This cannot be undone.",
-                     "Delete Autopilot Identity", MessageBoxImage.Warning)) return;
+        if (!Confirm(DeviceActionText.AutopilotConfirm(AutopilotAction.Delete, identities.Count), MessageBoxImage.Warning)) return;
         await RunAutopilotAsync("Deleting identity", identities,
             id => _graphService!.DeleteAutopilotIdentityAsync(id.Id, confirmed: true));
     }
@@ -72,18 +70,15 @@ public partial class IntunePage
         var results = new List<GraphService.DeviceActionResult>();
         foreach (var identity in identities) results.Add(await action(identity));
 
-        var failed = results.Where(r => !r.Success).ToList();
-        ShowActionMessage(failed.Count == 0
-                ? $"{verb}: done on {results.Count} device(s)."
-                : $"{verb}: {results.Count - failed.Count} done, {failed.Count} failed — {failed[0].Message}",
-            isError: failed.Count > 0);
+        var failures = results.Where(r => !r.Success).Select(r => r.Message ?? "failed").ToList();
+        ShowActionMessage(DeviceActionText.AutopilotResult(verb, results.Count, failures), isError: failures.Count > 0);
 
         _autopilot = new();
         await LoadAutopilotAsync();
     }
 
-    private static bool Confirm(string message, string title, MessageBoxImage image = MessageBoxImage.Question) =>
-        MessageBox.Show(message, title, MessageBoxButton.YesNo, image) == MessageBoxResult.Yes;
+    private static bool Confirm(DeviceActionConfirm confirm, MessageBoxImage image = MessageBoxImage.Question) =>
+        MessageBox.Show(confirm.Message, confirm.Title, MessageBoxButton.YesNo, image) == MessageBoxResult.Yes;
 
     // ── Hardware hash import ─────────────────────────────────────────────
 

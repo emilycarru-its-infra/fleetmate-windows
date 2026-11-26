@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="FleetMate.WinUI.Pages.Devices.ComplianceLightbox"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    KeyDown="Lightbox_KeyDown">
+
+    <!-- Scrim and a centred card: the scrim or Escape dismisses, like the other lightboxes. -->
+    <Grid x:Name="Scrim" Background="{ThemeResource SmokeFillColorDefaultBrush}" Tapped="Scrim_Tapped">
+        <Border
+            x:Name="Card"
+            MaxWidth="1200"
+            Margin="32"
+            Padding="20"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch"
+            AutomationProperties.AutomationId="DevicesComplianceLightbox"
+            AutomationProperties.Name="Compliance policy"
+            Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+            BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="{ThemeResource OverlayCornerRadius}"
+            Tapped="Card_Tapped">
+            <Grid RowSpacing="14">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Header: the policy on the left, actions on the right. -->
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="4">
+                        <StackPanel x:Name="TitleLine" Orientation="Horizontal" Spacing="8">
+                            <TextBlock x:Name="PolicyNameText" AutomationProperties.HeadingLevel="Level2" Style="{StaticResource SubtitleTextBlockStyle}" TextWrapping="Wrap" />
+                            <Border
+                                x:Name="PlatformBadge"
+                                Padding="7,1"
+                                VerticalAlignment="Center"
+                                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                CornerRadius="4">
+                                <TextBlock x:Name="PlatformText" Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold" />
+                            </Border>
+                            <ContentControl x:Name="StateBadgeHost" VerticalAlignment="Center" IsTabStop="False" />
+                            <TextBlock
+                                x:Name="VersionText"
+                                VerticalAlignment="Center"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}" />
+                        </StackPanel>
+                        <TextBlock
+                            x:Name="DeviceLineText"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            IsTextSelectionEnabled="True"
+                            Style="{StaticResource BodyTextBlockStyle}"
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            x:Name="StatusText"
+                            AutomationProperties.LiveSetting="Polite"
+                            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Visibility="Collapsed" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Top" Orientation="Horizontal" Spacing="8">
+                        <Button AutomationProperties.AutomationId="DevicesLightboxCopy" Click="Copy_Click" ToolTipService.ToolTip="Copy a plain-text report for a ticket">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon FontSize="14" Glyph="&#xE8C8;" />
+                                <TextBlock Text="Copy" />
+                            </StackPanel>
+                        </Button>
+                        <Button AutomationProperties.AutomationId="DevicesLightboxSync" Click="Sync_Click" ToolTipService.ToolTip="Sync this device now">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon FontSize="14" Glyph="&#xE72C;" />
+                                <TextBlock Text="Sync" />
+                            </StackPanel>
+                        </Button>
+                        <Button
+                            AutomationProperties.AutomationId="DevicesLightboxOpenIntune"
+                            AutomationProperties.Name="Open in Intune"
+                            Click="OpenInIntune_Click"
+                            ToolTipService.ToolTip="Open the device's compliance page in Intune">
+                            <FontIcon FontSize="14" Glyph="&#xE8A7;" />
+                        </Button>
+                        <Button
+                            x:Name="CloseButton"
+                            AutomationProperties.AutomationId="DevicesLightboxClose"
+                            AutomationProperties.Name="Close"
+                            Click="Close_Click"
+                            ToolTipService.ToolTip="Close (Escape)">
+                            <FontIcon FontSize="14" Glyph="&#xE711;" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Setting states on the left, the policy definition on the right; stacked when narrow. -->
+                <Grid x:Name="Columns" Grid.Row="1" ColumnSpacing="16" RowSpacing="16" SizeChanged="Columns_SizeChanged">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition x:Name="SettingsColumn" Width="*" />
+                        <ColumnDefinition x:Name="DefinitionColumn" Width="400" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition x:Name="DefinitionRow" Height="0" />
+                    </Grid.RowDefinitions>
+
+                    <ScrollViewer x:Name="SettingsScroller" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="SettingsPanel" Padding="0,0,12,0" Spacing="6" />
+                    </ScrollViewer>
+
+                    <Border x:Name="DefinitionCard" Grid.Column="1" Style="{StaticResource CardStyle}" Padding="0">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel x:Name="DefinitionPanel" Padding="14" Spacing="2" />
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

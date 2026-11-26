@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using FleetMate.Core.Devices;
 using FleetMate.Core.Models.Devices;
 using FleetMate.Core.Services;
 using ModernWpf.Controls;
@@ -23,7 +24,11 @@ namespace FleetMate.GUI.Views.Devices;
 /// </summary>
 public sealed record AppleOrgContext(AppleOrgDevice Device, string ServiceName, string? ServerName,
     Func<Task<List<AppleCareAgreement>>>? LoadAppleCare,
-    Func<Task<AppleActivationLock>>? LoadActivationLock = null);
+    Func<Task<AppleActivationLock>>? LoadActivationLock = null)
+{
+    /// <summary>The record as Core's detail sections take it.</summary>
+    public AppleOrgView View => new(Device, ServiceName, ServerName, LoadAppleCare != null, LoadActivationLock != null);
+}
 
 public partial class DeviceDetailPanel : UserControl
 {
@@ -42,96 +47,101 @@ public partial class DeviceDetailPanel : UserControl
     {
         _device = device;
         _graphService = graphService;
-
-        DeviceName.Text = device.DeviceName;
-        DeviceSerial.Text = device.SerialNumber ?? device.Id;
-
+        (DeviceName.Text, DeviceSerial.Text) = DeviceDetailSections.Header(device);
         ContentPanel.Children.Clear();
 
-        RenderSummary(device);
-        // A device's provisioning record follows Summary: its Apple
-        // organization record, or a Windows device's Autopilot identity.
-        Task appleCare = Task.CompletedTask;
-        if (apple != null) appleCare = RenderAppleOrg(apple, device.Id);
-        if (autopilot != null) RenderAutopilot(autopilot);
-        // The Intune sections follow, the first titled for what Intune is
-        // here: the device management service.
-        RenderEnrollment(device);
-        RenderRecovery(device);
-        RenderHardware(device);
-        // Groups sit beside the compliance they usually explain.
-        var groupsHost = Section("Group Membership", "");
-        var complianceHost = RenderCompliance(device);
-        var appsHost = Section("Detected Apps", "");
+        // The sections and their order come from Core, which FleetMate.WinUI draws too.
+        var slots = Render(DeviceDetailSections.ForDevice(device, autopilot, apple?.View));
+        var loads = new List<Task>();
+        if (apple != null) loads.Add(LoadAppleAsync(apple, slots, device.Id));
+        if (slots.TryGetValue(DeviceDetailSlot.Recovery, out var recovery)) RenderRecovery(device, recovery);
+        var groupsHost = slots[DeviceDetailSlot.Groups];
+        var complianceHost = slots[DeviceDetailSlot.Compliance];
+        var appsHost = slots[DeviceDetailSlot.DetectedApps];
 
         if (graphService == null)
         {
-            AddNote(groupsHost, "Graph is not configured.");
-            AddNote(appsHost, "Graph is not configured.");
+            ReplaceNotes(groupsHost, "Graph is not configured.");
+            ReplaceNotes(appsHost, "Graph is not configured.");
+            await Task.WhenAll(loads);
             return;
         }
 
-        AddNote(groupsHost, "Loading groups...");
-        AddNote(appsHost, "Loading apps...");
-
         // Parallel like the Mac; each fills its own reserved host.
         var current = device.Id;
-        await Task.WhenAll(
-            appleCare,
-            LoadGroupsAsync(device, groupsHost, current),
-            LoadCompliancePoliciesAsync(device.Id, complianceHost, current),
-            LoadDetectedAppsAsync(device.Id, appsHost, current));
+        loads.Add(LoadGroupsAsync(device, groupsHost, current));
+        loads.Add(LoadCompliancePoliciesAsync(device.Id, complianceHost, current));
+        loads.Add(LoadDetectedAppsAsync(device.Id, appsHost, current));
+        await Task.WhenAll(loads);
     }
 
     /// <summary>A device an Apple organization holds and Intune doesn't: only its organization record.</summary>
     public async Task ShowAppleOnlyAsync(AppleOrgContext apple)
     {
         _device = null;
-        DeviceName.Text = string.IsNullOrWhiteSpace(apple.Device.Model) ? "Not Enrolled" : apple.Device.Model;
-        DeviceSerial.Text = apple.Device.SerialNumber;
+        (DeviceName.Text, DeviceSerial.Text) = DeviceDetailSections.Header(apple.Device);
         ContentPanel.Children.Clear();
-        var appleCare = RenderAppleOrg(apple, "apple-org:" + apple.Device.SerialNumber);
-        AddNote(Section("Device Management Service", ""), "Not enrolled in Intune.");
-        await appleCare;
+        var slots = Render(DeviceDetailSections.ForAppleOnly(apple.View));
+        await LoadAppleAsync(apple, slots, "apple-org:" + apple.Device.SerialNumber);
     }
 
-    /// <summary>
-    /// The organization's section, titled for its service: status, assigned
-    /// service, order and purchase, dates, MAC addresses, migration, and
-    /// AppleCare read when the device is selected.
-    /// </summary>
-    private Task RenderAppleOrg(AppleOrgContext ctx, string current)
+    /// <summary>A device Autopilot knows and Intune doesn't: only its Autopilot record.</summary>
+    public void ShowAutopilotOnly(AutopilotDevice identity)
     {
-        var d = ctx.Device;
-        var host = Section(ctx.ServiceName, "");
-        AddRow(host, "Status", d.OrgStatusLabel());
-        AddRow(host, "Management Service", ctx.ServerName ?? (d.AssignedServerId == null ? "Not assigned" : d.AssignedServerId));
-        AddRow(host, "Model", d.Model);
-        AddRow(host, "Product Family", d.ProductFamily);
-        AddRow(host, "Order Number", d.OrderNumber);
-        AddRow(host, "Purchase Source", d.PurchaseSourceLabel() is var source && source != DeviceListRow.Missing ? source : null);
-        AddRow(host, "Order Date", d.OrderDate?.ToLocalTime().ToString("yyyy-MM-dd"));
-        AddRow(host, "Added", d.AddedToOrg?.ToLocalTime().ToString("yyyy-MM-dd"));
-        AddRow(host, "Released", d.ReleasedFromOrg?.ToLocalTime().ToString("yyyy-MM-dd"));
-        AddRowMono(host, "Wi-Fi MAC", d.WifiMacAddresses.Count > 0 ? string.Join(", ", d.WifiMacAddresses) : null);
-        AddRowMono(host, "Ethernet MAC", d.EthernetMacAddresses.Count > 0 ? string.Join(", ", d.EthernetMacAddresses) : null);
-        AddRow(host, "Migration", d.MigrationStatus == null ? (d.IsMigrationCapable == true ? "Eligible" : null) : d.MigrationLabel());
-        var activationLock = ctx.LoadActivationLock == null ? Task.CompletedTask : AddActivationLock(host, ctx);
-        AddRow(host, "Migration Deadline", d.MigrationDeadline?.ToLocalTime().ToString("yyyy-MM-dd HH:mm"));
-
-        if (ctx.LoadAppleCare == null) return activationLock;
-        var coverage = Section("AppleCare", "");
-        AddNote(coverage, "Loading coverage...");
-        return Task.WhenAll(activationLock, LoadAppleCareAsync(ctx, coverage, current));
+        _device = null;
+        (DeviceName.Text, DeviceSerial.Text) = DeviceDetailSections.Header(identity);
+        ContentPanel.Children.Clear();
+        Render(DeviceDetailSections.ForAutopilotOnly(identity));
     }
 
-    /// <summary>Report only: no bypass code is shown and nothing here clears a lock.</summary>
+    /// <summary>Draw Core's sections; the hosts of the async ones come back by slot.</summary>
+    private Dictionary<DeviceDetailSlot, StackPanel> Render(IEnumerable<DeviceDetailSection> sections)
+    {
+        var slots = new Dictionary<DeviceDetailSlot, StackPanel>();
+        foreach (var section in sections)
+        {
+            var host = Section(section.Title, Glyph(section));
+            if (section.Badge is { } badge) AddComplianceBadge(host, badge.Tone, badge.Text);
+            foreach (var row in section.Rows) host.Children.Add(Row(row.Label, row.Value, row.Mono));
+            if (section.StorageUsedPercent is { } used) AddStorageBar(host, used);
+            if (section.Placeholder != null) AddNote(host, section.Placeholder);
+            if (section.Slot != DeviceDetailSlot.None) slots[section.Slot] = host;
+        }
+        return slots;
+    }
+
+    /// <summary>The icon WPF has always drawn beside a section title.</summary>
+    private static string Glyph(DeviceDetailSection section) => section.Title switch
+    {
+        "Summary" => "",
+        "Device Management Service" when section.Rows.Count > 0 => "",
+        "Recovery" => "",
+        "Hardware" => "",
+        "Group Membership" => "",
+        "Compliance & Conditional Access" => "",
+        "Detected Apps" => "",
+        _ => "",
+    };
+
+    /// <summary>The Activation Lock row and AppleCare coverage, read when the device is selected.</summary>
+    private Task LoadAppleAsync(AppleOrgContext ctx, Dictionary<DeviceDetailSlot, StackPanel> slots, string current)
+    {
+        var loads = new List<Task>();
+        if (ctx.LoadActivationLock != null && slots.TryGetValue(DeviceDetailSlot.ActivationLock, out var org))
+            loads.Add(AddActivationLock(org, ctx));
+        if (ctx.LoadAppleCare != null && slots.TryGetValue(DeviceDetailSlot.AppleCare, out var coverage))
+            loads.Add(LoadAppleCareAsync(ctx, coverage, current));
+        return Task.WhenAll(loads);
+    }
+
+    /// <summary>Report only: no bypass code is shown and nothing here clears a lock. The row sits before Migration Deadline.</summary>
     private async Task AddActivationLock(StackPanel host, AppleOrgContext ctx)
     {
         var row = Row("Activation Lock", "Reading Activation Lock…", mono: false);
         var value = row.Children.OfType<TextBlock>().Last();
         value.Foreground = (Brush)FindResource("SystemControlForegroundBaseMediumBrush");
-        host.Children.Add(row);
+        var deadline = host.Children.OfType<Grid>().FirstOrDefault(g => g.Children.OfType<TextBlock>().FirstOrDefault()?.Text == "Migration Deadline");
+        host.Children.Insert(deadline == null ? host.Children.Count : host.Children.IndexOf(deadline), row);
 
         var state = await ctx.LoadActivationLock!();
         value.Text = state.DetailText();
@@ -148,119 +158,13 @@ public partial class DeviceDetailPanel : UserControl
             if (DeviceSerial.Text != ctx.Device.SerialNumber && _device?.Id != current) return;
             host.Children.Clear();
             if (agreements.Count == 0) { AddNote(host, "No coverage on record."); return; }
-            foreach (var a in agreements)
-            {
-                var span = string.Join(" – ", new[] { a.Start, a.End }.Where(x => x != null).Select(x => x!.Value.ToLocalTime().ToString("yyyy-MM-dd")));
-                AddRow(host, a.Description, string.Join(" · ", new[] { a.IsCanceled ? "Canceled" : a.Status, span }.Where(x => !string.IsNullOrEmpty(x))));
-            }
+            foreach (var row in agreements.Select(DeviceDetailSections.AppleCareRow)) AddRow(host, row.Label, row.Value);
         }
         catch (Exception ex)
         {
             host.Children.Clear();
             AddNote(host, $"Coverage could not be read: {ex.Message}");
         }
-    }
-
-    /// <summary>A device Autopilot knows and Intune doesn't: only its Autopilot record.</summary>
-    public void ShowAutopilotOnly(AutopilotDevice identity)
-    {
-        _device = null;
-        DeviceName.Text = string.IsNullOrWhiteSpace(identity.DisplayName) ? "Not Enrolled" : identity.DisplayName;
-        DeviceSerial.Text = identity.SerialNumber ?? identity.Id;
-        ContentPanel.Children.Clear();
-        RenderAutopilot(identity);
-        AddNote(Section("Device Management Service", ""), "Not enrolled in Intune.");
-    }
-
-    private void RenderAutopilot(AutopilotDevice a)
-    {
-        var host = Section("Windows Autopilot", "");
-        AddRow(host, "Group Tag", a.GroupTag);
-        AddRow(host, "Enrollment State", a.EnrollmentStateLabel());
-        AddRow(host, "Deployment Profile", a.ProfileStatusLabel());
-        AddRow(host, "Purchase Order", a.PurchaseOrderIdentifier);
-        AddRow(host, "Manufacturer", a.Manufacturer);
-        AddRow(host, "Model", a.Model);
-        AddRow(host, "System Family", a.SystemFamily);
-        // Graph reports a device that never checked in as 0001-01-01.
-        AddRow(host, "Last Contacted", a.LastContactedDateTime is { Year: > 1 } contacted
-            ? contacted.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : null);
-        AddRow(host, "Assigned User", a.UserPrincipalName);
-        AddRowMono(host, "Autopilot ID", a.Id);
-    }
-
-    // ── Summary ──────────────────────────────────────────────────────────
-
-    private void RenderSummary(IntuneDevice d)
-    {
-        var host = Section("Summary", "");
-        AddRow(host, "Device Name", d.DeviceName);
-        AddRow(host, "Management Name", d.ManagedDeviceName);
-        AddRow(host, "Ownership", FormatOwnership(d.ManagedDeviceOwnerType));
-        AddRow(host, "Manufacturer", d.Manufacturer);
-        AddRow(host, "Model", d.Model);
-        AddRow(host, "OS", FormatOs(d));
-        AddRow(host, "Last Check-in", d.LastSyncDateTime?.ToString("yyyy-MM-dd HH:mm"));
-        AddRow(host, "Primary User", d.UserDisplayName ?? d.UserPrincipalName);
-    }
-
-    // ── Enrollment & Identity ────────────────────────────────────────────
-
-    private void RenderEnrollment(IntuneDevice d)
-    {
-        var host = Section("Device Management Service", "");
-        AddRowMono(host, "Intune Device ID", d.Id);
-        AddRowMono(host, "Entra Device ID", d.AzureAdDeviceId);
-        AddRow(host, "Enrollment Type", FormatEnrollmentType(d.DeviceEnrollmentType));
-        AddRow(host, "Enrollment Profile", d.EnrollmentProfileName);
-        AddRow(host, "Supervised", d.IsSupervised == true ? "Yes" : d.IsSupervised == false ? "No" : null);
-        AddRow(host, "Enrolled", d.EnrolledDateTime?.ToString("yyyy-MM-dd HH:mm"));
-        AddRow(host, "Registration State", d.DeviceRegistrationState);
-        AddRow(host, "Management Agent", d.ManagementAgent);
-        AddRow(host, "Join Type", d.JoinType);
-    }
-
-    // ── Hardware ─────────────────────────────────────────────────────────
-
-    private void RenderHardware(IntuneDevice d)
-    {
-        var host = Section("Hardware", "");
-        AddRowMono(host, "Serial Number", d.SerialNumber);
-        AddRow(host, "SKU Family", d.SkuFamily);
-
-        if (d.TotalStorageSpaceInBytes is > 0)
-            AddRow(host, "Total Storage", FormatBytes(d.TotalStorageSpaceInBytes.Value));
-        if (d.FreeStorageSpaceInBytes is > 0)
-            AddRow(host, "Free Storage", FormatBytes(d.FreeStorageSpaceInBytes.Value));
-        if (d.StorageUsedPercent.HasValue)
-            AddStorageBar(host, d.StorageUsedPercent.Value);
-        if (d.PhysicalMemoryInBytes is > 0)
-            AddRow(host, "Physical Memory", FormatBytes(d.PhysicalMemoryInBytes.Value));
-
-        AddRowMono(host, "Wi-Fi MAC", d.WiFiMacAddress);
-        AddRowMono(host, "Ethernet MAC", d.EthernetMacAddress);
-
-        if (!string.IsNullOrEmpty(d.Imei) || !string.IsNullOrEmpty(d.Meid))
-        {
-            AddRowMono(host, "IMEI", d.Imei);
-            AddRowMono(host, "MEID", d.Meid);
-            AddRow(host, "Phone Number", d.PhoneNumber);
-            AddRow(host, "Carrier", d.SubscriberCarrier);
-        }
-    }
-
-    // ── Compliance ───────────────────────────────────────────────────────
-
-    private StackPanel RenderCompliance(IntuneDevice d)
-    {
-        var host = Section("Compliance & Conditional Access", "");
-        AddComplianceBadge(host, d.ComplianceState);
-        AddRow(host, "Management State", d.ManagementState);
-        AddRow(host, "Azure AD Registered", d.AzureAdRegistered == true ? "Yes" : d.AzureAdRegistered == false ? "No" : null);
-        AddRow(host, "Device Category", d.DeviceCategoryDisplayName);
-        AddRow(host, "Encrypted", d.IsEncrypted == true ? "Yes" : d.IsEncrypted == false ? "No" : null);
-        AddRow(host, "Jailbroken", d.JailBroken);
-        return host;
     }
 
     // ── Async sections ───────────────────────────────────────────────────
@@ -340,13 +244,7 @@ public partial class DeviceDetailPanel : UserControl
                 });
                 foreach (var policy in policies)
                 {
-                    var color = policy.State?.ToLowerInvariant() switch
-                    {
-                        "compliant" => "#27ae60",
-                        "noncompliant" or "error" => "#e8890c",
-                        "conflict" => "#f39c12",
-                        _ => "#718096"
-                    };
+                    var color = ToneHex(DeviceDetailSections.PolicyTone(policy.State), "#718096");
                     var row = new DockPanel { Margin = new Thickness(0, 0, 0, 0) };
                     var state = new TextBlock
                     {
@@ -423,8 +321,8 @@ public partial class DeviceDetailPanel : UserControl
                     AddNote(host, "No detected apps found");
                     return;
                 }
-                AddNote(host, $"{apps.Count} apps detected");
-                foreach (var app in apps.Take(50))
+                AddNote(host, DeviceDetailSections.AppsHeadline(apps.Count));
+                foreach (var app in apps.Take(DeviceDetailSections.AppLimit))
                 {
                     var row = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
                     var version = new TextBlock
@@ -446,10 +344,7 @@ public partial class DeviceDetailPanel : UserControl
                     });
                     host.Children.Add(row);
                 }
-                if (apps.Count > 50)
-                {
-                    AddNote(host, $"... and {apps.Count - 50} more");
-                }
+                if (apps.Count > DeviceDetailSections.AppLimit) AddNote(host, DeviceDetailSections.AppsMore(apps.Count));
             });
         }
         catch (Exception ex)
@@ -559,19 +454,20 @@ public partial class DeviceDetailPanel : UserControl
         });
     }
 
-    private void AddComplianceBadge(StackPanel host, string? state)
+    /// <summary>The colour each tone has always had here.</summary>
+    private static string ToneHex(DeviceTone tone, string neutral = "#666") => tone switch
     {
-        var (color, text) = (state?.ToLowerInvariant()) switch
-        {
-            "compliant" => ("#27ae60", "Compliant"),
-            "noncompliant" => ("#e8890c", "Non-Compliant"),
-            "ingrace" or "ingraceperiod" => ("#f39c12", "In Grace Period"),
-            _ => ("#666", state ?? "Unknown")
-        };
+        DeviceTone.Good => "#27ae60",
+        DeviceTone.Attention => "#e8890c",
+        DeviceTone.Caution => "#f39c12",
+        _ => neutral,
+    };
 
+    private void AddComplianceBadge(StackPanel host, DeviceTone tone, string text)
+    {
         var border = new Border
         {
-            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color)),
+            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(ToneHex(tone))),
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(8, 3, 8, 3),
             HorizontalAlignment = HorizontalAlignment.Left,
@@ -596,7 +492,7 @@ public partial class DeviceDetailPanel : UserControl
             CornerRadius = new CornerRadius(4)
         });
 
-        var barColor = usedPercent > 90 ? "#e8890c" : usedPercent > 70 ? "#f39c12" : "#27ae60";
+        var barColor = ToneHex(DeviceDetailSections.StorageTone(usedPercent));
         bar.Children.Add(new Border
         {
             Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(barColor)),
@@ -613,35 +509,6 @@ public partial class DeviceDetailPanel : UserControl
             Foreground = (Brush)FindResource("SystemControlForegroundBaseMediumBrush"),
             Margin = new Thickness(0, 0, 0, 4)
         });
-    }
-
-    // ── Format helpers ───────────────────────────────────────────────────
-
-    private static string FormatOs(IntuneDevice d)
-    {
-        if (d.OperatingSystem == null) return "-";
-        return d.OsVersion != null ? $"{d.OperatingSystem} {d.OsVersion}" : d.OperatingSystem;
-    }
-
-    private static string? FormatOwnership(string? ownership) => ownership?.ToLowerInvariant() switch
-    {
-        null or "" => null,
-        "company" => "Corporate",
-        "personal" => "Personal",
-        _ => char.ToUpperInvariant(ownership[0]) + ownership[1..]
-    };
-
-    private static string? FormatEnrollmentType(string? type)
-    {
-        if (string.IsNullOrEmpty(type)) return null;
-        // Insert spaces before uppercase letters to make camelCase readable
-        return System.Text.RegularExpressions.Regex.Replace(type, "([a-z])([A-Z])", "$1 $2");
-    }
-
-    private static string FormatBytes(long bytes)
-    {
-        var gb = (double)bytes / 1_073_741_824;
-        return gb >= 1 ? $"{gb:F1} GB" : $"{(double)bytes / 1_048_576:F0} MB";
     }
 
     private void OnClose(object sender, RoutedEventArgs e)

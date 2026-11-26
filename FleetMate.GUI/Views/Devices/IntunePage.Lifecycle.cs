@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using FleetMate.Core.Devices;
 using FleetMate.Core.Models.Devices;
 using FleetMate.Core.Services.Devices;
 
@@ -29,22 +30,17 @@ public partial class IntunePage
     }
 
     /// <summary>Show the wipe options the selected platforms accept, and Offboard when every device can take it.</summary>
-    private void UpdateLifecycleSections(List<DeviceListRow> selected)
+    private void UpdateLifecycleSections(DeviceActionSections s)
     {
-        var platforms = selected.Where(r => r.Intune != null)
-            .Select(r => DevicePlatforms.From(r.Intune!.OperatingSystem)).ToHashSet();
-        var hasWindows = platforms.Contains(DevicePlatform.Windows);
-        var hasApple = platforms.Contains(DevicePlatform.MacOS) || platforms.Contains(DevicePlatform.IOS);
-
-        WipeMixedPlatformText.Visibility = Show(platforms.Count > 1);
-        WipeKeepUserDataCheckBox.Visibility = Show(hasWindows);
-        WipeProtectedCheckBox.Visibility = Show(hasWindows);
-        WipeUnlockCodeTextBox.Visibility = Show(hasApple);
-        WipeObliterationComboBox.Visibility = Show(platforms.Contains(DevicePlatform.MacOS));
+        WipeMixedPlatformText.Visibility = Show(s.WipeMixedPlatforms);
+        WipeKeepUserDataCheckBox.Visibility = Show(s.WipeWindowsOptions);
+        WipeProtectedCheckBox.Visibility = Show(s.WipeWindowsOptions);
+        WipeUnlockCodeTextBox.Visibility = Show(s.WipeUnlockCode);
+        WipeObliterationComboBox.Visibility = Show(s.WipeObliteration);
 
         // An enrolled device takes the whole pass; a registered-only device
         // takes the directory steps, with the Intune ones reported skipped.
-        OffboardSection.Visibility = Show(selected.Count > 0 && selected.All(r => r.IsEnrolled || r.Autopilot != null));
+        OffboardSection.Visibility = Show(s.Offboard);
         UpdateOffboardWarning();
     }
 
@@ -76,8 +72,9 @@ public partial class IntunePage
         if (OffboardTerminalComboBox == null || OffboardCancelsWarningText == null) return;
         var plan = CurrentOffboardPlan();
         OffboardUsesWipeOptionsText.Visibility = Show(plan.TerminalAction == OffboardTerminalAction.Wipe);
-        OffboardCancelsWarningText.Visibility = Show(plan.CancelsPendingAction);
-        OffboardCancelsWarningText.Text = $"The pending action lives on the Intune record — deleting it before the device checks in cancels the {(plan.TerminalAction == OffboardTerminalAction.Wipe ? "wipe" : "retire")}.";
+        var warning = DeviceActionText.OffboardWarning(plan);
+        OffboardCancelsWarningText.Visibility = Show(warning != null);
+        OffboardCancelsWarningText.Text = warning ?? "";
     }
 
     private async void OnOffboardClicked(object sender, RoutedEventArgs e)
@@ -90,7 +87,7 @@ public partial class IntunePage
         if (MessageBox.Show(plan.Summary(rows.Count), "Confirm Offboard", MessageBoxButton.YesNo, MessageBoxImage.Warning)
             != MessageBoxResult.Yes) return;
 
-        ShowActionMessage($"Offboarding {rows.Count} device(s)...", isLoading: true);
+        ShowActionMessage(DeviceActionText.Progress(DeviceActionKind.Offboard, rows.Count), isLoading: true);
         OffboardResultsPanel.Children.Clear();
 
         var offboarder = new DeviceOffboarder(_graphService);
@@ -114,9 +111,7 @@ public partial class IntunePage
             OffboardResultsPanel.Children.Add(ResultBlock(result));
 
         var failed = results.Count(r => !r.Success);
-        ShowActionMessage(failed == 0
-            ? $"Offboarded {results.Count} device(s)"
-            : $"Offboarded {results.Count - failed} device(s), {failed} with failures", isError: failed > 0);
+        ShowActionMessage(DeviceActionText.Result(DeviceActionKind.Offboard, results.Count - failed, failed), isError: failed > 0);
     }
 
     /// <summary>
