@@ -185,73 +185,40 @@ public partial class SettingsPage : Page
     {
         try
         {
-            using var key = Registry.CurrentUser.CreateSubKey(RegistryPath)
-                ?? throw new InvalidOperationException("Cannot open registry key");
-
-            // Graph — no secret is written; Graph authenticates via the broker.
-            SetReg(key, "GraphTenantId",    TenantIdTextBox.Text);
-            SetReg(key, "GraphClientId",    ClientIdTextBox.Text);
-            key.DeleteValue("GraphClientSecret", throwOnMissingValue: false);
-
-            // AzDO — NO PAT, SSO only
-            SetReg(key, "DevOpsOrganization", AdoOrgTextBox.Text);
-            SetReg(key, "DevOpsProject",      AdoProjectTextBox.Text);
-
-            // Snipe — no API key is written; auth is the operator's Entra session.
-            SetReg(key, "SnipeUrl", SnipeUrlTextBox.Text);
-
-            SetReg(key, "ReportMateUrl", ReportMateUrlTextBox.Text);
-            key.DeleteValue("ReportMatePassphrase", throwOnMissingValue: false);
-
-            SetOrDeleteReg(key, "TeamsApiUrl", TeamsUrlTextBox.Text);
-            SetOrDeleteReg(key, "TeamsApiScope", TeamsScopeTextBox.Text);
-            SetOrDeleteReg(key, "TeamsDefaultTeam", TeamsDefaultTeamTextBox.Text);
-            SetOrDeleteReg(key, "TeamsDefaultChannels", TeamsDefaultChannelsTextBox.Text);
-
-            // Handbook and skills. Empty values are removed so a managed value applies.
-            SetOrDeleteReg(key, "HandbookRepoUrl", HandbookRepoUrlTextBox.Text);
-            SetOrDeleteReg(key, "HandbookSiteUrl", HandbookSiteUrlTextBox.Text);
-            SetOrDeleteReg(key, "AgentsHubRepoUrl", AgentsHubRepoUrlTextBox.Text);
-
-            // Manage tab. Empty values are removed so the defaults apply again.
-            SetOrDeleteReg(key, "ManageRosterPath", ManageRosterPathTextBox.Text);
-            SetOrDeleteReg(key, "ManageCommandsPath", ManageCommandsPathTextBox.Text);
-            SetOrDeleteReg(key, "SecureShellKeyPath", SecureShellKeyPathTextBox.Text);
-            SetOrDeleteReg(key, "SecureShellUser", SecureShellUserTextBox.Text);
-            SetOrDeleteReg(key, "ManageTerminalProfile", ManageTerminalProfileTextBox.Text);
-            SetOrDeleteReg(key, "ManageRdpUser", ManageRdpUserTextBox.Text);
-            key.SetValue("ManageIncludeRetired", ManageIncludeRetiredCheckBox.IsChecked == true ? "1" : "0");
-            key.SetValue("ManageIncludeProvisioning", ManageIncludeProvisioningCheckBox.IsChecked == true ? "1" : "0");
-            key.DeleteValue("SnipeApiKey", throwOnMissingValue: false);
-
-            // Terminal. An empty repo list is removed so the managed defaults seed it again.
-            // Your own value is written only when it differs from what you
-            // would otherwise get (policy, then the default), so a managed
-            // default keeps applying until you choose something else.
-            var agentCommand = FleetMate.Core.Config.AgentCommandPicker.ToSetting(
-                AgentCommandPicker.SelectedValue as string ?? "", AgentCustomCommandTextBox.Text);
-            if (_terminal != null && string.Equals(agentCommand, _terminal.AgentCommandFallback, StringComparison.OrdinalIgnoreCase))
-                key.DeleteValue("AgentCommand", throwOnMissingValue: false);
-            else
-                key.SetValue("AgentCommand", agentCommand);
-            var autoStart = AgentAutoStartCheckBox.IsChecked == true;
-            if (_terminal != null && autoStart == _terminal.AgentAutoStartFallback)
-                key.DeleteValue("AgentAutoStart", throwOnMissingValue: false);
-            else
-                key.SetValue("AgentAutoStart", autoStart ? "1" : "0");
-            var repos = FleetMate.Core.Config.TerminalSettings.ParseList(ReposTextBox.Text);
-            if (repos.Count == 0 || repos.SequenceEqual(_repoDefaults, StringComparer.OrdinalIgnoreCase))
-                key.DeleteValue("Repos", throwOnMissingValue: false);
-            else
-                key.SetValue("Repos", repos.ToArray(), RegistryValueKind.MultiString);
-
-            // TDX
-            // TDX — SSO only. Clear any service-account credential left behind by
-            // an older build rather than leaving a live secret in the registry.
-            SetReg(key, "TdxBaseUrl", TdxUrlTextBox.Text);
-            SetReg(key, "TdxAppId", TdxAppIdTextBox.Text);
-            foreach (var retired in new[] { "TdxUsername", "TdxPassword", "TdxBeid", "TdxWebServicesKey" })
-                key.DeleteValue(retired, throwOnMissingValue: false);
+            var settings = new DesktopSettings
+            {
+                GraphTenantId = TenantIdTextBox.Text,
+                GraphClientId = ClientIdTextBox.Text,
+                DevOpsOrganization = AdoOrgTextBox.Text,
+                DevOpsProject = AdoProjectTextBox.Text,
+                SnipeUrl = SnipeUrlTextBox.Text,
+                TdxBaseUrl = TdxUrlTextBox.Text,
+                TdxAppId = TdxAppIdTextBox.Text,
+                ReportMateUrl = ReportMateUrlTextBox.Text,
+                TeamsApiUrl = TeamsUrlTextBox.Text,
+                TeamsApiScope = TeamsScopeTextBox.Text,
+                TeamsDefaultTeam = TeamsDefaultTeamTextBox.Text,
+                TeamsDefaultChannels = TeamsDefaultChannelsTextBox.Text,
+                HandbookRepoUrl = HandbookRepoUrlTextBox.Text,
+                HandbookSiteUrl = HandbookSiteUrlTextBox.Text,
+                AgentsHubRepoUrl = AgentsHubRepoUrlTextBox.Text,
+                ManageRosterPath = ManageRosterPathTextBox.Text,
+                ManageCommandsPath = ManageCommandsPathTextBox.Text,
+                SecureShellKeyPath = SecureShellKeyPathTextBox.Text,
+                SecureShellUser = SecureShellUserTextBox.Text,
+                ManageTerminalProfile = ManageTerminalProfileTextBox.Text,
+                ManageRdpUser = ManageRdpUserTextBox.Text,
+                ManageIncludeRetired = ManageIncludeRetiredCheckBox.IsChecked == true,
+                ManageIncludeProvisioning = ManageIncludeProvisioningCheckBox.IsChecked == true,
+                AgentCommand = FleetMate.Core.Config.AgentCommandPicker.ToSetting(
+                    AgentCommandPicker.SelectedValue as string ?? "", AgentCustomCommandTextBox.Text),
+                AgentAutoStart = AgentAutoStartCheckBox.IsChecked == true,
+                Repos = FleetMate.Core.Config.TerminalSettings.ParseList(ReposTextBox.Text),
+            };
+            // The rules for what is written and what is left to policy are
+            // DesktopSettings', shared with the WinUI Settings page.
+            using (var sink = new RegistrySettingsSink(RegistryPath))
+                settings.Save(sink, _terminal ?? new TerminalSettings { RepoDefaults = _repoDefaults.ToList() });
 
             if (Application.Current is App app)
             {
