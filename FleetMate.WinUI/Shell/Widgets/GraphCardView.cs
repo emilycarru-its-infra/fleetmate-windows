@@ -79,7 +79,8 @@ internal static class GraphCardView
         GraphCardKind.Donut => GraphCharts.Donut(card, open),
         GraphCardKind.Columns => GraphCharts.Columns(card),
         GraphCardKind.List => List(card, open),
-        _ => Bars(card, open),
+        GraphCardKind.Treemap => GraphTreemap.Build(card, open),
+        _ => card.Kpis.Count > 0 ? GraphTreemap.WithStats(card, Bars(card, open)) : Bars(card, open),
     };
 
     // MARK: - KPI tiles

@@ -81,6 +81,7 @@ public sealed partial class ShellServices : IDisposable
         InitializeIdentity(config);
         TicketCache.Updated += TdxSession.TicketsLoaded;
         TdxSession.SignInChanged += OnTdxSignInChanged;
+        InitializeDevices(config);
     }
 
     /// <summary>
@@ -128,6 +129,7 @@ public sealed partial class ShellServices : IDisposable
         Notifications = Inbox.Notifications.ToList(),
         Commits = DevelopmentCommits?.ToList() ?? new(),
         Runs = DevelopmentRuns?.ToList() ?? new(),
+        Devices = CachedDevices.ToList(),
     };
 
     /// <summary>
@@ -158,6 +160,7 @@ public sealed partial class ShellServices : IDisposable
         _ = StartSignInAsync();
         StartInventory();
         StartDevelopment();
+        StartDevices();
     }
 
     private async Task StartSignInAsync()
@@ -203,6 +206,7 @@ public sealed partial class ShellServices : IDisposable
         DisposeIdentity();
         TdxSession.SignInChanged -= OnTdxSignInChanged;
         TicketCache.Dispose();
+        DisposeDevices();
         TdxSession.Dispose();
         Tdx?.Dispose();
     }

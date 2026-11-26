@@ -12,13 +12,9 @@ namespace FleetMate.GUI.Views.Devices;
 /// </summary>
 public partial class DeviceDetailPanel
 {
-    private void RenderRecovery(IntuneDevice device)
+    private void RenderRecovery(IntuneDevice device, StackPanel host)
     {
-        var kinds = RecoverySecretKinds.Available(device.OperatingSystem);
-        if (kinds.Count == 0) return;
-
-        var host = Section("Recovery", "");
-        foreach (var kind in kinds)
+        foreach (var kind in RecoverySecretKinds.Available(device.OperatingSystem))
         {
             var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
             var reveal = new Button { Content = "Reveal…", MinWidth = 80, Padding = new Thickness(10, 3, 10, 3) };

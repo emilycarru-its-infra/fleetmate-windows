@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using FleetMate.Core.Devices;
 using FleetMate.Core.Models.Devices;
 using FleetMate.Core.Models.Identity;
 using FleetMate.Core.Config;
@@ -288,7 +289,7 @@ public partial class IntunePage : Page
     private void UpdateFiltersButton()
     {
         var active = _facetSelection.Values.Sum(v => v.Count);
-        FiltersButtonText.Text = active == 0 ? "Filters" : $"Filters ({active})";
+        FiltersButtonText.Text = DeviceListText.FiltersButton(active);
     }
 
     private void ApplyFilters()
@@ -319,12 +320,7 @@ public partial class IntunePage : Page
         foreach (var row in _rows.Where(r => keep.Contains(r.Id)))
             DevicesDataGrid.SelectedItems.Add(row);
 
-        DeviceCountText.Text = lookup != null
-            ? $"{lookup.Matched} of {_lookupSerials!.Count} looked-up serials found"
-              + (lookup.Unknown.Count > 0 ? $", {lookup.Unknown.Count} unknown" : "")
-            : visible.Count == _allRows.Count
-                ? $"{_allRows.Count} devices"
-                : $"{visible.Count} of {_allRows.Count} devices";
+        DeviceCountText.Text = DeviceListText.Count(visible.Count, _allRows.Count, lookup, _lookupSerials?.Count ?? 0);
     }
 
     /// <summary>Serials the asset inventory holds, once it has been read; null until then.</summary>
@@ -347,7 +343,7 @@ public partial class IntunePage : Page
     private void OnSerialsInputChanged(object sender, TextChangedEventArgs e)
     {
         var count = SerialListParser.Parse(SerialsInput.Text).Count;
-        SerialsParsedText.Text = count == 0 ? "" : count == 1 ? "1 serial" : $"{count} serials";
+        SerialsParsedText.Text = DeviceListText.ParsedSerials(count);
         SerialsShowButton.IsEnabled = count > 0;
     }
 
@@ -401,7 +397,7 @@ public partial class IntunePage : Page
     public void SetSerialLookup(IReadOnlyList<string>? serials)
     {
         _lookupSerials = serials is { Count: > 0 } ? serials.ToList() : null;
-        SerialsButtonText.Text = _lookupSerials == null ? "Serials" : $"Serials ({_lookupSerials.Count})";
+        SerialsButtonText.Text = DeviceListText.SerialsButton(_lookupSerials?.Count);
         ApplyFilters();
     }
 
@@ -486,23 +482,7 @@ public partial class IntunePage : Page
     /// Whether the connected services fill an optional column for any device,
     /// so the header menu offers only columns that would show something.
     /// </summary>
-    private bool CanFill(string header)
-    {
-        if (_allRows.Count == 0) return true;
-        Func<DeviceListRow, bool> filled = header switch
-        {
-            "Model" => r => r.ModelText != DeviceListRow.Missing,
-            "Manufacturer" => r => r.ManufacturerText != DeviceListRow.Missing,
-            "Ownership" => r => r.OwnershipText != DeviceListRow.Missing,
-            "Migration" => r => r.Apple != null,
-            "Purchase Source" => r => r.PurchaseSourceText != DeviceListRow.Missing,
-            "Added" => r => r.AddedText != DeviceListRow.Missing,
-            // Read per device on selection, so any Apple organization device can fill it.
-            "Activation Lock" => r => r.Apple != null,
-            _ => _ => true,
-        };
-        return _allRows.Any(filled);
-    }
+    private bool CanFill(string header) => DeviceListColumns.CanFill(header, _allRows);
 
     // ── Selection ────────────────────────────────────────────────────────
 
@@ -540,16 +520,8 @@ public partial class IntunePage : Page
 
         if (hasSelection)
         {
-            SelectedDevicesText.Text = $"{selectedCount} device(s) selected";
-            if (selectedCount <= 3)
-            {
-                SelectedDeviceNamesText.Text = string.Join(", ", selected.Select(Label));
-            }
-            else
-            {
-                var first2 = string.Join(", ", selected.Take(2).Select(Label));
-                SelectedDeviceNamesText.Text = $"{first2} and {selectedCount - 2} more...";
-            }
+            SelectedDevicesText.Text = DeviceListText.SelectedTitle(selectedCount);
+            SelectedDeviceNamesText.Text = DeviceListText.SelectedNames(selected);
 
             UpdateActionSections(selected);
 
@@ -573,39 +545,36 @@ public partial class IntunePage : Page
     }
 
     /// <summary>A device's name, or its serial when it has none yet.</summary>
-    private static string Label(DeviceListRow r) => r.NameText != DeviceListRow.Missing ? r.NameText : r.SerialText;
+    private static string Label(DeviceListRow r) => DeviceListText.Label(r);
 
     /// <summary>
-    /// Offer only the actions valid for every selected device: Intune's need
-    /// every device enrolled; Fresh Start, Autopilot Reset and Cimian need
-    /// every device to be Windows; Autopilot's need every device registered.
+    /// Offer only the actions valid for every selected device, as
+    /// <see cref="DeviceActionSections"/> decides for both Windows apps.
     /// </summary>
     private void UpdateActionSections(List<DeviceListRow> selected)
     {
-        var allEnrolled = selected.All(r => r.IsEnrolled);
-        var allWindows = selected.All(r => r.IsWindows);
-        var identities = selected.Select(r => r.Autopilot).ToList();
-
+        var orgName = AppleOrgJoin.SingleOrg(selected);
+        var org = orgName == null ? null : _appleOrgs.FirstOrDefault(o => o.Profile.Name == orgName);
+        var s = DeviceActionSections.For(selected, org?.Profile);
         static Visibility Show(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
 
         foreach (var section in new[] { SyncSection, RestartSection, LockSection, RetireSection, WipeSection,
                      DeleteRecordSection, ReinstallAppSection, OsUpdateSection })
-            section.Visibility = Show(allEnrolled);
+            section.Visibility = Show(s.Intune);
         foreach (var section in new[] { FreshStartSection, AutopilotResetSection, PushCimianSection })
-            section.Visibility = Show(allEnrolled && allWindows);
+            section.Visibility = Show(s.WindowsIntune);
 
-        AutopilotGroupTagSection.Visibility = Show(AutopilotAction.SetGroupTag.IsAvailable(identities));
-        AutopilotAssignUserSection.Visibility = Show(AutopilotAction.AssignUser.IsAvailable(identities));
-        AutopilotUnassignUserSection.Visibility = Show(AutopilotAction.UnassignUser.IsAvailable(identities));
-        AutopilotSyncSection.Visibility = Show(AutopilotAction.Sync.IsAvailable(identities));
-        AutopilotDeleteSection.Visibility = Show(AutopilotAction.Delete.IsAvailable(identities));
+        AutopilotGroupTagSection.Visibility = Show(s.AutopilotGroupTag);
+        AutopilotAssignUserSection.Visibility = Show(s.AutopilotAssignUser);
+        AutopilotUnassignUserSection.Visibility = Show(s.AutopilotUnassignUser);
+        AutopilotSyncSection.Visibility = Show(s.AutopilotSync);
+        AutopilotDeleteSection.Visibility = Show(s.AutopilotDelete);
 
-        var anyAutopilot = AutopilotAction.Sync.IsAvailable(identities);
-        var anyApple = UpdateAppleSections(selected);
-        AutopilotActionsHeader.Visibility = Show(anyAutopilot);
-        IntuneActionsHeader.Visibility = Show((anyAutopilot || anyApple) && allEnrolled);
-        NoActionsText.Visibility = Show(!allEnrolled && !anyAutopilot && !anyApple);
-        UpdateLifecycleSections(selected);
+        UpdateAppleSections(s, org);
+        AutopilotActionsHeader.Visibility = Show(s.AutopilotHeaderShown);
+        IntuneActionsHeader.Visibility = Show(s.IntuneHeaderShown);
+        NoActionsText.Visibility = Show(s.NoActions);
+        UpdateLifecycleSections(s);
     }
 
     private async Task ShowDeviceDetailAsync(DeviceListRow row)
@@ -666,12 +635,17 @@ public partial class IntunePage : Page
         ActionProgressRing.IsActive = isLoading;
     }
 
+    /// <summary>Ask the question Core words for <paramref name="kind"/>; true when the person says yes.</summary>
+    private static bool ConfirmAction(DeviceActionKind kind, int count, bool keepUserData = false) =>
+        DeviceActionText.Confirm(kind, count, keepUserData) is not { } confirm
+        || MessageBox.Show(confirm.Message, confirm.Title, MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
+
     private async void OnSyncClicked(object sender, RoutedEventArgs e)
     {
         if (_graphService == null) return;
 
         var deviceIds = GetSelectedDeviceIds().ToList();
-        ShowActionMessage($"Syncing {deviceIds.Count} device(s)...", isLoading: true);
+        ShowActionMessage(DeviceActionText.Progress(DeviceActionKind.Sync, deviceIds.Count), isLoading: true);
 
         try
         {
@@ -679,9 +653,7 @@ public partial class IntunePage : Page
             var successful = results.Count(r => r.Success);
             var failed = results.Count - successful;
 
-            ShowActionMessage(failed == 0
-                ? $"Successfully synced {successful} device(s)"
-                : $"Synced {successful}, {failed} failed");
+            ShowActionMessage(DeviceActionText.Result(DeviceActionKind.Sync, successful, failed));
         }
         catch (Exception ex)
         {
@@ -694,15 +666,9 @@ public partial class IntunePage : Page
         if (_graphService == null) return;
 
         var deviceIds = GetSelectedDeviceIds().ToList();
-        var result = MessageBox.Show(
-            $"Are you sure you want to restart {deviceIds.Count} device(s)? Active user sessions will be terminated.",
-            "Confirm Restart",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
+        if (!ConfirmAction(DeviceActionKind.Restart, deviceIds.Count)) return;
 
-        if (result != MessageBoxResult.Yes) return;
-
-        ShowActionMessage($"Restarting {deviceIds.Count} device(s)...", isLoading: true);
+        ShowActionMessage(DeviceActionText.Progress(DeviceActionKind.Restart, deviceIds.Count), isLoading: true);
 
         try
         {
@@ -710,9 +676,7 @@ public partial class IntunePage : Page
             var successful = results.Count(r => r.Success);
             var failed = results.Count - successful;
 
-            ShowActionMessage(failed == 0
-                ? $"Successfully sent reboot to {successful} device(s)"
-                : $"Rebooted {successful}, {failed} failed");
+            ShowActionMessage(DeviceActionText.Result(DeviceActionKind.Restart, successful, failed));
         }
         catch (Exception ex)
         {
@@ -725,15 +689,9 @@ public partial class IntunePage : Page
         if (_graphService == null) return;
 
         var deviceIds = GetSelectedDeviceIds().ToList();
-        var result = MessageBox.Show(
-            $"Remove company data and unenroll {deviceIds.Count} device(s)? Personal data is left intact.",
-            "Confirm Retire",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
+        if (!ConfirmAction(DeviceActionKind.Retire, deviceIds.Count)) return;
 
-        if (result != MessageBoxResult.Yes) return;
-
-        ShowActionMessage($"Retiring {deviceIds.Count} device(s)...", isLoading: true);
+        ShowActionMessage(DeviceActionText.Progress(DeviceActionKind.Retire, deviceIds.Count), isLoading: true);
 
         try
         {
@@ -741,9 +699,7 @@ public partial class IntunePage : Page
             var successful = results.Count(r => r.Success);
             var failed = results.Count - successful;
 
-            ShowActionMessage(failed == 0
-                ? $"Successfully sent retire to {successful} device(s)"
-                : $"Retired {successful}, {failed} failed");
+            ShowActionMessage(DeviceActionText.Result(DeviceActionKind.Retire, successful, failed));
         }
         catch (Exception ex)
         {
@@ -763,27 +719,20 @@ public partial class IntunePage : Page
             .ToList();
         if (targets.Count == 0)
         {
-            ShowActionMessage("Fresh Start applies to Windows devices only — none selected", isError: true);
+            ShowActionMessage(DeviceActionText.FreshStartNoWindows, isError: true);
             return;
         }
 
         var keepUserData = FreshStartKeepUserDataCheckBox.IsChecked == true;
-        var result = MessageBox.Show(
-            $"This will reinstall Windows on {targets.Count} device(s){(keepUserData ? ", preserving user data" : ", removing user data")}. Preinstalled OEM apps are removed and the device stays enrolled.",
-            "Confirm Fresh Start",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-        if (result != MessageBoxResult.Yes) return;
+        if (!ConfirmAction(DeviceActionKind.FreshStart, targets.Count, keepUserData)) return;
 
-        ShowActionMessage($"Starting Fresh Start on {targets.Count} device(s)...", isLoading: true);
+        ShowActionMessage(DeviceActionText.Progress(DeviceActionKind.FreshStart, targets.Count), isLoading: true);
         try
         {
             var results = await _graphService.FreshStartDevicesAsync(targets, keepUserData, confirmed: true);
             var successful = results.Count(r => r.Success);
             var failed = results.Count - successful;
-            ShowActionMessage(failed == 0
-                ? $"Fresh Start sent to {successful} device(s)"
-                : $"Fresh Start sent to {successful}, {failed} failed");
+            ShowActionMessage(DeviceActionText.Result(DeviceActionKind.FreshStart, successful, failed));
         }
         catch (Exception ex)
         {
@@ -796,14 +745,9 @@ public partial class IntunePage : Page
         if (_graphService == null) return;
 
         var deviceIds = GetSelectedDeviceIds().ToList();
-        var result = MessageBox.Show(
-            $"Autopilot-reset {deviceIds.Count} device(s)? Apps and settings are removed; enrollment is kept and the device re-provisions.",
-            "Confirm Autopilot Reset",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-        if (result != MessageBoxResult.Yes) return;
+        if (!ConfirmAction(DeviceActionKind.AutopilotReset, deviceIds.Count)) return;
 
-        ShowActionMessage($"Autopilot-resetting {deviceIds.Count} device(s)...", isLoading: true);
+        ShowActionMessage(DeviceActionText.Progress(DeviceActionKind.AutopilotReset, deviceIds.Count), isLoading: true);
         try
         {
             var successful = 0;
@@ -813,9 +757,7 @@ public partial class IntunePage : Page
                 if (actionResult.Success) successful++;
             }
             var failed = deviceIds.Count - successful;
-            ShowActionMessage(failed == 0
-                ? $"Autopilot reset sent to {successful} device(s)"
-                : $"Autopilot reset sent to {successful}, {failed} failed");
+            ShowActionMessage(DeviceActionText.Result(DeviceActionKind.AutopilotReset, successful, failed));
         }
         catch (Exception ex)
         {
@@ -828,14 +770,9 @@ public partial class IntunePage : Page
         if (_graphService == null) return;
 
         var deviceIds = GetSelectedDeviceIds().ToList();
-        var result = MessageBox.Show(
-            $"Delete the Intune record for {deviceIds.Count} device(s)? This is server-side only and cannot be undone from here.",
-            "Confirm Delete Record",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-        if (result != MessageBoxResult.Yes) return;
+        if (!ConfirmAction(DeviceActionKind.DeleteRecord, deviceIds.Count)) return;
 
-        ShowActionMessage($"Deleting {deviceIds.Count} record(s)...", isLoading: true);
+        ShowActionMessage(DeviceActionText.Progress(DeviceActionKind.DeleteRecord, deviceIds.Count), isLoading: true);
         try
         {
             var successful = 0;
@@ -845,9 +782,7 @@ public partial class IntunePage : Page
                 if (actionResult.Success) successful++;
             }
             var failed = deviceIds.Count - successful;
-            ShowActionMessage(failed == 0
-                ? $"Deleted {successful} record(s)"
-                : $"Deleted {successful}, {failed} failed");
+            ShowActionMessage(DeviceActionText.Result(DeviceActionKind.DeleteRecord, successful, failed));
         }
         catch (Exception ex)
         {
@@ -862,15 +797,9 @@ public partial class IntunePage : Page
         // Wipe takes device records, not bare ids, so each body is built for its own platform.
         var devices = SelectedRows().Where(r => r.Intune != null).Select(r => r.Intune!).ToList();
         var options = CurrentWipeOptions();
-        var result = MessageBox.Show(
-            $"This will factory-reset {devices.Count} device(s){(options.KeepUserData ? ", keeping user data where the platform allows" : ", erasing all data")}. This cannot be undone.",
-            "Confirm Wipe",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
+        if (!ConfirmAction(DeviceActionKind.Wipe, devices.Count, options.KeepUserData)) return;
 
-        if (result != MessageBoxResult.Yes) return;
-
-        ShowActionMessage($"Wiping {devices.Count} device(s)...", isLoading: true);
+        ShowActionMessage(DeviceActionText.Progress(DeviceActionKind.Wipe, devices.Count), isLoading: true);
 
         try
         {
@@ -878,9 +807,7 @@ public partial class IntunePage : Page
             var successful = results.Count(r => r.Success);
             var failed = results.Count - successful;
 
-            ShowActionMessage(failed == 0
-                ? $"Successfully sent wipe to {successful} device(s)"
-                : $"Wiped {successful}, {failed} failed");
+            ShowActionMessage(DeviceActionText.Result(DeviceActionKind.Wipe, successful, failed));
         }
         catch (Exception ex)
         {
@@ -893,16 +820,10 @@ public partial class IntunePage : Page
         if (_graphService == null) return;
 
         var deviceIds = GetSelectedDeviceIds().ToList();
-        var result = MessageBox.Show(
-            $"Are you sure you want to lock {deviceIds.Count} device(s)?",
-            "Confirm Lock",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-
-        if (result != MessageBoxResult.Yes) return;
+        if (!ConfirmAction(DeviceActionKind.Lock, deviceIds.Count)) return;
 
         var pin = string.IsNullOrWhiteSpace(LockPinTextBox.Text) ? null : LockPinTextBox.Text;
-        ShowActionMessage($"Locking {deviceIds.Count} device(s)...", isLoading: true);
+        ShowActionMessage(DeviceActionText.Progress(DeviceActionKind.Lock, deviceIds.Count), isLoading: true);
 
         try
         {
@@ -910,9 +831,7 @@ public partial class IntunePage : Page
             var successful = results.Count(r => r.Success);
             var failed = results.Count - successful;
 
-            ShowActionMessage(failed == 0
-                ? $"Successfully locked {successful} device(s)"
-                : $"Locked {successful}, {failed} failed");
+            ShowActionMessage(DeviceActionText.Result(DeviceActionKind.Lock, successful, failed));
 
             LockPinTextBox.Clear();
         }
@@ -960,7 +879,7 @@ public partial class IntunePage : Page
         }
 
         var deviceIds = GetSelectedDeviceIds().ToList();
-        ShowActionMessage($"Triggering reinstall on {deviceIds.Count} device(s)...", isLoading: true);
+        ShowActionMessage(DeviceActionText.Progress(DeviceActionKind.ReinstallApp, deviceIds.Count), isLoading: true);
 
         try
         {
@@ -970,9 +889,7 @@ public partial class IntunePage : Page
             var failed = results.Count - successful;
 
             var appName = selectedApp.Content?.ToString() ?? "app";
-            ShowActionMessage(failed == 0
-                ? $"Triggered {appName} reinstall on {successful} device(s)"
-                : $"Triggered on {successful}, {failed} failed");
+            ShowActionMessage(DeviceActionText.Result(DeviceActionKind.ReinstallApp, successful, failed, appName));
         }
         catch (Exception ex)
         {
@@ -985,7 +902,7 @@ public partial class IntunePage : Page
         if (_graphService == null) return;
 
         var deviceIds = GetSelectedDeviceIds().ToList();
-        ShowActionMessage($"Checking updates on {deviceIds.Count} device(s)...", isLoading: true);
+        ShowActionMessage(DeviceActionText.Progress(DeviceActionKind.OsUpdate, deviceIds.Count), isLoading: true);
 
         try
         {
@@ -994,9 +911,7 @@ public partial class IntunePage : Page
             var successful = results.Count(r => r.Success);
             var failed = results.Count - successful;
 
-            ShowActionMessage(failed == 0
-                ? $"Triggered update check on {successful} device(s)"
-                : $"Triggered on {successful}, {failed} failed");
+            ShowActionMessage(DeviceActionText.Result(DeviceActionKind.OsUpdate, successful, failed));
         }
         catch (Exception ex)
         {
@@ -1015,7 +930,7 @@ public partial class IntunePage : Page
             return;
         }
 
-        ShowActionMessage($"Pushing Cimian run to {selectedDevices.Count} device(s)...", isLoading: true);
+        ShowActionMessage(DeviceActionText.Progress(DeviceActionKind.PushCimian, selectedDevices.Count), isLoading: true);
 
         try
         {
@@ -1024,9 +939,7 @@ public partial class IntunePage : Page
             var successful = syncResults.Count(r => r.Success);
             var failed = syncResults.Count - successful;
 
-            ShowActionMessage(failed == 0
-                ? $"Cimian push initiated on {successful} device(s) - sync forced, remediation will create trigger file on check-in"
-                : $"Push initiated on {successful}, {failed} sync(s) failed");
+            ShowActionMessage(DeviceActionText.Result(DeviceActionKind.PushCimian, successful, failed));
         }
         catch (Exception ex)
         {
