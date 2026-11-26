@@ -71,6 +71,31 @@ public sealed partial class ShellServices : IDevelopmentHost
         return false;
     }
 
+    // MARK: - Demo mode
+
+    /// <summary>
+    /// Fictional data only, nothing fetched: for screenshots of a public
+    /// repository's app. Set by <c>--demo</c>, implied by <c>--capture</c>, or
+    /// <c>FLEETMATE_DEMO=1</c>.
+    /// </summary>
+    public bool DemoMode { get; } = IsDemoRequested();
+
+    private static bool IsDemoRequested() =>
+        Environment.GetEnvironmentVariable("FLEETMATE_DEMO") == "1"
+        || Environment.GetCommandLineArgs().Any(a =>
+            a.Equals("--demo", StringComparison.OrdinalIgnoreCase) || a.Equals("--capture", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Fill every Development cache with <see cref="DevelopmentDemoData"/>.</summary>
+    private void SeedDevelopmentDemo()
+    {
+        var now = DateTime.UtcNow;
+        _developmentPullRequests = DevelopmentDemoData.PullRequests(now);
+        _developmentCommits = DevelopmentDemoData.Commits(now);
+        _developmentRuns = DevelopmentDemoData.Runs(now);
+        Inbox.Seed(DevelopmentDemoData.Notifications(now));
+        Skills?.Seed(DevelopmentDemoData.Skills());
+    }
+
     // MARK: - Caches
 
     /// <summary>Raised on the UI thread when a Development cache changes or starts or stops loading.</summary>
@@ -137,6 +162,8 @@ public sealed partial class ShellServices : IDevelopmentHost
 
     Task<bool> IDevelopmentHost.RunOnUiAsync(Func<Task<bool>> work)
     {
+        // Demo mode keeps its fictional data: a refresh changes nothing.
+        if (DemoMode) return Task.FromResult(true);
         if (_ui == null || _ui.HasThreadAccess) return work();
         var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!_ui.TryEnqueue(async () =>
@@ -213,6 +240,11 @@ public sealed partial class ShellServices : IDevelopmentHost
 
     private void StartDevelopment()
     {
+        if (DemoMode)
+        {
+            SeedDevelopmentDemo();
+            return;
+        }
         Inbox.Start();
         Skills?.Start();
         _ = AttemptSilentDevOpsSsoAsync();

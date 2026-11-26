@@ -42,6 +42,15 @@ public sealed class DevelopmentInbox : IDisposable
     /// <summary>Raised on the thread that started the inbox after every refresh or local change.</summary>
     public event EventHandler? Changed;
 
+    /// <summary>Show <paramref name="notifications"/> without asking GitHub: demo mode's fictional inbox.</summary>
+    public void Seed(IEnumerable<GitHubNotification> notifications)
+    {
+        Notifications = GitHubNotificationService.Sort(notifications.ToList());
+        LastError = null;
+        LastRefreshed = DateTime.Now;
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
     public void Start()
     {
         if (_loop != null) return;

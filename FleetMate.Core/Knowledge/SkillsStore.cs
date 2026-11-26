@@ -60,6 +60,15 @@ public sealed class SkillsStore
         }, ct);
     }
 
+    /// <summary>Show <paramref name="entries"/> without reading any repository: demo mode's fictional catalog.</summary>
+    public void Seed(IReadOnlyList<SkillEntry> entries)
+    {
+        Entries = entries;
+        SyncedAt = DateTime.Now;
+        SyncError = null;
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
     public void Stop() => _loop?.Cancel();
 
     /// <summary>This PC's own skills change when the person edits them; reread on demand.</summary>

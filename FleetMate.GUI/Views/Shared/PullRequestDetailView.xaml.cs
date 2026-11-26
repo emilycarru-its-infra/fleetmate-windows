@@ -129,9 +129,7 @@ public partial class PullRequestDetailView : UserControl
             var checks = await checksTask;
             if (generation != _loadGeneration) return;
             ChecksSummary.Text = PullRequestCheckViewModel.Summary(checks);
-            ChecksList.ItemsSource = checks
-                .OrderBy(c => c.State == PullRequestCheckState.Failure ? 0 : c.State == PullRequestCheckState.Pending ? 1 : 2)
-                .ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            ChecksList.ItemsSource = PullRequestPresentation.OrderChecks(checks)
                 .Select(c => new PullRequestCheckViewModel { Check = c })
                 .ToList();
         }
@@ -231,7 +229,7 @@ public partial class PullRequestDetailView : UserControl
         CommitsList.ItemsSource = detail.Commits;
 
         ChangesSection.Visibility = PullRequestCheckViewModel.Show(detail.Files.Count > 0);
-        ChangesHeader.Text = $"Changes ({detail.Files.Count} files, +{detail.Insertions} −{detail.Deletions})";
+        ChangesHeader.Text = PullRequestPresentation.ChangesHeader(detail);
         _files = detail.Files;
         ShowFiles();
 
@@ -364,9 +362,7 @@ public partial class PullRequestDetailView : UserControl
             : PullRequestMergeMethod.Squash;
 
         var plan = new PullRequestActionPlan { PullRequest = pr };
-        var how = pr.Source == PullRequestSource.GitHub
-            ? $"This {method.GitHubValue()}-merges into {pr.TargetBranch}."
-            : $"This completes the pull request into {pr.TargetBranch} with its own merge settings.";
+        var how = plan.MergeExplanation(method);
 
         if (!Confirm($"{plan.MergeLabel} pull request?", $"{pr.Title}\n\n{pr.Container}/{pr.Repository} {pr.Reference}\n\n{how}"))
             return;

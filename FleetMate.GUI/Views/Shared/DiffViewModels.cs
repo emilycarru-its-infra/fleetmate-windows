@@ -30,17 +30,7 @@ public sealed class PullRequestCommentViewModel
         : Application.Current?.TryFindResource("SystemControlForegroundBaseHighBrush") as Brush
           ?? Brushes.Black;
 
-    internal static string Strip(string? html)
-    {
-        if (string.IsNullOrWhiteSpace(html)) return "";
-        if (!html.Contains('<')) return html.Trim();
-
-        var text = System.Text.RegularExpressions.Regex.Replace(html, "<br\\s*/?>", "\n");
-        text = System.Text.RegularExpressions.Regex.Replace(text, "</p>", "\n");
-        text = System.Text.RegularExpressions.Regex.Replace(text, "<[^>]+>", "");
-
-        return System.Net.WebUtility.HtmlDecode(text).Trim();
-    }
+    internal static string Strip(string? html) => PullRequestPresentation.StripHtml(html);
 }
 
 /// <summary>
