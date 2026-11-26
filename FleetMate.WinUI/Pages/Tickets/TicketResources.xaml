@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+    The Tickets widgets' tones (Core's TicketTone), stepped for light and dark
+    surfaces. High Contrast draws every tone in the system highlight colour,
+    so a chart reads by its labels and counts rather than by hue.
+-->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="TicketToneBlueBrush" Color="#1E7ACF" />
+            <SolidColorBrush x:Key="TicketToneGreenBrush" Color="#3C8F40" />
+            <SolidColorBrush x:Key="TicketToneOrangeBrush" Color="#D27A00" />
+            <SolidColorBrush x:Key="TicketToneYellowBrush" Color="#B98A00" />
+            <SolidColorBrush x:Key="TicketTonePurpleBrush" Color="#8E24AA" />
+            <SolidColorBrush x:Key="TicketToneTealBrush" Color="#00897B" />
+            <SolidColorBrush x:Key="TicketToneIndigoBrush" Color="#3F51B5" />
+            <SolidColorBrush x:Key="TicketToneGrayBrush" Color="#8A8A8A" />
+            <SolidColorBrush x:Key="TicketToneSecondaryBrush" Color="#6E6E6E" />
+            <SolidColorBrush x:Key="TicketToneTrackBrush" Color="#0F000000" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+            <SolidColorBrush x:Key="TicketToneBlueBrush" Color="#4FA3F0" />
+            <SolidColorBrush x:Key="TicketToneGreenBrush" Color="#6CC070" />
+            <SolidColorBrush x:Key="TicketToneOrangeBrush" Color="#FFA733" />
+            <SolidColorBrush x:Key="TicketToneYellowBrush" Color="#F2C230" />
+            <SolidColorBrush x:Key="TicketTonePurpleBrush" Color="#C17BD6" />
+            <SolidColorBrush x:Key="TicketToneTealBrush" Color="#34B5A6" />
+            <SolidColorBrush x:Key="TicketToneIndigoBrush" Color="#8C9EFF" />
+            <SolidColorBrush x:Key="TicketToneGrayBrush" Color="#9E9E9E" />
+            <SolidColorBrush x:Key="TicketToneSecondaryBrush" Color="#B0B0B0" />
+            <SolidColorBrush x:Key="TicketToneTrackBrush" Color="#18FFFFFF" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="HighContrast">
+            <SolidColorBrush x:Key="TicketToneBlueBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="TicketToneGreenBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="TicketToneOrangeBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="TicketToneYellowBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="TicketTonePurpleBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="TicketToneTealBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="TicketToneIndigoBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="TicketToneGrayBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="TicketToneSecondaryBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+            <SolidColorBrush x:Key="TicketToneTrackBrush" Color="{ThemeResource SystemColorWindowColor}" />
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>

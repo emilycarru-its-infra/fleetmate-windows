@@ -1,6 +1,7 @@
 ﻿using FleetMate.Core.Config;
 using FleetMate.Core.Links;
 using FleetMate.WinUI.Pages;
+using FleetMate.WinUI.Pages.Tickets;
 using FleetMate.WinUI.Shell;
 using Microsoft.UI.Xaml;
 using Serilog;
@@ -52,7 +53,8 @@ public partial class App : Application
 
         // Each ported page registers here; every other tab shows a placeholder.
         ShellPages.Register("Tickets", typeof(TicketsPage));
-        ShellServices.RegisterDemoFixtures(s => s.CachedTickets = Data.SampleTickets.Tickets);
+        Shell.Widgets.WidgetStrip.RegisterTab("Tickets");
+        ShellServices.RegisterDemoFixtures(s => s.TicketCache.Update(DemoTickets.Tickets.ToList()));
         ShellPages.Register("Development", typeof(Pages.Development.DevelopmentPage));
         Shell.Widgets.WidgetStrip.RegisterTab("Development");
         ShellServices.RegisterDemoFixtures(s => s.SeedDevelopmentDemo());

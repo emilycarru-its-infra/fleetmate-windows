@@ -35,7 +35,7 @@ public sealed partial class ShellServices : IDisposable
     /// <see cref="App"/>'s constructor, beside <c>ShellPages.Register</c>:
     ///
     /// <code>
-    /// ShellServices.RegisterDemoFixtures(s => s.CachedTickets = SampleTickets.Tickets);
+    /// ShellServices.RegisterDemoFixtures(s => s.TicketCache.Update(DemoTickets.Tickets.ToList()));
     /// </code>
     ///
     /// Fixtures are public: every name, address, id and record in them is made
@@ -51,6 +51,8 @@ public sealed partial class ShellServices : IDisposable
     public ShellServices(FleetMateConfig config, bool? demoMode = null)
     {
         DemoMode = demoMode ?? Core.Config.DemoMode.IsRequested();
+        TicketCache = new TicketBoardCache(() => Tdx, () => Config?.Tdx, () => TdxSession?.Settled ?? Task.CompletedTask,
+            () => TimeSpan.FromMinutes(Config?.CacheMinutes ?? 5));
         if (DemoMode)
         {
             // Nothing configured, so nothing can sign in or call out, and the
@@ -76,6 +78,8 @@ public sealed partial class ShellServices : IDisposable
         TdxSession = new TdxSessionCoordinator(config.Tdx, Tdx, Auth, TdxSessionCoordinator.HttpOnly);
         InitializeDevelopment(config);
         InitializeIdentity(config);
+        TicketCache.Updated += TdxSession.TicketsLoaded;
+        TdxSession.SignInChanged += OnTdxSignInChanged;
     }
 
     /// <summary>
@@ -103,8 +107,16 @@ public sealed partial class ShellServices : IDisposable
     /// <summary>The TeamDynamix sign-in: silent at launch, renewed while the window is open.</summary>
     public TdxSessionCoordinator TdxSession { get; }
 
-    /// <summary>Tickets loaded by the Tickets page, for search. Empty until the page loads live data.</summary>
-    public IReadOnlyList<TdxTicket> CachedTickets { get; set; } = Array.Empty<TdxTicket>();
+    /// <summary>
+    /// The loaded Tickets board, shared with FleetMate.GUI's code: each
+    /// signed-in identity's snapshot, the coalesced fresh read and the edits
+    /// made in place. In demo mode it holds the registered fixtures. Its
+    /// events arrive on the UI thread.
+    /// </summary>
+    public TicketBoardCache TicketCache { get; }
+
+    /// <summary>Tickets loaded for the board, for search.</summary>
+    public IReadOnlyList<TdxTicket> CachedTickets => TicketCache.Tickets;
 
     /// <summary>A snapshot of the loaded data for <see cref="GlobalSearch.Search"/>; no API calls.</summary>
     public SearchSources BuildSearchSources() => new()
@@ -118,7 +130,7 @@ public sealed partial class ShellServices : IDisposable
 
     /// <summary>
     /// A ticket a <c>fleetmate:</c> link asked for, waiting for the Tickets
-    /// page. Set by the shell; the live Tickets page (phase 2) opens and clears it.
+    /// page. Set by the shell; the Tickets page opens and clears it.
     /// </summary>
     public int? PendingTicketId { get; set; }
 
@@ -155,12 +167,38 @@ public sealed partial class ShellServices : IDisposable
         {
             Log.Warning(ex, "[tdx-sso] Silent SSO sequence failed");
         }
+        if (Tdx == null || !TdxSession.IsSignedIn) return;
+        // The board loads at launch, as FleetMate.GUI's preload does, so the
+        // Tickets tab opens on it; the page shares this read.
+        try
+        {
+            var tickets = await TicketCache.LoadAsync();
+            Log.Information("Preloaded {Count} tickets", tickets.Count);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Log.Warning(ex, "Failed to preload tickets");
+            TdxSession.TicketsLoaded();
+        }
+    }
+
+    /// <summary>
+    /// Another account's tickets never stay on screen: a change of identity
+    /// drops the board, and a fresh sign-in makes the next read go to
+    /// TeamDynamix.
+    /// </summary>
+    private void OnTdxSignInChanged()
+    {
+        if (TicketCache.IdentityChanged) TicketCache.Reset();
+        else if (TdxSession.IsSignedIn) TicketCache.Invalidate();
     }
 
     public void Dispose()
     {
         DisposeDevelopment();
         DisposeIdentity();
+        TdxSession.SignInChanged -= OnTdxSignInChanged;
+        TicketCache.Dispose();
         TdxSession.Dispose();
         Tdx?.Dispose();
     }

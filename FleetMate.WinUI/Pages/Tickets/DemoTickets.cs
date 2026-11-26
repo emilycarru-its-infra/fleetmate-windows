@@ -1,13 +1,15 @@
 using FleetMate.Core.Models.Tickets;
 
-namespace FleetMate.WinUI.Data;
+namespace FleetMate.WinUI.Pages.Tickets;
 
 /// <summary>
-/// Made-up tickets for the prototype, built from Core's real <see cref="TdxTicket"/>
-/// model so the stats strip runs through Core's <see cref="TicketStats"/>.
-/// Every name, team and ticket here is fictional; no service is contacted.
+/// Made-up tickets for demo mode (<c>--demo</c>, <c>--capture</c> or
+/// <c>FLEETMATE_DEMO=1</c>), built from Core's real <see cref="TdxTicket"/> model
+/// so the list, board and widgets run through the same code as live data.
+/// Every name, team and ticket here is fictional; no service is contacted,
+/// so screenshots taken in this mode are safe to publish.
 /// </summary>
-public static class SampleTickets
+public static class DemoTickets
 {
     private static readonly DateTime Now = DateTime.UtcNow;
 
@@ -71,8 +73,16 @@ public static class SampleTickets
                 DaysOld = r.Days,
                 Description = DescriptionFor(r.Title, r.Requestor),
             };
+        }).Select(t =>
+        {
+            // Two children under the new-starter ticket, so the outline and fold controls show.
+            if (t.Id is 204766 or 204540) { t.ParentId = 204790; t.ParentTitle = "New starter: workstation and accounts for Monday"; }
+            return t;
         }).ToList();
     }
+
+    /// <summary>The signed-in person in demo mode, responsible for some of the tickets.</summary>
+    public static TdxPerson Me { get; } = new() { FullName = "Jordan Lee", FirstName = "Jordan", LastName = "Lee" };
 
     private static string DescriptionFor(string title, string requestor) =>
         $"{title}.\n\nThis started earlier in the week and happens every time. I have restarted twice and checked the cables. " +
@@ -99,13 +109,4 @@ public static class SampleTickets
         }
         return entries.OrderByDescending(e => e.CreatedDate).ToList();
     }
-
-    public static IReadOnlyList<SampleTask> TasksFor(TdxTicket t) =>
-    [
-        new("Confirm scope with requester", t.ResponsibleFullName ?? "Unassigned", true, t.CreatedDate.AddDays(1).ToLocalTime().ToString("MMM d")),
-        new("Apply fix and test", t.ResponsibleFullName ?? "Unassigned", false, t.CreatedDate.AddDays(2).ToLocalTime().ToString("MMM d")),
-        new("Follow up after 48 hours", "Service Desk", false, t.CreatedDate.AddDays(4).ToLocalTime().ToString("MMM d")),
-    ];
 }
-
-public sealed record SampleTask(string Title, string Responsible, bool Done, string Due);

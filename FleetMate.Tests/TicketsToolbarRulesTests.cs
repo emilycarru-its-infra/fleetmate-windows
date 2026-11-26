@@ -1,3 +1,4 @@
+using FleetMate.Core.Models.Tickets;
 using FleetMate.GUI.Views.Tickets;
 using Xunit;
 

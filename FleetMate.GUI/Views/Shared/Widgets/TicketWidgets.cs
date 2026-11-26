@@ -44,9 +44,9 @@ public static class TicketWidgets
         cards.Add(BarCard("By Age", new TicketStats(tickets(TicketFilterCategory.Age)).ByAge,
             TicketFilterCategory.Age, filters, loading, AgeColor));
         cards.Add(BarCard("By Responsible", new TicketStats(tickets(TicketFilterCategory.Responsible)).ByResponsible,
-            TicketFilterCategory.Responsible, filters, loading, v => v == TicketStats.Unassigned ? Gray : Teal));
+            TicketFilterCategory.Responsible, filters, loading, v => ToneColor(TicketTones.Responsible(v))));
         cards.Add(BarCard("By Group", new TicketStats(tickets(TicketFilterCategory.Group)).ByGroup,
-            TicketFilterCategory.Group, filters, loading, v => v == TicketStats.Unassigned ? Gray : Indigo));
+            TicketFilterCategory.Group, filters, loading, v => ToneColor(TicketTones.Group(v))));
 
         return cards;
     }
@@ -54,37 +54,14 @@ public static class TicketWidgets
     /// <summary>One figure, which doubles as a filter: it toggles the selection it counts and lights up while that selection is on.</summary>
     internal sealed record Tile(string Title, int Value, string Glyph, Color Color, bool IsOn, string Help, Action Action);
 
-    /// <summary>
-    /// Statuses that count as open: every status the list could show except
-    /// On Hold. The Open figure selects exactly these.
-    /// </summary>
+    /// <summary>Statuses that count as open; see <see cref="TicketWidgetRules.OpenStatuses"/>.</summary>
     internal static HashSet<string> OpenStatuses(IEnumerable<TdxTicket> ticketsIgnoringStatus) =>
-        new TicketStats(ticketsIgnoringStatus).ByStatus.Select(c => c.Label)
-            .Where(l => l != TicketStats.OnHoldStatus).ToHashSet();
+        TicketWidgetRules.OpenStatuses(ticketsIgnoringStatus);
 
-    private static List<Tile> Tiles(Func<TicketFilterCategory?, List<TdxTicket>> tickets, TicketFilters filters, TicketStats stats)
-    {
-        var openStatuses = OpenStatuses(tickets(TicketFilterCategory.Status));
-        var openOn = openStatuses.Count > 0 && filters.Selected(TicketFilterCategory.Status).SetEquals(openStatuses);
-
-        Tile Single(string title, int value, string glyph, Color color, string help, TicketFilterCategory category, string v) =>
-            new(title, value, glyph, color, filters.IsSelected(category, v), help, () => filters.Toggle(category, v));
-
-        return new List<Tile>
-        {
-            new("Showing", stats.Total, "", Secondary, false, "Clear every filter", filters.ClearAll),
-            new("Open", stats.Open, "", Purple, openOn, "Show open tickets",
-                () => filters.Set(TicketFilterCategory.Status, openOn ? Array.Empty<string>() : openStatuses)),
-            Single("On Hold", stats.OnHold, "", Yellow, "Show tickets on hold",
-                TicketFilterCategory.Status, TicketStats.OnHoldStatus),
-            Single("Unassigned", stats.UnassignedCount, "", Teal, "Show tickets nobody is responsible for",
-                TicketFilterCategory.Responsible, TicketStats.Unassigned),
-            Single("SLA Violated", stats.SlaViolated, "", Orange, "Show tickets past their SLA",
-                TicketFilterCategory.Sla, TicketFilters.SlaViolated),
-            Single($"Over {TicketStats.AgingDays} days", stats.Aging, "", Indigo,
-                $"Show tickets older than {TicketStats.AgingDays} days", TicketFilterCategory.Age, TicketStats.AgingBucket),
-        };
-    }
+    private static List<Tile> Tiles(Func<TicketFilterCategory?, List<TdxTicket>> tickets, TicketFilters filters, TicketStats stats) =>
+        TicketWidgetRules.Tiles(tickets, filters)
+            .Select(t => new Tile(t.Title, t.Value, t.Glyph, ToneColor(t.Tone), t.IsOn, t.Help, t.Action))
+            .ToList();
 
     /// <summary>
     /// Six small figures in one chart-width card, so the five charts share
@@ -183,12 +160,9 @@ public static class TicketWidgets
 
     private static UIElement Empty(bool loading) => loading ? WidgetCards.Skeleton() : WidgetCards.Empty("No tickets match");
 
-    /// <summary>Values outside an active selection fade, so a chart shows what is picked and what else could be.</summary>
-    internal static bool Faded(TicketFilters filters, TicketFilterCategory category, string value)
-    {
-        var picked = filters.Selected(category);
-        return picked.Count > 0 && !picked.Contains(value);
-    }
+    /// <summary>Values outside an active selection fade; see <see cref="TicketWidgetRules.Faded"/>.</summary>
+    internal static bool Faded(TicketFilters filters, TicketFilterCategory category, string value) =>
+        TicketWidgetRules.Faded(filters, category, value);
 
     // Colours, matching the macOS app. No red: High is orange.
 
@@ -202,26 +176,23 @@ public static class TicketWidgets
     private static readonly Color Gray = Color.FromRgb(158, 158, 158);
     private static readonly Color Secondary = Color.FromRgb(128, 128, 128);
 
-    internal static Color StatusColor(string name)
-    {
-        var n = name.ToLowerInvariant();
-        if (n.Contains("new") || n.Contains("open")) return Blue;
-        if (n.Contains("progress") || n.Contains("process")) return Orange;
-        if (n.Contains("hold") || n.Contains("pending") || n.Contains("waiting")) return Yellow;
-        if (n.Contains("resolved") || n.Contains("completed")) return Green;
-        if (n.Contains("closed")) return Gray;
-        if (n.Contains("cancel")) return Orange;
-        return Secondary;
-    }
+    internal static Color StatusColor(string name) => ToneColor(TicketTones.Status(name));
 
-    internal static Color PriorityColor(string name) => name switch
-    {
-        "Low" => Green, "Medium" => Blue, "High" => Orange, "Emergency" => Purple, _ => Gray,
-    };
+    internal static Color PriorityColor(string name) => ToneColor(TicketTones.Priority(name));
 
-    internal static Color AgeColor(string bucket) => bucket switch
+    internal static Color AgeColor(string bucket) => ToneColor(TicketTones.Age(bucket));
+
+    internal static Color ToneColor(TicketTone tone) => tone switch
     {
-        "Today" => Green, "1–7 days" => Blue, "8–30 days" => Orange, "Over 30 days" => Purple, _ => Gray,
+        TicketTone.Blue => Blue,
+        TicketTone.Green => Green,
+        TicketTone.Orange => Orange,
+        TicketTone.Yellow => Yellow,
+        TicketTone.Purple => Purple,
+        TicketTone.Teal => Teal,
+        TicketTone.Indigo => Indigo,
+        TicketTone.Gray => Gray,
+        _ => Secondary,
     };
 
     private static SKColor ToSk(Color c) => new(c.R, c.G, c.B, c.A);
