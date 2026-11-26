@@ -334,8 +334,9 @@ public sealed partial class TicketsPage : Page
     private Button ValueRow(TicketWidgetChart chart, TicketStats.Count c, Brush brush, bool swatch, int max = 0)
     {
         var row = new Grid { ColumnSpacing = 8 };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = swatch ? GridLength.Auto : new GridLength(1.1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        // The name takes what is left; a bar is a short fixed track, so names are not cut short for it.
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = swatch ? GridLength.Auto : new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = swatch ? new GridLength(1, GridUnitType.Star) : new GridLength(44) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var name = Caption(c.Label, c.Label == TicketStats.Unassigned ? "TextFillColorTertiaryBrush" : "TextFillColorPrimaryBrush");
@@ -851,7 +852,10 @@ public sealed partial class TicketsPage : Page
         for (var i = 0; i < columns; i++)
             WidgetsGrid.ColumnDefinitions.Add(new ColumnDefinition
             {
-                Width = i == 0 && !twoRows ? GridLength.Auto : new GridLength(1, GridUnitType.Star),
+                // One row: the figures size to themselves and By Status gets extra room for its legend.
+                Width = twoRows ? new GridLength(1, GridUnitType.Star)
+                    : i == 0 ? GridLength.Auto
+                    : new GridLength(i == 1 ? 1.4 : 1, GridUnitType.Star),
             });
         WidgetsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         if (twoRows) WidgetsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
