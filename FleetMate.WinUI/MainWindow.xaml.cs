@@ -44,7 +44,8 @@ public sealed partial class MainWindow : Window
     public static string ViewMode { get; private set; } = "list";
 
     private readonly AppEdition _edition = AppEdition.Current;
-    private readonly IReadOnlyList<string> _tabs;
+    private IReadOnlyList<string> _tabs = Array.Empty<string>();
+    private readonly List<KeyboardAccelerator> _tabAccelerators = new();
     private bool _syncingSelection;
     private CancellationTokenSource? _search;
 
@@ -60,9 +61,12 @@ public sealed partial class MainWindow : Window
         AppTitleBar.IconSource = new ImageIconSource { ImageSource = new BitmapImage(new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", iconFile))) };
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", iconFile));
 
-        _tabs = AppTabs.Visible(_edition, UserPreferences.HiddenModules);
         BuildTabs();
+        AddSettingsShortcut();
         if (_edition.IsTicketsOnly) NavView.IsPaneVisible = false;
+        // Switching a module in Settings rebuilds the tab bar at once.
+        Pages.Settings.SettingsViewModel.ModulesChanged += () => DispatcherQueue.TryEnqueue(BuildTabs);
+        Pages.Settings.SettingsViewModel.ThemeChanged += ApplyTheme;
 
         SizeAndCenter(1600, 1000);
 
@@ -80,8 +84,20 @@ public sealed partial class MainWindow : Window
 
     // MARK: - Tabs
 
+    /// <summary>
+    /// The tabs this edition shows, leaving out the modules the operator
+    /// switched off. Demo mode reads no preferences and shows every tab.
+    /// </summary>
     private void BuildTabs()
     {
+        var hidden = App.Services.DemoMode ? new HashSet<string>() : UserPreferences.HiddenModules;
+        var tabs = AppTabs.Visible(_edition, hidden);
+        if (tabs.SequenceEqual(_tabs)) return;
+        _tabs = tabs;
+        NavView.MenuItems.Clear();
+        foreach (var old in _tabAccelerators) RootGrid.KeyboardAccelerators.Remove(old);
+        _tabAccelerators.Clear();
+
         foreach (var (tag, index) in _tabs.Select((t, i) => (t, i)))
         {
             var item = new NavigationViewItem
@@ -103,18 +119,40 @@ public sealed partial class MainWindow : Window
                     e.Handled = true;
                 };
                 RootGrid.KeyboardAccelerators.Add(accelerator);
+                _tabAccelerators.Add(accelerator);
             }
             NavView.MenuItems.Add(item);
         }
 
+        // Keep the selection on the tab showing; a tab just switched off falls back to the start tab.
+        if (CurrentTab is { } current && current != ShellPages.Settings && !_tabs.Contains(current)
+            && AppTabs.StartTab(_edition, _tabs) is { } start)
+            NavigateToTab(start);
+        else if (CurrentTab is { } shown)
+            NavView.SelectedItem = shown == ShellPages.Settings
+                ? NavView.SettingsItem
+                : NavView.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => Equals(i.Tag, shown));
+    }
+
+    private void AddSettingsShortcut()
+    {
         var settings = new KeyboardAccelerator { Key = (VirtualKey)188, Modifiers = VirtualKeyModifiers.Control };
         settings.Invoked += (_, e) =>
         {
-            NavigateTo(typeof(PlaceholderPage), ShellPages.Settings);
+            ShowPanel(ShellPages.Settings);
             e.Handled = true;
         };
         RootGrid.KeyboardAccelerators.Add(settings);
     }
+
+    /// <summary>Apply a theme chosen in Settings without restarting.</summary>
+    private void ApplyTheme(string theme) =>
+        RootGrid.RequestedTheme = theme switch
+        {
+            "Light" => ElementTheme.Light,
+            "Dark" => ElementTheme.Dark,
+            _ => ElementTheme.Default,
+        };
 
     /// <summary>Show <paramref name="tag"/>'s tab; a tab this edition or the operator left out is ignored.</summary>
     public void NavigateToTab(string tag)
@@ -130,7 +168,7 @@ public sealed partial class MainWindow : Window
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         if (_syncingSelection) return;
-        if (args.IsSettingsSelected) NavigateTo(typeof(PlaceholderPage), ShellPages.Settings);
+        if (args.IsSettingsSelected) ShowPanel(ShellPages.Settings);
         else if (args.SelectedItem is NavigationViewItem { Tag: string tag }) NavigateToTab(tag);
     }
 
@@ -347,7 +385,12 @@ public sealed partial class MainWindow : Window
     /// <summary>Show a tab, or Settings, without touching history rules.</summary>
     internal void ShowPanel(string panel)
     {
-        if (panel == ShellPages.Settings) NavigateTo(typeof(PlaceholderPage), ShellPages.Settings);
+        if (panel == ShellPages.Settings)
+        {
+            NavigateTo(typeof(Pages.Settings.SettingsPage), ShellPages.Settings);
+            // Opening Settings again starts at General.
+            (NavFrame.Content as Pages.Settings.SettingsPage)?.ShowSection("General");
+        }
         else NavigateToTab(panel);
     }
 
