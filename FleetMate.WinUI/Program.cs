@@ -23,7 +23,9 @@ public static class Program
         // Its own lock while FleetMate.GUI ships, so the two never hand off to each other.
         LinkHost.Instance = "WinUI";
         var link = LinkHost.LinkFromArgs(args);
-        if (!LinkHost.TryBecomePrimary(link))
+        // A QA capture runs beside an open window, so it takes no lock.
+        var capturing = Shell.CaptureHarness.DirectoryFromArgs(args) != null;
+        if (!capturing && !LinkHost.TryBecomePrimary(link))
         {
             Log.CloseAndFlush();
             return 0;
@@ -41,7 +43,7 @@ public static class Program
 
         LinkHost.Stop();
         Log.CloseAndFlush();
-        return 0;
+        return Environment.ExitCode;
     }
 }
 
