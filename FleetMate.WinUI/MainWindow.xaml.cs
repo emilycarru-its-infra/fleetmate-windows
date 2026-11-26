@@ -265,7 +265,16 @@ public sealed partial class MainWindow : Window
         Log.Information("Opening {Link}", parsed.ToLink());
         LinkBanner.IsOpen = false;
         if (parsed is FleetMateLink.Ticket ticket) App.Services.PendingTicketId = ticket.Id;
-        NavigateToTab(LinkRoutes.TabFor(parsed));
+        var tab = LinkRoutes.TabFor(parsed);
+        if (tab == "Development") App.Services.RequestDevelopmentLink(parsed);
+        NavigateToTab(tab);
+    }
+
+    /// <summary>Say something about a link in the banner under the toolbar: a page's link that found nothing.</summary>
+    public void ShowLinkBanner(string message)
+    {
+        LinkBanner.Message = message;
+        LinkBanner.IsOpen = true;
     }
 
     private void BringToFront()

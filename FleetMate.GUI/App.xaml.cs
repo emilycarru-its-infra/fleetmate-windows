@@ -756,46 +756,14 @@ public partial class App : Application, IDevelopmentHost
 
         AuthManager.Update(AuthSystemId.DevOps, AuthTokenState.Authenticating());
 
-        // Phase 1: the broker, redeeming the device's primary refresh token.
-        if (EntraTokenSource.Shared is { } broker)
+        var sso = DevOpsSsoService;
+        var headless = await DevOpsSignInChain.RunAsync(sso, async () =>
         {
-            try
-            {
-                var token = await broker.GetTokenAsync(DevOpsSsoService.AdoResourceId);
-                var (name, email) = DevOpsSsoService.ExtractUserInfoFromJwt(token);
-                Log.Information("[devops-sso] Phase 1: broker token acquired — user={UserName}", name ?? email ?? "(unknown)");
-                HandleDevOpsSsoSuccess(DevOpsSsoResult.Succeeded(token, TdxSsoService.ReadExpiry(token), userName: name, userEmail: email));
-                return;
-            }
-            catch (Exception ex)
-            {
-                Log.Information("[devops-sso] Phase 1: broker had no token: {Reason}", ex.Message);
-            }
-        }
-
-        // Phase 2: az CLI, then its MSAL cache, then a refresh token from this session.
-        try
-        {
-            var result = await DevOpsSsoService.RefreshAccessTokenAsync();
-            if (result.Success && !string.IsNullOrEmpty(result.Token))
-            {
-                Log.Information("[devops-sso] Phase 2: token acquired — user={UserName}", result.UserName ?? "(unknown)");
-                HandleDevOpsSsoSuccess(result);
-                return;
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "[devops-sso] Phase 2: token acquisition failed");
-        }
-
-        // Phase 3: the hidden browser.
-        Log.Information("[devops-sso] Phase 3: hidden WebView2 SSO");
-        var upn = await TdxSsoIdentity.ResolveWindowsUpnAsync();
-        var headless = await DevOpsHeadlessSso.SignInAsync(DevOpsSsoService, upn);
+            var upn = await TdxSsoIdentity.ResolveWindowsUpnAsync();
+            return await DevOpsHeadlessSso.SignInAsync(sso, upn);
+        });
         if (headless is { Success: true, Token: not null })
         {
-            Log.Information("[devops-sso] Phase 3: token acquired — user={UserName}", headless.UserName ?? "(unknown)");
             HandleDevOpsSsoSuccess(headless);
             return;
         }

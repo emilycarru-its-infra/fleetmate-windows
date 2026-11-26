@@ -24,7 +24,7 @@ namespace FleetMate.WinUI.Shell;
 /// FleetMate.GUI's <c>App.InitializeServices</c>.
 /// Create on the UI thread.
 /// </summary>
-public sealed class ShellServices : IDisposable
+public sealed partial class ShellServices : IDisposable
 {
     public ShellServices(FleetMateConfig config)
     {
@@ -39,6 +39,7 @@ public sealed class ShellServices : IDisposable
         // adopted first, then HTTP Negotiate. The hidden-browser phase the WPF
         // app runs after it is not in the WinUI shell yet.
         TdxSession = new TdxSessionCoordinator(config.Tdx, Tdx, Auth, TdxSessionCoordinator.HttpOnly);
+        InitializeDevelopment(config);
     }
 
     public FleetMateConfig Config { get; }
@@ -58,6 +59,10 @@ public sealed class ShellServices : IDisposable
     public SearchSources BuildSearchSources() => new()
     {
         Tickets = CachedTickets.ToList(),
+        PullRequests = DevelopmentPullRequests?.PullRequests.ToList() ?? new(),
+        Notifications = Inbox.Notifications.ToList(),
+        Commits = DevelopmentCommits?.ToList() ?? new(),
+        Runs = DevelopmentRuns?.ToList() ?? new(),
     };
 
     /// <summary>
@@ -85,6 +90,7 @@ public sealed class ShellServices : IDisposable
     {
         TdxSession.Start();
         _ = StartSignInAsync();
+        StartDevelopment();
     }
 
     private async Task StartSignInAsync()
@@ -101,6 +107,7 @@ public sealed class ShellServices : IDisposable
 
     public void Dispose()
     {
+        DisposeDevelopment();
         TdxSession.Dispose();
         Tdx?.Dispose();
     }

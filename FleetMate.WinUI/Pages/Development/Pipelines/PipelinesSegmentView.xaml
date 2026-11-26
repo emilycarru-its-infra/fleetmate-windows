@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="FleetMate.WinUI.Pages.Development.Pipelines.PipelinesSegmentView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Placeholder until the Pipelines sub-tab is ported. -->
+    <TextBlock
+        HorizontalAlignment="Center"
+        VerticalAlignment="Center"
+        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+        Text="Pipelines is not ported to this app yet." />
+</UserControl>

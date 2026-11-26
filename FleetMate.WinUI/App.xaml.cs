@@ -22,6 +22,9 @@ public partial class App : Application
 
     public static new App Current => (App)Application.Current;
 
+    /// <summary>The one window, once launched.</summary>
+    public MainWindow? Window => _window;
+
     public App(string? startupLink)
     {
         _startupLink = startupLink;
@@ -49,6 +52,7 @@ public partial class App : Application
 
         // Each ported page registers here; every other tab shows a placeholder.
         ShellPages.Register("Tickets", typeof(TicketsPage));
+        ShellPages.Register("Development", typeof(Pages.Development.DevelopmentPage));
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
