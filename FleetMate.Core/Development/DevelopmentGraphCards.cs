@@ -93,6 +93,8 @@ public sealed record GraphCard(GraphCardKind Kind, string Title)
     /// <summary>Whether a column chart names its series under it.</summary>
     public bool Legend { get; init; }
     public IReadOnlyList<GraphListRow> Rows { get; init; } = Array.Empty<GraphListRow>();
+    /// <summary>A line under the chart, such as Projects' current sprint; empty for none.</summary>
+    public string Caption { get; init; } = "";
     /// <summary>How many list rows show before "Show all".</summary>
     public int VisibleRows { get; init; } = DevelopmentFigures.TopCount;
 

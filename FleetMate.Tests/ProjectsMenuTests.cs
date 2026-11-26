@@ -27,7 +27,7 @@ public class ProjectsMenuTests
         };
         var extra = new[] { Task("azdevops", "9", now.AddDays(-2)) };
 
-        var mine = BoardsPage.MineTasks(loaded, extra, new HashSet<int> { 1, 9 }, "ada");
+        var mine = TaskBoard.MineTasks(loaded, extra, new HashSet<int> { 1, 9 }, "ada");
 
         Assert.Equal(new[] { "acme/fleet#7", "9", "1" }, mine.Select(t => t.Id));
     }
@@ -39,7 +39,7 @@ public class ProjectsMenuTests
     [InlineData("2026-10-11", "monday", "2026-10-12")]   // Sunday
     [InlineData("2026-02-10", "month", "2026-02-28")]
     public void RescheduleDates(string today, string choice, string expected) =>
-        Assert.Equal(DateTime.Parse(expected), BoardsPage.RescheduleDate(choice, DateTime.Parse(today)));
+        Assert.Equal(DateTime.Parse(expected), TaskBoard.RescheduleDate(choice, DateTime.Parse(today)));
 
     [Theory]
     [InlineData(5324, "Give each tab a Widgets section!", "5324-give-each-tab-a-widgets-section")]

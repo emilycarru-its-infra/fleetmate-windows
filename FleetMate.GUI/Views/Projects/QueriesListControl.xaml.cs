@@ -15,11 +15,6 @@ namespace FleetMate.GUI.Views.Projects;
 /// </summary>
 public partial class QueriesListControl : UserControl
 {
-    /// <summary>A query with its materialized rows, ready to render.</summary>
-    public record QueryRunDisplay(AdoSharedQuery Query, List<QueryRowDisplay> Rows, bool Truncated, string AreaBucket);
-
-    public record QueryRowDisplay(UnifiedTask Task, int Depth, bool HasChildren);
-
     public event EventHandler<UnifiedTask>? TaskSelected;
     public event EventHandler<AdoSharedQuery>? OpenQueryRequested;
 
@@ -72,71 +67,6 @@ public partial class QueriesListControl : UserControl
         ChangedSortGlyph.Text = order == QueryListOrder.LastChanged ? glyph : "";
     }
 
-    /// <summary>
-    /// Dominant area-path bucket: the second path component when present
-    /// ("Projects\Devices\Macintosh" → "Devices"), else the project itself.
-    /// Empty queries fall back to the "Bucket - Query name" convention.
-    /// </summary>
-    public static string AreaBucket(List<QueryRowDisplay> rows, string queryName)
-    {
-        var counts = new Dictionary<string, int>();
-        foreach (var row in rows)
-        {
-            if (!row.Task.Metadata.TryGetValue("areaPath", out var area) || area.Length == 0) continue;
-            var comps = area.Split('\\');
-            var bucket = comps.Length >= 2 ? comps[1] : comps[0];
-            counts[bucket] = counts.GetValueOrDefault(bucket) + 1;
-        }
-        if (counts.Count > 0)
-            return counts.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase).First().Key;
-        foreach (var separator in new[] { " - ", " — " })
-        {
-            var idx = queryName.IndexOf(separator, StringComparison.Ordinal);
-            if (idx > 0) return queryName[..idx];
-        }
-        return "General";
-    }
-
-    /// <summary>When anything in a query last changed.</summary>
-    internal static DateTime LatestChange(QueryRunDisplay run) =>
-        run.Rows.Count == 0 ? DateTime.MinValue : run.Rows.Max(r => r.Task.UpdatedAt);
-
-    /// <summary>
-    /// Areas and the queries inside each, most recently active first — the
-    /// default order. Ties fall back to name.
-    /// </summary>
-    internal static List<(string Key, List<QueryRunDisplay> Runs)> RecentFirst(IEnumerable<QueryRunDisplay> runs) =>
-        Ordered(runs, QueryListOrders.Default, QueryListOrders.Default.DefaultAscending(), r => r.Rows.Count);
-
-    /// <summary>
-    /// Areas and the queries inside each, in the chosen Sort Queries By order.
-    /// <paramref name="runs"/> arrive in Azure DevOps order, which is what
-    /// Query Order shows; <paramref name="resultCount"/> counts the rows a
-    /// query shows after search and the Closed toggle.
-    /// </summary>
-    internal static List<(string Key, List<QueryRunDisplay> Runs)> Ordered(
-        IEnumerable<QueryRunDisplay> runs, QueryListOrder order, bool ascending, Func<QueryRunDisplay, int> resultCount)
-    {
-        var list = runs.ToList();
-        var positions = new Dictionary<QueryRunDisplay, int>(ReferenceEqualityComparer.Instance);
-        for (var i = 0; i < list.Count; i++) positions.TryAdd(list[i], i);
-
-        QueryOrderKey RunKey(QueryRunDisplay r) => new(r.Query.Name, resultCount(r), LatestChange(r), positions[r]);
-
-        var sections = list.GroupBy(r => r.AreaBucket)
-            .Select(g => (g.Key, Runs: order.Sort(g, ascending, RunKey)))
-            .ToList();
-        var ordered = order.Sort(sections, ascending, s => new QueryOrderKey(
-            s.Key,
-            s.Runs.Sum(resultCount),
-            s.Runs.Max(LatestChange),
-            s.Runs.Min(r => positions[r])));
-        // "General" holds whatever fits no project; by name it reads best last.
-        if (order == QueryListOrder.Name)
-            ordered = ordered.Where(s => s.Key != "General").Concat(ordered.Where(s => s.Key == "General")).ToList();
-        return ordered;
-    }
-
     /// <summary>The current Sort Queries By order; saved, and the list redrawn.</summary>
     public void SetOrder(QueryListOrder order, bool ascending)
     {
@@ -175,7 +105,7 @@ public partial class QueriesListControl : UserControl
         SectionsPanel.Children.Clear();
 
         var any = false;
-        foreach (var section in Ordered(_runs, UserPreferences.QueriesOrder, UserPreferences.QueriesOrderAscending,
+        foreach (var section in QueryRuns.Ordered(_runs, UserPreferences.QueriesOrder, UserPreferences.QueriesOrderAscending,
                      r => r.Rows.Count(RowVisible)))
         {
             // Under a tile filter, a query with nothing in the tile's set drops out, and so does an emptied section.
@@ -200,8 +130,7 @@ public partial class QueriesListControl : UserControl
 
         if (!any)
         {
-            ShowMessage(_rowFilter != null ? "No rows in the shared queries match the selected tile."
-                : _search.Length > 0 ? $"No rows match \"{_search}\"." : "No shared queries.");
+            ShowMessage(QueryRuns.EmptyMessage(_rowFilter != null, _search));
         }
     }
 
@@ -252,7 +181,7 @@ public partial class QueriesListControl : UserControl
 
         var name = new TextBlock
         {
-            Text = run.Query.FolderPath.Length > 0 ? $"{run.Query.FolderPath} / {run.Query.Name}" : run.Query.Name,
+            Text = QueryRuns.Name(run.Query),
             FontSize = 13,
             FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
@@ -281,16 +210,7 @@ public partial class QueriesListControl : UserControl
         return expander;
     }
 
-    private bool RowVisible(QueryRowDisplay row)
-    {
-        if (!_showClosed && row.Task.State == TaskState.Closed) return false;
-        if (_rowFilter != null && !_rowFilter(row.Task)) return false;
-        if (_search.Length == 0) return true;
-        return row.Task.Id.Contains(_search, StringComparison.OrdinalIgnoreCase)
-            || row.Task.Title.Contains(_search, StringComparison.OrdinalIgnoreCase)
-            || row.Task.Assignees.Any(a => a.Contains(_search, StringComparison.OrdinalIgnoreCase))
-            || row.Task.Labels.Any(l => l.Contains(_search, StringComparison.OrdinalIgnoreCase));
-    }
+    private bool RowVisible(QueryRowDisplay row) => QueryRuns.RowVisible(row, _search, _showClosed, _rowFilter);
 
     private UIElement BuildRow(QueryRowDisplay row)
     {
@@ -351,7 +271,7 @@ public partial class QueriesListControl : UserControl
         Grid.SetColumn(titlePanel, 1);
         grid.Children.Add(titlePanel);
 
-        var state = row.Task.Metadata.TryGetValue("state", out var s) && s.Length > 0 ? s : row.Task.State.ToString();
+        var state = QueryRuns.State(row.Task);
         var stateBlock = new TextBlock
         {
             Text = state,
@@ -405,13 +325,5 @@ public partial class QueriesListControl : UserControl
         _ => (Brush)FindResource("SystemControlForegroundBaseHighBrush")
     };
 
-    private static string FormatRelative(DateTime when)
-    {
-        if (when <= DateTime.MinValue) return "";
-        var span = DateTime.UtcNow - when.ToUniversalTime();
-        return span.TotalMinutes < 60 ? $"{Math.Max(1, (int)span.TotalMinutes)}m"
-            : span.TotalHours < 24 ? $"{(int)span.TotalHours}h"
-            : span.TotalDays < 30 ? $"{(int)span.TotalDays}d"
-            : when.ToLocalTime().ToString("MMM d");
-    }
+    private static string FormatRelative(DateTime when) => TaskCardText.Relative(when, DateTime.UtcNow);
 }

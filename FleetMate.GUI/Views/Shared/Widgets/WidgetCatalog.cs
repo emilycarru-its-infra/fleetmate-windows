@@ -125,28 +125,13 @@ public static partial class WidgetCatalog
         });
     }
 
-    /// <summary>
-    /// States that take a work item off the open list. Resolved counts: the
-    /// work is done and only awaits closing, so it is not something to do.
-    /// </summary>
-    private static readonly HashSet<string> FinishedStates =
-        new(AzureDevOpsService.FinishedStates, StringComparer.OrdinalIgnoreCase);
-
-    internal static bool IsClosed(string? state) => state is not null && FinishedStates.Contains(state);
+    internal static bool IsClosed(string? state) => ProjectsGraphCards.IsClosed(state);
 
     private static readonly Color[] WorkItemColors = { P.Blue, P.Green, P.Orange, P.Purple, P.Gray, P.Brown };
 
-    /// <summary>The user's open items by state, most first, each labelled "State (count)".</summary>
-    internal static List<ChartSlice> WorkItemSlices(IEnumerable<WorkItem> items) => items
-        .GroupBy(w => string.IsNullOrEmpty(w.State) ? "Unknown" : w.State)
-        .Select(g => (State: g.Key, Count: g.Count()))
-        .OrderByDescending(s => s.Count)
-        .Select(s => new ChartSlice($"{s.State} ({s.Count})", s.Count))
-        .ToList();
+    internal static List<ChartSlice> WorkItemSlices(IEnumerable<WorkItem> items) => ProjectsGraphCards.WorkItemSlices(items);
 
-    /// <summary>"Sprint: Name · N open" — the user's open items in the current sprint.</summary>
-    internal static string SprintCaption(string sprintName, IEnumerable<WorkItem> items) =>
-        $"Sprint: {sprintName} · {items.Count(w => w.IterationPath?.EndsWith(sprintName, StringComparison.Ordinal) == true)} open";
+    internal static string SprintCaption(string sprintName, IEnumerable<WorkItem> items) => ProjectsGraphCards.SprintCaption(sprintName, items);
 
     private static List<UIElement> Projects(App app)
     {

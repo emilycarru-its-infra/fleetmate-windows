@@ -380,6 +380,7 @@ public sealed partial class MainWindow : Window
         if (parsed is FleetMateLink.Asset asset) App.Services.RequestAssetLink(asset.Id);
         var tab = LinkRoutes.TabFor(parsed);
         if (tab == "Development") App.Services.RequestDevelopmentLink(parsed);
+        if (tab == "Projects") App.Services.RequestProjectsLink(parsed);
         NavigateToTab(tab);
     }
 

@@ -62,7 +62,7 @@ public partial class BoardsPage
     private void OnTaskCopyId(object sender, RoutedEventArgs e)
     {
         if (VmOfMenu(MenuOf(sender)) is not { } vm) return;
-        try { Clipboard.SetText(vm.Task.Provider == "azdevops" ? vm.Task.Id : $"#{vm.Task.Id}"); } catch { }
+        try { Clipboard.SetText(TaskCardText.CopyId(vm.Task)); } catch { }
     }
 
     /// <summary>Fill a dynamic submenu the first time it opens for this card.</summary>
@@ -194,21 +194,12 @@ public partial class BoardsPage
         return result;
     }
 
-    /// <summary>Tomorrow / Next Monday / End of Month, sent as the due date (yyyy-MM-dd).</summary>
-    internal static DateTime RescheduleDate(string choice, DateTime today) => choice switch
-    {
-        "tomorrow" => today.AddDays(1),
-        // The coming Monday; on a Monday, the next one.
-        "monday" => today.AddDays(((int)DayOfWeek.Monday - (int)today.DayOfWeek + 6) % 7 + 1),
-        _ => new DateTime(today.Year, today.Month, DateTime.DaysInMonth(today.Year, today.Month)),
-    };
-
     private async void OnTaskReschedule(object sender, RoutedEventArgs e)
     {
         if (sender is not MenuItem { Tag: string choice } || _devOpsService == null) return;
         if (VmOfMenu(MenuOf(sender)) is not { } vm || !int.TryParse(vm.Task.Id, out var id)) return;
 
-        var due = RescheduleDate(choice, DateTime.Today).ToString("yyyy-MM-dd");
+        var due = TaskBoard.RescheduleDate(choice, DateTime.Today).ToString("yyyy-MM-dd");
         var result = await _devOpsService.SetWorkItemFieldAsync(id, "Microsoft.VSTS.Scheduling.DueDate", due);
         if (!result.Success)
         {
@@ -226,14 +217,8 @@ public partial class BoardsPage
         if (item == null) return;
 
         var fresh = AzureDevOpsTaskProvider.MapToUnifiedTask(item);
-        ReplaceTask(_allTasks, task, fresh);
-        ReplaceTask(_mineExtra, task, fresh);
+        TaskBoard.Replace(_allTasks, task, fresh);
+        TaskBoard.Replace(_mineExtra, task, fresh);
         UpdateDisplay();
-    }
-
-    private static void ReplaceTask(List<UnifiedTask> list, UnifiedTask old, UnifiedTask fresh)
-    {
-        var index = list.FindIndex(t => t.Provider == old.Provider && t.Id == old.Id);
-        if (index >= 0) list[index] = fresh;
     }
 }

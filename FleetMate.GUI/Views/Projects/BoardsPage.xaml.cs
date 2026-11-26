@@ -40,7 +40,7 @@ public partial class BoardsPage : Page, IChromeToolbar
 
     // Stored queries (the List mode's primary content, macOS parity). Cached
     // statically so tab switches don't refetch every Shared Query.
-    private static List<QueriesListControl.QueryRunDisplay> _queryRuns = new();
+    private static List<QueryRunDisplay> _queryRuns = new();
     private static DateTime _queriesLoadedAt = DateTime.MinValue;
     private static readonly TimeSpan QueriesFreshness = TimeSpan.FromMinutes(5);
     private bool _isLoadingQueries;
@@ -269,126 +269,23 @@ public partial class BoardsPage : Page, IChromeToolbar
             return;
         }
 
-        TaskBoardColumnsControl.ItemsSource = BuildTaskColumns(tasks);
+        TaskBoardColumnsControl.ItemsSource = BuildTaskColumns(tasks, _groupBy, _showClosed);
         TaskCountLabel.Text = $"{tasks.Count} tasks";
     }
 
     /// <summary>Search, bucket and closed filters shared by the board and the Mine/Recent list.</summary>
-    private List<UnifiedTask> FilterTasks(IEnumerable<UnifiedTask> source)
-    {
-        var filtered = source;
+    private List<UnifiedTask> FilterTasks(IEnumerable<UnifiedTask> source) =>
+        TaskBoard.Filter(source, _searchText, _filterBucket, _showClosed, _groupBy,
+            flat: IsInitialized && CurrentView is ProjectsView.Mine or ProjectsView.Recent, TilePasses);
 
-        // Apply search filter
-        if (!string.IsNullOrWhiteSpace(_searchText))
+    private static List<TaskBoardColumn> BuildTaskColumns(List<UnifiedTask> tasks, string groupBy, bool showClosed) =>
+        TaskBoard.Columns(tasks, groupBy, showClosed).Select(g => new TaskBoardColumn
         {
-            var search = _searchText.ToLowerInvariant();
-            filtered = filtered.Where(t =>
-                t.Title.ToLowerInvariant().Contains(search) ||
-                (t.Description?.ToLowerInvariant().Contains(search) ?? false));
-        }
-
-        // A strip tile narrows the lists to the set it counts.
-        filtered = filtered.Where(TilePasses);
-
-        // Apply bucket filter
-        if (!string.IsNullOrEmpty(_filterBucket) && _filterBucket != "(All Buckets)")
-        {
-            filtered = filtered.Where(t => t.Bucket == _filterBucket);
-        }
-
-        // State columns handle closed visibility themselves; every other
-        // dimension, and the Mine/Recent list, drops closed tasks entirely,
-        // like the Mac board.
-        var flat = IsInitialized && CurrentView is ProjectsView.Mine or ProjectsView.Recent;
-        if (!_showClosed && (_groupBy != "State" || flat))
-        {
-            filtered = filtered.Where(t => t.State != TaskState.Closed);
-        }
-
-        return filtered.ToList();
-    }
-
-    private static readonly string[] ClosedStateNames = { "closed", "done", "removed", "completed", "resolved" };
-
-    private List<TaskBoardColumn> BuildTaskColumns(List<UnifiedTask> tasks)
-    {
-        static string MetaOr(UnifiedTask t, string key, string fallback)
-            => t.Metadata.TryGetValue(key, out var v) && !string.IsNullOrEmpty(v) ? v : fallback;
-
-        switch (_groupBy)
-        {
-            case "Priority":
-            {
-                var labels = new (int Key, string Label, string Color)[]
-                {
-                    (1, "Critical", "#C05050"), (2, "High", "#DD8844"), (3, "Medium", "#C9A83A"),
-                    (4, "Low", "#4C9A60"), (0, "None", "#808080")
-                };
-                var grouped = tasks.GroupBy(t => t.Priority ?? 0).ToDictionary(g => g.Key, g => g.ToList());
-                return labels
-                    .Select(l => MakeColumn(l.Label, l.Color, grouped.GetValueOrDefault(l.Key) ?? new List<UnifiedTask>()))
-                    .ToList();
-            }
-            case "Assigned To":
-                return tasks.GroupBy(t => t.Assignees.FirstOrDefault() ?? "Unassigned")
-                    .OrderBy(g => g.Key == "Unassigned" ? 0 : 1)
-                    .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
-                    .Select(g => MakeColumn(g.Key, "#5B6BAE", g.ToList()))
-                    .ToList();
-            case "Area Path":
-                return GroupedAlpha(tasks, t => MetaOr(t, "areaPath", "No Area"), "No Area", "#8E6BA5");
-            case "Iteration":
-                return GroupedAlpha(tasks, t => MetaOr(t, "iterationPath", "No Iteration"), "No Iteration", "#A5783A");
-            case "Type":
-                return GroupedAlpha(tasks, t => MetaOr(t, "workItemType", "Unknown"), "Unknown", "#4C8C8C");
-            default: // State
-            {
-                var grouped = tasks.GroupBy(t => MetaOr(t, "state", "New")).ToDictionary(g => g.Key, g => g.ToList());
-                return grouped.Keys
-                    .Where(k => _showClosed || !ClosedStateNames.Contains(k.ToLowerInvariant()))
-                    .OrderBy(StateOrder)
-                    .ThenBy(k => k, StringComparer.OrdinalIgnoreCase)
-                    .Select(s => MakeColumn(s, StateColorHex(s), grouped[s]))
-                    .ToList();
-            }
-        }
-    }
-
-    private static List<TaskBoardColumn> GroupedAlpha(
-        List<UnifiedTask> tasks, Func<UnifiedTask, string> key, string fallback, string colorHex)
-        => tasks.GroupBy(key)
-            .OrderBy(g => g.Key == fallback ? 1 : 0)
-            .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(g => MakeColumn(g.Key, colorHex, g.ToList()))
-            .ToList();
-
-    private static TaskBoardColumn MakeColumn(string title, string colorHex, List<UnifiedTask> tasks) => new()
-    {
-        Title = title,
-        Color = new SolidColorBrush((Color)ColorConverter.ConvertFromString(colorHex)),
-        CountLabel = $"({tasks.Count})",
-        Tasks = tasks.OrderByDescending(t => t.UpdatedAt).Select(t => new TaskCardVm { Task = t }).ToList()
-    };
-
-    private static int StateOrder(string state) => state.ToLowerInvariant() switch
-    {
-        "new" or "to do" or "proposed" or "open" => 0,
-        "active" or "in progress" or "doing" or "committed" => 1,
-        "resolved" or "done" or "completed" => 2,
-        "closed" => 3,
-        "removed" => 4,
-        _ => 2
-    };
-
-    private static string StateColorHex(string state) => state.ToLowerInvariant() switch
-    {
-        "new" or "to do" or "proposed" or "open" => "#4C9A60",
-        "active" or "in progress" or "doing" or "committed" => "#3A6EA5",
-        "resolved" or "done" or "completed" => "#8E6BA5",
-        "closed" => "#707070",
-        "removed" => "#C05050",
-        _ => "#3A6EA5"
-    };
+            Title = g.Title,
+            Color = new SolidColorBrush((Color)ColorConverter.ConvertFromString(g.ColorHex)),
+            CountLabel = $"({g.Tasks.Count})",
+            Tasks = g.Tasks.Select(t => new TaskCardVm { Task = t }).ToList(),
+        }).ToList();
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
@@ -526,19 +423,7 @@ public partial class BoardsPage : Page, IChromeToolbar
         if (task.Provider != "azdevops" || _devOpsService == null || !int.TryParse(task.Id, out var id))
             return;
 
-        UpdateWorkItemRequest? request = _groupBy switch
-        {
-            "State" => new UpdateWorkItemRequest { State = columnTitle },
-            "Priority" => PriorityFromLabel(columnTitle) is int p and > 0
-                ? new UpdateWorkItemRequest { Priority = p } : null,
-            "Assigned To" => columnTitle == "Unassigned" ? null
-                : new UpdateWorkItemRequest { AssignedTo = columnTitle },
-            "Iteration" => columnTitle == "No Iteration" ? null
-                : new UpdateWorkItemRequest { IterationPath = columnTitle },
-            "Area Path" => columnTitle == "No Area" ? null
-                : new UpdateWorkItemRequest { AreaPath = columnTitle },
-            _ => null // Type changes are not drag-updatable
-        };
+        var request = TaskBoard.DropRequest(_groupBy, columnTitle);
         if (request == null) return;
 
         await ApplyWorkItemUpdateAsync(task, id, request);
@@ -551,25 +436,9 @@ public partial class BoardsPage : Page, IChromeToolbar
         var updated = await _devOpsService.UpdateWorkItemAsync(id, request);
         if (updated == null) return;
 
-        task.Metadata["state"] = updated.State;
-        task.Metadata["areaPath"] = updated.AreaPath ?? "";
-        task.Metadata["iterationPath"] = updated.IterationPath ?? "";
-        task.Metadata["workItemType"] = updated.WorkItemType;
-        task.Priority = updated.Priority;
-        task.Assignees = updated.AssignedTo != null ? new List<string> { updated.AssignedTo } : new List<string>();
-        task.State = updated.State.ToLowerInvariant() switch
-        {
-            "new" or "to do" or "proposed" or "open" => TaskState.Open,
-            "active" or "in progress" or "doing" or "committed" => TaskState.InProgress,
-            _ => TaskState.Closed
-        };
+        TaskBoard.ApplyUpdate(task, updated);
         UpdateDisplay();
     }
-
-    private static int? PriorityFromLabel(string label) => label switch
-    {
-        "Critical" => 1, "High" => 2, "Medium" => 3, "Low" => 4, _ => null
-    };
 
     // ── Card context menu ─────────────────────────────────────────
 
@@ -601,7 +470,7 @@ public partial class BoardsPage : Page, IChromeToolbar
     {
         if (VmFromMenuItem(sender) is not { } vm || (sender as MenuItem)?.Header is not string label) return;
         if (vm.Task.Provider != "azdevops" || !int.TryParse(vm.Task.Id, out var id)) return;
-        if (PriorityFromLabel(label) is not int priority) return;
+        if (TaskBoard.PriorityFromLabel(label) is not int priority) return;
         await ApplyWorkItemUpdateAsync(vm.Task, id, new UpdateWorkItemRequest { Priority = priority });
     }
 
@@ -650,7 +519,7 @@ public partial class BoardsPage : Page, IChromeToolbar
 
             // Run queries a few at a time; each run already batches its work
             // item fetches.
-            var runs = new List<QueriesListControl.QueryRunDisplay>();
+            var runs = new List<QueryRunDisplay>();
             using var gate = new SemaphoreSlim(4);
             var tasks = queries.Select(async query =>
             {
@@ -659,15 +528,8 @@ public partial class BoardsPage : Page, IChromeToolbar
                 {
                     var run = await _devOpsService.RunStoredQueryAsync(query.Id);
                     if (run == null) return;
-                    var rows = run.Rows
-                        .Select(r => new QueriesListControl.QueryRowDisplay(r.Item.AsUnifiedTask(), r.Depth, r.HasChildren))
-                        .ToList();
-                    lock (runs)
-                    {
-                        runs.Add(new QueriesListControl.QueryRunDisplay(
-                            query, rows, run.Truncated,
-                            QueriesListControl.AreaBucket(rows, query.Name)));
-                    }
+                    var display = QueryRuns.From(query, run);
+                    lock (runs) runs.Add(display);
                 }
                 finally { gate.Release(); }
             });
@@ -855,44 +717,9 @@ public partial class BoardsPage : Page, IChromeToolbar
     {
         ProjectsColumnsPanel.Children.Clear();
 
-        var items = _projectItems.AsEnumerable();
-        if (!string.IsNullOrWhiteSpace(_projectsSearchText))
-        {
-            var search = _projectsSearchText.ToLowerInvariant();
-            items = items.Where(i =>
-                (i.Content?.Title?.ToLowerInvariant().Contains(search) ?? false) ||
-                (i.DraftContent?.Title?.ToLowerInvariant().Contains(search) ?? false));
-        }
-        var filteredItems = items.ToList();
-
-        // Build columns from status field options
-        var columns = new List<(string Name, System.Windows.Media.Brush Color, List<GitHubProjectItem> Items)>();
-
-        if (_statusField != null)
-        {
-            foreach (var opt in _statusField.Options)
-            {
-                columns.Add((opt.Name, GetStatusBrush(opt.Name), new List<GitHubProjectItem>()));
-            }
-        }
-        columns.Add(("(No Status)", new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(113, 128, 150)), new List<GitHubProjectItem>()));
-
-        foreach (var item in filteredItems)
-        {
-            var statusValue = item.FieldValues
-                .FirstOrDefault(fv => fv.FieldName.Equals("Status", StringComparison.OrdinalIgnoreCase))
-                ?.SingleSelectValue;
-
-            var col = columns.FirstOrDefault(c => c.Name.Equals(statusValue, StringComparison.OrdinalIgnoreCase));
-            if (col.Items != null)
-                col.Items.Add(item);
-            else
-                columns.Last().Items.Add(item);
-        }
-
-        // Remove empty "(No Status)" column
-        if (columns.Last().Items.Count == 0)
-            columns.RemoveAt(columns.Count - 1);
+        var columns = GitHubProjectBoard.Columns(_projectItems, _statusField, _projectsSearchText)
+            .Select(c => (c.Name, Color: (System.Windows.Media.Brush)new SolidColorBrush((Color)ColorConverter.ConvertFromString(c.ColorHex)), Items: c.Items.ToList()))
+            .ToList();
 
         foreach (var col in columns)
         {
@@ -938,12 +765,12 @@ public partial class BoardsPage : Page, IChromeToolbar
             ProjectsColumnsPanel.Children.Add(columnBorder);
         }
 
-        ProjectsCountLabel.Text = $"{filteredItems.Count} items across {columns.Count} columns";
+        ProjectsCountLabel.Text = $"{columns.Sum(c => c.Items.Count)} items across {columns.Count} columns";
     }
 
     private Border CreateProjectCard(GitHubProjectItem item)
     {
-        var title = item.Content?.Title ?? item.DraftContent?.Title ?? "(untitled)";
+        var title = GitHubProjectBoard.Title(item);
         var typeIcon = item.Type switch
         {
             "ISSUE" => "●",
@@ -1040,22 +867,6 @@ public partial class BoardsPage : Page, IChromeToolbar
         return card;
     }
 
-    private static System.Windows.Media.Brush GetStatusBrush(string name)
-    {
-        var lower = name.ToLowerInvariant();
-        if (lower.Contains("done") || lower.Contains("closed"))
-            return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(56, 161, 105));
-        if (lower.Contains("progress") || lower.Contains("active"))
-            return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(49, 130, 206));
-        if (lower.Contains("review"))
-            return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(128, 90, 213));
-        if (lower.Contains("backlog"))
-            return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(160, 174, 192));
-        if (lower.Contains("todo"))
-            return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(237, 137, 54));
-        return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(214, 158, 46));
-    }
-
     // MARK: - SSO
 
     private async void OnSsoButtonClicked(object sender, RoutedEventArgs e)
@@ -1111,46 +922,26 @@ public sealed class TaskCardVm
 
     public string Title => Task.Title;
 
-    public string ProviderName => Task.Provider switch
-    {
-        "azdevops" => "DevOps",
-        "github" => "GitHub",
-        "gitea" => "Gitea",
-        _ => Task.Provider
-    };
+    public string ProviderName => TaskCardText.ProviderName(Task.Provider);
 
-    public string TypeName => Meta("workItemType");
+    public string TypeName => TaskCardText.TypeName(Task);
     public Visibility TypeVisibility => Vis(TypeName);
 
-    public string AreaPath => Meta("areaPath");
+    public string AreaPath => TaskCardText.AreaPath(Task);
     public Visibility AreaVisibility => Vis(AreaPath);
 
-    public string Iteration
-    {
-        get
-        {
-            var iteration = Meta("iterationPath");
-            return string.IsNullOrEmpty(iteration) ? Task.Bucket ?? "" : iteration;
-        }
-    }
+    public string Iteration => TaskCardText.Iteration(Task);
     public Visibility IterationVisibility => Vis(Iteration);
 
     public string AssigneesLabel => Task.Assignees.Count > 0 ? "@ " + string.Join(", ", Task.Assignees) : "";
 
     /// <summary>Mine/Recent row second line: "#123 · Bug · Active · Projects › Devices".</summary>
-    public string RowDetail => string.Join(" · ", new[]
-    {
-        Task.Provider == "azdevops" ? $"#{Task.Id}" : ProviderName,
-        TypeName,
-        Meta("state"),
-        AreaPath.Replace("\\", " › "),
-    }.Where(x => !string.IsNullOrEmpty(x)));
+    public string RowDetail => TaskCardText.RowDetail(Task);
 
     public string UpdatedLabel => Task.UpdatedAt == DateTime.MinValue
         ? ""
         : FleetMate.GUI.Views.Shared.ActivityItem.Relative(Task.UpdatedAt, DateTime.UtcNow);
     public Visibility AssigneesVisibility => Vis(AssigneesLabel);
 
-    private string Meta(string key) => Task.Metadata.TryGetValue(key, out var value) ? value : "";
     private static Visibility Vis(string s) => string.IsNullOrEmpty(s) ? Visibility.Collapsed : Visibility.Visible;
 }
