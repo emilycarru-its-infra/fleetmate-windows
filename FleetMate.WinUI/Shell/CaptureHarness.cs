@@ -77,6 +77,13 @@ internal static class CaptureHarness
             foreach (var (sizeName, width, height) in Sizes)
             {
                 window.ResizeForCapture(width, height);
+                // A sleeping or small display caps the window below the size
+                // asked for; laying the root out at that size anyway keeps the
+                // capture true to the window it stands for.
+                window.CaptureRoot.Width = width;
+                window.CaptureRoot.Height = height;
+                window.CaptureRoot.HorizontalAlignment = HorizontalAlignment.Left;
+                window.CaptureRoot.VerticalAlignment = VerticalAlignment.Top;
                 {
                     foreach (var panel in panels)
                     {

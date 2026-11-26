@@ -56,7 +56,7 @@ public sealed partial class MainWindow : Window
         SetTitleBar(AppTitleBar);
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         Title = AppTitleBar.Title = _edition.Name;
-        var iconFile = _edition.IsTicketsOnly ? "TicketsMate.ico" : "AppIcon.ico";
+        var iconFile = _edition.IsTicketsOnly ? "TicketsMate.ico" : "FleetMate.ico";
         AppTitleBar.IconSource = new ImageIconSource { ImageSource = new BitmapImage(new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", iconFile))) };
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", iconFile));
 
