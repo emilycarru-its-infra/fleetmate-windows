@@ -83,9 +83,12 @@ public sealed class InventoryApi : IDisposable
             throw new InvalidOperationException(
                 $"{Backend.DisplayName()} is not configured: set {Backend.Key()}_oidc_audience or {Backend.Key()}_api_key.");
 
+        // Redirects are not followed: a redirect to another host would carry
+        // the API key (or bearer) with it. An inventory API never needs one.
+        static HttpClientHandler NoRedirects() => new() { AllowAutoRedirect = false };
         _client = usesOidc
-            ? new HttpClient(new ActivityLogHandler("Inventory", new EntraBearerHandler(audience!)))
-            : new HttpClient(new ActivityLogHandler("Inventory"));
+            ? new HttpClient(new ActivityLogHandler("Inventory", new EntraBearerHandler(audience!) { InnerHandler = NoRedirects() }))
+            : new HttpClient(new ActivityLogHandler("Inventory", NoRedirects()));
         _client.Timeout = TimeSpan.FromSeconds(120);
         _client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         if (!usesOidc)
