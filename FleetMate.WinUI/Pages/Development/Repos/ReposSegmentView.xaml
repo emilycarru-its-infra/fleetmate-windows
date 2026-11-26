@@ -2,12 +2,67 @@
 <UserControl
     x:Class="FleetMate.WinUI.Pages.Development.Repos.ReposSegmentView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:FleetMate.WinUI.Pages.Development.Repos"
+    xmlns:toolkit="using:CommunityToolkit.WinUI.Controls">
 
-    <!-- Placeholder until the Repos sub-tab is ported. -->
-    <TextBlock
-        HorizontalAlignment="Center"
-        VerticalAlignment="Center"
-        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-        Text="Repos is not ported to this app yet." />
+    <!-- Tracked checkouts on the left; the selected one's git pane, files and editor beside them. -->
+    <Grid x:Name="Root">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition x:Name="SidebarColumn" Width="300" MinWidth="240" MaxWidth="520" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <local:RepoSidebar x:Name="Sidebar" />
+
+        <toolkit:GridSplitter
+            Grid.Column="1"
+            Width="12"
+            AutomationProperties.Name="Resize the repository list"
+            ResizeBehavior="PreviousAndNext"
+            ResizeDirection="Columns" />
+
+        <local:RepoWorkspaceView x:Name="Workspace" Grid.Column="2" />
+
+        <!-- Settings › Repositories, in place of the workspace until Back. -->
+        <Grid x:Name="SettingsHost" Grid.Column="2" RowSpacing="8" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Button
+                x:Name="SettingsBackButton"
+                AutomationProperties.AutomationId="RepoSettingsBack"
+                Click="SettingsBackButton_Click"
+                ToolTipService.ToolTip="Back to the workspace (Esc)">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon FontSize="14" Glyph="&#xE72B;" />
+                    <TextBlock Text="Back to Repos" />
+                </StackPanel>
+                <Button.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="Escape" />
+                </Button.KeyboardAccelerators>
+            </Button>
+            <ContentControl
+                x:Name="SettingsContent"
+                Grid.Row="1"
+                HorizontalContentAlignment="Stretch"
+                VerticalContentAlignment="Stretch"
+                IsTabStop="False" />
+        </Grid>
+
+        <!-- Demo mode builds its fictional repositories first. -->
+        <StackPanel
+            x:Name="PreparingState"
+            Grid.ColumnSpan="3"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Orientation="Horizontal"
+            Spacing="8"
+            Visibility="Collapsed">
+            <ProgressRing Width="20" Height="20" IsActive="True" />
+            <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Preparing the sample repositories…" />
+        </StackPanel>
+    </Grid>
 </UserControl>
