@@ -154,7 +154,8 @@ fleetmate inventory operations --json
 fleetmate inventory assets find-tag --id EXAMPLE-001
 fleetmate inventory buyouts list --query open=1
 fleetmate inventory buyouts transition --id 12 --body '{"status":"invoiced","invoice_number":"0001","invoice_date":"2026-11-26"}'
-fleetmate inventory files upload --record asset --id 571 --file invoice.pdf --notes "Lessor invoice"
+fleetmate inventory buyouts attach --id 12 --file invoice.pdf --notes "Lessor invoice"
+fleetmate inventory files upload --record asset --id 571 --file photo.jpg
 fleetmate inventory deployments decommission
 ```
 

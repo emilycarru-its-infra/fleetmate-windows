@@ -50,6 +50,8 @@ internal static class InventoryCommand
         }
         lines.Add("  files");
         lines.Add("    [SC] upload");
+        lines.Add("  buyouts");
+        lines.Add("    [SC] attach (files the document on the buyout's asset)");
         lines.Add("");
         lines.Add("Also: backend (which system is active), operations [--json] (routes on the active backend),");
         lines.Add("and api --method M --api-path P for any endpoint outside the named operations.");
@@ -124,6 +126,15 @@ internal static class InventoryCommand
                 {
                     using var uploader = new InventoryApi(config, selected);
                     var response = await UploadAsync(uploader, options.GetValueForOption(fileOption), record, id,
+                        options.GetValueForOption(notesOption), options.GetValueForOption(domainOption));
+                    await PrintResponseAsync(response, output, json);
+                    return;
+                }
+
+                if (group == "buyouts" && name == "attach")
+                {
+                    using var attacher = new InventoryApi(config, selected);
+                    var response = await AttachToBuyoutAssetAsync(attacher, options.GetValueForOption(fileOption), id,
                         options.GetValueForOption(notesOption), options.GetValueForOption(domainOption));
                     await PrintResponseAsync(response, output, json);
                     return;
@@ -213,6 +224,34 @@ internal static class InventoryCommand
             throw new ArgumentException("The request body is not valid JSON.");
         }
         return source;
+    }
+
+    // A buyout's documents (quote, invoice, agreement) live on its asset, so
+    // this resolves the buyout to its asset and files the upload there.
+    private static async Task<InventoryApi.Response> AttachToBuyoutAssetAsync(InventoryApi api, string? file, string? id,
+        string? notes, string? domain)
+    {
+        var path = ExpandHome(Required(file, "--file"));
+        if (!File.Exists(path)) throw new ArgumentException($"Cannot read {path}.");
+        var buyoutId = InventoryApi.Escape(Required(id, "--id"));
+        var lookup = await api.SendAsync("GET", api.Backend == InventoryBackend.Snipe ? $"buyouts/{buyoutId}" : $"lease-buyouts/{buyoutId}");
+        using var document = JsonDocument.Parse(lookup.Data);
+        var buyout = document.RootElement.TryGetProperty("payload", out var payload) ? payload : document.RootElement;
+        string? Text(string key) =>
+            buyout.ValueKind == JsonValueKind.Object && buyout.TryGetProperty(key, out var value)
+                ? value.ValueKind switch
+                {
+                    JsonValueKind.String => string.IsNullOrEmpty(value.GetString()) ? null : value.GetString(),
+                    JsonValueKind.Number => value.GetRawText(),
+                    _ => null,
+                }
+                : null;
+        var assetId = Text(api.Backend == InventoryBackend.Snipe ? "asset_id" : "item_id")
+            ?? throw new ArgumentException($"Buyout {id} has no asset to attach the file to.");
+        var holdingDomain = domain ?? Text("domain_id");
+        if (api.Backend == InventoryBackend.Cellarum && holdingDomain is null)
+            throw new ArgumentException("Cellarum needs --domain for a file on an asset.");
+        return await api.UploadAsync(path, "hardware", "item", assetId, notes, holdingDomain);
     }
 
     private static async Task<InventoryApi.Response> UploadAsync(InventoryApi api, string? file, string? record, string? id,
