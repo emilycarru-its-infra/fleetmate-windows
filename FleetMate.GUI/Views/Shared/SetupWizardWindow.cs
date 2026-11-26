@@ -27,16 +27,10 @@ public sealed partial class SetupWizardWindow : Window
     private static string RegistryPath => FleetMate.Core.Config.AppEdition.Current.UserRegistryPath;
     // TicketsMate has one module and signs in with the Windows account alone,
     // so it skips Modules and the sign-in step.
-    private string[] StepTitles => AppEdition.Current.IsTicketsOnly
-        ? new[] { "Welcome", "Connections", "Summary" }
-        : new[] { "Welcome", "Modules", "Connections", SignInStepTitle, Shows("Development") ? RepositoriesStepTitle : null, "Summary" }
-            .OfType<string>().ToArray();
+    private string[] StepTitles => SetupWizardPlan.Steps(AppEdition.Current, _hidden, includeRepositories: true)
+        .Select(step => step == SetupWizardPlan.Repositories ? RepositoriesStepTitle : step)
+        .ToArray();
 
-    /// <summary>The sign-in step's title, or null when no chosen module needs az or gh.</summary>
-    private string? SignInStepTitle =>
-        Shows("Development") ? "Development"
-        : Shows("Devices") || Shows("Identity") || Shows("Projects") ? "Sign In"
-        : null;
     private static string AppName => AppEdition.Current.Name;
 
     private readonly FleetMateConfig _config;
@@ -115,10 +109,7 @@ public sealed partial class SetupWizardWindow : Window
     /// Policy-supplied endpoints count, so a managed PC never sees it.
     /// </summary>
     public static bool NeededAtLaunch(FleetMateConfig config) =>
-        !UserPreferences.SetupCompleted
-        && string.IsNullOrWhiteSpace(config.AzureDevOps?.Organization)
-        && string.IsNullOrWhiteSpace(config.SnipeUrl)
-        && string.IsNullOrWhiteSpace(config.Tdx?.BaseUrl);
+        SetupWizardPlan.NeededAtLaunch(config, UserPreferences.SetupCompleted);
 
     private bool Shows(string tag) => !_hidden.Contains(tag);
 
@@ -197,40 +188,11 @@ public sealed partial class SetupWizardWindow : Window
         _fields.Clear();
         // Each section is named for what it does; the product behind it is
         // named once, as its connector.
-        if (Shows("Devices") || Shows("Identity") || Shows(AppModules.Enrollment))
+        // The sections and their fields are SetupWizardPlan's, shared with the WinUI wizard.
+        foreach (var section in SetupWizardPlan.ConnectionSections(_hidden))
         {
-            Section(panel, "Devices & Identity", "Managed devices, users and groups. Connector: Microsoft Graph.");
-            Field(panel, "GraphTenantId", "Tenant ID");
-            Field(panel, "GraphClientId", "Client ID");
-        }
-        if (Shows("Projects") || Shows("Development"))
-        {
-            Section(panel, "Projects", "Boards, work items and issues. Connector: Azure DevOps.");
-            Field(panel, "DevOpsOrganization", "Organization");
-            Field(panel, "DevOpsProject", "Project");
-        }
-        if (Shows("Inventory"))
-        {
-            Section(panel, "Inventory", "Asset inventory and lifecycle. Connector: Snipe-IT.");
-            Field(panel, "SnipeUrl", "Base URL");
-        }
-        if (Shows("Tickets"))
-        {
-            Section(panel, "Tickets", "Service desk tickets. Connector: TeamDynamix.");
-            Field(panel, "TdxBaseUrl", "Base URL");
-            Field(panel, "TdxAppId", "Ticketing App ID");
-        }
-        if (Shows("Reporting"))
-        {
-            Section(panel, "Reporting", "Fleet reporting and device telemetry. Connector: ReportMate.");
-            Field(panel, "ReportMateUrl", "API URL");
-        }
-        if (Shows("Development"))
-        {
-            Section(panel, "Handbook and Skills", "Shown beside Development and in the agent terminal.");
-            Field(panel, "HandbookRepoUrl", "Handbook repository");
-            Field(panel, "HandbookSiteUrl", "Handbook site");
-            Field(panel, "AgentsHubRepoUrl", "Skills repository");
+            Section(panel, section.Title, section.Description);
+            foreach (var field in section.Fields) Field(panel, field.Key, field.Label);
         }
         if (_fields.Count == 0)
             panel.Children.Add(Note("The modules you chose need no endpoints."));
@@ -381,13 +343,10 @@ public sealed partial class SetupWizardWindow : Window
         CaptureFields();
         try
         {
-            using var key = Registry.CurrentUser.CreateSubKey(RegistryPath)
-                ?? throw new InvalidOperationException("Cannot open registry key");
             // Only the endpoints this run showed are written, and a blank one is
             // left as it was: the wizard never clears what Settings or policy set.
-            foreach (var name in _fields.Keys)
-                if (!string.IsNullOrWhiteSpace(Value(name)))
-                    key.SetValue(name, Value(name));
+            using var sink = new RegistrySettingsSink(RegistryPath);
+            SetupWizardPlan.SaveEndpoints(sink, _fields.Keys.Select(name => KeyValuePair.Create(name, Value(name))));
         }
         catch (Exception ex)
         {
@@ -421,21 +380,7 @@ public sealed partial class SetupWizardWindow : Window
     private string Value(string name) =>
         _fields.TryGetValue(name, out var box) ? box.Text.Trim() : _values.GetValueOrDefault(name, "");
 
-    private static string FieldLabel(string name) => name switch
-    {
-        "GraphTenantId" => "Graph tenant",
-        "GraphClientId" => "Graph client",
-        "DevOpsOrganization" => "DevOps organization",
-        "DevOpsProject" => "DevOps project",
-        "SnipeUrl" => "Snipe-IT",
-        "TdxBaseUrl" => "TeamDynamix",
-        "TdxAppId" => "Ticketing app",
-        "ReportMateUrl" => "ReportMate",
-        "HandbookRepoUrl" => "Handbook repository",
-        "HandbookSiteUrl" => "Handbook site",
-        "AgentsHubRepoUrl" => "Skills repository",
-        _ => name,
-    };
+    private static string FieldLabel(string name) => SetupWizardPlan.FieldLabel(name);
 
     private void Field(Panel panel, string name, string label)
     {

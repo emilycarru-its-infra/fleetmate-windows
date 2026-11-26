@@ -99,6 +99,18 @@ public sealed partial class MainWindow : Window
         LinkBanner.IsOpen = false;
 
         if (AppTabs.StartTab(_edition, _tabs) is { } start) NavigateToTab(start);
+
+        // A first launch with nothing set up opens the setup wizard over the window.
+        if (!services.DemoMode && Pages.Settings.SetupWizardDialog.NeededAtLaunch(services.Config))
+        {
+            var shown = false;
+            RootGrid.Loaded += async (_, _) =>
+            {
+                if (shown) return;
+                shown = true;
+                await new Pages.Settings.SetupWizardDialog(services.Config, demo: false) { XamlRoot = RootGrid.XamlRoot }.ShowAsync();
+            };
+        }
     }
 
     // MARK: - Tabs

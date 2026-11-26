@@ -65,6 +65,9 @@ public sealed partial class SettingsPage : Page, Shell.ICaptureViews
         return Task.CompletedTask;
     }
 
+    private async void SetupWizardButton_Click(object sender, RoutedEventArgs e) =>
+        await ViewModel.RunSetupWizardCommand.ExecuteAsync(XamlRoot);
+
     private void UpdateAuthEmpty() =>
         NoAuthText.Visibility = Show(!ViewModel.HasAuthSystems);
 

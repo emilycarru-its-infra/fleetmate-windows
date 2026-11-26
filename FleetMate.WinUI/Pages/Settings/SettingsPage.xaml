@@ -50,7 +50,7 @@
                         IsClosable="False"
                         IsOpen="True"
                         Severity="Informational"
-                        Message="Enrollment and Repositories settings, text size and the setup wizard are still in the WPF app." />
+                        Message="Enrollment and Repositories settings, and text size, are still in the WPF app." />
                     <InfoBar
                         Margin="0,0,0,8"
                         IsClosable="False"
@@ -100,6 +100,24 @@
                                 </ItemsRepeater.ItemTemplate>
                             </ItemsRepeater>
                         </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource SettingsCardStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Setup wizard" />
+                                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="Walks through choosing modules and connecting each one." TextWrapping="Wrap" />
+                            </StackPanel>
+                            <Button
+                                x:Name="SetupWizardButton"
+                                Grid.Column="1"
+                                AutomationProperties.AutomationId="SettingsSetupWizardButton"
+                                Click="SetupWizardButton_Click"
+                                Content="Run setup wizard…" />
+                        </Grid>
                     </Border>
                     <Border Style="{StaticResource SettingsCardStyle}">
                         <StackPanel Spacing="4">
