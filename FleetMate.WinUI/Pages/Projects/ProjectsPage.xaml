@@ -1,0 +1,548 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="FleetMate.WinUI.Pages.Projects.ProjectsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:FleetMate.WinUI.Pages.Projects"
+    NavigationCacheMode="Required">
+
+    <Page.KeyboardAccelerators>
+        <KeyboardAccelerator Key="F5" Invoked="RefreshAccelerator_Invoked" />
+        <KeyboardAccelerator Key="R" Modifiers="Control" Invoked="RefreshAccelerator_Invoked" />
+        <KeyboardAccelerator Key="K" Modifiers="Control,Shift" Invoked="ClearFiltersAccelerator_Invoked" />
+    </Page.KeyboardAccelerators>
+
+    <Page.Resources>
+        <Style x:Key="CardListItemStyle" TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+            <Setter Property="MinHeight" Value="0" />
+        </Style>
+
+        <!-- One task card (macOS TaskCard): title and priority, type and provider, area, iteration, labels, assignee. -->
+        <DataTemplate x:Key="TaskCardTemplate" x:DataType="local:TaskCardItem">
+            <Border
+                Padding="12,10"
+                AutomationProperties.Name="{x:Bind SpokenName}"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                ContextRequested="Card_ContextRequested"
+                CornerRadius="{ThemeResource ControlCornerRadius}"
+                Opacity="{x:Bind CardOpacity}"
+                Tag="{x:Bind}">
+                <StackPanel Spacing="4">
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock MaxLines="3" Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" />
+                        <Border
+                            Grid.Column="1"
+                            Padding="6,1"
+                            VerticalAlignment="Top"
+                            BorderBrush="{x:Bind PriorityBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Visibility="{x:Bind PriorityVisibility}">
+                            <TextBlock Foreground="{x:Bind PriorityBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Priority}" />
+                        </Border>
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Border
+                            Padding="6,1"
+                            Background="{ThemeResource AccentFillColorSelectedTextBackgroundBrush}"
+                            CornerRadius="4"
+                            Visibility="{x:Bind TypeVisibility}">
+                            <TextBlock Foreground="{ThemeResource TextOnAccentFillColorSelectedTextBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind TypeName}" />
+                        </Border>
+                        <TextBlock VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind ProviderName}" />
+                    </StackPanel>
+                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" MaxLines="1" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind AreaPath}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind AreaPath}" Visibility="{x:Bind AreaVisibility}" />
+                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" MaxLines="1" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Iteration}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Iteration}" Visibility="{x:Bind IterationVisibility}" />
+                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" MaxLines="1" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Labels}" TextTrimming="CharacterEllipsis" Visibility="{x:Bind LabelsVisibility}" />
+                    <StackPanel Orientation="Horizontal" Spacing="6" Visibility="{x:Bind AssigneesVisibility}">
+                        <FontIcon FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="&#xE77B;" />
+                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" MaxLines="1" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Assignees}" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <!-- One board column: a drop target that scrolls its own cards and lights up while a card is over it. -->
+        <DataTemplate x:Key="BoardColumnTemplate" x:DataType="local:BoardColumnItem">
+            <Grid
+                Width="280"
+                Padding="8"
+                AllowDrop="True"
+                AutomationProperties.Name="{x:Bind SpokenName}"
+                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                BorderBrush="Transparent"
+                BorderThickness="2"
+                CornerRadius="{ThemeResource OverlayCornerRadius}"
+                DragEnter="BoardColumn_DragOver"
+                DragLeave="BoardColumn_DragLeave"
+                DragOver="BoardColumn_DragOver"
+                Drop="BoardColumn_Drop"
+                RowSpacing="8"
+                Tag="{x:Bind Title}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid Margin="4,2,4,0" ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Ellipse Width="10" Height="10" VerticalAlignment="Center" Fill="{x:Bind Dot}" />
+                    <TextBlock Grid.Column="1" MaxLines="1" Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Title}" />
+                    <Border Grid.Column="2" Padding="8,1" Background="{ThemeResource ControlFillColorSecondaryBrush}" CornerRadius="10">
+                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind CountLabel}" />
+                    </Border>
+                </Grid>
+                <ListView
+                    Grid.Row="1"
+                    AutomationProperties.Name="{x:Bind Title}"
+                    CanDragItems="True"
+                    DragItemsStarting="BoardCards_DragItemsStarting"
+                    IsItemClickEnabled="True"
+                    ItemClick="Card_ItemClick"
+                    ItemContainerStyle="{StaticResource CardListItemStyle}"
+                    ItemTemplate="{StaticResource TaskCardTemplate}"
+                    ItemsSource="{x:Bind Cards}"
+                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                    ScrollViewer.HorizontalScrollMode="Disabled"
+                    SelectionMode="None" />
+                <TextBlock
+                    Grid.Row="1"
+                    Margin="0,16"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Top"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="Drop items here"
+                    Visibility="{x:Bind EmptyVisibility}" />
+            </Grid>
+        </DataTemplate>
+
+        <!-- A GitHub Project card: kind, title, repository and number, assignees, labels. -->
+        <DataTemplate x:Key="GitHubCardTemplate" x:DataType="local:GitHubCardItem">
+            <Border
+                Padding="12,10"
+                AutomationProperties.Name="{x:Bind SpokenName}"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="{ThemeResource ControlCornerRadius}">
+                <StackPanel Spacing="4">
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Margin="0,3,0,0" VerticalAlignment="Top" FontSize="14" Foreground="{x:Bind KindBrush}" Glyph="{x:Bind Glyph}" ToolTipService.ToolTip="{x:Bind Kind}" />
+                        <TextBlock Grid.Column="1" MaxLines="3" Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" />
+                    </Grid>
+                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" MaxLines="1" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Detail}" TextTrimming="CharacterEllipsis" />
+                    <StackPanel Orientation="Horizontal" Spacing="6" Visibility="{x:Bind AssigneesVisibility}">
+                        <FontIcon FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="&#xE77B;" />
+                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Assignees}" />
+                    </StackPanel>
+                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" MaxLines="1" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Labels}" TextTrimming="CharacterEllipsis" Visibility="{x:Bind LabelsVisibility}" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate x:Key="GitHubColumnTemplate" x:DataType="local:GitHubColumnItem">
+            <Grid
+                Width="280"
+                Padding="8"
+                AutomationProperties.Name="{x:Bind SpokenName}"
+                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                CornerRadius="{ThemeResource OverlayCornerRadius}"
+                RowSpacing="8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid Margin="4,2,4,0" ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Ellipse Width="10" Height="10" VerticalAlignment="Center" Fill="{x:Bind Dot}" />
+                    <TextBlock Grid.Column="1" MaxLines="1" Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                    <Border Grid.Column="2" Padding="8,1" Background="{ThemeResource ControlFillColorSecondaryBrush}" CornerRadius="10">
+                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind CountLabel}" />
+                    </Border>
+                </Grid>
+                <ListView
+                    Grid.Row="1"
+                    AutomationProperties.Name="{x:Bind Title}"
+                    IsItemClickEnabled="True"
+                    ItemClick="GitHubCard_ItemClick"
+                    ItemContainerStyle="{StaticResource CardListItemStyle}"
+                    ItemTemplate="{StaticResource GitHubCardTemplate}"
+                    ItemsSource="{x:Bind Cards}"
+                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                    SelectionMode="None" />
+            </Grid>
+        </DataTemplate>
+
+        <!-- A Mine or Recent row: title and when it changed, then "#123 · Bug · Active · Area". -->
+        <DataTemplate x:Key="FlatRowTemplate" x:DataType="local:TaskCardItem">
+            <Grid
+                Padding="4,8"
+                AutomationProperties.Name="{x:Bind SpokenName}"
+                Background="Transparent"
+                ColumnSpacing="12"
+                ContextRequested="Card_ContextRequested"
+                Tag="{x:Bind}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="2">
+                    <TextBlock MaxLines="1" Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Title}" />
+                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" MaxLines="1" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind RowDetail}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" VerticalAlignment="Top" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Updated}" />
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="WorkItemRowTemplate" x:DataType="local:WorkItemRowItem">
+            <Grid Padding="4,8" AutomationProperties.Name="{x:Bind SpokenName}" ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="64" />
+                    <ColumnDefinition Width="100" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="96" />
+                    <ColumnDefinition Width="64" />
+                    <ColumnDefinition Width="160" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Id}" />
+                <TextBlock Grid.Column="1" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Type}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Column="2" MaxLines="1" Style="{StaticResource BodyTextBlockStyle}" Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Column="3" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind State}" />
+                <TextBlock Grid.Column="4" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Priority}" />
+                <TextBlock Grid.Column="5" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind AssignedTo}" TextTrimming="CharacterEllipsis" />
+            </Grid>
+        </DataTemplate>
+    </Page.Resources>
+
+    <Grid x:Name="Root" Padding="16,8,16,16" RowSpacing="8" SizeChanged="Root_SizeChanged">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- The views on the left, the commands on the right, as on Mac. -->
+        <Grid ColumnSpacing="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Queries opens first: every Shared Query. -->
+            <SelectorBar
+                x:Name="ViewBar"
+                AutomationProperties.AutomationId="ProjectsViews"
+                AutomationProperties.Name="Projects views"
+                SelectionChanged="ViewBar_SelectionChanged">
+                <SelectorBarItem x:Name="MineItem" AutomationProperties.AutomationId="ProjectsMineView" Tag="Mine" Text="Mine" />
+                <SelectorBarItem x:Name="QueriesItem" AutomationProperties.AutomationId="ProjectsQueriesView" IsSelected="True" Tag="Queries" Text="Queries" />
+                <SelectorBarItem x:Name="RecentItem" AutomationProperties.AutomationId="ProjectsRecentView" Tag="Recent" Text="Recent" />
+                <SelectorBarItem x:Name="BoardItem" AutomationProperties.AutomationId="ProjectsBoardView" Tag="Board" Text="Board" />
+            </SelectorBar>
+            <DropDownButton
+                x:Name="ViewMenu"
+                HorizontalAlignment="Left"
+                AutomationProperties.AutomationId="ProjectsViewMenu"
+                AutomationProperties.Name="Projects view"
+                Visibility="Collapsed">
+                <DropDownButton.Flyout>
+                    <MenuFlyout x:Name="ViewMenuFlyout" Placement="BottomEdgeAlignedLeft" />
+                </DropDownButton.Flyout>
+            </DropDownButton>
+
+            <!-- Orders the queries themselves, so it works while every query is collapsed. -->
+            <DropDownButton
+                x:Name="SortButton"
+                Grid.Column="1"
+                AutomationProperties.AutomationId="ProjectsSortQueries"
+                AutomationProperties.Name="Sort queries"
+                ToolTipService.ToolTip="Sort queries"
+                Visibility="{x:Bind local:ProjectsViewModel.Show(ViewModel.ShowsQueries), Mode=OneWay}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon FontSize="16" Glyph="&#xE8CB;" />
+                    <TextBlock x:Name="SortLabel" Text="Sort" />
+                </StackPanel>
+                <DropDownButton.Flyout>
+                    <MenuFlyout x:Name="SortMenu" Opening="SortMenu_Opening" Placement="BottomEdgeAlignedRight" />
+                </DropDownButton.Flyout>
+            </DropDownButton>
+
+            <!-- The item types this setup can create. -->
+            <DropDownButton
+                x:Name="NewButton"
+                Grid.Column="2"
+                AutomationProperties.AutomationId="ProjectsNew"
+                AutomationProperties.Name="New item"
+                ToolTipService.ToolTip="New item">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon FontSize="16" Glyph="&#xE710;" />
+                    <TextBlock x:Name="NewLabel" Text="New" />
+                </StackPanel>
+                <DropDownButton.Flyout>
+                    <MenuFlyout x:Name="NewMenu" Opening="NewMenu_Opening" Placement="BottomEdgeAlignedRight">
+                        <MenuFlyoutItem x:Name="NewWorkItemMenu" Click="NewWorkItem_Click" Text="DevOps Work Item…">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE821;" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem x:Name="NewIssueMenu" Click="NewIssue_Click" Text="GitHub Issue…">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE943;" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutSeparator />
+                        <MenuFlyoutItem x:Name="NewProjectMenu" Click="NewProject_Click" Text="GitHub Project…">
+                            <MenuFlyoutItem.Icon>
+                                <FontIcon Glyph="&#xE8F4;" />
+                            </MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                    </MenuFlyout>
+                </DropDownButton.Flyout>
+            </DropDownButton>
+
+            <Button
+                x:Name="SyncButton"
+                Grid.Column="3"
+                AutomationProperties.AutomationId="ProjectsSync"
+                AutomationProperties.Name="Sync to Planner or Markdown"
+                Click="SyncButton_Click"
+                ToolTipService.ToolTip="Sync open tasks to Planner or Markdown">
+                <FontIcon FontSize="16" Glyph="&#xE895;" />
+            </Button>
+
+            <Button
+                x:Name="RefreshButton"
+                Grid.Column="4"
+                AutomationProperties.AutomationId="ProjectsRefresh"
+                AutomationProperties.Name="Refresh"
+                Click="RefreshButton_Click"
+                ToolTipService.ToolTip="Refresh (F5)">
+                <FontIcon FontSize="16" Glyph="&#xE72C;" />
+            </Button>
+
+            <ProgressRing
+                Grid.Column="5"
+                Width="16"
+                Height="16"
+                Margin="4,0,0,0"
+                AutomationProperties.Name="Loading"
+                IsActive="{x:Bind ViewModel.IsLoading, Mode=OneWay}" />
+        </Grid>
+
+        <!-- The filters for the view showing; the toolbar search field filters it too. -->
+        <Grid Grid.Row="1" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <ComboBox
+                    x:Name="BoardSourceBox"
+                    MinWidth="150"
+                    AutomationProperties.AutomationId="ProjectsBoardSource"
+                    AutomationProperties.Name="Board source"
+                    ItemsSource="{x:Bind ViewModel.BoardSources}"
+                    SelectedItem="{x:Bind ViewModel.BoardSource, Mode=TwoWay}"
+                    SelectionChanged="BoardSourceBox_SelectionChanged"
+                    ToolTipService.ToolTip="Which board to show"
+                    Visibility="{x:Bind IsBoard(ViewModel.View), Mode=OneWay}" />
+                <ComboBox
+                    x:Name="GroupByBox"
+                    MinWidth="130"
+                    AutomationProperties.AutomationId="ProjectsGroupBy"
+                    AutomationProperties.Name="Group by"
+                    ItemsSource="{x:Bind ViewModel.GroupByOptions}"
+                    SelectedItem="{x:Bind ViewModel.GroupBy, Mode=TwoWay}"
+                    ToolTipService.ToolTip="Group the columns by"
+                    Visibility="{x:Bind local:ProjectsViewModel.Show(ViewModel.ShowsTaskBoard), Mode=OneWay}" />
+                <ComboBox
+                    x:Name="MyItemsBox"
+                    MinWidth="170"
+                    AutomationProperties.AutomationId="ProjectsMyItemsFilter"
+                    AutomationProperties.Name="My items"
+                    SelectionChanged="MyItemsBox_SelectionChanged"
+                    ToolTipService.ToolTip="Show only the items one of the figures above counts"
+                    Visibility="{x:Bind IsMine(ViewModel.View), Mode=OneWay}" />
+                <DropDownButton
+                    x:Name="FiltersButton"
+                    AutomationProperties.AutomationId="ProjectsFilters"
+                    AutomationProperties.Name="Filters"
+                    Visibility="{x:Bind local:ProjectsViewModel.Show(ViewModel.ShowsFilters), Mode=OneWay}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon FontSize="16" Glyph="&#xE71C;" />
+                        <TextBlock x:Name="FiltersLabel" Text="Filters" />
+                    </StackPanel>
+                    <DropDownButton.Flyout>
+                        <Flyout Placement="BottomEdgeAlignedLeft">
+                            <StackPanel Width="260" Spacing="12">
+                                <CheckBox
+                                    AutomationProperties.AutomationId="ProjectsShowClosed"
+                                    Content="Include closed items"
+                                    IsChecked="{x:Bind ViewModel.ShowClosed, Mode=TwoWay}" />
+                                <ComboBox
+                                    HorizontalAlignment="Stretch"
+                                    AutomationProperties.AutomationId="ProjectsProvider"
+                                    Header="Provider"
+                                    ItemsSource="{x:Bind ViewModel.ProviderOptions}"
+                                    SelectedItem="{x:Bind ViewModel.Provider, Mode=TwoWay}"
+                                    SelectionChanged="Provider_SelectionChanged" />
+                                <ComboBox
+                                    HorizontalAlignment="Stretch"
+                                    AutomationProperties.AutomationId="ProjectsBucket"
+                                    Header="Bucket"
+                                    ItemsSource="{x:Bind ViewModel.Buckets}"
+                                    SelectedItem="{x:Bind ViewModel.Bucket, Mode=TwoWay}" />
+                                <Button HorizontalAlignment="Right" Click="ClearFilters_Click" Content="Clear Filters" />
+                            </StackPanel>
+                        </Flyout>
+                    </DropDownButton.Flyout>
+                </DropDownButton>
+            </StackPanel>
+            <TextBlock
+                Grid.Column="2"
+                VerticalAlignment="Center"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="{x:Bind ViewModel.CountLabel, Mode=OneWay}" />
+        </Grid>
+
+        <!-- The Graphs strip, shown or hidden by the toolbar's Graphs button. -->
+        <ScrollViewer
+            x:Name="GraphsScroller"
+            Grid.Row="2"
+            HorizontalScrollMode="Disabled"
+            VerticalScrollBarVisibility="Auto">
+            <ContentControl x:Name="GraphsHost" HorizontalContentAlignment="Stretch" IsTabStop="False" />
+        </ScrollViewer>
+
+        <!-- Shown while a figure filters the lists: names the filter and clears it. -->
+        <StackPanel Grid.Row="3" Spacing="8">
+            <InfoBar
+                x:Name="TileFilterBar"
+                AutomationProperties.AutomationId="ProjectsTileFilterBar"
+                IsClosable="False"
+                IsOpen="{x:Bind HasText(ViewModel.TileFilterLabel), Mode=OneWay}"
+                Message="{x:Bind ViewModel.TileFilterLabel, Mode=OneWay}"
+                Severity="Informational">
+                <InfoBar.ActionButton>
+                    <Button
+                        AutomationProperties.AutomationId="ProjectsTileFilterClear"
+                        Click="ClearTileFilter_Click"
+                        Content="Clear Filter"
+                        ToolTipService.ToolTip="Show every item again" />
+                </InfoBar.ActionButton>
+            </InfoBar>
+            <InfoBar x:Name="ActionBar" AutomationProperties.AutomationId="ProjectsActionBar" IsOpen="False" />
+        </StackPanel>
+
+        <!-- The view on the left; the selected item's detail beside it. -->
+        <Grid x:Name="ContentGrid" Grid.Row="4" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition x:Name="DetailColumn" Width="0" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Board: columns from the group-by dimension; cards drag between them to change it. -->
+            <ScrollViewer
+                x:Name="BoardScroller"
+                AutomationProperties.AutomationId="ProjectsBoard"
+                HorizontalScrollBarVisibility="Auto"
+                HorizontalScrollMode="Enabled"
+                VerticalScrollBarVisibility="Disabled"
+                VerticalScrollMode="Disabled"
+                Visibility="{x:Bind local:ProjectsViewModel.Show(ViewModel.ShowsTaskBoard), Mode=OneWay}">
+                <ItemsRepeater ItemTemplate="{StaticResource BoardColumnTemplate}" ItemsSource="{x:Bind ViewModel.Columns}">
+                    <ItemsRepeater.Layout>
+                        <StackLayout Orientation="Horizontal" Spacing="12" />
+                    </ItemsRepeater.Layout>
+                </ItemsRepeater>
+            </ScrollViewer>
+
+            <ScrollViewer
+                x:Name="GitHubScroller"
+                AutomationProperties.AutomationId="ProjectsGitHubBoard"
+                HorizontalScrollBarVisibility="Auto"
+                HorizontalScrollMode="Enabled"
+                VerticalScrollBarVisibility="Disabled"
+                VerticalScrollMode="Disabled"
+                Visibility="{x:Bind local:ProjectsViewModel.Show(ViewModel.ShowsGitHubBoard), Mode=OneWay}">
+                <ItemsRepeater ItemTemplate="{StaticResource GitHubColumnTemplate}" ItemsSource="{x:Bind ViewModel.GitHubColumns}">
+                    <ItemsRepeater.Layout>
+                        <StackLayout Orientation="Horizontal" Spacing="12" />
+                    </ItemsRepeater.Layout>
+                </ItemsRepeater>
+            </ScrollViewer>
+
+            <local:QueriesView
+                x:Name="Queries"
+                Visibility="{x:Bind local:ProjectsViewModel.Show(ViewModel.ShowsQueries), Mode=OneWay}" />
+
+            <Grid Visibility="{x:Bind local:ProjectsViewModel.Show(ViewModel.ShowsFlat), Mode=OneWay}">
+                <ListView
+                    x:Name="FlatList"
+                    AutomationProperties.AutomationId="ProjectsFlatList"
+                    AutomationProperties.Name="Items"
+                    IsItemClickEnabled="True"
+                    ItemClick="Card_ItemClick"
+                    ItemTemplate="{StaticResource FlatRowTemplate}"
+                    ItemsSource="{x:Bind ViewModel.FlatRows}"
+                    SelectionMode="Single" />
+                <TextBlock
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource BodyTextBlockStyle}"
+                    Text="{x:Bind ViewModel.EmptyText, Mode=OneWay}"
+                    TextAlignment="Center"
+                    TextWrapping="Wrap"
+                    Visibility="{x:Bind EmptyFlat(ViewModel.FlatRows.Count), Mode=OneWay}" />
+            </Grid>
+
+            <ListView
+                x:Name="WorkItemList"
+                AutomationProperties.AutomationId="ProjectsWorkItems"
+                AutomationProperties.Name="Work items"
+                IsItemClickEnabled="True"
+                ItemClick="WorkItem_ItemClick"
+                ItemTemplate="{StaticResource WorkItemRowTemplate}"
+                ItemsSource="{x:Bind ViewModel.WorkItemRows}"
+                SelectionMode="None"
+                Visibility="{x:Bind local:ProjectsViewModel.Show(ViewModel.ShowsWorkItemList), Mode=OneWay}" />
+
+            <ContentControl
+                x:Name="DetailHost"
+                Grid.Column="1"
+                HorizontalContentAlignment="Stretch"
+                VerticalContentAlignment="Stretch"
+                IsTabStop="False" />
+        </Grid>
+    </Grid>
+</Page>

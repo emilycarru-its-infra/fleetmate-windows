@@ -56,16 +56,16 @@ public class QueryListOrderTests
         Assert.Equal(QueryListOrders.Default, QueryListOrders.Parse(null));
     }
 
-    private static QueriesListControl.QueryRunDisplay Run(string name, string area, int rows, int daysAgo) =>
+    private static QueryRunDisplay Run(string name, string area, int rows, int daysAgo) =>
         new(new AdoSharedQuery { Id = name, Name = name },
-            Enumerable.Range(0, rows).Select(_ => new QueriesListControl.QueryRowDisplay(
+            Enumerable.Range(0, rows).Select(_ => new QueryRowDisplay(
                 new UnifiedTask { UpdatedAt = new DateTime(2026, 10, 4).AddDays(-daysAgo) }, 0, false)).ToList(),
             false, area);
 
     [Fact]
     public void ByNameAreasAlphabeticalWithGeneralLast()
     {
-        var sections = QueriesListControl.Ordered(new[]
+        var sections = QueryRuns.Ordered(new[]
         {
             Run("Zulu", "Systems", 1, 0),
             Run("Loose", "General", 1, 0),
@@ -80,7 +80,7 @@ public class QueryListOrderTests
     [Fact]
     public void ByResultCountBiggestFirst()
     {
-        var sections = QueriesListControl.Ordered(new[]
+        var sections = QueryRuns.Ordered(new[]
         {
             Run("Small", "Devices", 2, 0),
             Run("Big", "Devices", 30, 5),

@@ -63,6 +63,9 @@ public partial class App : Application
         ShellServices.RegisterDemoFixtures(s => s.SeedDevelopmentDemo());
         ShellPages.Register("Identity", typeof(Pages.Identity.IdentityPage));
         ShellServices.RegisterDemoFixtures(s => s.Identity = new Pages.Identity.IdentityDemo());
+        ShellPages.Register("Projects", typeof(Pages.Projects.ProjectsPage));
+        Shell.Widgets.WidgetStrip.RegisterTab("Projects");
+        ShellServices.RegisterDemoFixtures(s => s.SeedProjectsDemo());
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)

@@ -7,16 +7,16 @@ namespace FleetMate.Tests;
 /// <summary>Projects › List orders shared queries, and their areas, most recently active first.</summary>
 public class QueriesOrderTests
 {
-    private static QueriesListControl.QueryRunDisplay Run(string name, string area, params int[] daysAgo) =>
+    private static QueryRunDisplay Run(string name, string area, params int[] daysAgo) =>
         new(new AdoSharedQuery { Id = name, Name = name },
-            daysAgo.Select(d => new QueriesListControl.QueryRowDisplay(
+            daysAgo.Select(d => new QueryRowDisplay(
                 new UnifiedTask { UpdatedAt = new DateTime(2026, 10, 4).AddDays(-d) }, 0, false)).ToList(),
             false, area);
 
     [Fact]
     public void QueriesAndAreasMostRecentFirst()
     {
-        var sections = QueriesListControl.RecentFirst(new[]
+        var sections = QueryRuns.RecentFirst(new[]
         {
             Run("Old devices", "Devices", 30),
             Run("Fresh devices", "Devices", 9, 1),

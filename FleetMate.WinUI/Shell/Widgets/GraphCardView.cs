@@ -56,6 +56,12 @@ internal static class GraphCardView
             GraphCardBody.AllClear => AllClear(card.Message, card.Detail),
             _ => Chart(card, open),
         };
+        if (card.Body == GraphCardBody.Chart && card.Caption.Length > 0)
+        {
+            var caption = GraphTheme.Caption(card.Caption, wrap: true);
+            caption.Margin = new Thickness(0, 8, 0, 0);
+            body = new StackPanel { Children = { body, caption } };
+        }
         Grid.SetRow(body, 1);
 
         var grid = new Grid { RowDefinitions = { new() { Height = GridLength.Auto }, new() { Height = new GridLength(1, GridUnitType.Star) } } };

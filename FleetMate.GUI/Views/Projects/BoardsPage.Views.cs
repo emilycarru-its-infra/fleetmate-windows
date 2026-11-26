@@ -130,18 +130,6 @@ public partial class BoardsPage
         }
     }
 
-    /// <summary>The Mine rows: @Me work items plus GitHub items assigned to the viewer.</summary>
-    internal static List<UnifiedTask> MineTasks(
-        IEnumerable<UnifiedTask> loaded, IEnumerable<UnifiedTask> extra, IReadOnlySet<int> myIds, string? viewerLogin) =>
-        loaded.Concat(extra)
-            .GroupBy(t => (t.Provider, t.Id)).Select(g => g.First())
-            .Where(t => t.Provider == "azdevops"
-                ? int.TryParse(t.Id, out var id) && myIds.Contains(id)
-                : !string.IsNullOrEmpty(viewerLogin)
-                  && t.Assignees.Any(a => string.Equals(a, viewerLogin, StringComparison.OrdinalIgnoreCase)))
-            .OrderByDescending(t => t.UpdatedAt)
-            .ToList();
-
     /// <summary>Render Mine or Recent into the flat list, through the same search, bucket and closed filters.</summary>
     private void RenderFlatTasks(IEnumerable<UnifiedTask> filtered)
     {
@@ -163,7 +151,7 @@ public partial class BoardsPage
             // Mine's extra items were not in the board list, so they pass the
             // same filters here rather than through `filtered`.
             var extra = FilterTasks(_mineExtra);
-            rows = MineTasks(_allTasks.Where(t => filteredSet.Contains((t.Provider, t.Id))), extra, _myIds ?? new HashSet<int>(), _viewerLogin);
+            rows = TaskBoard.MineTasks(_allTasks.Where(t => filteredSet.Contains((t.Provider, t.Id))), extra, _myIds ?? new HashSet<int>(), _viewerLogin);
         }
         else
         {
