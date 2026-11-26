@@ -165,7 +165,7 @@ public partial class IntunePage : Page
     /// lists management records alone.
     /// </summary>
     private static bool EnrollmentOn =>
-        AppModules.IsOn(Shared.UserPreferences.HiddenModules, AppModules.Enrollment);
+        AppModules.IsOn(UserPreferences.HiddenModules, AppModules.Enrollment);
 
     private async Task LoadAutopilotAsync()
     {

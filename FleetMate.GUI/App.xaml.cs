@@ -858,13 +858,13 @@ public partial class App : Application
 
         // One FleetMate per person: a second launch (a fleetmate: link opened
         // from a browser or chat) hands its link to the first and exits.
-        var startupLink = Links.LinkHost.LinkFromArgs(e.Args);
+        var startupLink = FleetMate.Core.Links.LinkHost.LinkFromArgs(e.Args);
         var headless = e.Args.Contains("--headless-tdx-sso", StringComparer.OrdinalIgnoreCase);
         // The inbox helper never takes the single-instance lock, so opening the
         // app while it runs still opens a normal window.
         var inboxAgent = _isInboxAgent = InboxAgent.IsRequested(e.Args);
         var inboxSupervisor = InboxAgentSupervisor.IsRequested(e.Args, Environment.ProcessPath);
-        if (!headless && !inboxAgent && !inboxSupervisor && !Links.LinkHost.TryBecomePrimary(startupLink))
+        if (!headless && !inboxAgent && !inboxSupervisor && !FleetMate.Core.Links.LinkHost.TryBecomePrimary(startupLink))
         {
             Shutdown();
             return;
@@ -1321,7 +1321,7 @@ public partial class App : Application
         _developmentSync?.Dispose();
         _ticketWorkspace?.Dispose();
         StopTdxSessionKeeper();
-        Links.LinkHost.Stop();
+        FleetMate.Core.Links.LinkHost.Stop();
         GraphService?.Dispose();
         SnipeService?.Dispose();
         TdxService?.Dispose();

@@ -5,7 +5,7 @@ using FleetMate.Core.Links;
 using Microsoft.Win32;
 using Serilog;
 
-namespace FleetMate.GUI.Links;
+namespace FleetMate.Core.Links;
 
 /// <summary>
 /// One FleetMate per person: the first launch owns a named mutex and listens
@@ -22,9 +22,18 @@ public static class LinkHost
     private static string UserKey =>
         WindowsIdentity.GetCurrent().User?.Value ?? Environment.UserName;
 
+    /// <summary>
+    /// Which app holds the lock: "GUI" for the WPF app. The WinUI shell sets
+    /// its own while both ship, so running one never hands off to the other.
+    /// Set before <see cref="TryBecomePrimary"/>.
+    /// </summary>
+    public static string Instance { get; set; } = "GUI";
+
+    private static string Suffix => Instance == "GUI" ? "" : $".{Instance}";
+
     // Per edition, so FleetMate and TicketsMate each run their own single instance.
-    private static string MutexName => $@"Local\{FleetMate.Core.Config.AppEdition.Current.Name}.GUI.{UserKey}";
-    private static string PipeName => $"{FleetMate.Core.Config.AppEdition.Current.Name}.Links.{UserKey}";
+    private static string MutexName => $@"Local\{FleetMate.Core.Config.AppEdition.Current.Name}.{Instance}.{UserKey}";
+    private static string PipeName => $"{FleetMate.Core.Config.AppEdition.Current.Name}.Links{Suffix}.{UserKey}";
 
     /// <summary>The link among the command-line arguments, if Windows passed one.</summary>
     public static string? LinkFromArgs(IEnumerable<string> args) =>
@@ -114,7 +123,7 @@ public static class LinkHost
     /// <summary>
     /// Register <c>fleetmate:</c> for the current user, pointing at this
     /// executable, when it is missing or points elsewhere. A development run
-    /// through <c>dotnet fleetmate-gui.dll</c> uses the apphost beside the dll
+    /// through <c>dotnet &lt;app&gt;.dll</c> uses the apphost beside the dll
     /// when there is one, and otherwise registers nothing.
     /// </summary>
     public static void RegisterProtocol()
@@ -124,7 +133,7 @@ public static class LinkHost
             var exe = Environment.ProcessPath;
             if (exe == null || Path.GetFileName(exe).Equals("dotnet.exe", StringComparison.OrdinalIgnoreCase))
             {
-                var apphost = Path.Combine(AppContext.BaseDirectory, "fleetmate-gui.exe");
+                var apphost = Path.Combine(AppContext.BaseDirectory, (System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name ?? "fleetmate-gui") + ".exe");
                 if (!File.Exists(apphost))
                 {
                     Log.Information("fleetmate: links not registered: running under the dotnet host with no apphost");

@@ -16,7 +16,7 @@ public partial class DevelopmentView
     private static void OpenUrl(string? url)
     {
         if (string.IsNullOrWhiteSpace(url)) return;
-        FleetMate.GUI.Links.ExternalBrowser.Open(url);
+        FleetMate.Core.Links.ExternalBrowser.Open(url);
     }
 
     private static void Copy(string? text)

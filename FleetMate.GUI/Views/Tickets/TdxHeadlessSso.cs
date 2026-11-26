@@ -53,22 +53,8 @@ internal static class TdxHeadlessSso
     public static async Task<TdxSsoResult> SignInAsync(string baseUrl, CancellationToken ct = default,
         Action<TdxSignInStep>? step = null)
     {
-        step?.Invoke(TdxSignInStep.FindingAccount);
-        var upn = await TdxSsoIdentity.ResolveWindowsUpnAsync(ct);
-        if (upn == null)
-        {
-            Log.Error("[tdx-sso] No Windows work-account address from the logon, the sign-in broker or the registry; the session's account cannot be checked, sign-in refused");
-            return TdxSsoResult.Refused(TdxSsoResult.UnknownExpectedAddressReason);
-        }
-        Log.Information("[tdx-sso] Signing in as the Windows account {Upn}", upn);
-        // The account came from the logon or the Microsoft sign-in broker;
-        // the next step reaches Microsoft sign-in for the TeamDynamix session.
-        step?.Invoke(TdxSignInStep.ConnectingToMicrosoft);
-
-        Log.Information("[tdx-sso] Phase 1: silent HTTP SSO (Negotiate/Kerberos)");
-        step?.Invoke(TdxSignInStep.SigningInToTeamDynamix);
-        var http = await Task.Run(() => new TdxSsoService(baseUrl).TrySilentSsoAsync(ct, upn), ct);
-        if (http is { Success: true, Token: not null } or { IdentityRefused: true }) return http;
+        var (upn, http) = await TdxSignInChain.HttpPhaseAsync(baseUrl, step, ct);
+        if (upn == null || TdxSignInChain.IsFinal(http)) return http;
 
         Log.Information("[tdx-sso] Phase 2: hidden WebView2 SSO");
         step?.Invoke(TdxSignInStep.FinishingSignIn);

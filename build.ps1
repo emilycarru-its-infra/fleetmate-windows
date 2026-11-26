@@ -31,6 +31,14 @@
     Stamp this YYYY.MM.DD.HHMM version instead of the current Pacific time.
     The release workflow passes the tag, so every artifact carries it.
 
+.PARAMETER WinUI
+    Also build the WinUI 3 app (FleetMate.WinUI), both editions, into
+    publish\winui\FleetMate and publish\winui\TicketsMate. It is built beside
+    the WPF GUI; the installers still package the WPF GUI.
+
+.PARAMETER WinUIOnly
+    Build and sign only the WinUI 3 app, both editions
+
 .PARAMETER Launch
     After building and signing, launch the GUI application
 
@@ -55,6 +63,8 @@ param(
     [switch]$Publish,
     [switch]$GUI,
     [switch]$GUIOnly,
+    [switch]$WinUI,
+    [switch]$WinUIOnly,
     [switch]$CLIOnly,
     [switch]$PkgOnly,
     [switch]$Msi,
@@ -542,11 +552,12 @@ try {
     Write-Host "`n=== FleetMate Build ===" -ForegroundColor Cyan
 
     # Determine what to build
-    $buildCLI = -not $GUIOnly
+    $buildCLI = -not $GUIOnly -and -not $WinUIOnly
     $buildGUI  = $GUI -or $GUIOnly
+    $buildWinUI = $WinUI -or $WinUIOnly
 
     # Default with no flags: build + sign everything (CLI + GUI)
-    if (-not $buildCLI -and -not $buildGUI) {
+    if (-not $buildCLI -and -not $buildGUI -and -not $buildWinUI) {
         $buildCLI = $true
         $buildGUI = $true
     }
@@ -560,7 +571,7 @@ try {
     # Clean if requested
     if ($Clean) {
         Write-BuildLog "Cleaning build artifacts..."
-        foreach ($proj in @('FleetMate.CLI', 'FleetMate.GUI', 'FleetMate.Core')) {
+        foreach ($proj in @('FleetMate.CLI', 'FleetMate.GUI', 'FleetMate.WinUI', 'FleetMate.Core')) {
             Remove-Item -Path "$RootDir\$proj\bin" -Recurse -Force -ErrorAction SilentlyContinue
             Remove-Item -Path "$RootDir\$proj\obj" -Recurse -Force -ErrorAction SilentlyContinue
         }
@@ -669,6 +680,48 @@ try {
                 Write-BuildLog "GUI exe not found at: $guiExe — skipping sign" "WARNING"
             }
         }
+    }
+
+    # --- Build WinUI ---
+    if ($buildWinUI -and -not $PkgOnly -and -not $MsiOnly) {
+        # The WinUI 3 port grows beside the WPF GUI until it matches it, and the
+        # installers keep packaging the WPF GUI until cutover. Unpackaged and
+        # self-contained (.NET and the Windows App SDK), so it is a folder of
+        # files rather than a single exe. Both editions, as the MSIs carry both.
+        $winuiRid = if ($GuiRuntime) {
+            $GuiRuntime
+        } elseif ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') {
+            'win-arm64'
+        } else {
+            'win-x64'
+        }
+        $winuiPlatform = if ($winuiRid -eq 'win-arm64') { 'ARM64' } else { 'x64' }
+        foreach ($edition in @('FleetMate', 'TicketsMate')) {
+            Write-BuildLog "Building $edition WinUI ($winuiRid)..."
+            $winuiOutDir = "$RootDir\publish\winui\$edition"
+            & dotnet publish "$RootDir\FleetMate.WinUI\FleetMate.WinUI.csproj" `
+                --configuration Release `
+                --runtime $winuiRid `
+                --self-contained true `
+                -p:Platform=$winuiPlatform `
+                -p:Edition=$edition `
+                -p:SignDevBuild=false `
+                --output $winuiOutDir
+            if ($LASTEXITCODE -ne 0) { throw "$edition WinUI build failed" }
+
+            if ($Sign -and $certInfo) {
+                $exeName = if ($edition -eq 'TicketsMate') { 'TicketsMate' } else { 'FleetMate.WinUI' }
+                foreach ($file in @("$exeName.exe", "$exeName.dll", 'FleetMate.Core.dll')) {
+                    $path = Join-Path $winuiOutDir $file
+                    if (Test-Path $path) {
+                        Invoke-SignArtifact -Path $path -Thumbprint $certInfo.Thumbprint -Store $certInfo.Store
+                    } else {
+                        Write-BuildLog "$file not found in $winuiOutDir — skipping sign" "WARNING"
+                    }
+                }
+            }
+        }
+        Write-BuildLog "WinUI build completed" "SUCCESS"
     }
 
     # --- Summary ---

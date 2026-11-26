@@ -174,7 +174,7 @@ public partial class PipelineRunView : UserControl
     private void OnOpenInBrowserClicked(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrWhiteSpace(_run?.WebUrl)) return;
-        FleetMate.GUI.Links.ExternalBrowser.Open(_run.WebUrl);
+        FleetMate.Core.Links.ExternalBrowser.Open(_run.WebUrl);
     }
 
     private async void OnRerunClicked(object sender, RoutedEventArgs e)

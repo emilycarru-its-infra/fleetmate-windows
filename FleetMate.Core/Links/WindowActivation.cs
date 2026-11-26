@@ -1,11 +1,11 @@
-namespace FleetMate.GUI.Links;
+namespace FleetMate.Core.Links;
 
 /// <summary>
 /// Which window a handoff from a later launch brings forward, and what it
 /// takes to get it there. Kept free of WPF types so it can be tested without a
 /// UI: the app passes its windows in as plain objects.
 /// </summary>
-internal static class WindowActivation
+public static class WindowActivation
 {
     /// <summary>
     /// The app's own main window, never any other. The window remembered at
@@ -35,4 +35,4 @@ internal static class WindowActivation
 /// <paramref name="Restore"/> when it is minimized. Activating and raising it
 /// always follow.
 /// </summary>
-internal readonly record struct ActivationPlan(bool Show, bool Restore);
+public readonly record struct ActivationPlan(bool Show, bool Restore);

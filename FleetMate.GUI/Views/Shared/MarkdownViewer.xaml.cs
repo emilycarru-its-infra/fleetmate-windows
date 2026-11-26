@@ -151,7 +151,7 @@ public partial class MarkdownViewer : UserControl
     public static void OpenInBrowser(Uri url)
     {
         if (!FleetMate.Core.Knowledge.HandbookLinks.IsWeb(url)) return;
-        FleetMate.GUI.Links.ExternalBrowser.Open(url.AbsoluteUri);
+        FleetMate.Core.Links.ExternalBrowser.Open(url.AbsoluteUri);
     }
 
     /// <summary>Nothing loads but inline styles and images from <paramref name="imageOrigin"/> or inline data.</summary>
