@@ -338,6 +338,9 @@ public sealed partial class MainWindow : Window
     /// <summary>The XAML root a capture renders and themes.</summary>
     internal FrameworkElement CaptureRoot => RootGrid;
 
+    /// <summary>The page the frame shows, for the capture's <see cref="ICaptureViews"/>.</summary>
+    internal object? CurrentPage => NavFrame.Content;
+
     /// <summary>Show a tab, or Settings, without touching history rules.</summary>
     internal void ShowPanel(string panel)
     {

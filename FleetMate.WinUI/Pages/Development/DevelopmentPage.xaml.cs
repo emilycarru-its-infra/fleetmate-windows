@@ -16,7 +16,7 @@ namespace FleetMate.WinUI.Pages.Development;
 /// this page switches between them, routes the toolbar search, Refresh and
 /// <c>fleetmate:</c> links to them, and owns nothing else.
 /// </summary>
-public sealed partial class DevelopmentPage : Page
+public sealed partial class DevelopmentPage : Page, Shell.ICaptureViews
 {
     private readonly Dictionary<DevelopmentSegment, IDevelopmentSegmentView> _views;
     private IDevelopmentSegmentView _current;
@@ -139,6 +139,32 @@ public sealed partial class DevelopmentPage : Page
             var entry = new MenuFlyoutItem { Text = item.Text, Tag = item.Tag };
             entry.Click += (_, _) => SegmentBar.SelectedItem = item;
             SegmentMenuFlyout.Items.Add(entry);
+        }
+    }
+
+    // MARK: - QA capture
+
+    /// <summary>Every sub-tab, and the detail pane of each that has one, for the QA capture.</summary>
+    public IReadOnlyList<string> CaptureViews { get; } = new[]
+    {
+        "pulls", "pulls-detail", "pulls-graphs", "commits", "pipelines", "skills", "skills-detail",
+    };
+
+    public async Task ShowCaptureViewAsync(string view)
+    {
+        var graphs = view.EndsWith("-graphs", StringComparison.Ordinal);
+        if (DevelopmentGraphs.IsShown != graphs)
+        {
+            DevelopmentGraphs.IsShown = graphs;
+            GraphsButton.IsChecked = graphs;
+        }
+        var segment = Enum.Parse<DevelopmentSegment>(view.Split('-')[0], ignoreCase: true);
+        ShowSegment(segment);
+        RenderGraphs();
+        if (view.EndsWith("-detail", StringComparison.Ordinal))
+        {
+            if (segment == DevelopmentSegment.Pulls) await PullsView.SelectFirstAsync();
+            else if (segment == DevelopmentSegment.Skills) SkillsView.SelectFirst();
         }
     }
 

@@ -339,6 +339,16 @@ public sealed partial class PullsSegmentView : UserControl, IDevelopmentSegmentV
         }
     }
 
+    /// <summary>Select the first row and wait for its detail: the QA capture's detail view.</summary>
+    public async Task SelectFirstAsync()
+    {
+        if (_rows.FirstOrDefault() is not { } row) return;
+        _rendering = true;
+        List.SelectedItem = row;
+        _rendering = false;
+        await ShowDetailAsync(row.PullRequest);
+    }
+
     // MARK: - Inbox threads
 
     /// <summary>

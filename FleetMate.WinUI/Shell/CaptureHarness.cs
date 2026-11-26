@@ -89,19 +89,30 @@ internal static class CaptureHarness
                     {
                         window.ShowPanel(panel);
                         await Task.Delay(Settle);
-                        report.AppendLine($"## {panel}, {theme}, {sizeName} ({width}x{height})").AppendLine();
-                        foreach (var scale in Scales)
+                        // A page with sub-tabs or detail panes captures each of them as well.
+                        var views = window.CurrentPage is ICaptureViews multi ? multi.CaptureViews : Array.Empty<string>();
+                        foreach (var view in views.Prepend(null))
                         {
-                            var file = FileName(panel, theme, sizeName, scale);
-                            await RenderAsync(window.CaptureRoot, Path.Combine(directory, file), scale, dark);
-                            report.AppendLine($"![{file}]({file})");
+                            if (view != null)
+                            {
+                                await ((ICaptureViews)window.CurrentPage!).ShowCaptureViewAsync(view);
+                                await Task.Delay(Settle);
+                            }
+                            var name = view == null ? panel : $"{panel}-{view}";
+                            report.AppendLine($"## {name}, {theme}, {sizeName} ({width}x{height})").AppendLine();
+                            foreach (var scale in Scales)
+                            {
+                                var file = FileName(name, theme, sizeName, scale);
+                                await RenderAsync(window.CaptureRoot, Path.Combine(directory, file), scale, dark);
+                                report.AppendLine($"![{file}]({file})");
+                            }
+                            var issues = Inspect(window.CaptureRoot).ToList();
+                            findings += issues.Count;
+                            report.AppendLine();
+                            if (issues.Count == 0) report.AppendLine("No clipped text or unnamed controls.");
+                            foreach (var issue in issues) report.AppendLine($"- {issue}");
+                            report.AppendLine();
                         }
-                        var issues = Inspect(window.CaptureRoot).ToList();
-                        findings += issues.Count;
-                        report.AppendLine();
-                        if (issues.Count == 0) report.AppendLine("No clipped text or unnamed controls.");
-                        foreach (var issue in issues) report.AppendLine($"- {issue}");
-                        report.AppendLine();
                     }
                 }
             }

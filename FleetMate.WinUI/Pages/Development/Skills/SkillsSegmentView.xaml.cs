@@ -78,6 +78,13 @@ public sealed partial class SkillsSegmentView : UserControl, IDevelopmentSegment
         EmptyText.Text = store.Entries.Count == 0 ? "No skills yet. They appear once the first fetch finishes." : "Nothing matches this filter.";
     }
 
+    /// <summary>Select the first entry: the QA capture's detail view.</summary>
+    public void SelectFirst()
+    {
+        if (GroupedSkills.Source is IEnumerable<SkillGroup> groups && groups.SelectMany(g => g).FirstOrDefault() is { } first)
+            List.SelectedItem = first;
+    }
+
     private void List_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (List.SelectedItem is not SkillEntry entry) return;
