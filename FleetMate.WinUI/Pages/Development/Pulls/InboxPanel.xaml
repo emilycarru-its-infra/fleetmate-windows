@@ -2,6 +2,131 @@
 <UserControl
     x:Class="FleetMate.WinUI.Pages.Development.Pulls.InboxPanel"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Text="Inbox" />
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:FleetMate.WinUI.Pages.Development.Pulls">
+
+    <UserControl.Resources>
+        <DataTemplate x:Key="NotificationTemplate" x:DataType="local:NotificationRow">
+            <Grid Padding="0,6" ColumnSpacing="8" AutomationProperties.Name="{x:Bind AccessibleName}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Ellipse
+                    Width="8"
+                    Height="8"
+                    Margin="0,6,0,0"
+                    VerticalAlignment="Top"
+                    Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                    Opacity="{x:Bind UnreadOpacity}" />
+                <FontIcon
+                    Grid.Column="1"
+                    Margin="0,3,0,0"
+                    VerticalAlignment="Top"
+                    FontSize="14"
+                    Glyph="{x:Bind TypeGlyph}"
+                    ToolTipService.ToolTip="{x:Bind TypeLabel}" />
+                <StackPanel Grid.Column="2" Spacing="2">
+                    <TextBlock
+                        FontWeight="{x:Bind TitleWeight}"
+                        MaxLines="2"
+                        Text="{x:Bind Title}"
+                        TextTrimming="CharacterEllipsis"
+                        TextWrapping="Wrap"
+                        ToolTipService.ToolTip="{x:Bind Title}" />
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        MaxLines="2"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="{x:Bind Byline}"
+                        TextTrimming="CharacterEllipsis"
+                        TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Grid.Column="3" VerticalAlignment="Top" Orientation="Horizontal" Spacing="2">
+                    <Button
+                        AutomationProperties.Name="Mark as read"
+                        Click="MarkRead_Click"
+                        Style="{StaticResource SubtleButtonStyle}"
+                        Tag="{x:Bind}"
+                        ToolTipService.ToolTip="Mark as read"
+                        Visibility="{x:Bind MarkReadVisibility}">
+                        <FontIcon FontSize="12" Glyph="&#xE8C3;" />
+                    </Button>
+                    <Button
+                        AutomationProperties.Name="Done"
+                        Click="Done_Click"
+                        Style="{StaticResource SubtleButtonStyle}"
+                        Tag="{x:Bind}"
+                        ToolTipService.ToolTip="Done: remove from the inbox">
+                        <FontIcon FontSize="12" Glyph="&#xE73E;" />
+                    </Button>
+                    <Button
+                        AutomationProperties.Name="Unsubscribe"
+                        Click="Unsubscribe_Click"
+                        Style="{StaticResource SubtleButtonStyle}"
+                        Tag="{x:Bind}"
+                        ToolTipService.ToolTip="Unsubscribe from this thread">
+                        <FontIcon FontSize="12" Glyph="&#xE7ED;" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid RowSpacing="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Unread / All, and Mark all read. -->
+        <Grid ColumnSpacing="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <ToggleButton x:Name="UnreadChip" Click="Filter_Click" Content="Unread" IsChecked="True" Tag="Unread" />
+            <ToggleButton x:Name="AllChip" Grid.Column="1" Click="Filter_Click" Content="All" Tag="All" />
+            <Button
+                x:Name="MarkAllReadButton"
+                Grid.Column="3"
+                Click="MarkAllRead_Click"
+                Content="Mark All Read"
+                ToolTipService.ToolTip="Mark every notification as read" />
+        </Grid>
+
+        <TextBlock
+            x:Name="StatusText"
+            Grid.Row="1"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            MaxLines="3"
+            Style="{StaticResource CaptionTextBlockStyle}"
+            TextWrapping="Wrap" />
+
+        <Grid Grid.Row="2">
+            <ListView
+                x:Name="List"
+                AutomationProperties.AutomationId="DevelopmentInboxList"
+                AutomationProperties.Name="Inbox"
+                ContextRequested="List_ContextRequested"
+                IsItemClickEnabled="True"
+                ItemClick="List_ItemClick"
+                ItemTemplate="{StaticResource NotificationTemplate}"
+                SelectionMode="Single" />
+            <TextBlock
+                x:Name="EmptyText"
+                Margin="16"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                TextAlignment="Center"
+                TextWrapping="Wrap"
+                Visibility="Collapsed" />
+        </Grid>
+    </Grid>
 </UserControl>
