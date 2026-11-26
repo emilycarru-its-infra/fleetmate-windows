@@ -135,7 +135,7 @@ public class RepoWorkspaceGuiTests
             view.Attach(model);
             // A test cannot answer a dialog: every confirmation is declined.
             var asked = new List<string>();
-            model.Git.Confirm = (title, _, _) => { asked.Add(title); return false; };
+            model.Git.Confirm = (title, _, _) => { asked.Add(title); return Task.FromResult(false); };
 
             model.ReloadRecords();
             Pump(model.RefreshStatusesAsync());
