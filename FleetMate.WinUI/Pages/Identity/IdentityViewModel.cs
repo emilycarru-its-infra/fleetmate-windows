@@ -96,19 +96,43 @@ public sealed partial class IdentityViewModel : ObservableObject
             : ("No matches", $"No group or member device matches “{GroupFilter.Trim()}”.");
     }
 
-    /// <summary>Load every group's members, a few at a time, refiltering as they arrive.</summary>
-    private async Task LoadAllMembersAsync()
+    private CancellationTokenSource? _membersLoad;
+
+    /// <summary>The background member load in flight, for a capture that waits for it.</summary>
+    public Task MembersLoaded { get; private set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// Load every group's members, a few at a time, refiltering as they
+    /// arrive. A new load or <see cref="CancelMemberLoads"/> stops the last one.
+    /// </summary>
+    private Task LoadAllMembersAsync()
+    {
+        _membersLoad?.Cancel();
+        var cts = _membersLoad = new CancellationTokenSource();
+        return MembersLoaded = LoadAllMembersCoreAsync(_allGroups.ToList(), cts.Token);
+    }
+
+    private async Task LoadAllMembersCoreAsync(IReadOnlyList<GroupRow> rows, CancellationToken ct)
     {
         using var gate = new SemaphoreSlim(4);
-        var rows = _allGroups.ToList();
-        await Task.WhenAll(rows.Select(async row =>
+        try
         {
-            await gate.WaitAsync();
-            try { await LoadMembersAsync(row); }
-            finally { gate.Release(); }
-        }));
-        if (!string.IsNullOrWhiteSpace(GroupFilter)) ApplyGroupFilter();
+            await Task.WhenAll(rows.Select(async row =>
+            {
+                await gate.WaitAsync(ct);
+                try
+                {
+                    if (!ct.IsCancellationRequested) await LoadMembersAsync(row);
+                }
+                finally { gate.Release(); }
+            }));
+        }
+        catch (OperationCanceledException) { return; }
+        if (!ct.IsCancellationRequested && !string.IsNullOrWhiteSpace(GroupFilter)) ApplyGroupFilter();
     }
+
+    /// <summary>Stop loading members, when the tab is left; groups already loaded keep their counts.</summary>
+    public void CancelMemberLoads() => _membersLoad?.Cancel();
 
     internal async Task LoadMembersAsync(GroupRow row)
     {

@@ -42,6 +42,12 @@ public sealed partial class IdentityPage : Page, Shell.ICaptureViews
         await ViewModel.LoadGroupsAsync();
     }
 
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        base.OnNavigatedFrom(e);
+        ViewModel.CancelMemberLoads();
+    }
+
     // MARK: - Views
 
     /// <summary>Select Device groups so the selector and the panel agree.</summary>
@@ -152,6 +158,7 @@ public sealed partial class IdentityPage : Page, Shell.ICaptureViews
         {
             case "groups-expanded":
                 ShowGroups();
+                await ViewModel.MembersLoaded;
                 if (ViewModel.Groups.FirstOrDefault() is { } first && !first.IsExpanded)
                     await first.ToggleCommand.ExecuteAsync(null);
                 break;

@@ -34,6 +34,11 @@
 .PARAMETER Runtime
     win-x64 or win-arm64. Defaults to this machine's architecture.
 
+.PARAMETER TimeoutMinutes
+    How long one capture (an edition in a theme) may take before it is
+    stopped and reported as timed out. The run grows with every panel a lane
+    adds, and software rendering on a CI runner is slow; defaults to 30.
+
 .EXAMPLE
     .\scripts\winui-qa.ps1
 
@@ -46,7 +51,8 @@ param(
     [ValidateSet('FleetMate', 'TicketsMate')]
     [string[]]$Edition = @('FleetMate', 'TicketsMate'),
     [ValidateSet('win-x64', 'win-arm64')]
-    [string]$Runtime
+    [string]$Runtime,
+    [int]$TimeoutMinutes = 30
 )
 
 $ErrorActionPreference = 'Stop'
@@ -104,7 +110,7 @@ foreach ($ed in $Edition) {
     foreach ($theme in 'light', 'dark') {
         Write-Host "  Capturing $ed in $theme..." -ForegroundColor Cyan
         $process = Start-Process (Join-Path $build "$exeName.exe") -ArgumentList '--theme', $theme, '--capture', $target -PassThru
-        if (-not $process.WaitForExit(600000)) {
+        if (-not $process.WaitForExit($TimeoutMinutes * 60 * 1000)) {
             $process.Kill()
             $failed = $true
             $summary.Add("| $ed | $theme | timed out | |")
