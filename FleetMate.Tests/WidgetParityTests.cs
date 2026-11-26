@@ -1,6 +1,7 @@
 using FleetMate.Core.Shared;
 using System.Windows;
 using FleetMate.Core.Models.Devices;
+using FleetMate.Core.Inventory;
 using FleetMate.Core.Models.Inventory;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Models.Reporting;
@@ -145,39 +146,39 @@ public class WidgetParityTests
         };
         assets.Add(new SnipeAsset());
 
-        var slices = WidgetCatalog.AssetStatusSlices(assets);
+        var slices = InventoryFigures.AssetStatusSlices(assets);
 
         Assert.Equal(5, slices.Count);
         Assert.Equal("deployed (3)", slices[0].Label);
         Assert.Equal("deployable (2)", slices[1].Label);
-        Assert.Contains(WidgetCatalog.AssetStatusSlices(new[] { Asset(null, "Repair") }), s => s.Label == "Repair (1)");
-        Assert.Contains(WidgetCatalog.AssetStatusSlices(new[] { new SnipeAsset() }), s => s.Label == "Unknown (1)");
+        Assert.Contains(InventoryFigures.AssetStatusSlices(new[] { Asset(null, "Repair") }), s => s.Label == "Repair (1)");
+        Assert.Contains(InventoryFigures.AssetStatusSlices(new[] { new SnipeAsset() }), s => s.Label == "Unknown (1)");
     }
 
     [Fact]
     public void AssetStatusType_PrefersMeta_ThenName_ThenUnknown()
     {
-        Assert.Equal("deployable", WidgetCatalog.AssetStatusType(Asset("deployable", "Ready")));
-        Assert.Equal("Repair", WidgetCatalog.AssetStatusType(Asset(null, "Repair")));
-        Assert.Equal("Repair", WidgetCatalog.AssetStatusType(Asset("", "Repair")));
-        Assert.Equal("Unknown", WidgetCatalog.AssetStatusType(new SnipeAsset()));
+        Assert.Equal("deployable", InventoryFigures.AssetStatusType(Asset("deployable", "Ready")));
+        Assert.Equal("Repair", InventoryFigures.AssetStatusType(Asset(null, "Repair")));
+        Assert.Equal("Repair", InventoryFigures.AssetStatusType(Asset("", "Repair")));
+        Assert.Equal("Unknown", InventoryFigures.AssetStatusType(new SnipeAsset()));
     }
 
     [Fact]
     public void StatusTypeFilter_HoldsStatusTypes_Capitalised()
     {
-        Assert.Equal("Deployable", WidgetCatalog.AssetStatusTypeFilterValue(Asset("deployable", "Ready")));
-        Assert.Equal("Ready To Deploy", WidgetCatalog.AssetStatusTypeFilterValue(Asset(null, "ready to deploy")));
-        Assert.Equal("Unknown", WidgetCatalog.AssetStatusTypeFilterValue(new SnipeAsset()));
+        Assert.Equal("Deployable", InventoryFigures.AssetStatusTypeFilterValue(Asset("deployable", "Ready")));
+        Assert.Equal("Ready To Deploy", InventoryFigures.AssetStatusTypeFilterValue(Asset(null, "ready to deploy")));
+        Assert.Equal("Unknown", InventoryFigures.AssetStatusTypeFilterValue(new SnipeAsset()));
     }
 
     [Fact]
     public void StatusFilter_HoldsStatusNames_AsSnipeNamesThem()
     {
-        Assert.Equal("Ready to Deploy", WidgetCatalog.AssetStatusNameFilterValue(Asset("deployable", "Ready to Deploy")));
-        Assert.Equal("In Repair", WidgetCatalog.AssetStatusNameFilterValue(Asset(null, " In Repair ")));
-        Assert.Null(WidgetCatalog.AssetStatusNameFilterValue(Asset("deployable", "")));
-        Assert.Null(WidgetCatalog.AssetStatusNameFilterValue(new SnipeAsset()));
+        Assert.Equal("Ready to Deploy", InventoryFigures.AssetStatusNameFilterValue(Asset("deployable", "Ready to Deploy")));
+        Assert.Equal("In Repair", InventoryFigures.AssetStatusNameFilterValue(Asset(null, " In Repair ")));
+        Assert.Null(InventoryFigures.AssetStatusNameFilterValue(Asset("deployable", "")));
+        Assert.Null(InventoryFigures.AssetStatusNameFilterValue(new SnipeAsset()));
     }
 
     /// <summary>
@@ -189,13 +190,13 @@ public class WidgetParityTests
     public void AssetStatusWedge_SelectsEveryAssetOfItsType()
     {
         var assets = new[] { Asset("deployable", "Ready to Deploy"), Asset("deployable", "Spare"), Asset("deployed", "In Use") };
-        var options = assets.Select(WidgetCatalog.AssetStatusTypeFilterValue).Distinct().ToList();
+        var options = assets.Select(InventoryFigures.AssetStatusTypeFilterValue).Distinct().ToList();
 
-        var wedge = WidgetCatalog.AssetStatusSlices(assets).Single(s => s.Label.StartsWith("deployable"));
+        var wedge = InventoryFigures.AssetStatusSlices(assets).Single(s => s.Label.StartsWith("deployable"));
         var selected = WidgetCatalog.MatchFilterValues(ChartSlice.FilterValue(wedge.Label), options).Single();
 
         Assert.Equal("Deployable", selected);
-        Assert.Equal(2, assets.Count(a => WidgetCatalog.AssetStatusTypeFilterValue(a) == selected));
+        Assert.Equal(2, assets.Count(a => InventoryFigures.AssetStatusTypeFilterValue(a) == selected));
     }
 
     /// <summary>
@@ -206,10 +207,10 @@ public class WidgetParityTests
     public void StatusName_SelectsOnlyThatName()
     {
         var assets = new[] { Asset("deployable", "Ready to Deploy"), Asset("deployable", "Spare"), Asset("deployed", "In Use") };
-        var options = assets.Select(WidgetCatalog.AssetStatusNameFilterValue).OfType<string>().ToHashSet();
+        var options = assets.Select(InventoryFigures.AssetStatusNameFilterValue).OfType<string>().ToHashSet();
 
         Assert.Equal(new HashSet<string> { "Ready to Deploy", "Spare", "In Use" }, options);
-        Assert.Single(assets, a => WidgetCatalog.AssetStatusNameFilterValue(a) == "Spare");
+        Assert.Single(assets, a => InventoryFigures.AssetStatusNameFilterValue(a) == "Spare");
     }
 
     [Fact]
@@ -219,11 +220,11 @@ public class WidgetParityTests
             .Append(Asset("deployed", "x"))
             .ToList();
 
-        var slices = WidgetCatalog.AssetCategorySlices(assets);
+        var slices = InventoryFigures.AssetCategorySlices(assets);
 
         Assert.Equal(8, slices.Count);
         Assert.Equal("C9", slices[0].Label);
-        Assert.Contains(WidgetCatalog.AssetCategorySlices(new[] { Asset("deployed", "x") }), s => s.Label == "Uncategorized");
+        Assert.Contains(InventoryFigures.AssetCategorySlices(new[] { Asset("deployed", "x") }), s => s.Label == "Uncategorized");
     }
 
     // MARK: - Projects

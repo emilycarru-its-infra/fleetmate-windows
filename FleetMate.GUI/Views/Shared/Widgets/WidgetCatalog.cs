@@ -1,4 +1,5 @@
 using FleetMate.Core.Shared;
+using FleetMate.Core.Inventory;
 using System.Diagnostics;
 using System.Globalization;
 using System.Windows;
@@ -428,66 +429,10 @@ public static partial class WidgetCatalog
     private static readonly Color[] AssetCategoryColors = { P.Orange, P.Blue, P.Purple, P.Teal, P.Green, P.Pink, P.Brown, P.Indigo };
     private static readonly Color[] AssetStatusColors = { P.Green, P.Blue, P.Orange, P.Purple, P.Gray };
 
-    /// <summary>Assets per category, most first, top eight.</summary>
-    internal static List<ChartSlice> AssetCategorySlices(IEnumerable<SnipeAsset> assets) => assets
-        .GroupBy(a => a.Category?.Name ?? "Uncategorized")
-        .Select(g => new ChartSlice(g.Key, g.Count()))
-        .OrderByDescending(s => s.Value)
-        .Take(8)
-        .ToList();
-
-    /// <summary>
-    /// The status type an asset is counted under by the Asset Status widget
-    /// and filtered by in the Status Type filter: Snipe-IT's status meta
-    /// (deployed, deployable, pending, archived…), else the status name, else
-    /// "Unknown". Both read this, so a wedge always finds its assets — the
-    /// Mac's rule.
-    /// </summary>
-    internal static string AssetStatusType(SnipeAsset asset) =>
-        !string.IsNullOrEmpty(asset.StatusLabel?.StatusMeta) ? asset.StatusLabel.StatusMeta
-        : !string.IsNullOrEmpty(asset.StatusLabel?.Name) ? asset.StatusLabel.Name
-        : "Unknown";
-
-    /// <summary>The Status Type filter's value for an asset: its status type, capitalised for the list.</summary>
-    internal static string AssetStatusTypeFilterValue(SnipeAsset asset) =>
-        CultureInfo.InvariantCulture.TextInfo.ToTitleCase(AssetStatusType(asset).ToLowerInvariant());
-
-    /// <summary>
-    /// The Status filter's value for an asset: its own status name ("Ready to
-    /// Deploy", "In Repair") exactly as Snipe-IT names it, or null when it has
-    /// none. Several names can share one status type, so this is the finer of
-    /// the two filters.
-    /// </summary>
-    internal static string? AssetStatusNameFilterValue(SnipeAsset asset) =>
-        string.IsNullOrWhiteSpace(asset.StatusLabel?.Name) ? null : asset.StatusLabel.Name.Trim();
-
-    /// <summary>
-    /// Assets per status type (see <see cref="AssetStatusType"/>), top five,
-    /// each labelled "Status (count)" — the Mac's grouping.
-    /// </summary>
-    internal static List<ChartSlice> AssetStatusSlices(IEnumerable<SnipeAsset> assets) => assets
-        .GroupBy(AssetStatusType)
-        .Select(g => (Status: g.Key, Count: g.Count()))
-        .OrderByDescending(s => s.Count)
-        .Take(5)
-        .Select(s => new ChartSlice($"{s.Status} ({s.Count})", s.Count))
-        .ToList();
-
-    /// <summary>
-    /// The few words a widget or the asset count shows when the assets could
-    /// not be loaded: a token that could not be had is a failed sign-in, which
-    /// the operator fixes differently from Snipe-IT itself failing.
-    /// </summary>
-    internal static string AssetsFailureHeadline(string? reason) =>
-        reason is null ? "No asset data"
-        : reason.StartsWith("Sign-in failed", StringComparison.OrdinalIgnoreCase)
-          || reason.Contains("refused the sign-in", StringComparison.OrdinalIgnoreCase) ? "Sign-in failed"
-        : "Could not load assets";
-
     private static List<UIElement> Inventory(App app, Action<string, string> filter)
     {
         var assets = app.CachedAssets;
-        var empty = AssetsFailureHeadline(app.AssetsLoadError);
+        var empty = InventoryFigures.AssetsFailureHeadline(app.AssetsLoadError);
         var loading = app.IsCacheLoading("Assets");
         var waiting = loading && assets.Count == 0;
 
@@ -496,20 +441,19 @@ public static partial class WidgetCatalog
             WidgetCards.KpiStack(new[]
             {
                 new KpiTile("Assets", assets.Count.ToString("N0"), "", P.Hex(P.Orange), waiting),
-                new KpiTile("Deployed", assets.Count(a =>
-                    a.StatusLabel?.StatusMeta?.Equals("deployed", StringComparison.OrdinalIgnoreCase) == true).ToString("N0"), "", P.Hex(P.Green), waiting),
-                new KpiTile("Unassigned", assets.Count(a => a.AssignedTo == null).ToString("N0"), "", P.Hex(P.Blue), waiting),
+                new KpiTile("Deployed", InventoryFigures.DeployedCount(assets).ToString("N0"), "", P.Hex(P.Green), waiting),
+                new KpiTile("Unassigned", InventoryFigures.UnassignedCount(assets).ToString("N0"), "", P.Hex(P.Blue), waiting),
             }),
         };
 
-        var categories = AssetCategorySlices(assets);
+        var categories = InventoryFigures.AssetCategorySlices(assets);
         cards.Add(WidgetCards.Card("Assets by Category",
             WidgetCards.ChartOr(categories.Count > 0, loading, empty,
                 () => WidgetCards.HorizontalBars(categories, WidgetCards.ByIndex(categories, AssetCategoryColors),
                     c => filter(Category.AssetCategory, c))),
             loading: loading));
 
-        var statuses = AssetStatusSlices(assets);
+        var statuses = InventoryFigures.AssetStatusSlices(assets);
         cards.Add(WidgetCards.Card("Asset Status",
             WidgetCards.ChartOr(statuses.Count > 0, loading, empty,
                 () => WidgetCards.Donut(statuses, s => filter(Category.StatusType, s),

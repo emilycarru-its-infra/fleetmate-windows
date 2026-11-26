@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
+using FleetMate.Core.Inventory;
 using FleetMate.Core.Models.Inventory;
 using ModernWpf.Controls;
 
@@ -69,20 +70,14 @@ public partial class AssetDetailPanel
     {
         HistoryHost.Children.Clear();
 
-        var filter = HistoryFilterBox.Text?.Trim().ToLowerInvariant() ?? "";
-        var shown = string.IsNullOrEmpty(filter)
-            ? _history
-            : _history.Where(h => h.SearchText.Contains(filter)).ToList();
-
-        HistoryCountText.Text = shown.Count == _history.Count
-            ? $"{_history.Count} event{(_history.Count == 1 ? "" : "s")}"
-            : $"{shown.Count} of {_history.Count} events";
+        var shown = AssetDetailLayout.FilterHistory(_history, HistoryFilterBox.Text);
+        HistoryCountText.Text = AssetDetailLayout.HistoryCount(shown.Count, _history.Count);
 
         if (shown.Count == 0)
         {
             HistoryHost.Children.Add(new TextBlock
             {
-                Text = _history.Count == 0 ? "No history recorded for this asset." : "No events match the filter.",
+                Text = AssetDetailLayout.HistoryEmpty(_history.Count),
                 FontSize = 12,
                 Foreground = Secondary(),
                 Margin = new Thickness(0, 8, 0, 0)
@@ -101,7 +96,7 @@ public partial class AssetDetailPanel
         var header = new DockPanel();
         var when = new TextBlock
         {
-            Text = FormatHistoryDate(entry.Date),
+            Text = AssetDetailLayout.FormatHistoryDate(entry.Date),
             FontSize = 11,
             Foreground = Secondary(),
             Margin = new Thickness(8, 0, 0, 0),
@@ -111,8 +106,8 @@ public partial class AssetDetailPanel
         header.Children.Add(when);
 
         var title = new TextBlock { TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
-        title.Inlines.Add(new FontIconRun(ActionGlyph(entry.Action), Secondary()));
-        title.Inlines.Add(new Run(Capitalize(entry.Action)) { FontWeight = FontWeights.SemiBold, FontSize = 12 });
+        title.Inlines.Add(new FontIconRun(AssetDetailLayout.ActionGlyph(entry.Action), Secondary()));
+        title.Inlines.Add(new Run(AssetDetailLayout.ActionTitle(entry.Action)) { FontWeight = FontWeights.SemiBold, FontSize = 12 });
         if (entry.By != null)
             title.Inlines.Add(new Run($"  by {entry.By}") { FontSize = 12, Foreground = Secondary() });
         if (entry.Target != null)
@@ -168,8 +163,8 @@ public partial class AssetDetailPanel
     private TextBlock FileLine(SnipeHistoryFile file)
     {
         var line = new TextBlock { FontSize = 12, Margin = new Thickness(18, 4, 0, 0) };
-        line.Inlines.Add(new FontIconRun("", Secondary()));
-        if (ResolveFileUrl(file.Url) is { } uri)
+        line.Inlines.Add(new FontIconRun(AssetDetailLayout.AttachmentGlyph, Secondary()));
+        if (AssetDetailLayout.ResolveFileUrl(file.Url, _service?.BaseUrl) is { } uri)
         {
             var link = new Hyperlink(new Run(file.Name)) { NavigateUri = uri, ToolTip = uri.ToString() };
             link.RequestNavigate += (_, e) =>
@@ -184,45 +179,6 @@ public partial class AssetDetailPanel
             line.Inlines.Add(new Run(file.Name));
         }
         return line;
-    }
-
-    private Uri? ResolveFileUrl(string? url)
-    {
-        if (string.IsNullOrEmpty(url)) return null;
-        if (Uri.TryCreate(url, UriKind.Absolute, out var absolute) &&
-            (absolute.Scheme == Uri.UriSchemeHttps || absolute.Scheme == Uri.UriSchemeHttp))
-            return absolute;
-        if (_service?.BaseUrl is { Length: > 0 } baseUrl &&
-            Uri.TryCreate(new Uri(baseUrl.TrimEnd('/') + "/"), url.TrimStart('/'), out var relative))
-            return relative;
-        return null;
-    }
-
-    private static string ActionGlyph(string action)
-    {
-        var a = action.ToLowerInvariant();
-        if (a.StartsWith("checkout")) return "";
-        if (a.StartsWith("checkin")) return "";
-        if (a.Contains("audit")) return "";
-        if (a.Contains("upload")) return "";
-        if (a.Contains("create")) return "";
-        if (a.Contains("delete")) return "";
-        if (a.Contains("restore")) return "";
-        if (a.Contains("request")) return "";
-        if (a.Contains("update")) return "";
-        return "";
-    }
-
-    private static string Capitalize(string s) =>
-        s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
-
-    private static string FormatHistoryDate(string? raw)
-    {
-        if (string.IsNullOrEmpty(raw)) return "";
-        return DateTime.TryParse(raw, System.Globalization.CultureInfo.InvariantCulture,
-            System.Globalization.DateTimeStyles.None, out var dt)
-            ? dt.ToString("MMM d, yyyy h:mm tt")
-            : raw;
     }
 
     /// <summary>A Segoe Fluent glyph inline in a TextBlock, ahead of its text.</summary>
