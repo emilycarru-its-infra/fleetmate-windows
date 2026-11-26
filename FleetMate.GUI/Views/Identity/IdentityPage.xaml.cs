@@ -197,23 +197,10 @@ public partial class IdentityPage : Page, IChromeToolbar
 
         try
         {
-            var results = new List<FleetMate.Core.Models.Identity.EntraUser>();
-
-            // Try exact lookup first (for UPN, email, or UUID)
-            if (query.Contains('@') || Guid.TryParse(query, out _))
-            {
-                var exactUser = await _graphService.GetUserAsync(query, includeGroups: true);
-                if (exactUser != null)
-                {
-                    results.Add(exactUser);
-                }
-            }
-
-            // Fall back to fuzzy search if no exact match
-            if (results.Count == 0)
-            {
-                results = await _graphService.SearchUsersAsync(query);
-            }
+            // Exact lookup for an address or id, then the fuzzy search: the
+            // rule is IdentitySearch's, shared with the WinUI app.
+            var results = await FleetMate.Core.Identity.IdentitySearch.FindUsersAsync(
+                new FleetMate.Core.Identity.GraphIdentityDirectory(_graphService), query);
 
             if (results.Count > 0)
             {

@@ -38,6 +38,12 @@ public sealed partial class MainWindow : Window
     /// <summary>The text in the toolbar search field. The current page filters on it.</summary>
     public static event EventHandler<string>? SearchChanged;
 
+    /// <summary>
+    /// Enter in the toolbar search field with no suggestion chosen: a page that
+    /// looks things up rather than filtering (Identity's Users) searches then.
+    /// </summary>
+    public static event EventHandler<string>? SearchSubmitted;
+
     /// <summary>List or Board, from the Tickets tab's selector.</summary>
     public static event EventHandler<string>? ViewModeChanged;
 
@@ -282,6 +288,7 @@ public sealed partial class MainWindow : Window
     private void SearchBox_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
     {
         if (args.ChosenSuggestion is SearchSuggestion s) OpenLink(s.Hit.Link);
+        else SearchSubmitted?.Invoke(this, args.QueryText);
     }
 
     /// <summary>One row in the search field's list.</summary>
