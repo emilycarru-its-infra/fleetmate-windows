@@ -119,6 +119,81 @@ jobs:
               -ProductName TicketsMate -Shortcut TicketsMate -ShortcutIcon TicketsMate.ico -Payload $tickets.FullName
           }
 
+  # The WinUI app's per-panel UI QA: screenshots of every tab and Settings in
+  # both editions, Light and Dark, narrow and wide, 100% and 150%, with the
+  # clipped-text and accessible-name findings. It runs in demo mode, where the
+  # app reads no configuration and shows only fictional fixtures, and the
+  # capture refuses to write a screenshot otherwise; so it needs no secrets and
+  # nothing it uploads can carry real data. Unsigned builds run here, so no lane
+  # needs a code-signing certificate to produce captures.
+  winui-qa:
+    name: WinUI UI QA
+    if: github.event_name == 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check for WinUI changes
+        id: changes
+        shell: pwsh
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          $files = git diff --name-only "origin/$env:BASE_REF...HEAD"
+          $pattern = '^(FleetMate\.WinUI/|FleetMate\.Core/|scripts/winui-qa\.ps1$|\.github/workflows/ci\.yml$)'
+          $hit = @($files | Where-Object { $_ -match $pattern })
+          "run=$([bool]$hit.Count)".ToLowerInvariant() | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+          if ($hit.Count) { "WinUI-related changes:"; $hit } else { 'No WinUI-related changes; skipping the capture.' }
+
+      - name: Setup .NET
+        if: steps.changes.outputs.run == 'true'
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        if: steps.changes.outputs.run == 'true'
+        uses: actions/cache@v5
+        with:
+          path: ~\.nuget\packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Build.props', '**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Capture both editions
+        if: steps.changes.outputs.run == 'true'
+        shell: pwsh
+        env:
+          FLEETMATE_DEMO: '1'
+        run: ./scripts/winui-qa.ps1 -OutDir artifacts/winui-qa
+
+      - name: Findings summary
+        if: always() && steps.changes.outputs.run == 'true'
+        shell: pwsh
+        run: |
+          $index = 'artifacts/winui-qa/index.md'
+          if (Test-Path $index) {
+            Get-Content $index | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            "`nScreenshots and per-panel reports are in the **winui-qa** artifact." | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          } else {
+            "## WinUI UI QA`n`nThe capture did not produce an index; see the job log." | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+
+      - name: Upload captures
+        if: always() && steps.changes.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: winui-qa
+          path: artifacts/winui-qa
+          if-no-files-found: warn
+          retention-days: 14
+
   # A run started by workflow_dispatch (reportmate-sync does this for its pull
   # request) is not counted toward the pull request's required check, so this
   # job records the result as a commit status under the same name. It runs no
