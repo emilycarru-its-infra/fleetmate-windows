@@ -890,6 +890,6 @@ public partial class TaskDetailPanel
 
     private static void OpenUrl(string url)
     {
-        FleetMate.GUI.Links.ExternalBrowser.Open(url);
+        FleetMate.Core.Links.ExternalBrowser.Open(url);
     }
 }

@@ -2,7 +2,7 @@ using System.Diagnostics;
 using FleetMate.Core.Links;
 using Serilog;
 
-namespace FleetMate.GUI.Links;
+namespace FleetMate.Core.Links;
 
 /// <summary>
 /// Opens web pages in the default browser. Every "Open in Browser" goes through

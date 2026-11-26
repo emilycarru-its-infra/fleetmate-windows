@@ -408,8 +408,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Tab-bar order: Ctrl+1 is the first, Ctrl+9 the last.</summary>
-    internal static readonly string[] TabOrder =
-        { "Development", "Projects", "Devices", "Reporting", "Manage", "Inventory", "Identity", "Teams", "Tickets" };
+    internal static readonly string[] TabOrder = FleetMate.Core.Config.AppTabs.Order.ToArray();
 
     internal static string? TabShortcut(System.Windows.Input.Key key)
     {

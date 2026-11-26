@@ -1,30 +1,84 @@
-﻿using Microsoft.UI.Xaml;
+﻿using FleetMate.Core.Config;
+using FleetMate.Core.Links;
+using FleetMate.WinUI.Pages;
+using FleetMate.WinUI.Shell;
+using Microsoft.UI.Xaml;
+using Serilog;
 
 namespace FleetMate.WinUI;
 
+/// <summary>
+/// The WinUI application: configuration, theme, services, links, then the
+/// window. <see cref="Program.Main"/> has already configured logging and
+/// taken the single-instance lock.
+/// </summary>
 public partial class App : Application
 {
-    private Window? _window;
+    private readonly string? _startupLink;
+    private MainWindow? _window;
 
-    public App()
+    /// <summary>The services every page reads; see <see cref="ShellServices"/>.</summary>
+    public static ShellServices Services { get; private set; } = null!;
+
+    public static new App Current => (App)Application.Current;
+
+    public App(string? startupLink)
     {
-        // `--theme light|dark` forces a theme, for screenshots and checks.
+        _startupLink = startupLink;
+
         // Application.RequestedTheme can only be set before the first window,
-        // and setting it here also themes the caption buttons.
-        var args = Environment.GetCommandLineArgs();
-        var i = Array.FindIndex(args, a => a.Equals("--theme", StringComparison.OrdinalIgnoreCase));
-        if (i >= 0 && i + 1 < args.Length)
-        {
-            if (args[i + 1].Equals("dark", StringComparison.OrdinalIgnoreCase)) RequestedTheme = ApplicationTheme.Dark;
-            else if (args[i + 1].Equals("light", StringComparison.OrdinalIgnoreCase)) RequestedTheme = ApplicationTheme.Light;
-        }
+        // and setting it here also themes the caption buttons. `--theme
+        // light|dark` overrides the saved choice, for screenshots and checks.
+        if ((ThemeArgument() ?? UserPreferences.UiTheme) is { } theme)
+            RequestedTheme = theme == "Dark" ? ApplicationTheme.Dark : ApplicationTheme.Light;
 
         InitializeComponent();
+
+        UnhandledException += (_, e) =>
+        {
+            Log.Fatal(e.Exception, "Unhandled exception on the UI thread");
+            Log.CloseAndFlush();
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            Log.Error(e.Exception, "Unobserved task exception");
+            e.SetObserved();
+            _window?.DispatcherQueue.TryEnqueue(() =>
+                Services?.ReportAppError(e.Exception.InnerException?.Message ?? e.Exception.Message));
+        };
+
+        // Each ported page registers here; every other tab shows a placeholder.
+        ShellPages.Register("Tickets", typeof(TicketsPage));
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        // The config file, then HKLM and HKCU policy for this edition;
+        // TicketsMate keeps TeamDynamix and drops every other module.
+        var config = FleetMateConfig.LoadDesktop();
+        Services = new ShellServices(config);
+
         _window = new MainWindow();
+        _window.Closed += (_, _) =>
+        {
+            Services.Dispose();
+            Exit();
+        };
         _window.Activate();
+
+        LinkHost.Listen(message => _window.DispatcherQueue.TryEnqueue(() => _window.OpenLink(message)));
+        // The fleetmate: and ticketsmate: protocols stay with FleetMate.GUI, the
+        // app that ships, until cutover; a link passed on the command line still opens.
+        if (_startupLink != null) _window.DispatcherQueue.TryEnqueue(() => _window.OpenLink(_startupLink));
+
+        Services.Start();
+    }
+
+    private static string? ThemeArgument()
+    {
+        var args = Environment.GetCommandLineArgs();
+        var i = Array.FindIndex(args, a => a.Equals("--theme", StringComparison.OrdinalIgnoreCase));
+        if (i < 0 || i + 1 >= args.Length) return null;
+        return args[i + 1].ToLowerInvariant() switch { "dark" => "Dark", "light" => "Light", _ => null };
     }
 }

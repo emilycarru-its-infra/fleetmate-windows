@@ -10,6 +10,6 @@
             HorizontalAlignment="Center"
             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
             Style="{StaticResource BodyTextBlockStyle}"
-            Text="Not part of this prototype. Only Tickets has content." />
+            Text="This tab is not in the WinUI app yet." />
     </StackPanel>
 </Page>

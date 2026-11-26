@@ -209,7 +209,7 @@ public partial class TaskLightboxWindow : Window
     private void OnOpenInBrowser(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrEmpty(_task.ExternalUrl)) return;
-        FleetMate.GUI.Links.ExternalBrowser.Open(_task.ExternalUrl);
+        FleetMate.Core.Links.ExternalBrowser.Open(_task.ExternalUrl);
     }
 
     private void OnCloseClicked(object sender, RoutedEventArgs e) => Close();

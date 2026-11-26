@@ -1,6 +1,5 @@
 using System.Windows;
 using FleetMate.Core.Links;
-using FleetMate.GUI.Links;
 using FleetMate.GUI.Views.Shared;
 using Serilog;
 
@@ -98,19 +97,19 @@ public partial class App
         {
             case FleetMateLink.WorkItem workItem:
                 PendingNavigateWorkItemId = workItem.Id;
-                window.NavigateToTab("Projects");
+                window.NavigateToTab(LinkRoutes.TabFor(parsed));
                 break;
             case FleetMateLink.GitHubIssue issue:
                 PendingNavigateGitHubIssue = issue;
-                window.NavigateToTab("Projects");
+                window.NavigateToTab(LinkRoutes.TabFor(parsed));
                 break;
             case FleetMateLink.Device device:
                 PendingNavigateDeviceId = device.IntuneId;
-                window.NavigateToTab("Devices");
+                window.NavigateToTab(LinkRoutes.TabFor(parsed));
                 break;
             case FleetMateLink.Asset asset:
                 PendingNavigateAssetId = asset.Id;
-                window.NavigateToTab("Inventory");
+                window.NavigateToTab(LinkRoutes.TabFor(parsed));
                 break;
             case FleetMateLink.Ticket ticket:
                 window.OpenTicketLink(ticket.Id);
@@ -119,11 +118,11 @@ public partial class App
                 window.OpenReportingLink(reporting.ToReportMateUrl());
                 break;
             case FleetMateLink.User or FleetMateLink.Group:
-                window.NavigateToTab("Identity");
+                window.NavigateToTab(LinkRoutes.TabFor(parsed));
                 break;
             default:
                 PendingDevelopmentLink = parsed;
-                window.NavigateToTab("Development");
+                window.NavigateToTab(LinkRoutes.TabFor(parsed));
                 DevelopmentLinkRequested?.Invoke(this, EventArgs.Empty);
                 break;
         }

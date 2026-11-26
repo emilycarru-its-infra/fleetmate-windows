@@ -102,7 +102,7 @@ public partial class BoardsPage : Page, IChromeToolbar
         QueriesList.OpenQueryRequested += (_, query) =>
         {
             if (_devOpsService == null) return;
-            FleetMate.GUI.Links.ExternalBrowser.Open(_devOpsService.StoredQueryWebUrl(query.Id));
+            FleetMate.Core.Links.ExternalBrowser.Open(_devOpsService.StoredQueryWebUrl(query.Id));
         };
     }
 
@@ -588,7 +588,7 @@ public partial class BoardsPage : Page, IChromeToolbar
     private void OnTaskOpenInBrowser(object sender, RoutedEventArgs e)
     {
         if (VmFromMenuItem(sender)?.Task.ExternalUrl is not { Length: > 0 } url) return;
-        FleetMate.GUI.Links.ExternalBrowser.Open(url);
+        FleetMate.Core.Links.ExternalBrowser.Open(url);
     }
 
     private void OnTaskCopyLink(object sender, RoutedEventArgs e)
@@ -1033,7 +1033,7 @@ public partial class BoardsPage : Page, IChromeToolbar
             }
             if (!string.IsNullOrEmpty(url))
             {
-                FleetMate.GUI.Links.ExternalBrowser.Open(url);
+                FleetMate.Core.Links.ExternalBrowser.Open(url);
             }
         };
 

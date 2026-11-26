@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
-    Prototype of a WinUI 3 FleetMate shell. Unpackaged and self-contained so
-    `dotnet run` starts it with no MSIX registration.
+    The WinUI 3 FleetMate shell, growing beside FleetMate.GUI (WPF) until it
+    matches it. Unpackaged and self-contained, like the WPF app, so the MSI
+    installers keep their shape. Program.cs owns Main: the single-instance
+    hand-off runs before any XAML starts.
   -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -19,6 +21,7 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
   </PropertyGroup>
 
   <!-- Edition: FleetMate by default; -p:Edition=TicketsMate builds the Tickets-only
@@ -37,8 +40,7 @@
     <AssemblyMetadata Include="FleetMateEdition" Value="TicketsMate" />
   </ItemGroup>
   <Target Name="CheckEdition" BeforeTargets="Build">
-    <Error Condition="'$(Edition)' != 'FleetMate' And '$(Edition)' != 'TicketsMate'"
-           Text="Edition must be FleetMate or TicketsMate, not '$(Edition)'." />
+    <Error Condition="'$(Edition)' != 'FleetMate' And '$(Edition)' != 'TicketsMate'" Text="Edition must be FleetMate or TicketsMate, not '$(Edition)'." />
   </Target>
 
   <!-- Signs our own exe and DLLs after every build when a code-signing
@@ -57,7 +59,17 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2957" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinUIAnalyzer" Version="0.8.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
+    <PackageReference Include="Serilog.Sinks.Debug" Version="3.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="FleetMate.Tests" />
   </ItemGroup>
 
   <ItemGroup>

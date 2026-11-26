@@ -4,7 +4,7 @@ using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Shared;
 using Serilog;
 
-namespace FleetMate.GUI.Views.Shared;
+namespace FleetMate.Core.Config;
 
 /// <summary>
 /// The operator's own display choices, kept in HKCU\SOFTWARE\FleetMate beside
@@ -24,6 +24,9 @@ public static class UserPreferences
 
     /// <summary>Raised after any preference here changes.</summary>
     public static event Action? Changed;
+
+    /// <summary>Light, Dark, or null to follow Windows (<c>UiTheme</c>, written by Settings › Appearance).</summary>
+    public static string? UiTheme => Read("UiTheme") is "Light" or "Dark" ? Read("UiTheme") : null;
 
     public static IReadOnlySet<string> HiddenModules => AppModules.ParseHidden(Read("HiddenModules"));
 

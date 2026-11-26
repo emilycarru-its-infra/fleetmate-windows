@@ -174,7 +174,7 @@ public partial class CommitDetailView : UserControl
     private void OnOpenInBrowserClicked(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrWhiteSpace(_commit?.Url)) return;
-        FleetMate.GUI.Links.ExternalBrowser.Open(_commit.Url);
+        FleetMate.Core.Links.ExternalBrowser.Open(_commit.Url);
     }
 
     private void OnCopyShaClicked(object sender, RoutedEventArgs e)

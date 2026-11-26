@@ -474,7 +474,7 @@ public partial class DevelopmentView : UserControl
     {
         if (_selectedNotification is not { } notification) return;
 
-        FleetMate.GUI.Links.ExternalBrowser.Open(notification.WebUrl);
+        FleetMate.Core.Links.ExternalBrowser.Open(notification.WebUrl);
 
         if (notification.Unread && AppInstance is { } app) await app.Inbox.MarkReadAsync(notification);
     }
