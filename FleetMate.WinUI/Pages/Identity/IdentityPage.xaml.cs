@@ -36,13 +36,23 @@ public sealed partial class IdentityPage : Page, Shell.ICaptureViews
     {
         base.OnNavigatedTo(e);
         // A capture walks every view each pass; each pass starts on the groups.
-        if (App.Services.DemoMode) Views.SelectedItem = GroupsItem;
+        if (App.Services.DemoMode) ShowGroups();
         if (_loaded || !ViewModel.IsConfigured) return;
         _loaded = true;
         await ViewModel.LoadGroupsAsync();
     }
 
     // MARK: - Views
+
+    /// <summary>Select Device groups so the selector and the panel agree.</summary>
+    private void ShowGroups()
+    {
+        UsersItem.IsSelected = false;
+        GroupsItem.IsSelected = true;
+        Views.SelectedItem = GroupsItem;
+        GroupsPanel.Visibility = ConfiguredVisibility;
+        UsersPanel.Visibility = Visibility.Collapsed;
+    }
 
     private void Views_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
@@ -141,6 +151,7 @@ public sealed partial class IdentityPage : Page, Shell.ICaptureViews
         switch (view)
         {
             case "groups-expanded":
+                ShowGroups();
                 if (ViewModel.Groups.FirstOrDefault() is { } first && !first.IsExpanded)
                     await first.ToggleCommand.ExecuteAsync(null);
                 break;

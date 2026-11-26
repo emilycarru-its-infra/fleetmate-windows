@@ -54,6 +54,9 @@ public sealed partial class IdentityViewModel : ObservableObject
             _allGroups.Clear();
             _allGroups.AddRange(groups.Select(g => new GroupRow(this, g)));
             ApplyGroupFilter();
+            // Every row shows its device count, and a device name finds its
+            // groups, so members load in the background (as the Mac app warms them).
+            _ = LoadAllMembersAsync();
         }
         catch (Exception ex)
         {
@@ -91,6 +94,20 @@ public sealed partial class IdentityViewModel : ObservableObject
         (GroupsEmptyTitle, GroupsEmptyText) = _allGroups.Count == 0
             ? ("No device groups", "No groups were found with the Devices- prefix.")
             : ("No matches", $"No group or member device matches “{GroupFilter.Trim()}”.");
+    }
+
+    /// <summary>Load every group's members, a few at a time, refiltering as they arrive.</summary>
+    private async Task LoadAllMembersAsync()
+    {
+        using var gate = new SemaphoreSlim(4);
+        var rows = _allGroups.ToList();
+        await Task.WhenAll(rows.Select(async row =>
+        {
+            await gate.WaitAsync();
+            try { await LoadMembersAsync(row); }
+            finally { gate.Release(); }
+        }));
+        if (!string.IsNullOrWhiteSpace(GroupFilter)) ApplyGroupFilter();
     }
 
     internal async Task LoadMembersAsync(GroupRow row)
