@@ -23,13 +23,14 @@ public class TicketGraphCardsTests
     }
 
     [Fact]
-    public void FiguresThenADonutThenBars()
+    public void TwoFigureCardsThenADonutThenBars()
     {
         var (cards, _, _) = Build();
 
-        Assert.Equal(new[] { GraphCardKind.Kpis, GraphCardKind.Donut, GraphCardKind.Bars, GraphCardKind.Bars, GraphCardKind.Bars, GraphCardKind.Bars },
+        Assert.Equal(new[] { GraphCardKind.Kpis, GraphCardKind.Kpis, GraphCardKind.Donut, GraphCardKind.Bars, GraphCardKind.Bars, GraphCardKind.Bars, GraphCardKind.Bars },
             cards.Select(c => c.Kind));
-        Assert.Equal(6, cards[0].Kpis.Count);
+        Assert.Equal(3, cards[0].Kpis.Count);
+        Assert.Equal(3, cards[1].Kpis.Count);
         Assert.Equal("2", cards[0].Kpis[0].Value);
     }
 
@@ -47,7 +48,7 @@ public class TicketGraphCardsTests
     public void AFigureClickRunsItsToggle()
     {
         var (cards, tiles, filters) = Build();
-        var unassigned = cards[0].Kpis.Single(k => k.Title == "Unassigned");
+        var unassigned = cards[1].Kpis.Single(k => k.Title == "Unassigned");
 
         Assert.True(TicketGraphCards.Apply(unassigned.Open!, tiles, filters));
         Assert.True(filters.IsSelected(TicketFilterCategory.Responsible, TicketStats.Unassigned));
