@@ -24,8 +24,9 @@
 
 .PARAMETER Thumbprint
     A code-signing certificate to sign the app with before it runs, for
-    machines where unsigned executables are blocked. Falls back to
-    CERT_THUMBPRINT; with neither, the app runs unsigned.
+    machines where unsigned executables are blocked (an attack surface
+    reduction rule can refuse to start, or even read, a freshly built exe).
+    Falls back to CERT_THUMBPRINT; with neither, the app runs unsigned.
 
 .PARAMETER Edition
     FleetMate, TicketsMate, or both (the default).
@@ -72,9 +73,12 @@ $summary.Add('')
 $summary.Add('| Edition | Theme | Findings | Report |')
 $summary.Add('| --- | --- | --- | --- |')
 $failed = $false
+$runId = "{0}-{1}" -f (Get-Date -Format 'yyyyMMddHHmmss'), $PID
 
 foreach ($ed in $Edition) {
-    $build = Join-Path ([IO.Path]::GetTempPath()) "fleetmate-winui-qa\$ed"
+    # A folder per run, so two lanes running this at once never publish over
+    # each other's build, or over an app still running from it.
+    $build = Join-Path ([IO.Path]::GetTempPath()) "fleetmate-winui-qa\$runId\$ed"
     Remove-Item $build -Recurse -Force -ErrorAction SilentlyContinue
     Write-Host "Publishing $ed ($Runtime)..." -ForegroundColor Cyan
     # A unique file version gives the executable a hash of its own, so a
@@ -118,5 +122,6 @@ foreach ($ed in $Edition) {
 }
 
 $summary | Set-Content (Join-Path $OutDir 'index.md') -Encoding utf8
+Remove-Item (Join-Path ([IO.Path]::GetTempPath()) "fleetmate-winui-qa\$runId") -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host "Wrote $(Join-Path $OutDir 'index.md')" -ForegroundColor Green
 if ($failed) { exit 1 }
