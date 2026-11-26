@@ -101,6 +101,54 @@ public class FleetMateConfig
     /// </summary>
     public string? EntraClientId { get; set; }
 
+    // --- Inventory backend ------------------------------------------------------
+
+    /// <summary>
+    /// Which inventory system <c>fleetmate inventory</c> talks to: <c>snipe</c>
+    /// (default) or <c>cellarum</c>. One switch moves every inventory operation
+    /// across; the operation names stay the same. config.yaml
+    /// <c>inventory_backend</c>, registry or policy <c>InventoryBackend</c>, or
+    /// <c>FLEETMATE_INVENTORY_BACKEND</c>.
+    /// </summary>
+    public string? InventoryBackend { get; set; }
+
+    /// <summary>Cellarum deployment root (with or without <c>/api/v1</c>).</summary>
+    public string? CellarumUrl { get; set; }
+
+    /// <summary>Entra audience for a Cellarum bearer token minted off the operator's sign-in.</summary>
+    public string? CellarumOidcAudience { get; set; }
+
+    /// <summary>Scoped Cellarum API key, sent as X-API-Key when no audience is set. A secret.</summary>
+    public string? CellarumApiKey { get; set; }
+
+    [YamlMember(Alias = "inventory_backend", ApplyNamingConventions = false)]
+    public string? InventoryBackendSetting
+    {
+        get => null;
+        set { if (!string.IsNullOrWhiteSpace(value)) InventoryBackend = value; }
+    }
+
+    [YamlMember(Alias = "cellarum_url", ApplyNamingConventions = false)]
+    public string? CellarumUrlSetting
+    {
+        get => null;
+        set { if (!string.IsNullOrWhiteSpace(value)) CellarumUrl = value; }
+    }
+
+    [YamlMember(Alias = "cellarum_oidc_audience", ApplyNamingConventions = false)]
+    public string? CellarumOidcAudienceSetting
+    {
+        get => null;
+        set { if (!string.IsNullOrWhiteSpace(value)) CellarumOidcAudience = value; }
+    }
+
+    [YamlMember(Alias = "cellarum_api_key", ApplyNamingConventions = false)]
+    public string? CellarumApiKeySetting
+    {
+        get => null;
+        set { if (!string.IsNullOrWhiteSpace(value)) CellarumApiKey = value; }
+    }
+
     /// <summary>True when Snipe-IT is set up to authenticate via Entra SSO.</summary>
     public bool SnipeUsesOidc => !string.IsNullOrWhiteSpace(SnipeOidcAudience);
 
@@ -441,6 +489,18 @@ public class FleetMateConfig
         if (!string.IsNullOrEmpty(snipeAudience))
             config.SnipeOidcAudience = snipeAudience;
 
+        var inventoryBackend = Environment.GetEnvironmentVariable("FLEETMATE_INVENTORY_BACKEND");
+        if (!string.IsNullOrWhiteSpace(inventoryBackend))
+            config.InventoryBackend = inventoryBackend;
+
+        var cellarumUrl = Environment.GetEnvironmentVariable("CELLARUM_API_URL");
+        if (!string.IsNullOrWhiteSpace(cellarumUrl))
+            config.CellarumUrl = cellarumUrl;
+
+        var cellarumApiKey = Environment.GetEnvironmentVariable("CELLARUM_API_KEY");
+        if (!string.IsNullOrWhiteSpace(cellarumApiKey))
+            config.CellarumApiKey = cellarumApiKey;
+
         var teamsApiUrl = Environment.GetEnvironmentVariable("FLEETMATE_TEAMS_API_URL");
         if (!string.IsNullOrWhiteSpace(teamsApiUrl))
             config.TeamsApiUrl = teamsApiUrl;
@@ -502,6 +562,7 @@ public class FleetMateConfig
         config.SnipeApiKey = null;
         config.ReportMatePassphrase = null;
 #pragma warning restore CS0618
+        config.CellarumApiKey = null;
         if (config.Tasks?.Providers?.GitHub is { } github)
             github.Token = null;
         if (config.Tasks?.Providers?.Gitea is { } gitea)
@@ -522,6 +583,10 @@ public class FleetMateConfig
         Elevation = null;
         SnipeUrl = null;
         SnipeOidcAudience = null;
+        InventoryBackend = null;
+        CellarumUrl = null;
+        CellarumOidcAudience = null;
+        CellarumApiKey = null;
         ReportMateUrl = null;
         ReportMateOidcAudience = null;
         TeamsApiUrl = null;
@@ -706,6 +771,23 @@ public class FleetMateConfig
             if (!string.IsNullOrEmpty(snipeAudience))
                 config.SnipeOidcAudience = snipeAudience;
 
+            // Inventory backend: a choice, an address and an audience, so policy may set them.
+            var inventoryBackend = key.GetValue("InventoryBackend") as string;
+            if (!string.IsNullOrEmpty(inventoryBackend))
+                config.InventoryBackend = inventoryBackend;
+
+            var cellarumUrl = key.GetValue("CellarumUrl") as string;
+            if (!string.IsNullOrEmpty(cellarumUrl))
+                config.CellarumUrl = cellarumUrl;
+
+            var cellarumAudience = key.GetValue("CellarumOidcAudience") as string;
+            if (!string.IsNullOrEmpty(cellarumAudience))
+                config.CellarumOidcAudience = cellarumAudience;
+
+            var cellarumApiKey = key.GetValue("CellarumApiKey") as string;
+            if (!string.IsNullOrEmpty(cellarumApiKey))
+                config.CellarumApiKey = cellarumApiKey;
+
             // Teams search: an address and a scope, not secrets, so policy may set them.
             var teamsApiUrl = key.GetValue("TeamsApiUrl") as string;
             if (!string.IsNullOrEmpty(teamsApiUrl))
@@ -886,7 +968,7 @@ public class FleetMateConfig
     {
         private static readonly HashSet<string> SecretNames = new(StringComparer.OrdinalIgnoreCase)
         {
-            "ReportMatePassphrase", "SnipeApiKey", "GraphClientSecret",
+            "ReportMatePassphrase", "SnipeApiKey", "CellarumApiKey", "GraphClientSecret",
             "TdxUsername", "TdxPassword", "TdxBeid", "TdxWebServicesKey",
         };
 
@@ -925,6 +1007,7 @@ public class FleetMateConfig
         var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "GraphTenantId", "GraphClientId", "SnipeUrl", "SnipeOidcAudience",
+            "InventoryBackend", "CellarumUrl", "CellarumOidcAudience",
             "TdxBaseUrl", "TdxTicketingAppId", "DevOpsBaseUrl", "DevOpsOrganization", "DevOpsProject",
             "ReportMateUrl", "HandbookRepoUrl", "HandbookSiteUrl", "AgentsHubRepoUrl",
             "TeamsApiUrl", "TeamsApiScope", "TeamsApiPurpose", "TeamsLinkHosts", "TeamsDefaultTeam", "TeamsDefaultChannels",
@@ -1027,7 +1110,7 @@ public class FleetMateConfig
     /// </summary>
     internal static readonly IReadOnlySet<string> WorkingDirectoryKeys = new HashSet<string>(StringComparer.Ordinal)
     {
-        "REPORTMATE_PASSPHRASE", "SNIPE_API_KEY", "GRAPH_CLIENT_SECRET", "GRAPH_USE_AZURE_CLI",
+        "REPORTMATE_PASSPHRASE", "SNIPE_API_KEY", "CELLARUM_API_KEY", "GRAPH_CLIENT_SECRET", "GRAPH_USE_AZURE_CLI",
         "TDX_APP_ID", "TDX_USERNAME", "TDX_PASSWORD", "TDX_BEID", "TDX_WEB_SERVICES_KEY",
         "TDX_BEID_SECRET", "TDX_KEY_VAULT_NAME", "SECURE_SHELL_PRIVATE_KEY",
     };
@@ -1090,6 +1173,12 @@ public class FleetMateConfig
 #pragma warning disable CS0618 // Legacy CLI compatibility; LoadDesktop always clears this secret.
                         config.SnipeApiKey = value;
 #pragma warning restore CS0618
+                        break;
+                    case "CELLARUM_API_URL":
+                        config.CellarumUrl = value;
+                        break;
+                    case "CELLARUM_API_KEY":
+                        config.CellarumApiKey = value;
                         break;
                     case "GRAPH_TENANT_ID":
                         config.Graph ??= new GraphConfig();

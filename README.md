@@ -137,6 +137,32 @@ and distribute their rows through the available space.
 
 ## Command Reference
 
+### Inventory (Snipe-IT now, Cellarum next)
+
+`fleetmate inventory` reaches every inventory workflow by one set of operation names:
+assets, buyouts, lease pickups, deployments and the decommissioning lane, user agreements,
+orders and invoices, purchase orders, requisitions, store orders, catalog, contracts,
+licences, maintenances, people, locations, files and email templates. The
+`inventory_backend` setting chooses the system (`snipe`, the default, or `cellarum`); the
+operation names and their bodies stay the same, so moving to Cellarum is that one setting
+plus `cellarum_url` and `cellarum_oidc_audience` (or a `cellarum_api_key`).
+
+```sh
+fleetmate inventory --help
+fleetmate inventory backend
+fleetmate inventory operations --json
+fleetmate inventory assets find-tag --id EXAMPLE-001
+fleetmate inventory buyouts list --query open=1
+fleetmate inventory buyouts transition --id 12 --body '{"status":"invoiced","invoice_number":"0001","invoice_date":"2026-11-26"}'
+fleetmate inventory files upload --record asset --id 571 --file invoice.pdf --notes "Lessor invoice"
+fleetmate inventory deployments decommission
+```
+
+`--help` marks which backend has each operation. An operation one backend lacks fails
+with a message rather than guessing, and `api --method M --api-path P` reaches any other
+endpoint with the same sign-in. `--backend cellarum` runs a single call against the other
+system, for checking a migration side by side.
+
 ### Azure Repos and Azure Pipelines
 
 FleetMate uses its configured Azure DevOps organization and silent sign-in for these commands.

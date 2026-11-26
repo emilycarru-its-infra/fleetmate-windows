@@ -162,6 +162,9 @@ class Program
             // Snipe-IT asset management
             rootCommand.AddCommand(SnipeCommand.Create(snipeService));
 
+            // Backend-neutral inventory operations (Snipe-IT now, Cellarum after the switch)
+            rootCommand.AddCommand(InventoryCommand.Create(config));
+
             // SecureShell remote execution
             rootCommand.AddCommand(SshCommand.Create(secureShellService, reportMate));
 
