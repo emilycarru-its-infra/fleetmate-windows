@@ -462,7 +462,9 @@
         </Grid>
 
         <!-- The shared widget strip: six figures and five breakdowns, each a filter; the toolbar's Graphs button hides it. -->
-        <ContentControl x:Name="WidgetHost" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+        <ScrollViewer x:Name="WidgetScroller" Grid.Row="1" HorizontalScrollMode="Disabled" VerticalScrollBarVisibility="Auto">
+            <ContentControl x:Name="WidgetHost" HorizontalContentAlignment="Stretch" IsTabStop="False" />
+        </ScrollViewer>
 
         <!-- The list or the board, and the open ticket beside it. -->
         <Grid x:Name="ContentGrid" Grid.Row="2" ColumnSpacing="12">
