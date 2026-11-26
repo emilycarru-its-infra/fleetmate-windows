@@ -360,6 +360,8 @@ public sealed partial class DevicesPage : Page, ICaptureViews
             foreach (var (value, count) in values)
             {
                 var box = new CheckBox { Content = $"{value} ({count})", IsChecked = ViewModel.IsChecked(facet, value), MinHeight = 28 };
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(box,
+                    $"DevicesFilter{facet}{new string(value.Where(char.IsLetterOrDigit).ToArray())}");
                 var (f, v) = (facet, value);
                 box.Checked += (_, _) => ViewModel.SetFacet(f, v, true);
                 box.Unchecked += (_, _) => ViewModel.SetFacet(f, v, false);

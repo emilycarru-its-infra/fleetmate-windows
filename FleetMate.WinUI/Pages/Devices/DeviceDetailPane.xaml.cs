@@ -139,9 +139,9 @@ public sealed partial class DeviceDetailPane : UserControl
             foreach (var group in groups.OrderBy(g => g.DisplayName, StringComparer.OrdinalIgnoreCase))
             {
                 var text = new StackPanel();
-                text.Children.Add(new TextBlock { Text = group.DisplayName, Style = Style("BodyTextBlockStyle"), TextWrapping = TextWrapping.Wrap });
+                text.Children.Add(new TextBlock { Text = group.DisplayName, Style = Res("BodyTextBlockStyle"), TextWrapping = TextWrapping.Wrap });
                 if (!string.IsNullOrEmpty(group.Description))
-                    text.Children.Add(new TextBlock { Text = group.Description, Style = Style("CaptionTextBlockStyle"), Foreground = DeviceUi.Theme("TextFillColorSecondaryBrush"), TextWrapping = TextWrapping.Wrap });
+                    text.Children.Add(new TextBlock { Text = group.Description, Style = Res("CaptionTextBlockStyle"), Foreground = DeviceUi.Theme("TextFillColorSecondaryBrush"), TextWrapping = TextWrapping.Wrap });
                 var row = new Grid
                 {
                     ColumnSpacing = 8,
@@ -185,10 +185,10 @@ public sealed partial class DeviceDetailPane : UserControl
                     Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center,
                     Fill = DeviceUi.ToneBrush(DeviceDetailSections.PolicyTone(policy.State)),
                 });
-                var name = new TextBlock { Text = policy.DisplayName ?? "Unknown Policy", Style = Style("BodyTextBlockStyle"), TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1, VerticalAlignment = VerticalAlignment.Center };
+                var name = new TextBlock { Text = policy.DisplayName ?? "Unknown Policy", Style = Res("BodyTextBlockStyle"), TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1, VerticalAlignment = VerticalAlignment.Center };
                 Grid.SetColumn(name, 1);
                 row.Children.Add(name);
-                var state = new TextBlock { Text = policy.State ?? "unknown", Style = Style("CaptionTextBlockStyle"), Foreground = DeviceUi.Theme("TextFillColorSecondaryBrush"), VerticalAlignment = VerticalAlignment.Center };
+                var state = new TextBlock { Text = policy.State ?? "unknown", Style = Res("CaptionTextBlockStyle"), Foreground = DeviceUi.Theme("TextFillColorSecondaryBrush"), VerticalAlignment = VerticalAlignment.Center };
                 Grid.SetColumn(state, 2);
                 row.Children.Add(state);
 
@@ -196,7 +196,7 @@ public sealed partial class DeviceDetailPane : UserControl
                 var button = new Button
                 {
                     Content = row,
-                    Style = Style<Style>("SubtleButtonStyle"),
+                    Style = Res("SubtleButtonStyle"),
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                     HorizontalContentAlignment = HorizontalAlignment.Stretch,
                     Padding = new Thickness(4, 4, 4, 4),
@@ -238,8 +238,8 @@ public sealed partial class DeviceDetailPane : UserControl
                     Margin = new Thickness(0, 1, 0, 1),
                     ColumnDefinitions = { new() { Width = new GridLength(1, GridUnitType.Star) }, new() { Width = GridLength.Auto } },
                 };
-                row.Children.Add(new TextBlock { Text = app.DisplayName ?? "Unknown", Style = Style("BodyTextBlockStyle"), TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1 });
-                var version = new TextBlock { Text = app.Version ?? "", Style = Style("CaptionTextBlockStyle"), Foreground = DeviceUi.Theme("TextFillColorSecondaryBrush"), VerticalAlignment = VerticalAlignment.Center };
+                row.Children.Add(new TextBlock { Text = app.DisplayName ?? "Unknown", Style = Res("BodyTextBlockStyle"), TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1 });
+                var version = new TextBlock { Text = app.Version ?? "", Style = Res("CaptionTextBlockStyle"), Foreground = DeviceUi.Theme("TextFillColorSecondaryBrush"), VerticalAlignment = VerticalAlignment.Center };
                 Grid.SetColumn(version, 1);
                 row.Children.Add(version);
                 host.Children.Add(row);
@@ -308,7 +308,7 @@ public sealed partial class DeviceDetailPane : UserControl
                 Margin = new Thickness(0, 2, 0, 2),
                 ColumnDefinitions = { new() { Width = new GridLength(1, GridUnitType.Star) }, new() { Width = GridLength.Auto } },
             };
-            row.Children.Add(new TextBlock { Text = kind.DisplayName(), Style = Style("BodyTextBlockStyle"), VerticalAlignment = VerticalAlignment.Center });
+            row.Children.Add(new TextBlock { Text = kind.DisplayName(), Style = Res("BodyTextBlockStyle"), VerticalAlignment = VerticalAlignment.Center });
             var reveal = new Button { Content = "Reveal…", MinWidth = 88 };
             AutomationProperties.SetName(reveal, $"Reveal {kind.DisplayName()}");
             AutomationProperties.SetAutomationId(reveal, $"Reveal{kind}Button");
@@ -364,7 +364,7 @@ public sealed partial class DeviceDetailPane : UserControl
         var header = new TextBlock
         {
             Text = title,
-            Style = Style("BodyStrongTextBlockStyle"),
+            Style = Res("BodyStrongTextBlockStyle"),
             Margin = new Thickness(0, ContentPanel.Children.Count == 0 ? 4 : 16, 0, 4),
         };
         AutomationProperties.SetHeadingLevel(header, Microsoft.UI.Xaml.Automation.Peers.AutomationHeadingLevel.Level3);
@@ -382,11 +382,11 @@ public sealed partial class DeviceDetailPane : UserControl
             Margin = new Thickness(0, 2, 0, 2),
             ColumnDefinitions = { new() { Width = new GridLength(128) }, new() { Width = new GridLength(1, GridUnitType.Star) } },
         };
-        var label = new TextBlock { Text = row.Label, Style = Style("CaptionTextBlockStyle"), Foreground = DeviceUi.Theme("TextFillColorSecondaryBrush"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
+        var label = new TextBlock { Text = row.Label, Style = Res("CaptionTextBlockStyle"), Foreground = DeviceUi.Theme("TextFillColorSecondaryBrush"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
         var value = new TextBlock
         {
             Text = row.Value,
-            Style = Style("BodyTextBlockStyle"),
+            Style = Res("BodyTextBlockStyle"),
             TextWrapping = TextWrapping.Wrap,
             IsTextSelectionEnabled = true,
         };
@@ -404,7 +404,7 @@ public sealed partial class DeviceDetailPane : UserControl
     private static TextBlock Note(string text) => new()
     {
         Text = text,
-        Style = Style("CaptionTextBlockStyle"),
+        Style = Res("CaptionTextBlockStyle"),
         Foreground = DeviceUi.Theme("TextFillColorSecondaryBrush"),
         TextWrapping = TextWrapping.Wrap,
         Margin = new Thickness(0, 2, 0, 2),
@@ -430,7 +430,6 @@ public sealed partial class DeviceDetailPane : UserControl
         };
     }
 
-    private static Style Style(string key) => (Style)Application.Current.Resources[key];
+    private static Style Res(string key) => (Style)Application.Current.Resources[key];
 
-    private static T Style<T>(string key) where T : class => (T)Application.Current.Resources[key];
 }

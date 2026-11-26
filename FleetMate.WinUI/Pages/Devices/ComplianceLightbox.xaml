@@ -41,7 +41,7 @@
                                 Padding="7,1"
                                 VerticalAlignment="Center"
                                 Background="{ThemeResource SubtleFillColorSecondaryBrush}"
-                                CornerRadius="4">
+                                CornerRadius="{StaticResource ControlCornerRadius}">
                                 <TextBlock x:Name="PlatformText" Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold" />
                             </Border>
                             <ContentControl x:Name="StateBadgeHost" VerticalAlignment="Center" IsTabStop="False" />

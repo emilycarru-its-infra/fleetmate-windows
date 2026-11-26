@@ -76,25 +76,25 @@
                     <TextBlock x:Name="AppleHeader" AutomationProperties.HeadingLevel="Level3" Style="{StaticResource ActionGroupStyle}" Text="Apple Organization" Visibility="Collapsed" />
                     <Expander x:Name="AppleAssignSection" AutomationProperties.AutomationId="DevicesAppleAssign" Header="Assign Management Service" Style="{StaticResource ActionExpanderStyle}" Visibility="Collapsed">
                         <StackPanel Spacing="8">
-                            <ComboBox x:Name="AppleServerCombo" HorizontalAlignment="Stretch" AutomationProperties.Name="Device management service" DisplayMemberPath="Name" PlaceholderText="Device management service" />
-                            <Button Click="AppleAssign_Click" Content="Assign" Style="{StaticResource ActionButtonStyle}" />
-                            <Button x:Name="AppleUnassignButton" Click="AppleUnassign_Click" Content="Unassign" Style="{StaticResource ActionButtonStyle}" />
+                            <ComboBox AutomationProperties.AutomationId="DevicesAppleServerCombo" x:Name="AppleServerCombo" HorizontalAlignment="Stretch" AutomationProperties.Name="Device management service" DisplayMemberPath="Name" PlaceholderText="Device management service" />
+                            <Button AutomationProperties.AutomationId="DevicesAppleAssignButton" Click="AppleAssign_Click" Content="Assign" Style="{StaticResource ActionButtonStyle}" />
+                            <Button AutomationProperties.AutomationId="DevicesAppleUnassignButton" x:Name="AppleUnassignButton" Click="AppleUnassign_Click" Content="Unassign" Style="{StaticResource ActionButtonStyle}" />
                         </StackPanel>
                     </Expander>
                     <Expander x:Name="AppleMigrationSection" AutomationProperties.AutomationId="DevicesAppleMigrate" Header="Migrate Management Service" Style="{StaticResource ActionExpanderStyle}" Visibility="Collapsed">
                         <StackPanel Spacing="8">
                             <TextBlock Style="{StaticResource ActionNoteStyle}" Text="Move the devices to another service without erasing them, by a deadline at most 90 days out." />
-                            <ComboBox x:Name="AppleMigrationServerCombo" HorizontalAlignment="Stretch" AutomationProperties.Name="Destination service" DisplayMemberPath="Name" PlaceholderText="Destination service" />
-                            <CalendarDatePicker x:Name="AppleMigrationDeadline" HorizontalAlignment="Stretch" AutomationProperties.Name="Migration deadline" PlaceholderText="Deadline" />
-                            <Button x:Name="AppleScheduleMigrationButton" Click="AppleScheduleMigration_Click" Content="Schedule Migration" Style="{StaticResource ActionButtonStyle}" />
-                            <Button x:Name="AppleUpdateDeadlineButton" Click="AppleUpdateDeadline_Click" Content="Change Deadline" Style="{StaticResource ActionButtonStyle}" />
-                            <Button x:Name="AppleCancelMigrationButton" Click="AppleCancelMigration_Click" Content="Cancel Migration" Style="{StaticResource ActionButtonStyle}" />
+                            <ComboBox AutomationProperties.AutomationId="DevicesAppleMigrationServerCombo" x:Name="AppleMigrationServerCombo" HorizontalAlignment="Stretch" AutomationProperties.Name="Destination service" DisplayMemberPath="Name" PlaceholderText="Destination service" />
+                            <CalendarDatePicker AutomationProperties.AutomationId="DevicesAppleMigrationDeadline" x:Name="AppleMigrationDeadline" HorizontalAlignment="Stretch" AutomationProperties.Name="Migration deadline" PlaceholderText="Deadline" />
+                            <Button AutomationProperties.AutomationId="DevicesAppleScheduleMigrationButton" x:Name="AppleScheduleMigrationButton" Click="AppleScheduleMigration_Click" Content="Schedule Migration" Style="{StaticResource ActionButtonStyle}" />
+                            <Button AutomationProperties.AutomationId="DevicesAppleUpdateDeadlineButton" x:Name="AppleUpdateDeadlineButton" Click="AppleUpdateDeadline_Click" Content="Change Deadline" Style="{StaticResource ActionButtonStyle}" />
+                            <Button AutomationProperties.AutomationId="DevicesAppleCancelMigrationButton" x:Name="AppleCancelMigrationButton" Click="AppleCancelMigration_Click" Content="Cancel Migration" Style="{StaticResource ActionButtonStyle}" />
                         </StackPanel>
                     </Expander>
                     <Expander x:Name="AppleReleaseSection" AutomationProperties.AutomationId="DevicesAppleRelease" Header="Release from Organization" Style="{StaticResource ActionExpanderStyle}" Visibility="Collapsed">
                         <StackPanel Spacing="8">
                             <TextBlock Style="{StaticResource ActionNoteStyle}" Text="Remove the devices from Apple Business Manager. They lose their enrollment assignment. This cannot be undone." />
-                            <Button Click="AppleRelease_Click" Content="Release" Style="{StaticResource DestructiveButtonStyle}" />
+                            <Button AutomationProperties.AutomationId="DevicesAppleReleaseButton" Click="AppleRelease_Click" Content="Release" Style="{StaticResource DestructiveButtonStyle}" />
                         </StackPanel>
                     </Expander>
 
@@ -102,32 +102,32 @@
                     <TextBlock x:Name="AutopilotHeader" AutomationProperties.HeadingLevel="Level3" Style="{StaticResource ActionGroupStyle}" Text="Windows Autopilot" Visibility="Collapsed" />
                     <Expander x:Name="AutopilotGroupTagSection" AutomationProperties.AutomationId="DevicesAutopilotGroupTag" Header="Set Group Tag" Style="{StaticResource ActionExpanderStyle}" Visibility="Collapsed">
                         <StackPanel Spacing="8">
-                            <TextBox x:Name="AutopilotGroupTagBox" AutomationProperties.Name="Group tag" PlaceholderText="Group tag (empty clears it)" />
-                            <Button Click="AutopilotSetGroupTag_Click" Content="Set Group Tag" Style="{StaticResource ActionButtonStyle}" />
+                            <TextBox AutomationProperties.AutomationId="DevicesAutopilotGroupTagBox" x:Name="AutopilotGroupTagBox" AutomationProperties.Name="Group tag" PlaceholderText="Group tag (empty clears it)" />
+                            <Button AutomationProperties.AutomationId="DevicesAutopilotSetGroupTagButton" Click="AutopilotSetGroupTag_Click" Content="Set Group Tag" Style="{StaticResource ActionButtonStyle}" />
                         </StackPanel>
                     </Expander>
                     <Expander x:Name="AutopilotAssignUserSection" AutomationProperties.AutomationId="DevicesAutopilotAssignUser" Header="Assign User" Style="{StaticResource ActionExpanderStyle}" Visibility="Collapsed">
                         <StackPanel Spacing="8">
-                            <TextBox x:Name="AutopilotUserBox" AutomationProperties.Name="User principal name" PlaceholderText="user@domain" />
-                            <Button Click="AutopilotAssignUser_Click" Content="Assign User" Style="{StaticResource ActionButtonStyle}" />
+                            <TextBox AutomationProperties.AutomationId="DevicesAutopilotUserBox" x:Name="AutopilotUserBox" AutomationProperties.Name="User principal name" PlaceholderText="user@domain" />
+                            <Button AutomationProperties.AutomationId="DevicesAutopilotAssignUserButton" Click="AutopilotAssignUser_Click" Content="Assign User" Style="{StaticResource ActionButtonStyle}" />
                         </StackPanel>
                     </Expander>
                     <Expander x:Name="AutopilotUnassignUserSection" AutomationProperties.AutomationId="DevicesAutopilotUnassignUser" Header="Unassign User" Style="{StaticResource ActionExpanderStyle}" Visibility="Collapsed">
                         <StackPanel Spacing="8">
                             <TextBlock Style="{StaticResource ActionNoteStyle}" Text="Remove the assigned user from the selected Autopilot identities." />
-                            <Button Click="AutopilotUnassignUser_Click" Content="Unassign User" Style="{StaticResource ActionButtonStyle}" />
+                            <Button AutomationProperties.AutomationId="DevicesAutopilotUnassignUserButton" Click="AutopilotUnassignUser_Click" Content="Unassign User" Style="{StaticResource ActionButtonStyle}" />
                         </StackPanel>
                     </Expander>
                     <Expander x:Name="AutopilotSyncSection" AutomationProperties.AutomationId="DevicesAutopilotSync" Header="Sync Autopilot" Style="{StaticResource ActionExpanderStyle}" Visibility="Collapsed">
                         <StackPanel Spacing="8">
                             <TextBlock Style="{StaticResource ActionNoteStyle}" Text="Ask Intune to sync registrations with the Autopilot service. This applies to the whole tenant." />
-                            <Button Click="AutopilotSync_Click" Content="Sync Autopilot" Style="{StaticResource ActionButtonStyle}" />
+                            <Button AutomationProperties.AutomationId="DevicesAutopilotSyncButton" Click="AutopilotSync_Click" Content="Sync Autopilot" Style="{StaticResource ActionButtonStyle}" />
                         </StackPanel>
                     </Expander>
                     <Expander x:Name="AutopilotDeleteSection" AutomationProperties.AutomationId="DevicesAutopilotDelete" Header="Delete Autopilot Identity" Style="{StaticResource ActionExpanderStyle}" Visibility="Collapsed">
                         <StackPanel Spacing="8">
                             <TextBlock Style="{StaticResource ActionNoteStyle}" Text="Remove the selected devices from Autopilot. The devices are untouched; they stop receiving an Autopilot profile." />
-                            <Button Click="AutopilotDelete_Click" Content="Delete Identity" Style="{StaticResource DestructiveButtonStyle}" />
+                            <Button AutomationProperties.AutomationId="DevicesAutopilotDeleteButton" Click="AutopilotDelete_Click" Content="Delete Identity" Style="{StaticResource DestructiveButtonStyle}" />
                         </StackPanel>
                     </Expander>
 
@@ -143,20 +143,20 @@
                         <Expander x:Name="RestartSection" AutomationProperties.AutomationId="DevicesRestart" Header="Restart Device" Style="{StaticResource ActionExpanderStyle}">
                             <StackPanel Spacing="8">
                                 <TextBlock Style="{StaticResource ActionNoteStyle}" Text="Immediately restart the selected devices. Active user sessions will be terminated." />
-                                <Button Click="Restart_Click" Content="Restart" Style="{StaticResource DestructiveButtonStyle}" />
+                                <Button AutomationProperties.AutomationId="DevicesRestartButton" Click="Restart_Click" Content="Restart" Style="{StaticResource DestructiveButtonStyle}" />
                             </StackPanel>
                         </Expander>
                         <Expander x:Name="LockSection" AutomationProperties.AutomationId="DevicesLock" Header="Lock Device" Style="{StaticResource ActionExpanderStyle}">
                             <StackPanel Spacing="8">
                                 <TextBlock Style="{StaticResource ActionNoteStyle}" Text="Remotely lock devices. Enter a PIN for supported devices." />
-                                <PasswordBox x:Name="LockPinBox" AutomationProperties.Name="Lock PIN" PlaceholderText="PIN (optional)" />
-                                <Button Click="Lock_Click" Content="Lock Device" Style="{StaticResource DestructiveButtonStyle}" />
+                                <PasswordBox AutomationProperties.AutomationId="DevicesLockPinBox" x:Name="LockPinBox" AutomationProperties.Name="Lock PIN" PlaceholderText="PIN (optional)" />
+                                <Button AutomationProperties.AutomationId="DevicesLockButton" Click="Lock_Click" Content="Lock Device" Style="{StaticResource DestructiveButtonStyle}" />
                             </StackPanel>
                         </Expander>
                         <Expander x:Name="RetireSection" AutomationProperties.AutomationId="DevicesRetire" Header="Retire Device" Style="{StaticResource ActionExpanderStyle}">
                             <StackPanel Spacing="8">
                                 <TextBlock Style="{StaticResource ActionNoteStyle}" Text="Remove company data and unenroll the selected devices. Personal data is left intact." />
-                                <Button Click="Retire_Click" Content="Retire Device" Style="{StaticResource DestructiveButtonStyle}" />
+                                <Button AutomationProperties.AutomationId="DevicesRetireButton" Click="Retire_Click" Content="Retire Device" Style="{StaticResource DestructiveButtonStyle}" />
                             </StackPanel>
                         </Expander>
                         <Expander x:Name="WipeSection" AutomationProperties.AutomationId="DevicesWipe" Header="Wipe Device" Style="{StaticResource ActionExpanderStyle}">
@@ -164,16 +164,16 @@
                                 <TextBlock Style="{StaticResource ActionNoteStyle}" Text="Factory-reset the selected devices. This cannot be undone." />
                                 <!-- Each device gets only the options its platform accepts. -->
                                 <TextBlock x:Name="WipeMixedText" Style="{StaticResource ActionNoteStyle}" Text="Mixed selection: each device gets only the options its platform supports." Visibility="Collapsed" />
-                                <CheckBox x:Name="WipeKeepEnrollmentBox" Content="Leave the device enrolled" />
-                                <CheckBox x:Name="WipeKeepUserDataBox" Content="Keep user data (Windows)" />
-                                <CheckBox x:Name="WipeProtectedBox" Content="Protected wipe (Windows)" ToolTipService.ToolTip="Retries until it succeeds and cannot be circumvented by the user. A device interrupted mid-wipe may not boot." />
-                                <PasswordBox x:Name="WipeUnlockCodeBox" AutomationProperties.Name="Recovery PIN" PlaceholderText="Recovery PIN (macOS/iOS)" />
+                                <CheckBox AutomationProperties.AutomationId="DevicesWipeKeepEnrollmentBox" x:Name="WipeKeepEnrollmentBox" Content="Leave the device enrolled" />
+                                <CheckBox AutomationProperties.AutomationId="DevicesWipeKeepUserDataBox" x:Name="WipeKeepUserDataBox" Content="Keep user data (Windows)" />
+                                <CheckBox AutomationProperties.AutomationId="DevicesWipeProtectedBox" x:Name="WipeProtectedBox" Content="Protected wipe (Windows)" ToolTipService.ToolTip="Retries until it succeeds and cannot be circumvented by the user. A device interrupted mid-wipe may not boot." />
+                                <PasswordBox AutomationProperties.AutomationId="DevicesWipeUnlockCodeBox" x:Name="WipeUnlockCodeBox" AutomationProperties.Name="Recovery PIN" PlaceholderText="Recovery PIN (macOS/iOS)" />
                                 <ComboBox
                                     x:Name="WipeObliterationCombo"
                                     HorizontalAlignment="Stretch"
                                     Header="Erase behaviour (macOS)"
                                     ToolTipService.ToolTip="macOS 12 and later. Erase All Content and Settings is instant; the fallback full erase is not." />
-                                <Button Click="Wipe_Click" Content="Wipe Device" Style="{StaticResource DestructiveButtonStyle}" />
+                                <Button AutomationProperties.AutomationId="DevicesWipeButton" Click="Wipe_Click" Content="Wipe Device" Style="{StaticResource DestructiveButtonStyle}" />
                             </StackPanel>
                         </Expander>
                     </StackPanel>
@@ -183,14 +183,14 @@
                         <Expander x:Name="FreshStartSection" AutomationProperties.AutomationId="DevicesFreshStart" Header="Fresh Start" Style="{StaticResource ActionExpanderStyle}">
                             <StackPanel Spacing="8">
                                 <TextBlock Style="{StaticResource ActionNoteStyle}" Text="Reinstall Windows and remove preinstalled OEM apps. The device stays enrolled and Entra-joined." />
-                                <CheckBox x:Name="FreshStartKeepUserDataBox" Content="Keep user data and account" IsChecked="True" />
-                                <Button Click="FreshStart_Click" Content="Fresh Start" Style="{StaticResource DestructiveButtonStyle}" />
+                                <CheckBox AutomationProperties.AutomationId="DevicesFreshStartKeepUserDataBox" x:Name="FreshStartKeepUserDataBox" Content="Keep user data and account" IsChecked="True" />
+                                <Button AutomationProperties.AutomationId="DevicesFreshStartButton" Click="FreshStart_Click" Content="Fresh Start" Style="{StaticResource DestructiveButtonStyle}" />
                             </StackPanel>
                         </Expander>
                         <Expander x:Name="AutopilotResetSection" AutomationProperties.AutomationId="DevicesAutopilotReset" Header="Autopilot Reset" Style="{StaticResource ActionExpanderStyle}">
                             <StackPanel Spacing="8">
                                 <TextBlock Style="{StaticResource ActionNoteStyle}" Text="Reimage the selected devices through Windows Autopilot: removes apps and settings, keeps enrollment, and re-provisions." />
-                                <Button Click="AutopilotReset_Click" Content="Autopilot Reset" Style="{StaticResource DestructiveButtonStyle}" />
+                                <Button AutomationProperties.AutomationId="DevicesAutopilotResetButton" Click="AutopilotReset_Click" Content="Autopilot Reset" Style="{StaticResource DestructiveButtonStyle}" />
                             </StackPanel>
                         </Expander>
                     </StackPanel>
@@ -199,13 +199,13 @@
                     <Expander x:Name="OffboardSection" AutomationProperties.AutomationId="DevicesOffboard" Header="Offboard Device" Style="{StaticResource ActionExpanderStyle}" Visibility="Collapsed">
                         <StackPanel Spacing="8">
                             <TextBlock Style="{StaticResource ActionNoteStyle}" Text="Decommission across Intune, Autopilot and Entra in one pass. Steps that do not apply to a device's platform are skipped." />
-                            <ComboBox x:Name="OffboardTerminalCombo" HorizontalAlignment="Stretch" Header="Intune action" SelectionChanged="OffboardPlan_Changed" />
+                            <ComboBox AutomationProperties.AutomationId="DevicesOffboardTerminalCombo" x:Name="OffboardTerminalCombo" HorizontalAlignment="Stretch" Header="Intune action" SelectionChanged="OffboardPlan_Changed" />
                             <TextBlock x:Name="OffboardUsesWipeOptionsText" Style="{StaticResource ActionNoteStyle}" Text="Uses the wipe options set above." />
-                            <CheckBox x:Name="OffboardDeleteAutopilotBox" Content="Delete the Autopilot registration" ToolTipService.ToolTip="Windows only. Releases the hardware hash so the device can be re-registered elsewhere." />
-                            <ComboBox x:Name="OffboardEntraCombo" HorizontalAlignment="Stretch" Header="Entra device" />
-                            <CheckBox x:Name="OffboardDeleteIntuneBox" Checked="OffboardPlan_Changed" Content="Delete the Intune record" Unchecked="OffboardPlan_Changed" />
+                            <CheckBox AutomationProperties.AutomationId="DevicesOffboardDeleteAutopilotBox" x:Name="OffboardDeleteAutopilotBox" Content="Delete the Autopilot registration" ToolTipService.ToolTip="Windows only. Releases the hardware hash so the device can be re-registered elsewhere." />
+                            <ComboBox AutomationProperties.AutomationId="DevicesOffboardEntraCombo" x:Name="OffboardEntraCombo" HorizontalAlignment="Stretch" Header="Entra device" />
+                            <CheckBox AutomationProperties.AutomationId="DevicesOffboardDeleteIntuneBox" x:Name="OffboardDeleteIntuneBox" Checked="OffboardPlan_Changed" Content="Delete the Intune record" Unchecked="OffboardPlan_Changed" />
                             <InfoBar x:Name="OffboardWarning" IsClosable="False" IsOpen="False" Severity="Warning" />
-                            <Button Click="Offboard_Click" Content="Offboard Device" Style="{StaticResource DestructiveButtonStyle}" />
+                            <Button AutomationProperties.AutomationId="DevicesOffboardButton" Click="Offboard_Click" Content="Offboard Device" Style="{StaticResource DestructiveButtonStyle}" />
                             <StackPanel x:Name="OffboardResults" Spacing="6" />
                         </StackPanel>
                     </Expander>
@@ -214,7 +214,7 @@
                         <Expander x:Name="DeleteRecordSection" AutomationProperties.AutomationId="DevicesDeleteRecord" Header="Delete Intune Record" Style="{StaticResource ActionExpanderStyle}">
                             <StackPanel Spacing="8">
                                 <TextBlock Style="{StaticResource ActionNoteStyle}" Text="Delete the Intune device record server-side only. Nothing is sent to the device; use for stale or duplicate records." />
-                                <Button Click="DeleteRecord_Click" Content="Delete Record" Style="{StaticResource DestructiveButtonStyle}" />
+                                <Button AutomationProperties.AutomationId="DevicesDeleteRecordButton" Click="DeleteRecord_Click" Content="Delete Record" Style="{StaticResource DestructiveButtonStyle}" />
                             </StackPanel>
                         </Expander>
                         <Expander x:Name="ReinstallAppSection" AutomationProperties.AutomationId="DevicesReinstallApp" Header="Reinstall App" Style="{StaticResource ActionExpanderStyle}">
@@ -226,14 +226,14 @@
                                     PlaceholderText="Search apps…"
                                     QueryIcon="Find"
                                     QuerySubmitted="AppSearch_QuerySubmitted" />
-                                <ComboBox x:Name="AppCombo" HorizontalAlignment="Stretch" AutomationProperties.Name="App" DisplayMemberPath="DisplayName" PlaceholderText="Select an app…" />
-                                <Button Click="ReinstallApp_Click" Content="Trigger Reinstall" Style="{StaticResource ActionButtonStyle}" />
+                                <ComboBox AutomationProperties.AutomationId="DevicesAppCombo" x:Name="AppCombo" HorizontalAlignment="Stretch" AutomationProperties.Name="App" DisplayMemberPath="DisplayName" PlaceholderText="Select an app…" />
+                                <Button AutomationProperties.AutomationId="DevicesReinstallAppButton" Click="ReinstallApp_Click" Content="Trigger Reinstall" Style="{StaticResource ActionButtonStyle}" />
                             </StackPanel>
                         </Expander>
                         <Expander x:Name="OsUpdateSection" AutomationProperties.AutomationId="DevicesOsUpdate" Header="OS Update" Style="{StaticResource ActionExpanderStyle}">
                             <StackPanel Spacing="8">
                                 <TextBlock Style="{StaticResource ActionNoteStyle}" Text="Trigger OS update check. Updates are installed based on update policies." />
-                                <Button Click="OsUpdate_Click" Content="Check for Updates" Style="{StaticResource ActionButtonStyle}" />
+                                <Button AutomationProperties.AutomationId="DevicesOsUpdateButton" Click="OsUpdate_Click" Content="Check for Updates" Style="{StaticResource ActionButtonStyle}" />
                             </StackPanel>
                         </Expander>
                     </StackPanel>
@@ -241,7 +241,7 @@
                     <Expander x:Name="PushCimianSection" AutomationProperties.AutomationId="DevicesPushCimian" Header="Push Cimian Run" Style="{StaticResource ActionExpanderStyle}">
                         <StackPanel Spacing="8">
                             <TextBlock Style="{StaticResource ActionNoteStyle}" Text="Trigger an immediate Cimian managed software update on selected devices. Creates a .cimian.headless trigger file via Intune remediation. CimianWatcher picks it up within 10 seconds." />
-                            <Button Click="PushCimian_Click" Content="Push Cimian Run" Style="{StaticResource ActionButtonStyle}" />
+                            <Button AutomationProperties.AutomationId="DevicesPushCimianButton" Click="PushCimian_Click" Content="Push Cimian Run" Style="{StaticResource ActionButtonStyle}" />
                         </StackPanel>
                     </Expander>
                 </StackPanel>

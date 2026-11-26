@@ -175,8 +175,7 @@ public sealed partial class ShellServices
             {
                 var devices = reportMate.GetDevicesAsync();
                 var errors = reportMate.GetErrorsByItemAsync(false);
-                await Task.WhenAll(devices, errors);
-                result = new DeviceErrorFigures(devices.Result.Count, errors.Result, Loading: false);
+                result = new DeviceErrorFigures((await devices).Count, await errors, Loading: false);
             }
             catch (Exception ex)
             {

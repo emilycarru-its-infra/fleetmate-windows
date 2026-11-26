@@ -121,7 +121,7 @@ public sealed partial class ComplianceLightbox : UserControl
                 ColumnSpacing = 8,
                 ColumnDefinitions = { new() { Width = new GridLength(1, GridUnitType.Star) }, new() { Width = GridLength.Auto } },
             };
-            header.Children.Add(new TextBlock { Text = s.Name, Style = Style("BodyStrongTextBlockStyle"), TextWrapping = TextWrapping.Wrap });
+            header.Children.Add(new TextBlock { Text = s.Name, Style = Res("BodyStrongTextBlockStyle"), TextWrapping = TextWrapping.Wrap });
             var state = DeviceUi.Badge(s.Tone, s.State);
             Grid.SetColumn(state, 1);
             header.Children.Add(state);
@@ -133,7 +133,7 @@ public sealed partial class ComplianceLightbox : UserControl
                 Background = s.IsBad ? DeviceUi.ToneBackground(DeviceTone.Attention) : DeviceUi.Theme("CardBackgroundFillColorDefaultBrush"),
                 BorderBrush = s.IsBad ? DeviceUi.ToneBrush(DeviceTone.Attention) : DeviceUi.Theme("CardStrokeColorDefaultBrush"),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
+                CornerRadius = (CornerRadius)Application.Current.Resources["ControlCornerRadius"],
                 Padding = new Thickness(10, 7, 10, 7),
                 Child = stack,
             });
@@ -169,7 +169,7 @@ public sealed partial class ComplianceLightbox : UserControl
                     ColumnDefinitions = { new() { Width = new GridLength(1, GridUnitType.Star) }, new() { Width = new GridLength(1, GridUnitType.Star) } },
                 };
                 grid.Children.Add(Note(key));
-                var v = new TextBlock { Text = value, Style = Style("BodyTextBlockStyle"), TextWrapping = TextWrapping.Wrap };
+                var v = new TextBlock { Text = value, Style = Res("BodyTextBlockStyle"), TextWrapping = TextWrapping.Wrap };
                 Grid.SetColumn(v, 1);
                 grid.Children.Add(v);
                 DefinitionPanel.Children.Add(grid);
@@ -232,28 +232,28 @@ public sealed partial class ComplianceLightbox : UserControl
 
     private static TextBlock Heading(string text)
     {
-        var block = new TextBlock { Text = text, Style = Style("BodyStrongTextBlockStyle"), Margin = new Thickness(0, 0, 0, 6) };
+        var block = new TextBlock { Text = text, Style = Res("BodyStrongTextBlockStyle"), Margin = new Thickness(0, 0, 0, 6) };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetHeadingLevel(block, Microsoft.UI.Xaml.Automation.Peers.AutomationHeadingLevel.Level3);
         return block;
     }
 
     private static TextBlock SubHeading(string text) => new()
     {
-        Text = text, Style = Style("BodyStrongTextBlockStyle"), Margin = new Thickness(0, 10, 0, 4),
+        Text = text, Style = Res("BodyStrongTextBlockStyle"), Margin = new Thickness(0, 10, 0, 4),
     };
 
     private static TextBlock Bullet(string text) => new()
     {
-        Text = "• " + text, Style = Style("BodyTextBlockStyle"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 1, 0, 1),
+        Text = "• " + text, Style = Res("BodyTextBlockStyle"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 1, 0, 1),
     };
 
     private static TextBlock Note(string text) => new()
     {
         Text = text,
-        Style = Style("CaptionTextBlockStyle"),
+        Style = Res("CaptionTextBlockStyle"),
         Foreground = DeviceUi.Theme("TextFillColorSecondaryBrush"),
         TextWrapping = TextWrapping.Wrap,
     };
 
-    private static Style Style(string key) => (Style)Application.Current.Resources[key];
+    private static Style Res(string key) => (Style)Application.Current.Resources[key];
 }

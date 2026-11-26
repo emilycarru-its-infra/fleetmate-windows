@@ -37,7 +37,7 @@ internal static class DeviceUi
         var badge = new Border
         {
             Background = ToneBackground(tone),
-            CornerRadius = new CornerRadius(4),
+            CornerRadius = (CornerRadius)Application.Current.Resources["ControlCornerRadius"],
             Padding = new Thickness(8, 2, 8, 2),
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Center,
