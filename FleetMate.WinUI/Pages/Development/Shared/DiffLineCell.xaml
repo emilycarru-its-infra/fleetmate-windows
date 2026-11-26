@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="FleetMate.WinUI.Pages.Development.Shared.DiffLineCell"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    IsTabStop="False">
+
+    <UserControl.Resources>
+        <Style x:Key="DiffCodeTextStyle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="LineHeight" Value="20" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+    </UserControl.Resources>
+
+    <!--
+        One diff line: inline (both line numbers, marker, content) or one half of
+        a side-by-side row (its side's number, content with the marker). The
+        tints are system fill brushes, so Light and Dark get readable ones and
+        High Contrast gets system colours; the marker carries the change too.
+    -->
+    <Grid x:Name="Root" MinHeight="20">
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="KindStates">
+                <VisualState x:Name="Context" />
+                <VisualState x:Name="Addition">
+                    <VisualState.Setters>
+                        <Setter Target="Root.Background" Value="{ThemeResource SystemFillColorSuccessBackgroundBrush}" />
+                        <Setter Target="Strip.Fill" Value="{ThemeResource SystemFillColorSuccessBrush}" />
+                    </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="Deletion">
+                    <VisualState.Setters>
+                        <Setter Target="Root.Background" Value="{ThemeResource SystemFillColorCriticalBackgroundBrush}" />
+                        <Setter Target="Strip.Fill" Value="{ThemeResource SystemFillColorCriticalBrush}" />
+                    </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="NoNewline">
+                    <VisualState.Setters>
+                        <Setter Target="ContentText.Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <Setter Target="ContentText.FontStyle" Value="Italic" />
+                    </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="Empty">
+                    <VisualState.Setters>
+                        <Setter Target="Root.Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="3" />
+            <ColumnDefinition x:Name="OldColumn" Width="44" />
+            <ColumnDefinition x:Name="NewColumn" Width="44" />
+            <ColumnDefinition x:Name="MarkerColumn" Width="16" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Rectangle x:Name="Strip" Fill="Transparent" />
+        <TextBlock
+            x:Name="OldNumber"
+            Grid.Column="1"
+            Padding="0,0,6,0"
+            Style="{StaticResource DiffCodeTextStyle}"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            TextAlignment="Right" />
+        <TextBlock
+            x:Name="NewNumber"
+            Grid.Column="2"
+            Padding="0,0,6,0"
+            Style="{StaticResource DiffCodeTextStyle}"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            TextAlignment="Right" />
+        <TextBlock
+            x:Name="MarkerText"
+            Grid.Column="3"
+            Style="{StaticResource DiffCodeTextStyle}"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        <TextBlock
+            x:Name="ContentText"
+            Grid.Column="4"
+            Padding="4,0,6,0"
+            Style="{StaticResource DiffCodeTextStyle}"
+            TextWrapping="Wrap" />
+    </Grid>
+</UserControl>

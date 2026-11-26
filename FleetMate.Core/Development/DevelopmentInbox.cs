@@ -1,27 +1,30 @@
-using System.Windows.Threading;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
 using Serilog;
 
-namespace FleetMate.GUI.Views.Development;
+namespace FleetMate.Core.Development;
 
 /// <summary>
 /// The GitHub inbox, held for the app's lifetime rather than by the Development view.
 ///
 /// It polls from startup whether or not Development has been opened, so the Inbox
-/// segment is already showing when there is something unread: a notification
+/// button is already showing when there is something unread: a notification
 /// nobody has gone looking for is exactly the one that gets missed.
+///
+/// Start it on the UI thread: the poll loop resumes there, so <see cref="Changed"/>
+/// is raised on the UI thread in FleetMate.GUI and FleetMate.WinUI alike.
 /// </summary>
-public sealed class DevelopmentInbox
+public sealed class DevelopmentInbox : IDisposable
 {
     /// <summary>
     /// Five minutes: well inside GitHub's advertised X-Poll-Interval (60s) and
     /// a rounding error against the REST quota.
     /// </summary>
-    private static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(5);
+    public static readonly TimeSpan PollInterval = TimeSpan.FromMinutes(5);
 
     private readonly Func<GitHubNotificationService?> _serviceFactory;
-    private DispatcherTimer? _timer;
+    private CancellationTokenSource? _loop;
+    private TimeSpan _nextDelay = PollInterval;
     private bool _refreshing;
 
     public DevelopmentInbox(Func<GitHubNotificationService?> serviceFactory)
@@ -36,16 +39,34 @@ public sealed class DevelopmentInbox
     public bool IsRefreshing => _refreshing;
     public DateTime? LastRefreshed { get; private set; }
 
-    /// <summary>Raised on the UI thread after every refresh or local change.</summary>
+    /// <summary>Raised on the thread that started the inbox after every refresh or local change.</summary>
     public event EventHandler? Changed;
+
+    /// <summary>Show <paramref name="notifications"/> without asking GitHub: demo mode's fictional inbox.</summary>
+    public void Seed(IEnumerable<GitHubNotification> notifications)
+    {
+        Notifications = GitHubNotificationService.Sort(notifications.ToList());
+        LastError = null;
+        LastRefreshed = DateTime.Now;
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
 
     public void Start()
     {
-        if (_timer != null) return;
-        _timer = new DispatcherTimer { Interval = PollInterval };
-        _timer.Tick += async (_, _) => await RefreshAsync();
-        _timer.Start();
-        _ = RefreshAsync();
+        if (_loop != null) return;
+        _loop = new CancellationTokenSource();
+        _ = PollAsync(_loop.Token);
+    }
+
+    private async Task PollAsync(CancellationToken ct)
+    {
+        await RefreshAsync();
+        while (!ct.IsCancellationRequested)
+        {
+            try { await Task.Delay(_nextDelay, ct); }
+            catch (OperationCanceledException) { return; }
+            await RefreshAsync();
+        }
     }
 
     public async Task RefreshAsync()
@@ -77,7 +98,7 @@ public sealed class DevelopmentInbox
         {
             _refreshing = false;
             // Wait for GitHub's reset when the budget is spent, not a fixed tick.
-            if (_timer != null) _timer.Interval = GitHubRateLimitGate.NextPollDelay(GitHubRateLimitBucket.Core, PollInterval);
+            _nextDelay = GitHubRateLimitGate.NextPollDelay(GitHubRateLimitBucket.Core, PollInterval);
             Changed?.Invoke(this, EventArgs.Empty);
         }
     }
@@ -147,5 +168,12 @@ public sealed class DevelopmentInbox
     {
         Notifications = GitHubNotificationService.Sort(Notifications);
         Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void Dispose()
+    {
+        _loop?.Cancel();
+        _loop?.Dispose();
+        _loop = null;
     }
 }

@@ -1,13 +1,50 @@
-using System.Windows;
+using FleetMate.Core.Config;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
-using FleetMate.GUI.Views.Shared.Widgets;
-using Microsoft.Win32;
 using Serilog;
 
-namespace FleetMate.GUI.Views.Development;
+namespace FleetMate.Core.Development;
 
-/// <summary>One app-session owner. Views observe caches; navigation never creates another refresh loop.</summary>
+/// <summary>
+/// What <see cref="DevelopmentDataSync"/> reads and writes: the app's
+/// Development caches, its configuration, and its UI thread. FleetMate.GUI's
+/// App and FleetMate.WinUI's ShellServices each implement it.
+/// </summary>
+public interface IDevelopmentHost
+{
+    FleetMateConfig Config { get; }
+
+    /// <summary>Development › Pulls. Setting it tells the views the cache changed.</summary>
+    PullRequestQueue? DevelopmentPullRequests { get; set; }
+
+    /// <summary>Development › Commits: repositories with recent commits.</summary>
+    List<RepositoryCommits>? DevelopmentCommits { get; set; }
+
+    /// <summary>Development › Pipelines: recent runs.</summary>
+    List<PipelineRun>? DevelopmentRuns { get; set; }
+
+    /// <summary>Pending Azure Pipelines approvals, pinned to the active runs they hold.</summary>
+    PipelineApprovalTracker PipelineApprovals { get; }
+
+    /// <summary>Mark a cache as loading until the scope is disposed ("PullRequests", "Commits", "Runs").</summary>
+    IDisposable TrackCacheLoad(string key);
+
+    /// <summary>Run <paramref name="work"/> on the UI thread and return its result.</summary>
+    Task<bool> RunOnUiAsync(Func<Task<bool>> work);
+
+    /// <summary>Post <paramref name="action"/> to the UI thread.</summary>
+    void PostToUi(Action action);
+
+    /// <summary>Raised on the UI thread when the silent Azure DevOps sign-in succeeds.</summary>
+    event Action? DevOpsSignedIn;
+}
+
+/// <summary>
+/// One app-session owner. Views observe caches; navigation never creates another refresh loop.
+/// The host reports window activity through <see cref="SetForeground"/>,
+/// <see cref="SetMinimized"/> and <see cref="SetSuspended"/>; nothing refreshes
+/// while the app is in the background, minimized or the PC is asleep.
+/// </summary>
 public sealed class DevelopmentDataSync : IDisposable
 {
     private sealed class ProviderState
@@ -23,8 +60,7 @@ public sealed class DevelopmentDataSync : IDisposable
         }
     }
     private static readonly TimeSpan HistoryInterval = TimeSpan.FromMinutes(15);
-    private readonly App _app;
-    private readonly Window? _window;
+    private readonly IDevelopmentHost _app;
     private readonly DevelopmentRefreshCoordinator _coordinator;
     private readonly PipelineRefreshPlan _plan = new();
     private readonly Dictionary<DevelopmentRefreshArea, DateTimeOffset> _checked = new();
@@ -45,31 +81,49 @@ public sealed class DevelopmentDataSync : IDisposable
     private DevelopmentSourceFilter _source = DevelopmentSourceFilter.All;
     private bool _suspended;
     private bool _foreground;
+    private bool _minimized;
     private bool _focusRefresh;
     private bool _disposed;
 
-    public DevelopmentDataSync(App app)
+    public DevelopmentDataSync(IDevelopmentHost app, bool foreground)
     {
         _app = app;
-        _window = app.MainWindow;
-        _foreground = app.Windows.OfType<Window>().Any(window => window.IsActive);
+        _foreground = foreground;
         _coordinator = new DevelopmentRefreshCoordinator(
-            (request, ct) => app.Dispatcher.InvokeAsync(() => RefreshAsync(request, ct)).Task.Unwrap(),
+            (request, ct) => app.RunOnUiAsync(() => RefreshAsync(request, ct)),
             () => app.DevelopmentRuns?.Any(run => run.Status.IsActive()
                 && new RepositoryFilterScope(run.Source, run.Container, run.Repository).Matches(_repository)
                 && CommitsAndPipelinesFilter.MatchesSource(run.Source, _source)) == true);
-        if (_window != null)
-        {
-            _window.StateChanged += OnActivityChanged;
-        }
-        app.Activated += OnApplicationActivated;
-        app.Deactivated += OnApplicationDeactivated;
-        SystemEvents.PowerModeChanged += OnPowerModeChanged;
         _app.DevOpsSignedIn += OnSignedIn;
         UpdateActivity();
     }
 
-    internal bool IsDisposed => _disposed;
+    /// <summary>The app's window became active (true) or another app's did (false). Call on the UI thread.</summary>
+    public void SetForeground(bool foreground)
+    {
+        if (_disposed) return;
+        _foreground = foreground;
+        OnActivityChanged();
+    }
+
+    /// <summary>The main window was minimized (true) or restored (false). Call on the UI thread.</summary>
+    public void SetMinimized(bool minimized)
+    {
+        if (_disposed) return;
+        _minimized = minimized;
+        OnActivityChanged();
+    }
+
+    /// <summary>The PC is going to sleep (true) or has resumed (false). Call on the UI thread.</summary>
+    public void SetSuspended(bool suspended)
+    {
+        if (_disposed) return;
+        _suspended = suspended;
+        UpdateActivity();
+        if (!suspended) RequestStaleEntry();
+    }
+
+    public bool IsDisposed => _disposed;
     public event EventHandler? StatusChanged;
     public DateTimeOffset? LastChecked(DevelopmentRefreshArea area) => _checked.TryGetValue(area, out var date) ? date : null;
     public bool IsLoading(DevelopmentRefreshArea area) => _loading.Contains(area);
@@ -122,7 +176,7 @@ public sealed class DevelopmentDataSync : IDisposable
         catch (OperationCanceledException) { }
     }
 
-    private void OnSignedIn() => _app.Dispatcher.BeginInvoke(() =>
+    private void OnSignedIn() => _app.PostToUi(() =>
     {
         if (_disposed) return;
         _azure.Failures = 0;
@@ -132,19 +186,9 @@ public sealed class DevelopmentDataSync : IDisposable
         _coordinator.InvalidatePipelines();
     });
 
-    private bool Active => !_disposed && !_suspended && _foreground && _window is { WindowState: not WindowState.Minimized };
-    private void OnApplicationActivated(object? sender, EventArgs e) { _foreground = true; OnActivityChanged(sender, e); }
-    private void OnApplicationDeactivated(object? sender, EventArgs e) { _foreground = false; OnActivityChanged(sender, e); }
-    private void OnActivityChanged(object? sender, EventArgs e) { UpdateActivity(); if (Active) RequestStaleEntry(); }
+    private bool Active => !_disposed && !_suspended && _foreground && !_minimized;
+    private void OnActivityChanged() { UpdateActivity(); if (Active) RequestStaleEntry(); }
     private void UpdateActivity() => _coordinator.SetActivity(Active, _segment == DevelopmentSegment.Pipelines);
-    private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e) => _app.Dispatcher.BeginInvoke(() =>
-    {
-        if (_disposed) return;
-        if (e.Mode == PowerModes.Suspend) _suspended = true;
-        else if (e.Mode == PowerModes.Resume) _suspended = false;
-        UpdateActivity();
-        if (e.Mode == PowerModes.Resume) RequestStaleEntry();
-    });
 
     private void RequestStaleEntry()
     {
@@ -444,13 +488,6 @@ public sealed class DevelopmentDataSync : IDisposable
         if (_disposed) return;
         _disposed = true;
         _coordinator.Dispose();
-        if (_window != null)
-        {
-            _window.StateChanged -= OnActivityChanged;
-        }
-        _app.Activated -= OnApplicationActivated;
-        _app.Deactivated -= OnApplicationDeactivated;
-        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         _app.DevOpsSignedIn -= OnSignedIn;
     }
 }

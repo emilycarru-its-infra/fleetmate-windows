@@ -5,112 +5,6 @@ using FleetMate.GUI.Views.Shared;
 
 namespace FleetMate.GUI.Views.Development;
 
-/// <summary>Source filter for the Development pull request list.</summary>
-public enum DevelopmentSourceFilter { All, DevOps, GitHub }
-
-/// <summary>
-/// Scope filter. <see cref="Everything"/> is the default, because the point of
-/// Development is to see every open PR on the operator's projects, not just their own.
-/// </summary>
-public enum DevelopmentScope { Everything, Mine }
-
-/// <summary>The Development list's filtering rules, kept out of the view so they can be tested.</summary>
-public static class DevelopmentFilter
-{
-    public static bool MatchesSource(UnifiedPullRequest pr, DevelopmentSourceFilter source) => source switch
-    {
-        DevelopmentSourceFilter.DevOps => pr.Source == PullRequestSource.AzureDevOps,
-        DevelopmentSourceFilter.GitHub => pr.Source == PullRequestSource.GitHub,
-        _ => true,
-    };
-
-    /// <summary>Mine = anything with a personal relation; Organization alone does not count.</summary>
-    public static bool MatchesScope(UnifiedPullRequest pr, DevelopmentScope scope) =>
-        scope == DevelopmentScope.Everything
-        || pr.Relations.Any(r => r != PullRequestRelation.Organization);
-
-    /// <summary>Case-insensitive match on title, repository, author, reference and branch.</summary>
-    public static bool MatchesSearch(UnifiedPullRequest pr, string? search)
-    {
-        if (string.IsNullOrWhiteSpace(search)) return true;
-        var needle = search.Trim();
-
-        return Contains(pr.Title) || Contains(pr.Repository) || Contains(pr.Container)
-            || Contains(pr.AuthorName) || Contains(pr.Reference) || Contains(pr.SourceBranch);
-
-        bool Contains(string? hay) => hay?.Contains(needle, StringComparison.OrdinalIgnoreCase) == true;
-    }
-
-    /// <summary>Every filter together, by last modified — newest first unless <paramref name="oldestFirst"/>.</summary>
-    public static List<UnifiedPullRequest> Apply(
-        IEnumerable<UnifiedPullRequest> prs, DevelopmentSourceFilter source, DevelopmentScope scope,
-        string? repository, string? search, bool oldestFirst = false) =>
-        SortByModified(
-            prs.Where(pr => MatchesSource(pr, source)
-                            && MatchesScope(pr, scope)
-                            && new RepositoryFilterScope(pr.Source, pr.Container, pr.Repository).Matches(repository)
-                            && MatchesSearch(pr, search)),
-            oldestFirst);
-
-    /// <summary>Last modified, newest first, or oldest first.</summary>
-    public static List<UnifiedPullRequest> SortByModified(IEnumerable<UnifiedPullRequest> prs, bool oldestFirst) =>
-        (oldestFirst ? prs.OrderBy(pr => pr.LastActivity) : prs.OrderByDescending(pr => pr.LastActivity)).ToList();
-
-    /// <summary>
-    /// Sections per repository for Group by Repository, rows in the chosen modified
-    /// order. A section ranks by its first row — its newest, or its oldest when
-    /// <paramref name="oldestFirst"/> — and ties go alphabetically.
-    /// </summary>
-    public static List<(string Repository, List<UnifiedPullRequest> Rows)> GroupByRepository(
-        IEnumerable<UnifiedPullRequest> prs, bool oldestFirst)
-    {
-        var groups = SortByModified(prs, oldestFirst)
-            .GroupBy(RepositoryKey)
-            .Select(g => (Repository: g.Key, Rows: g.ToList()));
-
-        var ordered = oldestFirst
-            ? groups.OrderBy(g => g.Rows[0].LastActivity)
-            : groups.OrderByDescending(g => g.Rows[0].LastActivity);
-
-        return ordered.ThenBy(g => g.Repository, StringComparer.Ordinal).ToList();
-    }
-
-    /// <summary>The inbox list: unread only, or every loaded thread.</summary>
-    public static List<GitHubNotification> Inbox(IEnumerable<GitHubNotification> notifications, bool showRead) =>
-        notifications.Where(n => showRead || n.Unread).ToList();
-
-    /// <summary>
-    /// Whether the toolbar's Inbox button shows. It shows while something is
-    /// unread, and stays while its popover is open so marking the last thread
-    /// read does not pull the popover out from under the reader.
-    /// </summary>
-    public static bool ShowInboxButton(int unread, bool inboxOpen) => unread > 0 || inboxOpen;
-
-    /// <summary>"owner/repo" for GitHub, "Project/Repo" for DevOps — the group header and repo-chip key.</summary>
-    public static string RepositoryKey(UnifiedPullRequest pr) => $"{pr.Container}/{pr.Repository}";
-
-    /// <summary>
-    /// Every recent comment and review across the loaded PRs, newest first,
-    /// optionally without the operator's own.
-    /// </summary>
-    public static List<DevelopmentActivityRowViewModel> Activity(
-        IEnumerable<UnifiedPullRequest> prs, IReadOnlySet<string> viewerNames, bool hideMine, int limit = 200) =>
-        prs.SelectMany(pr => pr.RecentComments.Select(c => (pr, c)))
-           .Where(e => !hideMine || !viewerNames.Contains(e.c.AuthorName))
-           .OrderByDescending(e => e.c.Date ?? DateTime.MinValue)
-           .Take(limit)
-           .Select(e => new DevelopmentActivityRowViewModel { PullRequest = e.pr, Comment = e.c })
-           .ToList();
-
-    /// <summary>Repositories with their PR counts, busiest first, ties alphabetical.</summary>
-    public static List<(string Repository, int Count)> RepositoryCounts(IEnumerable<UnifiedPullRequest> prs) =>
-        prs.GroupBy(RepositoryKey)
-           .Select(g => (g.Key, g.Count()))
-           .OrderByDescending(e => e.Item2)
-           .ThenBy(e => e.Item1, StringComparer.OrdinalIgnoreCase)
-           .ToList();
-}
-
 /// <summary>One row in the Development pull request list.</summary>
 public sealed class DevelopmentPullRequestRowViewModel
 {
@@ -129,17 +23,13 @@ public sealed class DevelopmentPullRequestRowViewModel
     public bool ShowRepository { get; init; }
 
     /// <summary>"owner/repo · ada · #42 · Updated 3h ago" ungrouped; the plain byline under a section header.</summary>
-    public string Subtitle => ShowRepository ? $"{RepositoryKey} · {Byline}" : Byline;
+    public string Subtitle => DevelopmentText.PullRequestSubtitle(PullRequest, ShowRepository);
 
     /// <summary>
     /// Why this PR is on the operator's plate, strongest reason first — "Review"
     /// beats "Mine" beats "Involved". Empty for organization-only rows.
     /// </summary>
-    public string RelationLabel =>
-        PullRequest.Relations.Contains(PullRequestRelation.AssignedToMe) ? "Review"
-        : PullRequest.Relations.Contains(PullRequestRelation.CreatedByMe) ? "Mine"
-        : PullRequest.Relations.Contains(PullRequestRelation.Involved) ? "Involved"
-        : "";
+    public string RelationLabel => DevelopmentText.RelationLabel(PullRequest);
 
     public Visibility RelationVisibility => RelationLabel.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
@@ -153,7 +43,7 @@ public sealed class DevelopmentActivityRowViewModel
     public required PullRequestComment Comment { get; init; }
 
     public string AuthorName => Comment.AuthorName;
-    public string Age => DevelopmentNotificationRowViewModel.Age(Comment.Date);
+    public string Age => DevelopmentText.Age(Comment.Date);
     public string PullRequestLabel => $"{PullRequest.Repository} {PullRequest.Reference} · {PullRequest.Title}";
     public string PullRequestTitle => PullRequest.Title;
 
@@ -184,19 +74,14 @@ public sealed class DevelopmentNotificationRowViewModel
     /// </summary>
     public string? PullRequestAuthor { get; init; }
 
-    public string AuthorLabel => string.IsNullOrWhiteSpace(PullRequestAuthor)
-        ? "PR author unavailable" : $"PR author: {PullRequestAuthor}";
+    public string AuthorLabel => DevelopmentText.AuthorLabel(PullRequestAuthor);
 
     /// <summary>A row for <paramref name="notification"/>, naming its PR's author when that PR is loaded.</summary>
     public static DevelopmentNotificationRowViewModel Create(
         GitHubNotification notification, IEnumerable<UnifiedPullRequest> pullRequests) => new()
     {
         Notification = notification,
-        PullRequestAuthor = notification.IsPullRequest && notification.SubjectNumber is { } number
-            ? pullRequests.FirstOrDefault(pr => pr.Source == PullRequestSource.GitHub
-                && pr.Number == number
-                && $"{pr.Container}/{pr.Repository}".Equals(notification.Repository, StringComparison.OrdinalIgnoreCase))?.AuthorName
-            : null,
+        PullRequestAuthor = DevelopmentText.NotificationPullRequestAuthor(notification, pullRequests),
     };
 
     public string Title => Notification.SubjectTitle;
@@ -206,56 +91,13 @@ public sealed class DevelopmentNotificationRowViewModel
     public Visibility MarkReadVisibility => Unread ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>"Review requested · owner/repo · 3h ago".</summary>
-    public string Byline => $"{ReasonLabel(Notification.Reason)} · {Notification.Repository} · {Age(Notification.UpdatedAt)}"
-        + (Notification.IsPullRequest ? $" · {AuthorLabel}" : "");
+    public string Byline => DevelopmentText.NotificationByline(Notification, PullRequestAuthor);
 
-    public string TypeGlyph => Notification.SubjectType switch
-    {
-        "PullRequest" => "",
-        "Issue" => "",
-        "Release" => "",
-        "Commit" => "",
-        "CheckSuite" => "",
-        "Discussion" => "",
-        _ => "",
-    };
+    public string TypeGlyph => DevelopmentText.NotificationGlyph(Notification.SubjectType);
 
-    public string TypeLabel => Notification.SubjectType switch
-    {
-        "PullRequest" => "Pull request",
-        "CheckSuite" => "Checks",
-        "" => "Notification",
-        var other => other,
-    };
+    public string TypeLabel => DevelopmentText.NotificationTypeLabel(Notification.SubjectType);
 
-    /// <summary>GitHub's reason codes, in the words its own inbox uses.</summary>
-    public static string ReasonLabel(string reason) => reason switch
-    {
-        "review_requested" => "Review requested",
-        "mention" => "Mentioned",
-        "team_mention" => "Team mentioned",
-        "author" => "Author",
-        "comment" => "Commented",
-        "assign" => "Assigned",
-        "state_change" => "State changed",
-        "ci_activity" => "CI activity",
-        "subscribed" => "Watching",
-        "manual" => "Subscribed",
-        "approval_requested" => "Approval requested",
-        "security_alert" => "Security alert",
-        "invitation" => "Invitation",
-        "member_feature_requested" => "Feature requested",
-        "" => "Notification",
-        _ => reason.Replace('_', ' '),
-    };
+    public static string ReasonLabel(string reason) => DevelopmentText.ReasonLabel(reason);
 
-    public static string Age(DateTime? when)
-    {
-        if (when is not { } value) return "recently";
-        var elapsed = DateTime.UtcNow - value;
-        if (elapsed.TotalMinutes < 1) return "just now";
-        if (elapsed.TotalHours < 1) return $"{(int)elapsed.TotalMinutes}m ago";
-        if (elapsed.TotalDays < 1) return $"{(int)elapsed.TotalHours}h ago";
-        return $"{(int)elapsed.TotalDays}d ago";
-    }
+    public static string Age(DateTime? when) => DevelopmentText.Age(when);
 }

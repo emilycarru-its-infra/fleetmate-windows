@@ -74,6 +74,7 @@ public sealed partial class ShellServices : IDisposable
         // adopted first, then HTTP Negotiate. The hidden-browser phase the WPF
         // app runs after it is not in the WinUI shell yet.
         TdxSession = new TdxSessionCoordinator(config.Tdx, Tdx, Auth, TdxSessionCoordinator.HttpOnly);
+        InitializeDevelopment(config);
     }
 
     /// <summary>
@@ -108,6 +109,10 @@ public sealed partial class ShellServices : IDisposable
     public SearchSources BuildSearchSources() => new()
     {
         Tickets = CachedTickets.ToList(),
+        PullRequests = DevelopmentPullRequests?.PullRequests.ToList() ?? new(),
+        Notifications = Inbox.Notifications.ToList(),
+        Commits = DevelopmentCommits?.ToList() ?? new(),
+        Runs = DevelopmentRuns?.ToList() ?? new(),
     };
 
     /// <summary>
@@ -136,6 +141,7 @@ public sealed partial class ShellServices : IDisposable
         if (DemoMode) return;
         TdxSession.Start();
         _ = StartSignInAsync();
+        StartDevelopment();
     }
 
     private async Task StartSignInAsync()
@@ -152,6 +158,7 @@ public sealed partial class ShellServices : IDisposable
 
     public void Dispose()
     {
+        DisposeDevelopment();
         TdxSession.Dispose();
         Tdx?.Dispose();
     }

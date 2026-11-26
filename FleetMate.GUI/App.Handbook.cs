@@ -1,5 +1,4 @@
 using FleetMate.Core.Knowledge;
-using FleetMate.GUI.Knowledge;
 
 namespace FleetMate.GUI;
 

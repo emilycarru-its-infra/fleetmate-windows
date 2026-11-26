@@ -144,21 +144,8 @@ public partial class PullRequestQueueView : UserControl
     /// True when a provider failure just means "you have not signed in here",
     /// which is a configuration state rather than something going wrong.
     /// </summary>
-    internal static bool IsExpectedSignedOut(PullRequestQueueError error)
-    {
-        if (error.Source != PullRequestSource.GitHub) return false;
-
-        var message = error.Message ?? "";
-
-        // Matched against the messages the stack actually produces rather than
-        // plausible-looking ones: "No authentication token available" is what
-        // the client throws when the token source comes back empty, and "Bad
-        // credentials" is GitHub's own reply to a stale token.
-        return message.Contains("authentication token", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("not authenticated", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("bad credentials", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("gh auth login", StringComparison.OrdinalIgnoreCase);
-    }
+    internal static bool IsExpectedSignedOut(PullRequestQueueError error) =>
+        FleetMate.Core.Development.DevelopmentText.IsExpectedSignedOut(error);
 
     private List<PullRequestRowViewModel> Filter(IReadOnlyList<UnifiedPullRequest> prs) =>
         prs.Where(Matches)

@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="FleetMate.WinUI.Pages.Development.Pulls.PullRequestDetailView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    x:DefaultBindMode="OneTime"
+    xmlns:local="using:FleetMate.WinUI.Pages.Development.Pulls"
+    xmlns:models="using:FleetMate.Core.Models.Projects"
+    xmlns:shared="using:FleetMate.WinUI.Pages.Development.Shared">
+
+    <UserControl.Resources>
+        <Style x:Key="SectionHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
+
+        <DataTemplate x:Key="CommitTemplate" x:DataType="models:PullRequestCommit">
+            <Grid Padding="0,3" ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    FontFamily="Cascadia Code, Consolas"
+                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                    IsTextSelectionEnabled="True"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="{x:Bind ShortSha}" />
+                <StackPanel Grid.Column="1">
+                    <TextBlock MaxLines="1" Text="{x:Bind Subject}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Subject}" />
+                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind AuthorName}" />
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
+
+        <DataTemplate x:Key="CommentTemplate" x:DataType="local:CommentRow">
+            <StackPanel Padding="0,8" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1" Spacing="2">
+                <Grid>
+                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind AuthorName}" />
+                    <TextBlock
+                        HorizontalAlignment="Right"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="{x:Bind DateLabel}" />
+                </Grid>
+                <!-- Vote and status noise renders in the secondary colour: context, not conversation. -->
+                <TextBlock
+                    Foreground="{x:Bind BodyBrush}"
+                    IsTextSelectionEnabled="True"
+                    Text="{x:Bind Body}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="CheckTemplate" x:DataType="local:CheckRow">
+            <Button
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Left"
+                Padding="8,3"
+                Margin="0,0,6,6"
+                AutomationProperties.Name="{x:Bind ToolTip}"
+                Click="Check_Click"
+                CornerRadius="12"
+                IsEnabled="{x:Bind HasDetails}"
+                Tag="{x:Bind}"
+                ToolTipService.ToolTip="{x:Bind ToolTip}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon VerticalAlignment="Center" FontSize="12" Foreground="{x:Bind Brush}" Glyph="{x:Bind Glyph}" />
+                    <TextBlock VerticalAlignment="Center" MaxLines="1" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Button>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header: identity of the PR, and everything you can do to it. -->
+        <StackPanel Spacing="8">
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="2">
+                    <TextBlock x:Name="TitleText" IsTextSelectionEnabled="True" Style="{StaticResource SubtitleTextBlockStyle}" TextWrapping="Wrap" />
+                    <TextBlock x:Name="BylineText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                    <TextBlock
+                        x:Name="BranchText"
+                        FontFamily="Cascadia Code, Consolas"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        IsTextSelectionEnabled="True"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" VerticalAlignment="Top" Orientation="Horizontal" Spacing="4">
+                    <Button AutomationProperties.AutomationId="PullRequestCopyLink" AutomationProperties.Name="Copy title and link" Click="CopyLink_Click" ToolTipService.ToolTip="Copy title and link">
+                        <FontIcon FontSize="14" Glyph="&#xE8C8;" />
+                    </Button>
+                    <Button AutomationProperties.AutomationId="PullRequestOpenInBrowser" AutomationProperties.Name="Open in browser" Click="OpenInBrowser_Click" ToolTipService.ToolTip="Open in browser">
+                        <FontIcon FontSize="14" Glyph="&#xE8A7;" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock x:Name="StateText" Style="{StaticResource CaptionTextBlockStyle}" />
+                <TextBlock x:Name="ReviewerText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
+                <TextBlock x:Name="CommentCountText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
+            </StackPanel>
+
+            <!--
+                Review composer and actions. The one box feeds Comment, Request
+                changes and Approve, the way a GitHub review box does, so no
+                action needs a dialog to collect its text.
+            -->
+            <Border x:Name="ActionPanel" Padding="12" Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="8">
+                    <TextBox
+                        x:Name="ComposerBox" AutomationProperties.AutomationId="PullRequestComposer"
+                        MinHeight="56"
+                        MaxHeight="160"
+                        AcceptsReturn="True"
+                        AutomationProperties.Name="Comment"
+                        PlaceholderText="Leave a comment, or say what needs to change…"
+                        ScrollViewer.VerticalScrollBarVisibility="Auto"
+                        TextWrapping="Wrap" />
+                    <!-- Review on one line, the PR's state on the next, so neither clips in a narrow pane. -->
+                    <StackPanel x:Name="ActionButtons" Spacing="8">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button x:Name="CommentButton" AutomationProperties.AutomationId="PullRequestComment" Click="Comment_Click" Content="Comment" />
+                            <Button x:Name="ApproveButton" AutomationProperties.AutomationId="PullRequestApprove" Click="Approve_Click" Content="Approve" />
+                            <Button x:Name="RequestChangesButton" AutomationProperties.AutomationId="PullRequestRequestChanges" Click="RequestChanges_Click" Content="Request changes" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <ComboBox
+                                x:Name="MergeMethodBox" AutomationProperties.AutomationId="PullRequestMergeMethod"
+                                MinWidth="150"
+                                AutomationProperties.Name="Merge method"
+                                SelectedIndex="1"
+                                ToolTipService.ToolTip="How GitHub merges this pull request">
+                                <ComboBoxItem Content="Merge commit" Tag="Merge" />
+                                <ComboBoxItem Content="Squash" Tag="Squash" />
+                                <ComboBoxItem Content="Rebase" Tag="Rebase" />
+                            </ComboBox>
+                            <Button x:Name="MergeButton" AutomationProperties.AutomationId="PullRequestMerge" Click="Merge_Click" Content="Merge" Style="{StaticResource AccentButtonStyle}" />
+                            <Button x:Name="DraftButton" AutomationProperties.AutomationId="PullRequestDraft" Click="Draft_Click" Content="Mark ready" />
+                            <Button x:Name="CloseButton" AutomationProperties.AutomationId="PullRequestClose" Click="Close_Click" Content="Close" />
+                        </StackPanel>
+                    </StackPanel>
+                    <InfoBar x:Name="ActionStatus" IsClosable="True" IsOpen="False" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+
+        <!--
+            One scroll, never tabs. Wide panes read in two columns:
+            Overview | Handbook, Conversation | Checks and Commits, then Changes
+            across the full width; narrow panes keep one column in that order.
+            PullRequestDetailLayout (FleetMate.Core) places each section.
+        -->
+        <Grid Grid.Row="1">
+            <StackPanel x:Name="LoadingPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                <ProgressRing Width="32" Height="32" IsActive="True" />
+                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Loading pull request…" />
+            </StackPanel>
+
+            <TextBlock
+                x:Name="ErrorText"
+                MaxWidth="460"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                TextAlignment="Center"
+                TextWrapping="Wrap"
+                Visibility="Collapsed" />
+
+            <ScrollViewer x:Name="ContentScroller" HorizontalScrollMode="Disabled" SizeChanged="ContentScroller_SizeChanged" Visibility="Collapsed">
+                <Grid x:Name="SectionsGrid" Padding="0,0,12,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition x:Name="ColumnGap" Width="0" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel x:Name="DescriptionSection" Margin="0,0,0,16">
+                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Description" />
+                        <Border Style="{StaticResource CardStyle}">
+                            <!-- Written by whoever opened the pull request: drawn natively, never in a browser. -->
+                            <shared:MarkdownView x:Name="Description" />
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel x:Name="ConversationSection" Margin="0,0,0,16">
+                        <TextBlock x:Name="ConversationHeader" Style="{StaticResource SectionHeaderStyle}" />
+                        <Border Padding="16,4" Style="{StaticResource CardStyle}">
+                            <ItemsControl x:Name="CommentsList" IsTabStop="False" ItemTemplate="{StaticResource CommentTemplate}" />
+                        </Border>
+                    </StackPanel>
+
+                    <!-- The Handbook's pages about this repository go here once the Handbook is in this app. -->
+                    <ContentControl x:Name="HandbookHost" Margin="0,0,0,16" IsTabStop="False" Visibility="Collapsed" />
+
+                    <StackPanel x:Name="SidePanel">
+                        <StackPanel Margin="0,0,0,16">
+                            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="Checks" />
+                            <TextBlock x:Name="ChecksSummary" Margin="0,0,0,6" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
+                            <ItemsControl x:Name="ChecksList" IsTabStop="False" ItemTemplate="{StaticResource CheckTemplate}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VariableSizedWrapGrid ItemHeight="36" ItemWidth="196" Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                        </StackPanel>
+                        <StackPanel x:Name="CommitsSection" Margin="0,0,0,16">
+                            <TextBlock x:Name="CommitsHeader" Style="{StaticResource SectionHeaderStyle}" />
+                            <Border Style="{StaticResource CardStyle}">
+                                <ItemsControl x:Name="CommitsList" IsTabStop="False" ItemTemplate="{StaticResource CommitTemplate}" />
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <shared:DiffFilesView x:Name="Changes" />
+                </Grid>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</UserControl>

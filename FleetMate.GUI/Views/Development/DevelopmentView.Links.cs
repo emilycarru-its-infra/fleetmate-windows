@@ -70,8 +70,8 @@ public partial class DevelopmentView
     {
         if (AppInstance is not { } app) return;
         UpdateFreshnessContext();
-        if (CurrentSegment == FleetMate.GUI.Views.Shared.Widgets.DevelopmentSegment.Pulls && app.DevelopmentPullRequests != null) await LoadPullRequestsAsync();
-        else if (CurrentSegment == FleetMate.GUI.Views.Shared.Widgets.DevelopmentSegment.Commits && app.DevelopmentCommits != null) await LoadCommitsAsync();
+        if (CurrentSegment == DevelopmentSegment.Pulls && app.DevelopmentPullRequests != null) await LoadPullRequestsAsync();
+        else if (CurrentSegment == DevelopmentSegment.Commits && app.DevelopmentCommits != null) await LoadCommitsAsync();
         else if (app.DevelopmentRuns != null) await LoadRunsAsync();
 
         if (_linkAwaitingSignIn is not { } link) return;

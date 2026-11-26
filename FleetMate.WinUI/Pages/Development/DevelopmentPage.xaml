@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="FleetMate.WinUI.Pages.Development.DevelopmentPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:FleetMate.WinUI.Pages.Development"
+    xmlns:commits="using:FleetMate.WinUI.Pages.Development.Commits"
+    xmlns:pipelines="using:FleetMate.WinUI.Pages.Development.Pipelines"
+    xmlns:pulls="using:FleetMate.WinUI.Pages.Development.Pulls"
+    xmlns:repos="using:FleetMate.WinUI.Pages.Development.Repos"
+    xmlns:skills="using:FleetMate.WinUI.Pages.Development.Skills"
+    NavigationCacheMode="Required">
+
+    <Page.KeyboardAccelerators>
+        <KeyboardAccelerator Key="F5" Invoked="RefreshAccelerator_Invoked" />
+        <KeyboardAccelerator Key="R" Modifiers="Control" Invoked="RefreshAccelerator_Invoked" />
+    </Page.KeyboardAccelerators>
+
+    <Grid x:Name="Root" Padding="16,8,16,16" RowSpacing="8" SizeChanged="Root_SizeChanged">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+
+        <!-- The sub-tabs, Graphs, Inbox and Refresh. -->
+        <Grid ColumnSpacing="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Repos is first and the default: the checkouts people and agents work in. -->
+            <SelectorBar
+                x:Name="SegmentBar"
+                AutomationProperties.AutomationId="DevelopmentSegments"
+                AutomationProperties.Name="Development views"
+                SelectionChanged="SegmentBar_SelectionChanged">
+                <SelectorBarItem x:Name="ReposItem" AutomationProperties.AutomationId="DevelopmentReposSegment" Tag="Repos" Text="Repos" IsSelected="True" />
+                <SelectorBarItem x:Name="PullsItem" AutomationProperties.AutomationId="DevelopmentPullsSegment" Tag="Pulls" Text="Pulls" />
+                <SelectorBarItem x:Name="CommitsItem" AutomationProperties.AutomationId="DevelopmentCommitsSegment" Tag="Commits" Text="Commits" />
+                <SelectorBarItem x:Name="PipelinesItem" AutomationProperties.AutomationId="DevelopmentPipelinesSegment" Tag="Pipelines" Text="Pipelines" />
+                <SelectorBarItem x:Name="SkillsItem" AutomationProperties.AutomationId="DevelopmentSkillsSegment" Tag="Skills" Text="Skills" />
+            </SelectorBar>
+
+            <DropDownButton
+                x:Name="SegmentMenu"
+                HorizontalAlignment="Left"
+                AutomationProperties.AutomationId="DevelopmentSegmentMenu"
+                AutomationProperties.Name="Development view"
+                Visibility="Collapsed">
+                <DropDownButton.Flyout>
+                    <MenuFlyout x:Name="SegmentMenuFlyout" Placement="BottomEdgeAlignedLeft" />
+                </DropDownButton.Flyout>
+            </DropDownButton>
+
+            <ToggleButton
+                x:Name="GraphsButton"
+                Grid.Column="1"
+                AutomationProperties.AutomationId="DevelopmentGraphsButton"
+                AutomationProperties.Name="Graphs"
+                Click="GraphsButton_Click"
+                Style="{StaticResource DefaultToggleButtonStyle}"
+                ToolTipService.ToolTip="Show or hide the graphs">
+                <FontIcon FontSize="16" Glyph="&#xE9D2;" />
+            </ToggleButton>
+
+            <!--
+                The inbox is a glance, not a sub-tab: a popover off one button,
+                shown only while something is unread (or while it is open, so
+                marking all read does not pull it away). It never shows a count.
+            -->
+            <Button
+                x:Name="InboxButton"
+                Grid.Column="2"
+                AutomationProperties.AutomationId="DevelopmentInboxButton"
+                AutomationProperties.Name="Inbox"
+                ToolTipService.ToolTip="Inbox: unread notifications"
+                Visibility="Collapsed">
+                <FontIcon FontSize="16" Glyph="&#xE715;" />
+                <Button.Flyout>
+                    <Flyout x:Name="InboxFlyout" Closed="InboxFlyout_Closed" Opening="InboxFlyout_Opening" Placement="BottomEdgeAlignedRight">
+                        <pulls:InboxPanel x:Name="Inbox" Width="440" Height="520" />
+                    </Flyout>
+                </Button.Flyout>
+            </Button>
+
+            <Button
+                x:Name="RefreshButton"
+                Grid.Column="3"
+                AutomationProperties.AutomationId="DevelopmentRefreshButton"
+                AutomationProperties.Name="Refresh"
+                Click="RefreshButton_Click"
+                ToolTipService.ToolTip="Refresh the current Development view (F5)">
+                <FontIcon FontSize="16" Glyph="&#xE72C;" />
+            </Button>
+
+            <ProgressRing
+                x:Name="LoadingRing"
+                Grid.Column="4"
+                Width="16"
+                Height="16"
+                Margin="4,0,0,0"
+                AutomationProperties.Name="Loading"
+                IsActive="False" />
+        </Grid>
+
+        <!-- The Graphs strip: each sub-tab's own cards; Repos shows the selected repository's Insights. -->
+        <ScrollViewer
+            x:Name="GraphsScroller"
+            Grid.Row="1"
+            HorizontalScrollMode="Disabled"
+            VerticalScrollBarVisibility="Auto"
+            Visibility="Collapsed">
+            <ContentControl x:Name="GraphsHost" HorizontalContentAlignment="Stretch" IsTabStop="False" />
+        </ScrollViewer>
+
+        <Grid Grid.Row="2">
+            <repos:ReposSegmentView x:Name="ReposView" />
+            <pulls:PullsSegmentView x:Name="PullsView" Visibility="Collapsed" />
+            <commits:CommitsSegmentView x:Name="CommitsView" Visibility="Collapsed" />
+            <pipelines:PipelinesSegmentView x:Name="PipelinesView" Visibility="Collapsed" />
+            <skills:SkillsSegmentView x:Name="SkillsView" Visibility="Collapsed" />
+        </Grid>
+    </Grid>
+</Page>

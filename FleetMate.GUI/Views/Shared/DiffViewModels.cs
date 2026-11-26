@@ -30,17 +30,7 @@ public sealed class PullRequestCommentViewModel
         : Application.Current?.TryFindResource("SystemControlForegroundBaseHighBrush") as Brush
           ?? Brushes.Black;
 
-    internal static string Strip(string? html)
-    {
-        if (string.IsNullOrWhiteSpace(html)) return "";
-        if (!html.Contains('<')) return html.Trim();
-
-        var text = System.Text.RegularExpressions.Regex.Replace(html, "<br\\s*/?>", "\n");
-        text = System.Text.RegularExpressions.Regex.Replace(text, "</p>", "\n");
-        text = System.Text.RegularExpressions.Regex.Replace(text, "<[^>]+>", "");
-
-        return System.Net.WebUtility.HtmlDecode(text).Trim();
-    }
+    internal static string Strip(string? html) => PullRequestPresentation.StripHtml(html);
 }
 
 /// <summary>
@@ -59,17 +49,11 @@ public sealed class DiffLineViewModel
     public string Content => Line.Content;
 
     /// <summary>Blank rather than 0 where a side has no line, so the gutter reads as absence.</summary>
-    public string OldLineLabel => Line.OldLine?.ToString() ?? "";
-    public string NewLineLabel => Line.NewLine?.ToString() ?? "";
+    public string OldLineLabel => DiffText.Number(Line.OldLine);
+    public string NewLineLabel => DiffText.Number(Line.NewLine);
 
     /// <summary>The +/-/space marker, restored for display.</summary>
-    public string Marker => Line.Kind switch
-    {
-        DiffLineKind.Addition => "+",
-        DiffLineKind.Deletion => "-",
-        DiffLineKind.NoNewline => "\\",
-        _ => " ",
-    };
+    public string Marker => DiffText.Marker(Line.Kind);
 
     public Brush RowBackground => Line.Kind switch
     {
@@ -133,17 +117,9 @@ public sealed class DiffSideCellViewModel
     /// <summary>Which side this cell is on, so a context line shows the right number.</summary>
     public bool IsLeft { get; init; }
 
-    public string NumberLabel => (IsLeft ? Line?.OldLine : Line?.NewLine)?.ToString() ?? "";
+    public string NumberLabel => DiffText.SideNumber(Line, IsLeft);
 
-    public string Content => Line is null ? "" : $"{Marker} {Line.Content}";
-
-    private string Marker => Line?.Kind switch
-    {
-        DiffLineKind.Addition => "+",
-        DiffLineKind.Deletion => "-",
-        DiffLineKind.NoNewline => "\\",
-        _ => " ",
-    };
+    public string Content => DiffText.SideContent(Line);
 
     public Brush CellBackground => Line is null
         ? EmptyFill
@@ -155,22 +131,7 @@ public sealed class DiffSideCellViewModel
 
     public FontStyle ContentStyle => Line?.Kind == DiffLineKind.NoNewline ? FontStyles.Italic : FontStyles.Normal;
 
-    public string AccessibleText
-    {
-        get
-        {
-            if (Line is null) return "No line";
-            var kind = Line.Kind switch
-            {
-                DiffLineKind.Addition => "Added",
-                DiffLineKind.Deletion => "Removed",
-                DiffLineKind.Context => "Unchanged",
-                _ => "",
-            };
-            var number = NumberLabel.Length > 0 ? $"line {NumberLabel}, " : "";
-            return $"{kind} {number}{Line.Content}".Trim();
-        }
-    }
+    public string AccessibleText => DiffText.Accessible(Line, NumberLabel);
 
     private static readonly Brush EmptyFill = FrozenGray();
 
@@ -236,17 +197,12 @@ public sealed class DiffFileViewModel
     public string Path => File.DisplayPath;
 
     /// <summary>"+12 −3", or a status word where there is nothing to count.</summary>
-    public string StatLabel => $"+{File.Insertions}  −{File.Deletions}";
+    public string StatLabel => DiffText.FileStats(File);
 
     public Brush InsertionBrush => new SolidColorBrush(Color.FromRgb(0x2D, 0xA4, 0x4E));
     public Brush DeletionBrush => new SolidColorBrush(Color.FromRgb(0xD1, 0x3A, 0x3A));
 
-    public string StatusLabel => File switch
-    {
-        { IsAddition: true } => "added",
-        { IsDeletion: true } => "deleted",
-        _ => "",
-    };
+    public string StatusLabel => DiffText.FileStatus(File);
 
     public Visibility StatusVisibility =>
         string.IsNullOrEmpty(StatusLabel) ? Visibility.Collapsed : Visibility.Visible;
@@ -262,5 +218,5 @@ public sealed class DiffFileViewModel
     public Visibility EmptyNoticeVisibility =>
         File.Hunks.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
-    public string EmptyNotice => "No text diff available — binary, too large, or renamed without changes.";
+    public string EmptyNotice => DiffText.EmptyNotice;
 }

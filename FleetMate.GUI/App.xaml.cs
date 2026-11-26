@@ -29,7 +29,7 @@ using ModernWpf;
 
 namespace FleetMate.GUI;
 
-public partial class App : Application
+public partial class App : Application, IDevelopmentHost
 {
     public FleetMateConfig Config { get; private set; } = null!;
     public AuthManager AuthManager { get; private set; } = null!;
@@ -172,18 +172,51 @@ public partial class App : Application
     /// <summary>Pending Azure Pipelines approvals, pinned to the active runs they hold.</summary>
     public FleetMate.Core.Services.Projects.PipelineApprovalTracker PipelineApprovals { get; } = new();
 
-    private FleetMate.GUI.Views.Development.DevelopmentDataSync? _developmentSync;
-    public FleetMate.GUI.Views.Development.DevelopmentDataSync DevelopmentSync =>
-        _developmentSync ??= new FleetMate.GUI.Views.Development.DevelopmentDataSync(this);
+    private DevelopmentDataSync? _developmentSync;
+    public DevelopmentDataSync DevelopmentSync => _developmentSync ??= CreateDevelopmentSync();
 
     /// <summary>GitHub notifications, polled from startup so the Development tab count is live.</summary>
-    public FleetMate.GUI.Views.Development.DevelopmentInbox Inbox { get; }
+    public DevelopmentInbox Inbox { get; }
 
     public App()
     {
-        Inbox = new FleetMate.GUI.Views.Development.DevelopmentInbox(() =>
+        Inbox = new DevelopmentInbox(() =>
             Config is { } config ? new GitHubNotificationService(config.GitHubProviderOrDefault()) : null);
     }
+
+    /// <summary>The Development refresh worker, told when the window is in the foreground, minimized or asleep.</summary>
+    private DevelopmentDataSync CreateDevelopmentSync()
+    {
+        var sync = new DevelopmentDataSync(this, Windows.OfType<Window>().Any(window => window.IsActive));
+        var window = MainWindow;
+        void OnState(object? s, EventArgs e) => sync.SetMinimized(window?.WindowState == WindowState.Minimized);
+        void OnActivated(object? s, EventArgs e) => sync.SetForeground(true);
+        void OnDeactivated(object? s, EventArgs e) => sync.SetForeground(false);
+        void OnPower(object s, Microsoft.Win32.PowerModeChangedEventArgs e) => Dispatcher.BeginInvoke(() =>
+        {
+            if (e.Mode == Microsoft.Win32.PowerModes.Suspend) sync.SetSuspended(true);
+            else if (e.Mode == Microsoft.Win32.PowerModes.Resume) sync.SetSuspended(false);
+        });
+        if (window != null) window.StateChanged += OnState;
+        Activated += OnActivated;
+        Deactivated += OnDeactivated;
+        Microsoft.Win32.SystemEvents.PowerModeChanged += OnPower;
+        _unhookDevelopmentSync = () =>
+        {
+            if (window != null) window.StateChanged -= OnState;
+            Activated -= OnActivated;
+            Deactivated -= OnDeactivated;
+            Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPower;
+        };
+        OnState(null, EventArgs.Empty);
+        return sync;
+    }
+
+    private Action? _unhookDevelopmentSync;
+
+    Task<bool> IDevelopmentHost.RunOnUiAsync(Func<Task<bool>> work) => Dispatcher.InvokeAsync(work).Task.Unwrap();
+
+    void IDevelopmentHost.PostToUi(Action action) => Dispatcher.BeginInvoke(action);
 
     // MARK: - TDX SSO State
     public bool IsTdxSsoAuthenticated => TdxService?.IsSsoAuthenticated ?? false;
@@ -354,6 +387,8 @@ public partial class App : Application
     /// <summary>Invalidate all caches</summary>
     public void InvalidateAllCaches()
     {
+        _unhookDevelopmentSync?.Invoke();
+        _unhookDevelopmentSync = null;
         _developmentSync?.Dispose();
         _ticketWorkspace?.Dispose();
         _developmentSync = null;
@@ -721,46 +756,14 @@ public partial class App : Application
 
         AuthManager.Update(AuthSystemId.DevOps, AuthTokenState.Authenticating());
 
-        // Phase 1: the broker, redeeming the device's primary refresh token.
-        if (EntraTokenSource.Shared is { } broker)
+        var sso = DevOpsSsoService;
+        var headless = await DevOpsSignInChain.RunAsync(sso, async () =>
         {
-            try
-            {
-                var token = await broker.GetTokenAsync(DevOpsSsoService.AdoResourceId);
-                var (name, email) = DevOpsSsoService.ExtractUserInfoFromJwt(token);
-                Log.Information("[devops-sso] Phase 1: broker token acquired — user={UserName}", name ?? email ?? "(unknown)");
-                HandleDevOpsSsoSuccess(DevOpsSsoResult.Succeeded(token, TdxSsoService.ReadExpiry(token), userName: name, userEmail: email));
-                return;
-            }
-            catch (Exception ex)
-            {
-                Log.Information("[devops-sso] Phase 1: broker had no token: {Reason}", ex.Message);
-            }
-        }
-
-        // Phase 2: az CLI, then its MSAL cache, then a refresh token from this session.
-        try
-        {
-            var result = await DevOpsSsoService.RefreshAccessTokenAsync();
-            if (result.Success && !string.IsNullOrEmpty(result.Token))
-            {
-                Log.Information("[devops-sso] Phase 2: token acquired — user={UserName}", result.UserName ?? "(unknown)");
-                HandleDevOpsSsoSuccess(result);
-                return;
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "[devops-sso] Phase 2: token acquisition failed");
-        }
-
-        // Phase 3: the hidden browser.
-        Log.Information("[devops-sso] Phase 3: hidden WebView2 SSO");
-        var upn = await TdxSsoIdentity.ResolveWindowsUpnAsync();
-        var headless = await DevOpsHeadlessSso.SignInAsync(DevOpsSsoService, upn);
+            var upn = await TdxSsoIdentity.ResolveWindowsUpnAsync();
+            return await DevOpsHeadlessSso.SignInAsync(sso, upn);
+        });
         if (headless is { Success: true, Token: not null })
         {
-            Log.Information("[devops-sso] Phase 3: token acquired — user={UserName}", headless.UserName ?? "(unknown)");
             HandleDevOpsSsoSuccess(headless);
             return;
         }
@@ -1318,6 +1321,8 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _unhookDevelopmentSync?.Invoke();
+        _unhookDevelopmentSync = null;
         _developmentSync?.Dispose();
         _ticketWorkspace?.Dispose();
         StopTdxSessionKeeper();

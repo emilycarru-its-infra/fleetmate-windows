@@ -3,7 +3,7 @@ using FleetMate.Core.Config;
 using FleetMate.Core.Knowledge;
 using Serilog;
 
-namespace FleetMate.GUI.Knowledge;
+namespace FleetMate.Core.Knowledge;
 
 /// <summary>
 /// Development › Skills: the shared agent setup from FleetMate's own copy of
@@ -58,6 +58,15 @@ public sealed class SkillsStore
                 catch (OperationCanceledException) { break; }
             }
         }, ct);
+    }
+
+    /// <summary>Show <paramref name="entries"/> without reading any repository: demo mode's fictional catalog.</summary>
+    public void Seed(IReadOnlyList<SkillEntry> entries)
+    {
+        Entries = entries;
+        SyncedAt = DateTime.Now;
+        SyncError = null;
+        Changed?.Invoke(this, EventArgs.Empty);
     }
 
     public void Stop() => _loop?.Cancel();

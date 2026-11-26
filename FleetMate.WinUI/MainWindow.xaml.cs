@@ -266,7 +266,16 @@ public sealed partial class MainWindow : Window
         Log.Information("Opening {Link}", parsed.ToLink());
         LinkBanner.IsOpen = false;
         if (parsed is FleetMateLink.Ticket ticket) App.Services.PendingTicketId = ticket.Id;
-        NavigateToTab(LinkRoutes.TabFor(parsed));
+        var tab = LinkRoutes.TabFor(parsed);
+        if (tab == "Development") App.Services.RequestDevelopmentLink(parsed);
+        NavigateToTab(tab);
+    }
+
+    /// <summary>Say something about a link in the banner under the toolbar: a page's link that found nothing.</summary>
+    public void ShowLinkBanner(string message)
+    {
+        LinkBanner.Message = message;
+        LinkBanner.IsOpen = true;
     }
 
     private void BringToFront()
@@ -331,6 +340,9 @@ public sealed partial class MainWindow : Window
 
     /// <summary>The XAML root a capture renders and themes.</summary>
     internal FrameworkElement CaptureRoot => RootGrid;
+
+    /// <summary>The page the frame shows, for the capture's <see cref="ICaptureViews"/>.</summary>
+    internal object? CurrentPage => NavFrame.Content;
 
     /// <summary>Show a tab, or Settings, without touching history rules.</summary>
     internal void ShowPanel(string panel)
