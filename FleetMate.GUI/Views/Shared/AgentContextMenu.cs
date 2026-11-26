@@ -14,7 +14,7 @@ using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Models.Reporting;
 using FleetMate.Core.Models.Tickets;
 using FleetMate.Core.Shared;
-using FleetMate.GUI.ViewModels.Manage;
+using FleetMate.Core.Manage;
 using FleetMate.GUI.Views.Development;
 using FleetMate.GUI.Views.Development.Repos;
 using FleetMate.GUI.Views.Identity;

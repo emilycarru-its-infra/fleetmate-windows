@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Interop;
 using FleetMate.Core.Models.Manage;
 using FleetMate.Core.Services.Manage;
-using FleetMate.GUI.ViewModels.Manage;
+using FleetMate.Core.Manage;
 using FleetMate.GUI.Views.Shared;
 
 namespace FleetMate.GUI.Views.Manage;
@@ -27,7 +27,7 @@ public partial class ManagePage : Page
 
     // Row drag state for sidebar reordering.
     private System.Windows.Point _dragStart;
-    private SidebarRoomVm? _dragCandidate;
+    private SidebarRoom? _dragCandidate;
     private ListBox? _dragSourceList;
     private bool _rosterLoaded;
     private bool _suppressSidebarSelection;
@@ -96,9 +96,7 @@ public partial class ManagePage : Page
     // DevOps REST API on load and on Reload, cached per user; the local file
     // is only the fallback. Removes the dependency on a checkout being pulled.
 
-    private static string RosterCachePath => System.IO.Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "FleetMate", "cache", "computers.csv");
+    private static string RosterCachePath => RosterSource.CachePath;
 
     private string _rosterProvenance = "local file";
     private bool _rosterFetchRunning;
@@ -109,7 +107,7 @@ public partial class ManagePage : Page
         if (_vm.RosterPathOverride == null && System.IO.File.Exists(RosterCachePath))
         {
             _vm.RosterPathOverride = RosterCachePath;
-            _rosterProvenance = $"cached {System.IO.File.GetLastWriteTime(RosterCachePath):HH:mm}";
+            _rosterProvenance = RosterSource.CachedProvenance(RosterCachePath)!;
         }
         ReloadRosterFromDisk();
         _ = FetchRemoteRosterAsync();
@@ -121,52 +119,18 @@ public partial class ManagePage : Page
         _rosterFetchRunning = true;
         try
         {
-            var app = Application.Current as App;
-            var manage = app?.Config.Manage ?? new Core.Config.ManageConfig();
-            if (!manage.FetchesRoster)
-            {
-                _rosterProvenance = "local file";
-                Dispatcher.Invoke(UpdateRosterFooter);
-                return;
-            }
-            var adoConfig = app?.Config.AzureDevOps;
-            if (adoConfig == null || string.IsNullOrWhiteSpace(adoConfig.Organization))
-            {
-                _rosterProvenance = "local file (DevOps not configured)";
-                Dispatcher.Invoke(UpdateRosterFooter);
-                return;
-            }
-
-            using var devops = new Core.Services.Projects.AzureDevOpsService(adoConfig);
-            var content = await devops.GetRepositoryItemContentAsync(
-                manage.RosterRepoProject, manage.RosterRepo, manage.RosterRepoPath);
-
-            if (string.IsNullOrWhiteSpace(content))
-            {
-                _rosterProvenance = System.IO.File.Exists(RosterCachePath)
-                    ? $"cached {System.IO.File.GetLastWriteTime(RosterCachePath):HH:mm} (fetch failed)"
-                    : "local file (fetch failed)";
-                Dispatcher.Invoke(UpdateRosterFooter);
-                return;
-            }
-
-            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(RosterCachePath)!);
-            System.IO.File.WriteAllText(RosterCachePath, content);
-            _rosterProvenance = $"{manage.RosterRepoProject}/{manage.RosterRepo} · fetched {DateTime.Now:HH:mm}";
-
+            var config = (Application.Current as App)?.Config ?? new Core.Config.FleetMateConfig();
+            var (fetched, provenance) = await RosterSource.FetchAsync(config, RosterCachePath);
+            _rosterProvenance = provenance;
             Dispatcher.Invoke(() =>
             {
-                _vm.RosterPathOverride = RosterCachePath;
-                ReloadRosterFromDisk();
+                if (fetched)
+                {
+                    _vm.RosterPathOverride = RosterCachePath;
+                    ReloadRosterFromDisk();
+                }
+                else UpdateRosterFooter();
             });
-        }
-        catch (Exception ex)
-        {
-            Serilog.Log.Warning(ex, "Roster fetch failed");
-            _rosterProvenance = System.IO.File.Exists(RosterCachePath)
-                ? $"cached {System.IO.File.GetLastWriteTime(RosterCachePath):HH:mm} (fetch failed)"
-                : "local file (fetch failed)";
-            Dispatcher.Invoke(UpdateRosterFooter);
         }
         finally
         {
@@ -178,10 +142,10 @@ public partial class ManagePage : Page
     {
         _vm.LoadRoster();
         _suppressSidebarSelection = true;
-        LabsList.ItemsSource = ApplySavedOrder("Labs", _vm.Roster.Labs.Select(r => SidebarRoomVm.From(r, RosterSection.Labs)).ToList());
-        KiosksList.ItemsSource = ApplySavedOrder("Kiosks", _vm.Roster.Kiosks.Select(r => SidebarRoomVm.From(r, RosterSection.Kiosks)).ToList());
-        StaffList.ItemsSource = ApplySavedOrder("Staff", _vm.Roster.Staff.Select(r => SidebarRoomVm.From(r, RosterSection.Staff)).ToList());
-        FacultyList.ItemsSource = ApplySavedOrder("Faculty", _vm.Roster.Faculty.Select(r => SidebarRoomVm.From(r, RosterSection.Faculty)).ToList());
+        LabsList.ItemsSource = ApplySavedOrder("Labs", _vm.Roster.Labs.Select(r => SidebarRoom.From(r, RosterSection.Labs)).ToList());
+        KiosksList.ItemsSource = ApplySavedOrder("Kiosks", _vm.Roster.Kiosks.Select(r => SidebarRoom.From(r, RosterSection.Kiosks)).ToList());
+        StaffList.ItemsSource = ApplySavedOrder("Staff", _vm.Roster.Staff.Select(r => SidebarRoom.From(r, RosterSection.Staff)).ToList());
+        FacultyList.ItemsSource = ApplySavedOrder("Faculty", _vm.Roster.Faculty.Select(r => SidebarRoom.From(r, RosterSection.Faculty)).ToList());
         _suppressSidebarSelection = false;
         NoGroupsText.Visibility = _vm.CustomGroups.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
@@ -196,13 +160,7 @@ public partial class ManagePage : Page
 
         ApplySidebarExpandedState();
 
-        var app = Application.Current as App;
-        if (!_vm.RosterLoaded)
-            EmptyHint.Text = _vm.RosterStatus;
-        else if (app?.SecureShellService == null)
-            EmptyHint.Text = "Rooms load from the roster. Machine details need the SSH key configured in Settings (Manage).";
-        else
-            EmptyHint.Text = "Rooms come from the roster configured in Settings.";
+        EmptyHint.Text = ManageText.EmptyHint(_vm, (Application.Current as App)?.SecureShellService != null);
         UpdateScanBadge();
     }
 
@@ -211,9 +169,7 @@ public partial class ManagePage : Page
     /// <summary>"22 labs · 445 machines · Platform/Agent · fetched 14:32".</summary>
     private void UpdateRosterFooter()
     {
-        RosterFooterText.Text = _vm.RosterLoaded
-            ? $"{_vm.Roster.Labs.Count} labs · {_vm.Roster.Source.Count} machines · {_rosterProvenance}"
-            : (_vm.RosterStatus is { Length: > 0 } status ? status : "Check the roster path in Settings › Manage");
+        RosterFooterText.Text = ManageText.RosterFooter(_vm, _rosterProvenance);
     }
 
     // ── Keyboard ────────────────────────────────────────────────────────
@@ -233,7 +189,7 @@ public partial class ManagePage : Page
 
     private async void OnRoomSelected(object sender, SelectionChangedEventArgs e)
     {
-        if (_suppressSidebarSelection || sender is not ListBox list || list.SelectedItem is not SidebarRoomVm room) return;
+        if (_suppressSidebarSelection || sender is not ListBox list || list.SelectedItem is not SidebarRoom room) return;
         ClearOtherSidebarSelections(list);
         HideDetail();
         await _vm.SelectRoomAsync(room.Room);
@@ -290,26 +246,15 @@ public partial class ManagePage : Page
     // Rows missing from the saved list keep the roster's default order after
     // the arranged ones, so new labs append rather than disappear.
 
-    /// <summary>Saved order first (matching by row id), then the rest in roster order.</summary>
-    private List<SidebarRoomVm> ApplySavedOrder(string section, List<SidebarRoomVm> rows)
-    {
-        if (!_sidebarOrder.TryGetValue(section, out var saved) || saved.Count == 0) return rows;
-        var ordered = new List<SidebarRoomVm>();
-        foreach (var id in saved)
-        {
-            var hit = rows.FirstOrDefault(r => r.Title == id && !ordered.Contains(r));
-            if (hit != null) ordered.Add(hit);
-        }
-        ordered.AddRange(rows.Where(r => !ordered.Contains(r)));
-        return ordered;
-    }
+    private List<SidebarRoom> ApplySavedOrder(string section, List<SidebarRoom> rows) =>
+        SidebarOrder.Apply(_sidebarOrder.GetValueOrDefault(section), rows);
 
-    private static SidebarRoomVm? RowUnderMouse(ListBox list, object originalSource)
+    private static SidebarRoom? RowUnderMouse(ListBox list, object originalSource)
     {
         var element = originalSource as DependencyObject;
         while (element != null && element is not ListBoxItem)
             element = System.Windows.Media.VisualTreeHelper.GetParent(element);
-        return (element as ListBoxItem)?.DataContext as SidebarRoomVm;
+        return (element as ListBoxItem)?.DataContext as SidebarRoom;
     }
 
     private void OnRoomListMouseDown(object sender, MouseButtonEventArgs e)
@@ -347,7 +292,7 @@ public partial class ManagePage : Page
         e.Effects = DragDropEffects.Move;
 
         var target = RowUnderMouse(list, e.OriginalSource);
-        foreach (var row in list.ItemsSource.Cast<SidebarRoomVm>())
+        foreach (var row in list.ItemsSource.Cast<SidebarRoom>())
             row.IsDropTarget = row == target && row != e.Data.GetData("FleetMateSidebarRoom");
     }
 
@@ -358,16 +303,11 @@ public partial class ManagePage : Page
         e.Handled = true;
         ClearDropIndicators();
         if (sender is not ListBox list || list != _dragSourceList) return;
-        if (e.Data.GetData("FleetMateSidebarRoom") is not SidebarRoomVm dragged) return;
+        if (e.Data.GetData("FleetMateSidebarRoom") is not SidebarRoom dragged) return;
         var target = RowUnderMouse(list, e.OriginalSource);
         if (target == null || target == dragged) return;
 
-        var rows = list.ItemsSource.Cast<SidebarRoomVm>().ToList();
-        var targetIndex = rows.IndexOf(target);
-        if (targetIndex < 0 || !rows.Remove(dragged)) return;
-        // Insert at the target's pre-removal slot: the target moves down when
-        // the drag came from below it, up when it came from above.
-        rows.Insert(Math.Min(targetIndex, rows.Count), dragged);
+        if (SidebarOrder.Move(list.ItemsSource.Cast<SidebarRoom>().ToList(), dragged, target) is not { } rows) return;
         list.ItemsSource = rows;
 
         var section = list.Tag?.ToString() ?? "";
@@ -380,7 +320,7 @@ public partial class ManagePage : Page
         foreach (var list in new[] { LabsList, KiosksList, StaffList, FacultyList })
         {
             if (list.ItemsSource == null) continue;
-            foreach (var row in list.ItemsSource.Cast<SidebarRoomVm>())
+            foreach (var row in list.ItemsSource.Cast<SidebarRoom>())
                 row.IsDropTarget = false;
         }
     }
@@ -585,7 +525,7 @@ public partial class ManagePage : Page
     private void UpdateTrustBadge()
     {
         var trust = _vm.EffectiveTrust;
-        TrustText.Text = trust.Label() + (_vm.EffectiveTrustIsInferred ? " (inferred)" : "");
+        TrustText.Text = ManageText.TrustLabel(trust, _vm.EffectiveTrustIsInferred);
         TrustDot.Fill = trust switch
         {
             CommandTrustLevel.Destructive => Brushes.IndianRed,
@@ -709,25 +649,22 @@ public partial class ManagePage : Page
         ResultsSplitterRow.Height = show ? new GridLength(6) : new GridLength(0);
         if (show && ResultsRow.Height.Value == 0) ResultsRow.Height = new GridLength(1.1, GridUnitType.Star);
         if (!show) ResultsRow.Height = new GridLength(0);
-        ResultsTitle.Text = _vm.LastRunLabel.Length > 0 ? $"Results: {_vm.LastRunLabel}" : "Results";
+        ResultsTitle.Text = ManageText.ResultsTitle(_vm.LastRunLabel);
     }
 
     private void UpdateResultCounts()
     {
-        ResultsCounts.Text = _vm.Results.Count == 0 ? "" : $"{_vm.ResultSuccessCount} ok · {_vm.ResultFailedCount} failed · {_vm.ResultOfflineCount} offline";
-        ResultsTitle.Text = _vm.LastRunLabel.Length > 0 ? $"Results: {_vm.LastRunLabel}" : "Results";
+        ResultsCounts.Text = ManageText.ResultCounts(_vm);
+        ResultsTitle.Text = ManageText.ResultsTitle(_vm.LastRunLabel);
     }
 
     private void OnResultFilterChanged(object sender, RoutedEventArgs e) => ApplyResultFilter();
 
-    private IEnumerable<CommandResultViewModel> FilteredResults()
-    {
-        IEnumerable<CommandResultViewModel> all = _vm.Results;
-        if (FilterSuccess?.IsChecked == true) return all.Where(r => r.Status == CommandRunStatus.Success);
-        if (FilterFailed?.IsChecked == true) return all.Where(r => r.Status is CommandRunStatus.Failed or CommandRunStatus.AuthFailed or CommandRunStatus.Timeout);
-        if (FilterOffline?.IsChecked == true) return all.Where(r => r.Status == CommandRunStatus.Offline);
-        return all;
-    }
+    private IEnumerable<CommandResultViewModel> FilteredResults() => ManageText.Filter(_vm.Results,
+        FilterSuccess?.IsChecked == true ? ResultFilter.Success
+        : FilterFailed?.IsChecked == true ? ResultFilter.Failed
+        : FilterOffline?.IsChecked == true ? ResultFilter.Offline
+        : ResultFilter.All);
 
     private void ApplyResultFilter()
     {
@@ -743,8 +680,7 @@ public partial class ManagePage : Page
 
     private void OnSelectFailedTargets(object sender, RoutedEventArgs e)
     {
-        var failed = _vm.Results.Where(r => r.Status is CommandRunStatus.Failed or CommandRunStatus.AuthFailed or CommandRunStatus.Timeout or CommandRunStatus.Offline)
-            .Select(r => r.Serial).ToHashSet();
+        var failed = ManageText.FailedSerials(_vm.Results);
         foreach (var row in _vm.Rows) row.IsSelected = failed.Contains(row.Serial);
     }
 
@@ -754,8 +690,8 @@ public partial class ManagePage : Page
     private void OnResultOpenSsh(object sender, RoutedEventArgs e) { if (ContextResult() is { } r && RowForResult(r) is { } row) _vm.OpenSsh(row); }
     private void OnResultOpenRdp(object sender, RoutedEventArgs e) { if (ContextResult() is { } r && RowForResult(r) is { } row) _vm.OpenRdp(row); }
     private void OnResultOpenBoth(object sender, RoutedEventArgs e) { if (ContextResult() is { } r && RowForResult(r) is { } row) _vm.OpenSshAndRdp(row); }
-    private void OnResultCopyHostnameIp(object sender, RoutedEventArgs e) { if (ContextResult() is { } r) CopyText($"{(r.Hostname.Length > 0 ? r.Hostname : r.Name)}	{r.Ip}"); }
-    private void OnResultCopyHostname(object sender, RoutedEventArgs e) { if (ContextResult() is { } r) CopyText(r.Hostname.Length > 0 ? r.Hostname : r.Name); }
+    private void OnResultCopyHostnameIp(object sender, RoutedEventArgs e) { if (ContextResult() is { } r) CopyText($"{ManageText.HostnameOf(r)}\t{r.Ip}"); }
+    private void OnResultCopyHostname(object sender, RoutedEventArgs e) { if (ContextResult() is { } r) CopyText(ManageText.HostnameOf(r)); }
     private void OnResultCopyIp(object sender, RoutedEventArgs e) { if (ContextResult() is { } r) CopyText(r.Ip); }
     private void OnResultCopyOutput(object sender, RoutedEventArgs e) { if (ContextResult() is { } r) CopyText(r.Output); }
     private void OnResultCopyError(object sender, RoutedEventArgs e) { if (ContextResult() is { } r) CopyText(r.ErrorOutput); }
@@ -832,7 +768,7 @@ public partial class ManagePage : Page
     {
         var selected = _vm.SelectedCount;
         var online = _vm.OnlineCount;
-        SelectionCountText.Text = selected == 0 ? $"{online} online" : $"{selected} selected · {online} online";
+        SelectionCountText.Text = ManageText.SelectionCount(selected, online);
         HeaderCheckBox.IsChecked = _vm.Rows.Count > 0 && selected == _vm.Rows.Count ? true : selected == 0 ? false : null;
     }
 
@@ -900,7 +836,7 @@ public partial class ManagePage : Page
 
     // ── Copy ────────────────────────────────────────────────────────────
 
-    private void OnCopyHostname(object sender, RoutedEventArgs e) { if (ContextRow() is { } r) CopyText(r.Computer.HasHostname ? r.Computer.Hostname : r.Name); }
+    private void OnCopyHostname(object sender, RoutedEventArgs e) { if (ContextRow() is { } r) CopyText(ManageText.HostnameOf(r)); }
     private void OnCopyIp(object sender, RoutedEventArgs e) { if (ContextRow() is { } r && r.HasAddress) CopyText(r.Ip); }
     private void OnCopySerial(object sender, RoutedEventArgs e) { if (ContextRow() is { } r) CopyText(r.Serial); }
     private void OnCopyAsset(object sender, RoutedEventArgs e) { if (ContextRow() is { } r) CopyText(r.Computer.Asset); }
@@ -908,20 +844,15 @@ public partial class ManagePage : Page
     private void OnCopyAllInfo(object sender, RoutedEventArgs e) { if (ContextRow() is { } r) CopyText(r.CopyAllInfo()); }
 
     private void OnCopySelectedHostnames(object sender, RoutedEventArgs e) =>
-        CopyLines(TargetRows().Select(r => r.Computer.HasHostname ? r.Computer.Hostname : r.Name));
+        CopyLines(TargetRows().Select(ManageText.HostnameOf));
     private void OnCopySelectedAssets(object sender, RoutedEventArgs e) =>
         CopyLines(TargetRows().Select(r => r.Computer.Asset).Where(a => a.Length > 0));
     private void OnCopySelectedInventory(object sender, RoutedEventArgs e) =>
         CopyLines(TargetRows().Select(r => r.CopyLine));
 
     /// <summary>Checked rows win; otherwise the grid's highlighted rows; otherwise every row.</summary>
-    private List<MachineRowViewModel> TargetRows()
-    {
-        var checkedRows = _vm.SelectedRows.ToList();
-        if (checkedRows.Count > 0) return checkedRows;
-        if (MachinesGrid.SelectedItems.Count > 0) return MachinesGrid.SelectedItems.Cast<MachineRowViewModel>().ToList();
-        return _vm.Rows.ToList();
-    }
+    private List<MachineRowViewModel> TargetRows() =>
+        ManageText.TargetRows(_vm, MachinesGrid.SelectedItems.Cast<MachineRowViewModel>());
 
     private MachineRowViewModel? ContextRow() =>
         MachinesGrid.SelectedItem as MachineRowViewModel ?? MachinesGrid.CurrentItem as MachineRowViewModel;
@@ -983,84 +914,8 @@ public class NonEmptyToVisibilityConverter : IValueConverter
 public class MachinesCountConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
-        value is int count ? (count == 1 ? "1 machine" : $"{count} machines") : "";
+        value is int count ? ManageText.Machines(count) : "";
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
-}
-
-/// <summary>
-/// A sidebar room row, macOS density: section icon, title, and an
-/// "area · room · N machines" caption. For Curriculum the title is the
-/// roster's fleet value (the room number when the row has no fleet); the
-/// caption's area is the most common lease area among members and its room
-/// the most common location, omitted when it equals the title.
-/// </summary>
-public class SidebarRoomVm : System.ComponentModel.INotifyPropertyChanged
-{
-    public RosterRoom Room { get; init; } = new();
-    public string Title { get; init; } = "";
-    public string Subtitle { get; init; } = "";
-    public string Glyph { get; init; } = "";
-
-    private bool _isDropTarget;
-
-    /// <summary>True while a sidebar row drag hovers this row; the template
-    /// paints the 2px accent line on the top edge.</summary>
-    public bool IsDropTarget
-    {
-        get => _isDropTarget;
-        set
-        {
-            if (_isDropTarget == value) return;
-            _isDropTarget = value;
-            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IsDropTarget)));
-        }
-    }
-
-    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
-
-    public static SidebarRoomVm From(RosterRoom room, RosterSection section)
-    {
-        // Curriculum titles by the roster's fleet value, falling back to the
-        // room number when the row has no fleet — read from the members, since
-        // a fleet-less room's DisplayName carries its area, not a fleet.
-        var fleet = Dominant(room.Computers.Select(c => c.Fleet));
-        var title = section == RosterSection.Labs && fleet is { Length: > 0 }
-            ? fleet
-            : room.Number;
-
-        var area = Dominant(room.Computers.Select(c => c.Area));
-        var location = Dominant(room.Computers.Select(c => c.Location));
-
-        var parts = new List<string>();
-        if (area is { Length: > 0 } && !string.Equals(area, title, StringComparison.OrdinalIgnoreCase))
-            parts.Add(area);
-        if (location is { Length: > 0 } && !string.Equals(location, title, StringComparison.OrdinalIgnoreCase))
-            parts.Add(location);
-        parts.Add(room.Count == 1 ? "1 machine" : $"{room.Count} machines");
-
-        var glyph = section switch
-        {
-            RosterSection.Labs => "",
-            RosterSection.Kiosks => "",
-            RosterSection.Staff => "",
-            RosterSection.Faculty => "",
-            _ => ""
-        };
-
-        return new SidebarRoomVm
-        {
-            Room = room,
-            Title = title,
-            Subtitle = string.Join(" · ", parts),
-            Glyph = glyph
-        };
-    }
-
-    private static string? Dominant(IEnumerable<string> values) =>
-        values.Where(v => !string.IsNullOrWhiteSpace(v))
-              .GroupBy(v => v)
-              .OrderByDescending(g => g.Count())
-              .FirstOrDefault()?.Key;
 }
 
 /// <summary>

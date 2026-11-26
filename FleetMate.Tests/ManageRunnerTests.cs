@@ -2,7 +2,7 @@ using FleetMate.Core.Config;
 using FleetMate.Core.Models;
 using FleetMate.Core.Models.Manage;
 using FleetMate.Core.Services.Manage;
-using FleetMate.GUI.ViewModels.Manage;
+using FleetMate.Core.Manage;
 using Xunit;
 
 namespace FleetMate.Tests;

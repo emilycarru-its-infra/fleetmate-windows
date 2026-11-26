@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using FleetMate.Core.Models.Manage;
 using FleetMate.Core.Services.Manage;
-using FleetMate.GUI.ViewModels.Manage;
+using FleetMate.Core.Manage;
 using Microsoft.Win32;
 
 namespace FleetMate.GUI.Views.Manage;
@@ -106,39 +106,12 @@ public partial class AddDeviceDialog : Window
         if (dialog.ShowDialog(this) != true) return;
         try
         {
-            ImportText.Text = ExtractDeviceLines(File.ReadAllText(dialog.FileName));
+            ImportText.Text = ManageText.ExtractDeviceLines(File.ReadAllText(dialog.FileName));
         }
         catch (Exception ex)
         {
             StatusText.Text = $"Could not read the file: {ex.Message}";
         }
-    }
-
-    /// <summary>
-    /// A roster-shaped CSV yields hostname (or serial when there is no hostname);
-    /// anything else is passed through as lines.
-    /// </summary>
-    internal static string ExtractDeviceLines(string content)
-    {
-        var lines = content.Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.Trim().Length > 0).ToList();
-        if (lines.Count < 2) return content;
-        var header = RosterLoader.ParseLine(lines[0]).Select(h => h.Trim().ToLowerInvariant()).ToList();
-        var iHost = header.IndexOf("hostname");
-        var iSerial = header.IndexOf("serial");
-        var iAlloc = header.IndexOf("allocation");
-        if (iHost < 0 && iSerial < 0) return content;
-
-        var result = new List<string>();
-        foreach (var line in lines.Skip(1))
-        {
-            var f = RosterLoader.ParseLine(line);
-            string Get(int i) => i >= 0 && i < f.Count ? f[i].Trim() : "";
-            var host = Get(iHost);
-            if (host.Length == 0 && iHost < 0) host = Get(iAlloc);
-            var value = host.Length > 0 ? host : Get(iSerial);
-            if (value.Length > 0) result.Add(value);
-        }
-        return string.Join(Environment.NewLine, result);
     }
 
     private void OnAdd(object sender, RoutedEventArgs e)
@@ -168,19 +141,11 @@ public partial class AddDeviceDialog : Window
         }
         else
         {
-            var entries = ManageViewModel.ParseDeviceLines(ImportText.Text);
-            if (entries.Count == 0) { StatusText.Text = "Nothing to import."; return; }
-            foreach (var (hostname, ip) in entries)
-            {
-                var roster = hostname.Length > 0
-                    ? _vm.Roster.Source.FirstOrDefault(c => c.Hostname.Equals(hostname, StringComparison.OrdinalIgnoreCase) || c.Serial.Equals(hostname, StringComparison.OrdinalIgnoreCase))
-                    : null;
-                var name = roster != null && roster.HasHostname ? roster.Hostname : hostname;
-                if (_vm.AddDevice(group, name, ip, roster?.Serial ?? "")) added++; else skipped++;
-            }
+            if (ManageViewModel.ParseDeviceLines(ImportText.Text).Count == 0) { StatusText.Text = "Nothing to import."; return; }
+            (added, skipped) = ManageText.ImportDevices(_vm, group, ImportText.Text);
         }
 
         ResultGroup = group;
-        StatusText.Text = $"Added {added} to \"{group.Name}\"" + (skipped > 0 ? $", {skipped} already there or invalid" : "");
+        StatusText.Text = ManageText.Added(added, skipped, group.Name);
     }
 }

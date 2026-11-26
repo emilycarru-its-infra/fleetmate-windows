@@ -2,7 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using FleetMate.Core.Models;
 using FleetMate.Core.Models.Manage;
 
-namespace FleetMate.GUI.ViewModels.Manage;
+namespace FleetMate.Core.Manage;
 
 /// <summary>
 /// One machine in the current room or group: roster identity plus whatever
