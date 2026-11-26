@@ -149,6 +149,19 @@
             </StackPanel>
         </Grid>
 
+        <!--
+            A diff of up to SmallDiffRows rows is one plain stack: every row is
+            realized at once and needs no viewport, so it draws in any host,
+            including the off-screen QA capture, where an ItemsRepeater gets an
+            empty effective viewport and realizes nothing. Longer diffs stay
+            virtualized in the repeater, drawing only what is on screen.
+        -->
+        <ItemsControl
+            x:Name="SmallRows"
+            Margin="0,0,0,4"
+            IsTabStop="False"
+            ItemTemplateSelector="{StaticResource RowSelector}"
+            Visibility="Collapsed" />
         <ItemsRepeater
             x:Name="Rows"
             Margin="0,0,0,4"
