@@ -13,7 +13,7 @@ namespace FleetMate.Core.Services.Inventory;
 /// Client for Snipe-IT Asset Management API
 /// https://snipe-it.readme.io/reference/api-overview
 /// </summary>
-public class SnipeService : IDisposable
+public class SnipeService : IDisposable, FleetMate.Core.Inventory.IAssetCheckout
 {
     private readonly HttpClient _client;
     private readonly JsonSerializerOptions _jsonOptions;

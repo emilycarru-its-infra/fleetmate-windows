@@ -125,7 +125,7 @@ public class SnipeSilentFailureTests
         var ex = await Assert.ThrowsAsync<SnipeException>(() => snipe.GetAssetsAsync());
         Assert.StartsWith("Sign-in failed:", ex.Message);
         Assert.Contains("no silent credential", ex.Message);
-        Assert.Equal("Sign-in failed", WidgetCatalog.AssetsFailureHeadline(ex.Message));
+        Assert.Equal("Sign-in failed", FleetMate.Core.Inventory.InventoryFigures.AssetsFailureHeadline(ex.Message));
     }
 
     [Fact]
@@ -188,7 +188,7 @@ public class SnipeSilentFailureTests
     [InlineData("Snipe-IT answered 500 Internal Server Error", "Could not load assets")]
     public void TheInventoryWidgetsSayWhatWentWrong(string? reason, string expected)
     {
-        Assert.Equal(expected, WidgetCatalog.AssetsFailureHeadline(reason));
+        Assert.Equal(expected, FleetMate.Core.Inventory.InventoryFigures.AssetsFailureHeadline(reason));
     }
 
     [Fact]

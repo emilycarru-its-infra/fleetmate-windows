@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using FleetMate.Core.Config;
+using FleetMate.Core.Inventory;
 using FleetMate.Core.Models.Inventory;
 using FleetMate.Core.Services.Inventory;
 using FleetMate.GUI.Views.Shared.Widgets;
@@ -23,10 +24,9 @@ public partial class AssetsPage : Page
     private DateTime _deepLinkOpenedAt = DateTime.MinValue;
     private static readonly TimeSpan DeepLinkClickGuard = TimeSpan.FromMilliseconds(500);
 
-    // Default sort: most recently touched assets first (macOS parity); any
-    // column header click re-sorts by that column, clicking again flips it.
-    private string _sortField = "Recent";
-    private bool _sortDescending = true;
+    // Search, filters and sort (FleetMate.Core): most recently touched first
+    // by default (macOS parity); a header click sorts by that column, again flips it.
+    private readonly AssetListQuery _query = new();
 
     public AssetsPage()
     {
@@ -135,7 +135,7 @@ public partial class AssetsPage : Page
             var reason = ex is SnipeException ? ex.Message : FleetMate.Core.Services.Inventory.SnipeService.Describe(ex);
             _allAssets = new List<SnipeAsset>();
             AssetListView.ItemsSource = _allAssets;
-            AssetCountLabel.Text = WidgetCatalog.AssetsFailureHeadline(reason);
+            AssetCountLabel.Text = InventoryFigures.AssetsFailureHeadline(reason);
             NotConfiguredText.Text = reason;
             NotConfiguredText.Visibility = Visibility.Visible;
             if (Application.Current is App app) app.SetAssetsLoadError(reason);
@@ -149,93 +149,23 @@ public partial class AssetsPage : Page
         await ApplyPendingAssetLinkAsync();
     }
 
+    /// <summary>Each filter's combo box, in <see cref="AssetListQuery.Filters"/> order.</summary>
+    private IEnumerable<(AssetFilter Filter, ComboBox Combo)> FilterCombos => new[]
+    {
+        (AssetFilter.Status, StatusFilterComboBox), (AssetFilter.StatusType, StatusTypeFilterComboBox),
+        (AssetFilter.Category, CategoryFilterComboBox), (AssetFilter.Platform, PlatformFilterComboBox),
+        (AssetFilter.Manufacturer, ManufacturerFilterComboBox), (AssetFilter.Model, ModelFilterComboBox),
+        (AssetFilter.Usage, UsageFilterComboBox), (AssetFilter.Catalog, CatalogFilterComboBox),
+        (AssetFilter.Area, AreaFilterComboBox), (AssetFilter.Location, LocationFilterComboBox),
+    };
+
     private void UpdateDisplay()
     {
-        var searchText = SearchBox.Text?.Trim().ToLowerInvariant() ?? "";
-        var filtered = _allAssets.AsEnumerable();
-
-        if (!string.IsNullOrEmpty(searchText))
-        {
-            filtered = filtered.Where(a =>
-                (a.DisplayName?.ToLowerInvariant().Contains(searchText) ?? false) ||
-                (a.AssetTag?.ToLowerInvariant().Contains(searchText) ?? false) ||
-                (a.Serial?.ToLowerInvariant().Contains(searchText) ?? false) ||
-                (a.AssignedTo?.Name?.ToLowerInvariant().Contains(searchText) ?? false));
-        }
-
-        // Apply filters
-        // Status holds the individual status names and Status Type the types
-        // they share, as on the Mac; the Asset Status widget's wedges set
-        // Status Type, so they select every asset of their type.
-        var statusFilter = StatusFilterComboBox.SelectedItem?.ToString();
-        if (!string.IsNullOrEmpty(statusFilter) && statusFilter != "All")
-            filtered = filtered.Where(a => WidgetCatalog.AssetStatusNameFilterValue(a) == statusFilter);
-
-        var statusTypeFilter = StatusTypeFilterComboBox.SelectedItem?.ToString();
-        if (!string.IsNullOrEmpty(statusTypeFilter) && statusTypeFilter != "All")
-            filtered = filtered.Where(a => WidgetCatalog.AssetStatusTypeFilterValue(a) == statusTypeFilter);
-
-        var categoryFilter = CategoryFilterComboBox.SelectedItem?.ToString();
-        if (!string.IsNullOrEmpty(categoryFilter) && categoryFilter != "All")
-            filtered = filtered.Where(a => a.Category?.Name == categoryFilter);
-
-        var platformFilter = PlatformFilterComboBox.SelectedItem?.ToString();
-        if (!string.IsNullOrEmpty(platformFilter) && platformFilter != "All")
-            filtered = filtered.Where(a => a.Platform == platformFilter);
-
-        var manufacturerFilter = ManufacturerFilterComboBox.SelectedItem?.ToString();
-        if (!string.IsNullOrEmpty(manufacturerFilter) && manufacturerFilter != "All")
-            filtered = filtered.Where(a => a.Manufacturer?.Name == manufacturerFilter);
-
-        var modelFilter = ModelFilterComboBox.SelectedItem?.ToString();
-        if (!string.IsNullOrEmpty(modelFilter) && modelFilter != "All")
-            filtered = filtered.Where(a => a.Model?.Name == modelFilter);
-
-        var usageFilter = UsageFilterComboBox.SelectedItem?.ToString();
-        if (!string.IsNullOrEmpty(usageFilter) && usageFilter != "All")
-            filtered = filtered.Where(a => a.Usage == usageFilter);
-
-        var catalogFilter = CatalogFilterComboBox.SelectedItem?.ToString();
-        if (!string.IsNullOrEmpty(catalogFilter) && catalogFilter != "All")
-            filtered = filtered.Where(a => a.Catalog == catalogFilter);
-
-        var areaFilter = AreaFilterComboBox.SelectedItem?.ToString();
-        if (!string.IsNullOrEmpty(areaFilter) && areaFilter != "All")
-            filtered = filtered.Where(a => a.Area == areaFilter);
-
-        var locationFilter = LocationFilterComboBox.SelectedItem?.ToString();
-        filtered = filtered.Where(a => AssetLocationFilter.Matches(a, locationFilter));
-
-        var list = ApplySort(filtered).ToList();
+        _query.Search = SearchBox.Text ?? "";
+        foreach (var (filter, combo) in FilterCombos) _query[filter] = combo.SelectedItem?.ToString();
+        var list = _query.Apply(_allAssets);
         AssetListView.ItemsSource = list;
         AssetCountLabel.Text = $"{list.Count} assets";
-    }
-
-    private IEnumerable<SnipeAsset> ApplySort(IEnumerable<SnipeAsset> assets)
-    {
-        // Snipe timestamps are "yyyy-MM-dd HH:mm:ss", which sorts correctly
-        // as text — both date-backed sorts compare the raw string.
-        Func<SnipeAsset, string> key = _sortField switch
-        {
-            "Asset Tag" => a => a.AssetTag ?? "",
-            "Name" => a => a.DisplayName ?? "",
-            "Serial" => a => a.Serial ?? "",
-            "Model" => a => a.Model?.Name ?? "",
-            "Status" => a => a.StatusLabel?.Name ?? "",
-            "Assigned To" => a => a.AssignedTo?.Name ?? "",
-            "Category" => a => a.Category?.Name ?? "",
-            "Manufacturer" => a => a.Manufacturer?.Name ?? "",
-            "Platform" => a => a.Platform ?? "",
-            "Usage" => a => a.Usage ?? "",
-            "Catalog" => a => a.Catalog ?? "",
-            "Area" => a => a.Area ?? "",
-            "Location" => a => a.LocationName ?? "",
-            "Last Activity" => a => a.LastActivity?.DateTime ?? "",
-            _ => a => a.LastActivity?.DateTime ?? ""
-        };
-        return _sortDescending
-            ? assets.OrderByDescending(key, StringComparer.OrdinalIgnoreCase)
-            : assets.OrderBy(key, StringComparer.OrdinalIgnoreCase);
     }
 
     private void OnColumnHeaderClicked(object sender, RoutedEventArgs e)
@@ -243,17 +173,7 @@ public partial class AssetsPage : Page
         if (e.OriginalSource is not GridViewColumnHeader header ||
             header.Column?.Header is not string field || string.IsNullOrEmpty(field))
             return;
-
-        if (_sortField == field)
-        {
-            _sortDescending = !_sortDescending;
-        }
-        else
-        {
-            _sortField = field;
-            // Date columns sort newest-first on first click.
-            _sortDescending = field == "Last Activity";
-        }
+        _query.SortBy(field);
         UpdateDisplay();
     }
 
@@ -280,46 +200,11 @@ public partial class AssetsPage : Page
 
     private void UpdateFilterOptions()
     {
-        var statuses = new HashSet<string> { "All" };
-        var statusTypes = new HashSet<string> { "All" };
-        var categories = new HashSet<string> { "All" };
-        var platforms = new HashSet<string> { "All" };
-        var manufacturers = new HashSet<string> { "All" };
-        var models = new HashSet<string> { "All" };
-        var usages = new HashSet<string> { "All" };
-        var catalogs = new HashSet<string> { "All" };
-        var areas = new HashSet<string> { "All" };
-
-        foreach (var asset in _allAssets)
+        foreach (var (filter, combo) in FilterCombos)
         {
-            if (WidgetCatalog.AssetStatusNameFilterValue(asset) is { } statusName) statuses.Add(statusName);
-            statusTypes.Add(WidgetCatalog.AssetStatusTypeFilterValue(asset));
-            if (!string.IsNullOrEmpty(asset.Category?.Name)) categories.Add(asset.Category.Name);
-            if (!string.IsNullOrEmpty(asset.Manufacturer?.Name)) manufacturers.Add(asset.Manufacturer.Name);
-            if (!string.IsNullOrEmpty(asset.Model?.Name)) models.Add(asset.Model.Name);
-            if (!string.IsNullOrEmpty(asset.Platform)) platforms.Add(asset.Platform!);
-            if (!string.IsNullOrEmpty(asset.Usage)) usages.Add(asset.Usage!);
-            if (!string.IsNullOrEmpty(asset.Catalog)) catalogs.Add(asset.Catalog!);
-            if (!string.IsNullOrEmpty(asset.Area)) areas.Add(asset.Area!);
+            combo.ItemsSource = AssetListQuery.Options(_allAssets, filter);
+            combo.SelectedIndex = 0;
         }
-
-        SetFilterItems(StatusFilterComboBox, statuses);
-        SetFilterItems(StatusTypeFilterComboBox, statusTypes);
-        SetFilterItems(CategoryFilterComboBox, categories);
-        SetFilterItems(PlatformFilterComboBox, platforms);
-        SetFilterItems(ManufacturerFilterComboBox, manufacturers);
-        SetFilterItems(ModelFilterComboBox, models);
-        SetFilterItems(UsageFilterComboBox, usages);
-        SetFilterItems(CatalogFilterComboBox, catalogs);
-        SetFilterItems(AreaFilterComboBox, areas);
-        LocationFilterComboBox.ItemsSource = AssetLocationFilter.Options(_allAssets);
-        LocationFilterComboBox.SelectedIndex = 0;
-    }
-
-    private static void SetFilterItems(ComboBox comboBox, HashSet<string> items)
-    {
-        comboBox.ItemsSource = items.OrderBy(s => s == "All" ? "" : s).ToList();
-        comboBox.SelectedIndex = 0;
     }
 
     private async void OnRefreshClicked(object sender, RoutedEventArgs e)
@@ -358,54 +243,26 @@ public partial class AssetsPage : Page
         var dialog = new ReAllocateDialog(_snipeService, _selectedAsset);
         var result = dialog.ShowDialog();
 
-        if (result == true && dialog.SelectedUserId.HasValue)
+        if (result != true || dialog.SelectedUserId is not { } userId) return;
+
+        try
         {
-            try
+            LoadingOverlay.Visibility = Visibility.Visible;
+            if (await AssetReallocation.RunAsync(_snipeService, _selectedAsset, userId, dialog.Note) is { } failure)
             {
-                LoadingOverlay.Visibility = Visibility.Visible;
-
-                // Step 1: check in only when the asset is currently assigned.
-                if (_selectedAsset.AssignedTo != null)
-                {
-                    var checkinResult = await _snipeService.CheckinAssetAsync(_selectedAsset.Id,
-                        new SnipeCheckinRequest { Note = "Re-allocated via FleetMate" });
-
-                    if (checkinResult == null || !checkinResult.IsSuccess)
-                    {
-                        MessageBox.Show($"Check-in failed: {checkinResult?.Messages ?? "Unknown error"}",
-                            "Re-Allocate", MessageBoxButton.OK, MessageBoxImage.Error);
-                        return;
-                    }
-                }
-
-                // Step 2: check out to the new user.
-                var checkoutResult = await _snipeService.CheckoutAssetAsync(_selectedAsset.Id,
-                    new SnipeCheckoutRequest
-                    {
-                        AssignedUser = dialog.SelectedUserId.Value,
-                        CheckoutToType = "user",
-                        Note = dialog.Note ?? "Re-allocated via FleetMate"
-                    });
-
-                if (checkoutResult != null && checkoutResult.IsSuccess)
-                {
-                    await LoadAssetsAsync();
-                }
-                else
-                {
-                    MessageBox.Show($"Checkout failed: {checkoutResult?.Messages ?? "Unknown error"}",
-                        "Re-Allocate", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
+                MessageBox.Show(failure, "Re-Allocate", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Re-allocate failed: {ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-            finally
-            {
-                LoadingOverlay.Visibility = Visibility.Collapsed;
-            }
+            await LoadAssetsAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Re-allocate failed: {ex.Message}", "Error",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            LoadingOverlay.Visibility = Visibility.Collapsed;
         }
     }
 }

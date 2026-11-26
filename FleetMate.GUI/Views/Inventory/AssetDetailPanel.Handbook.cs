@@ -26,7 +26,7 @@ public partial class AssetDetailPanel
         var groups = store.Index.RelatedByFacet(facets);
         if (groups.Count == 0) return null;
 
-        var card = Card("Handbook", "");
+        var card = Card("Handbook", FleetMate.Core.Inventory.AssetDetailLayout.HandbookGlyph);
         var host = (StackPanel)card.Child!;
         foreach (var group in groups)
         {
