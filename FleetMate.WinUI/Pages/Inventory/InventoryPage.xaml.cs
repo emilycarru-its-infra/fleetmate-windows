@@ -200,7 +200,7 @@ public sealed partial class InventoryPage : Page, Shell.ICaptureViews
     private void Root_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         _narrow = e.NewSize.Width < NarrowWidth;
-        GraphsScroller.MaxHeight = Math.Max(180, e.NewSize.Height * 0.4);
+        Shell.Widgets.WidgetStrip.CapToRows(GraphsScroller, e.NewSize.Height, minimum: 180);
         ApplyLayout();
     }
 
@@ -350,6 +350,7 @@ public sealed partial class InventoryPage : Page, Shell.ICaptureViews
                 filter => ViewModel.ApplyGraphFilter(filter.Category, filter.Value))
             : null;
         GraphsScroller.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+        Shell.Widgets.WidgetStrip.CapToRows(GraphsScroller, ActualHeight, minimum: 180);
     }
 
     // MARK: - QA capture

@@ -140,7 +140,7 @@ public sealed partial class DevelopmentPage : Page, Shell.ICaptureViews
         var fold = e.NewSize.Width < 640;
         SegmentBar.Visibility = DevelopmentUi.Show(!fold);
         SegmentMenu.Visibility = DevelopmentUi.Show(fold);
-        GraphsScroller.MaxHeight = Math.Max(180, e.NewSize.Height * 0.4);
+        Shell.Widgets.WidgetStrip.CapToRows(GraphsScroller, e.NewSize.Height, minimum: 180);
     }
 
     private void BuildSegmentMenu()
@@ -231,7 +231,7 @@ public sealed partial class DevelopmentPage : Page, Shell.ICaptureViews
         GraphsHost.Content = content;
         GraphsScroller.Visibility = DevelopmentUi.Show(content != null);
         // The graphs never take more than 40% of the page, so the lists keep the screen.
-        GraphsScroller.MaxHeight = Math.Max(180, ActualHeight * 0.4);
+        Shell.Widgets.WidgetStrip.CapToRows(GraphsScroller, ActualHeight, minimum: 180);
     }
 
     // MARK: - Inbox

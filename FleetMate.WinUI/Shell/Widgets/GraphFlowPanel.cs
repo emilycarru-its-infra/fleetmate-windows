@@ -21,8 +21,15 @@ internal sealed partial class GraphFlowPanel : Panel
     public static int GetUnits(UIElement element) => (int)element.GetValue(UnitsProperty);
     public static void SetUnits(UIElement element, int value) => element.SetValue(UnitsProperty, value);
 
+    /// <summary>The bottom of each row of cards, from the last measure; a host snaps its height cap to these.</summary>
+    public IReadOnlyList<double> RowBottoms { get; private set; } = Array.Empty<double>();
+
+    /// <summary>Raised after a measure changes <see cref="RowBottoms"/>.</summary>
+    public event Action<GraphFlowPanel>? RowsMeasured;
+
     private List<(int Index, Rect Slot)> Layout(double width, bool measure)
     {
+        var bottoms = new List<double>();
         var visible = Children.Select((c, i) => (Child: c, Index: i)).Where(x => x.Child.Visibility == Visibility.Visible).ToList();
         var perRow = WidgetRowPacking.UnitsPerRow(width);
         var rows = WidgetRowPacking.Rows(visible.Select(x => GetUnits(x.Child)).ToList(), perRow, WidgetRowPacking.FullRow);
@@ -51,7 +58,13 @@ internal sealed partial class GraphFlowPanel : Panel
                 var (i, slot) = slots[k];
                 slots[k] = (i, new Rect(slot.X, slot.Y, slot.Width, rowHeight));
             }
+            bottoms.Add(y + rowHeight);
             y += rowHeight + gap;
+        }
+        if (measure && !bottoms.SequenceEqual(RowBottoms))
+        {
+            RowBottoms = bottoms;
+            RowsMeasured?.Invoke(this);
         }
         return slots;
     }
