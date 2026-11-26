@@ -86,3 +86,6 @@ logs/
 
 # Task worktrees live inside the repo
 /.worktrees/
+
+# WinUI QA captures (scripts/winui-qa.ps1)
+/artifacts/

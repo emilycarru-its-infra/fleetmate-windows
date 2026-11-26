@@ -66,6 +66,14 @@ public partial class App : Application
         };
         _window.Activate();
 
+        // `--capture <dir>`: the per-panel QA run, which exits when done. It
+        // renders the sample and placeholder content and signs in to nothing.
+        if (CaptureHarness.DirectoryFromArgs(Environment.GetCommandLineArgs()) is { } captureDir)
+        {
+            _window.DispatcherQueue.TryEnqueue(async () => await CaptureHarness.RunAsync(_window, captureDir));
+            return;
+        }
+
         LinkHost.Listen(message => _window.DispatcherQueue.TryEnqueue(() => _window.OpenLink(message)));
         // The fleetmate: and ticketsmate: protocols stay with FleetMate.GUI, the
         // app that ships, until cutover; a link passed on the command line still opens.

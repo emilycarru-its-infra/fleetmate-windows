@@ -56,8 +56,8 @@ public sealed partial class MainWindow : Window
         SetTitleBar(AppTitleBar);
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         Title = AppTitleBar.Title = _edition.Name;
-        var iconFile = _edition.IsTicketsOnly ? "TicketsMate.ico" : "AppIcon.ico";
-        AppTitleBar.IconSource = new ImageIconSource { ImageSource = new BitmapImage(new Uri($"ms-appx:///Assets/{iconFile}")) };
+        var iconFile = _edition.IsTicketsOnly ? "TicketsMate.ico" : "FleetMate.ico";
+        AppTitleBar.IconSource = new ImageIconSource { ImageSource = new BitmapImage(new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", iconFile))) };
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", iconFile));
 
         _tabs = AppTabs.Visible(_edition, UserPreferences.HiddenModules);
@@ -320,6 +320,23 @@ public sealed partial class MainWindow : Window
             : systems.Select(s => $"{s.SystemId.DisplayName()}: {s.State.StatusLabel}"
                 + (s.State.User is { } user ? $" ({user})" : "")).ToList();
     }
+
+    // MARK: - QA capture
+
+    /// <summary>The tabs showing, in order, for <see cref="CaptureHarness"/>.</summary>
+    internal IReadOnlyList<string> Tabs => _tabs;
+
+    /// <summary>The XAML root a capture renders and themes.</summary>
+    internal FrameworkElement CaptureRoot => RootGrid;
+
+    /// <summary>Show a tab, or Settings, without touching history rules.</summary>
+    internal void ShowPanel(string panel)
+    {
+        if (panel == ShellPages.Settings) NavigateTo(typeof(PlaceholderPage), ShellPages.Settings);
+        else NavigateToTab(panel);
+    }
+
+    internal void ResizeForCapture(int width, int height) => SizeAndCenter(width, height);
 
     // MARK: - Window size
 

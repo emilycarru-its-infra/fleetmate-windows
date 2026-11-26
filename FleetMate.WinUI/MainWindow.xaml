@@ -31,9 +31,6 @@
             Title="FleetMate"
             IsBackButtonVisible="False"
             IsPaneToggleButtonVisible="False">
-            <TitleBar.IconSource>
-                <ImageIconSource ImageSource="ms-appx:///Assets/AppIcon.ico" />
-            </TitleBar.IconSource>
             <TitleBar.LeftHeader>
                 <StackPanel Margin="4,0,0,0" Orientation="Horizontal">
                     <Button
