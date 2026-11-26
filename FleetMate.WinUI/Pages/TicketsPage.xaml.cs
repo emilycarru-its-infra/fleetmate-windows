@@ -111,6 +111,7 @@ public sealed partial class TicketsPage : Page
                 break;
             case nameof(TicketsViewModel.IsBoard):
                 ApplyViewMode();
+                FitToolbar(Math.Max(0, ActualWidth - PageRoot.Padding.Left - PageRoot.Padding.Right));
                 if (!ViewModel.IsBoard) MainWindow.RequestViewMode("list");
                 break;
             case nameof(TicketsViewModel.SortField):
@@ -814,6 +815,53 @@ public sealed partial class TicketsPage : Page
         }
         var listWidth = !_detailOpen ? available : overlay ? 0 : available - DetailColumn.Width.Value - 12;
         Layout.Fit(listWidth);
+        FitToolbar(available);
+        FitWidgets(available);
+    }
+
+    /// <summary>
+    /// Below this width the toolbar's labels drop to icons; the tooltips and
+    /// accessible names keep the words. The board adds the column and sort
+    /// pickers, so it needs more room, as on the Mac.
+    /// </summary>
+    private void FitToolbar(double width)
+    {
+        var compact = TicketsToolbarRules.UsesCompactLabels(width, ViewModel.ViewMode);
+        var labels = Show(!compact);
+        FiltersLabel.Visibility = labels;
+        AssignedToMeLabel.Visibility = labels;
+        DetailsLabel.Visibility = labels;
+        RefreshLabel.Visibility = labels;
+    }
+
+    private bool? _widgetsTwoRows;
+
+    /// <summary>
+    /// The figures and five charts share one row when it fits them; narrower,
+    /// they wrap into two rows of three, so no card is cut off at the edge.
+    /// </summary>
+    private void FitWidgets(double width)
+    {
+        var twoRows = width < 1320;
+        if (_widgetsTwoRows == twoRows) return;
+        _widgetsTwoRows = twoRows;
+        WidgetsGrid.ColumnDefinitions.Clear();
+        WidgetsGrid.RowDefinitions.Clear();
+        var columns = twoRows ? 3 : 6;
+        for (var i = 0; i < columns; i++)
+            WidgetsGrid.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = i == 0 && !twoRows ? GridLength.Auto : new GridLength(1, GridUnitType.Star),
+            });
+        WidgetsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        if (twoRows) WidgetsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        WidgetsGrid.RowSpacing = 8;
+        var cards = WidgetsGrid.Children.OfType<FrameworkElement>().ToList();
+        for (var i = 0; i < cards.Count; i++)
+        {
+            Grid.SetColumn(cards[i], i % columns);
+            Grid.SetRow(cards[i], i / columns);
+        }
     }
 }
 

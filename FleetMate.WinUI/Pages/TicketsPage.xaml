@@ -458,13 +458,13 @@
         <!--
             The widgets: six figures and five breakdowns, each a filter. Every
             breakdown counts the list with its own category's filter left out.
-            Too narrow for one row, they scroll sideways rather than squash.
+            Too narrow for one row, they wrap into two rows of three (FitWidgets).
         -->
         <ScrollViewer
             x:Name="WidgetsScroller"
             Grid.Row="1"
-            HorizontalScrollBarVisibility="Auto"
-            HorizontalScrollMode="Auto"
+            HorizontalScrollBarVisibility="Disabled"
+            HorizontalScrollMode="Disabled"
             VerticalScrollBarVisibility="Disabled"
             VerticalScrollMode="Disabled">
             <Grid x:Name="WidgetsGrid" Padding="0,0,0,4" ColumnSpacing="8">
@@ -843,26 +843,5 @@
             </Border>
         </Grid>
 
-        <VisualStateManager.VisualStateGroups>
-            <VisualStateGroup>
-                <VisualState x:Name="Wide">
-                    <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="1200" />
-                    </VisualState.StateTriggers>
-                </VisualState>
-                <!-- Narrow: the toolbar's labels drop to icons; tooltips and names keep the words. -->
-                <VisualState x:Name="Narrow">
-                    <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="0" />
-                    </VisualState.StateTriggers>
-                    <VisualState.Setters>
-                        <Setter Target="FiltersLabel.Visibility" Value="Collapsed" />
-                        <Setter Target="AssignedToMeLabel.Visibility" Value="Collapsed" />
-                        <Setter Target="DetailsLabel.Visibility" Value="Collapsed" />
-                        <Setter Target="RefreshLabel.Visibility" Value="Collapsed" />
-                    </VisualState.Setters>
-                </VisualState>
-            </VisualStateGroup>
-        </VisualStateManager.VisualStateGroups>
     </Grid>
 </Page>
