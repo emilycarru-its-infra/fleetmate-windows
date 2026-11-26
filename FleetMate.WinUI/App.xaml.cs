@@ -52,15 +52,21 @@ public partial class App : Application
 
         // Each ported page registers here; every other tab shows a placeholder.
         ShellPages.Register("Tickets", typeof(TicketsPage));
+        ShellServices.RegisterDemoFixtures(s => s.CachedTickets = Data.SampleTickets.Tickets);
         ShellPages.Register("Development", typeof(Pages.Development.DevelopmentPage));
+        ShellServices.RegisterDemoFixtures(s => s.SeedDevelopmentDemo());
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         // The config file, then HKLM and HKCU policy for this edition;
         // TicketsMate keeps TeamDynamix and drops every other module.
-        var config = FleetMateConfig.LoadDesktop();
-        Services = new ShellServices(config);
+        // Demo mode reads no configuration at all, so a capture can never
+        // reach a live service whatever is set up on the machine.
+        var demo = DemoMode.IsRequested();
+        Services = demo
+            ? new ShellServices(new FleetMateConfig(), demoMode: true)
+            : new ShellServices(FleetMateConfig.LoadDesktop());
 
         _window = new MainWindow();
         _window.Closed += (_, _) =>

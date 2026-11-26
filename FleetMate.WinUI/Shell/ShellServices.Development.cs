@@ -74,20 +74,15 @@ public sealed partial class ShellServices : IDevelopmentHost
     // MARK: - Demo mode
 
     /// <summary>
-    /// Fictional data only, nothing fetched: for screenshots of a public
-    /// repository's app. Set by <c>--demo</c>, implied by <c>--capture</c>, or
-    /// <c>FLEETMATE_DEMO=1</c>.
+    /// Demo mode's fixture (registered in App): every Development cache filled
+    /// with <see cref="DevelopmentDemoData"/>, and an inbox and Skills catalog
+    /// that never reach GitHub or a repository.
     /// </summary>
-    public bool DemoMode { get; } = IsDemoRequested();
-
-    private static bool IsDemoRequested() =>
-        Environment.GetEnvironmentVariable("FLEETMATE_DEMO") == "1"
-        || Environment.GetCommandLineArgs().Any(a =>
-            a.Equals("--demo", StringComparison.OrdinalIgnoreCase) || a.Equals("--capture", StringComparison.OrdinalIgnoreCase));
-
-    /// <summary>Fill every Development cache with <see cref="DevelopmentDemoData"/>.</summary>
-    private void SeedDevelopmentDemo()
+    public void SeedDevelopmentDemo()
     {
+        _ui = DispatcherQueue.GetForCurrentThread();
+        Inbox = new DevelopmentInbox(() => null);
+        Skills = new SkillsStore(Config, () => Task.FromResult<string?>(null));
         var now = DateTime.UtcNow;
         _developmentPullRequests = DevelopmentDemoData.PullRequests(now);
         _developmentCommits = DevelopmentDemoData.Commits(now);
@@ -240,11 +235,6 @@ public sealed partial class ShellServices : IDevelopmentHost
 
     private void StartDevelopment()
     {
-        if (DemoMode)
-        {
-            SeedDevelopmentDemo();
-            return;
-        }
         Inbox.Start();
         Skills?.Start();
         _ = AttemptSilentDevOpsSsoAsync();
@@ -253,7 +243,7 @@ public sealed partial class ShellServices : IDevelopmentHost
     private void DisposeDevelopment()
     {
         _developmentSync?.Dispose();
-        Inbox.Dispose();
+        Inbox?.Dispose();
         Skills?.Stop();
     }
 

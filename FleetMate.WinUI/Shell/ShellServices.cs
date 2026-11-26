@@ -26,8 +26,43 @@ namespace FleetMate.WinUI.Shell;
 /// </summary>
 public sealed partial class ShellServices : IDisposable
 {
-    public ShellServices(FleetMateConfig config)
+    private static readonly List<Action<ShellServices>> DemoFixtures = new();
+
+    /// <summary>
+    /// Register a page's fictional data for demo mode. The action runs once,
+    /// when the services are built in demo mode, and fills the caches the page
+    /// reads; it never runs against live services. Register from
+    /// <see cref="App"/>'s constructor, beside <c>ShellPages.Register</c>:
+    ///
+    /// <code>
+    /// ShellServices.RegisterDemoFixtures(s => s.CachedTickets = SampleTickets.Tickets);
+    /// </code>
+    ///
+    /// Fixtures are public: every name, address, id and record in them is made
+    /// up, and addresses use example.* domains.
+    /// </summary>
+    public static void RegisterDemoFixtures(Action<ShellServices> fill) => DemoFixtures.Add(fill);
+
+    /// <param name="config">The desktop configuration. Ignored in demo mode, which reads none.</param>
+    /// <param name="demoMode">
+    /// Serve registered fixtures; build no live service and sign in to nothing.
+    /// Null reads this process's <c>--demo</c>, <c>--capture</c> and <c>FLEETMATE_DEMO</c>.
+    /// </param>
+    public ShellServices(FleetMateConfig config, bool? demoMode = null)
     {
+        DemoMode = demoMode ?? Core.Config.DemoMode.IsRequested();
+        if (DemoMode)
+        {
+            // Nothing configured, so nothing can sign in or call out, and the
+            // Authentication popover has no account to show.
+            Config = new FleetMateConfig();
+            Auth = new AuthManager(Config);
+            TdxSession = new TdxSessionCoordinator(null, null, Auth, TdxSessionCoordinator.HttpOnly);
+            foreach (var fill in DemoFixtures) fill(this);
+            Log.Information("Demo mode: fictional fixture data, no live services");
+            return;
+        }
+
         Config = config;
         Auth = new AuthManager(config);
         if (config.Tdx is { } tdx && !string.IsNullOrEmpty(tdx.BaseUrl))
@@ -41,6 +76,21 @@ public sealed partial class ShellServices : IDisposable
         TdxSession = new TdxSessionCoordinator(config.Tdx, Tdx, Auth, TdxSessionCoordinator.HttpOnly);
         InitializeDevelopment(config);
     }
+
+    /// <summary>
+    /// Demo mode is on (<c>--demo</c>, <c>--capture</c> or <c>FLEETMATE_DEMO=1</c>):
+    /// every service is absent, caches hold registered fixtures, and nothing
+    /// signed in is shown. Pages that would call a service read their cache instead.
+    /// </summary>
+    public bool DemoMode { get; }
+
+    /// <summary>
+    /// A live service exists or someone is signed in. A capture refuses to
+    /// write screenshots while this is true.
+    /// </summary>
+    public bool HasLiveSession =>
+        Tdx != null || TdxSession.IsSignedIn
+        || Auth.Systems.Values.Any(s => s.State.Kind is AuthStateKind.Valid or AuthStateKind.ServicePrincipal);
 
     public FleetMateConfig Config { get; }
 
@@ -88,6 +138,7 @@ public sealed partial class ShellServices : IDisposable
     /// <summary>Start the launch sign-in and the keeper that renews it.</summary>
     public void Start()
     {
+        if (DemoMode) return;
         TdxSession.Start();
         _ = StartSignInAsync();
         StartDevelopment();
