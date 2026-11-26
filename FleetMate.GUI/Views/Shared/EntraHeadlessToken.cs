@@ -1,3 +1,4 @@
+using FleetMate.Core.Services.SignIn;
 using System.Text.Json;
 using System.Windows;
 using FleetMate.Core.Services;
@@ -87,7 +88,7 @@ internal static class EntraHeadlessToken
             if (!e.IsSuccess || !EntraWebSignIn.IsEntraPage(url)) return;
             try
             {
-                await EntraPageDriver.HandleAsync(core, url, request.LoginHint, accountAnswered, tcs.Task,
+                await EntraPageDriver.HandleAsync(browser, url, request.LoginHint, accountAnswered, tcs.Task,
                     reason => tcs.TrySetException(new InvalidOperationException(reason)));
             }
             catch (Exception ex)

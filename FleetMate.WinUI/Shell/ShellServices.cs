@@ -4,6 +4,8 @@ using FleetMate.Core.Models.Tickets;
 using FleetMate.Core.Services;
 using FleetMate.Core.Services.Search;
 using FleetMate.Core.Services.Tickets;
+using FleetMate.Core.Services.SignIn;
+using FleetMate.SignIn;
 using Serilog;
 
 namespace FleetMate.WinUI.Shell;
@@ -70,10 +72,17 @@ public sealed partial class ShellServices : IDisposable
             Tdx = new TdxService(tdx);
             Log.Information("TdxService initialized");
         }
-        // The browser-free chain: a session another FleetMate process saved is
-        // adopted first, then HTTP Negotiate. The hidden-browser phase the WPF
-        // app runs after it is not in the WinUI shell yet.
-        TdxSession = new TdxSessionCoordinator(config.Tdx, Tdx, Auth, TdxSessionCoordinator.HttpOnly);
+        // The chain the WPF app runs: a session another FleetMate process saved
+        // is adopted first, then HTTP Negotiate, then a never-shown WebView2.
+        // Sign In opens a visible window when Entra wants a second factor.
+        TdxSession = new TdxSessionCoordinator(config.Tdx, Tdx, Auth,
+            (baseUrl, step, ct) => TdxBrowserSignIn.SignInAsync(baseUrl,
+                async () => await HiddenSignInBrowser.CreateAsync(), step, ct))
+        {
+            InteractiveSignIn = ct => config.Tdx?.BaseUrl is { Length: > 0 } baseUrl
+                ? TdxSignInWindow.SignInAsync(baseUrl, TdxSessionPolicy.WindowTimeout, ct)
+                : Task.FromResult<TdxSsoResult?>(null),
+        };
     }
 
     /// <summary>

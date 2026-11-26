@@ -1,6 +1,8 @@
 using System.Windows;
 using System.Windows.Interop;
 using FleetMate.Core.Services;
+using FleetMate.Core.Services.SignIn;
+using FleetMate.SignIn;
 using Microsoft.Web.WebView2.Core;
 
 namespace FleetMate.GUI.Views.Shared;
@@ -15,14 +17,12 @@ namespace FleetMate.GUI.Views.Shared;
 ///
 /// Create and use it on the UI thread.
 /// </summary>
-internal sealed class HiddenWebView : IDisposable
+internal sealed class HiddenWebView : CoreWebView2SignInBrowser, ISignInHost
 {
     private readonly Window _host;
     private readonly CoreWebView2Controller _controller;
 
-    public CoreWebView2 Core => _controller.CoreWebView2;
-
-    private HiddenWebView(Window host, CoreWebView2Controller controller)
+    private HiddenWebView(Window host, CoreWebView2Controller controller) : base(controller.CoreWebView2)
     {
         _host = host;
         _controller = controller;

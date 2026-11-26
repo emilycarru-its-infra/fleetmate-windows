@@ -1,4 +1,5 @@
 using System.Net.NetworkInformation;
+using Microsoft.Win32;
 using FleetMate.Core.Config;
 using FleetMate.Core.Models;
 using FleetMate.Core.Models.Tickets;
@@ -141,17 +142,115 @@ public sealed class TdxSessionCoordinator : IDisposable
     }
 
     /// <summary>
-    /// The Sign In button: forget a refusal and try the silent sign-in again.
-    /// True when signed in afterwards.
+    /// The Sign In button: forget a refusal and sign in silently again (a
+    /// session another process saved, then the chain). When that cannot finish
+    /// and a window could help (<see cref="TdxSsoResult.ShouldOfferWindow"/>),
+    /// opens <see cref="InteractiveSignIn"/>. Concurrent clicks share one
+    /// attempt. True when signed in afterwards.
     /// </summary>
-    public async Task<bool> RetryAsync()
+    public Task<bool> RetryAsync()
     {
+        if (_retry is { IsCompleted: false } running) return running;
+        return _retry = RetryCoreAsync();
+    }
+
+    private Task<bool>? _retry;
+    private Task<bool>? _window;
+    private CancellationTokenSource? _windowCts;
+
+    /// <summary>
+    /// Opens the visible sign-in for a second factor; null where there is none.
+    /// The token is cancelled when a session arrives from elsewhere, and the
+    /// window should then close.
+    /// </summary>
+    public Func<CancellationToken, Task<TdxSsoResult?>>? InteractiveSignIn { get; set; }
+
+    /// <summary>
+    /// False in a process with no window (the inbox helper): it keeps the
+    /// session renewed but reports no status and never opens a sign-in window.
+    /// </summary>
+    public bool ReportsStatus { get; set; } = true;
+
+    /// <summary>
+    /// Whether a session adopted from another process belongs to someone other
+    /// than the one the window last loaded data for; the window then reloads
+    /// even though it was already signed in.
+    /// </summary>
+    public Func<bool>? IdentityChanged { get; set; }
+
+    /// <summary>Whether tickets are already loaded, so the launch progress can stop at sign-in.</summary>
+    public Func<bool>? HasTickets { get; set; }
+
+    private async Task<bool> RetryCoreAsync()
+    {
+        // A window already open is the one to finish.
+        if (_window is { IsCompleted: false } open) return await open;
+
         _last = null;
-        try { await AttemptSilentAsync(); }
+        try
+        {
+            if (_service == null || !await _service.ReloadSharedSessionAsync(force: true))
+                await AttemptSilentAsync();
+        }
         catch (Exception ex) { Log.Warning(ex, "[tdx-sso] Silent SSO retry failed"); }
         RefreshStatus();
-        return IsSignedIn;
+        if (IsSignedIn) return true;
+
+        if (!IsEnabled || !ReportsStatus || InteractiveSignIn == null) return false;
+        if (!TdxSsoResult.ShouldOfferWindow(_last))
+        {
+            Log.Information("[tdx-sso] Not opening the sign-in window: {Reason}", _last?.Error);
+            return false;
+        }
+        return await (_window = RunWindowAsync());
     }
+
+    private async Task<bool> RunWindowAsync()
+    {
+        using var cts = new CancellationTokenSource();
+        _windowCts = cts;
+        TdxSsoResult? result;
+        try
+        {
+            result = await InteractiveSignIn!(cts.Token);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[tdx-sso] The sign-in window failed");
+            result = TdxSsoResult.Failed(ex.Message);
+        }
+        finally
+        {
+            _windowCts = null;
+        }
+
+        if (result is { Success: true, Token: not null })
+        {
+            Accept(result);
+            _policy.RecordSuccess();
+            RefreshStatus();
+            return true;
+        }
+
+        // A silent renewal or another process may have signed in meanwhile;
+        // a late failure from the window must not overwrite that.
+        var signedIn = IsSignedIn;
+        if (signedIn) _policy.RecordSuccess();
+        if (!signedIn && result != null)
+        {
+            if (result.IdentityRefused)
+            {
+                Store.Clear();
+                _last = result;
+            }
+            _auth.Update(AuthSystemId.Tdx, AuthTokenState.Failed(result.Error ?? "TeamDynamix sign-in did not finish"));
+        }
+        RefreshStatus();
+        return signedIn;
+    }
+
+    /// <summary>A token arrived: the sign-in window has nothing left to do.</summary>
+    private void CloseWindow() => _windowCts?.Cancel();
 
     private async Task RunSilentAsync(bool renew)
     {
@@ -168,7 +267,7 @@ public sealed class TdxSessionCoordinator : IDisposable
         }
         finally
         {
-            if (report) SetLaunchStep(IsSignedIn ? TdxSignInStep.LoadingTickets : null);
+            if (report) SetLaunchStep(IsSignedIn && HasTickets?.Invoke() != true ? TdxSignInStep.LoadingTickets : null);
             if (attempted)
             {
                 var renewed = IsSignedIn && (!wasSignedIn || _service?.CurrentSsoExpiry > expiryBefore);
@@ -283,6 +382,7 @@ public sealed class TdxSessionCoordinator : IDisposable
 
         _auth.Update(AuthSystemId.Tdx, AuthTokenState.Valid(session.UserName, session.ExpiryUtc));
         Log.Information("[tdx-sso] Reused the saved session for {UserName}", session.UserName ?? "(unknown)");
+        CloseWindow();
         RaiseSignInChanged();
         return true;
     }
@@ -290,6 +390,7 @@ public sealed class TdxSessionCoordinator : IDisposable
     private void Accept(TdxSsoResult result)
     {
         if (_service is not { } tdx) return;
+        CloseWindow();
         if (tdx.CurrentSsoToken != null && !_policy.ShouldAccept(result.Expiry, tdx.CurrentSsoExpiry))
         {
             Log.Information("[tdx-sso] Kept the session held; the new sign-in does not outlast it");
@@ -328,7 +429,8 @@ public sealed class TdxSessionCoordinator : IDisposable
     /// <summary>
     /// Keep the session renewed while the window is open: a check every 15
     /// seconds (sooner just before expiry), and one shortly after
-    /// <see cref="Kick"/> or a network change. Call once, on the UI thread.
+    /// <see cref="Kick"/>, a network change, resume from sleep or a session
+    /// unlock. Call once, on the UI thread.
     /// </summary>
     public void Start()
     {
@@ -336,6 +438,8 @@ public sealed class TdxSessionCoordinator : IDisposable
         _started = true;
         NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
         NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
+        SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        SystemEvents.SessionSwitch += OnSessionSwitch;
         _ = KeeperLoopAsync(_stop.Token);
     }
 
@@ -387,7 +491,7 @@ public sealed class TdxSessionCoordinator : IDisposable
             await tdx.ReloadSharedSessionAsync(force: kicked);
             RefreshStatus();
 
-            if (_inFlight is { IsCompleted: false }) return;
+            if (_inFlight is { IsCompleted: false } || _retry is { IsCompleted: false }) return;
             // The wrong account is final until someone clicks Sign In.
             if (_last is { IdentityRefused: true }) return;
             if (!_policy.ShouldAttempt(HeldExpiry, kicked)) return;
@@ -432,7 +536,7 @@ public sealed class TdxSessionCoordinator : IDisposable
     /// <summary>Recompute <see cref="NeedsAttention"/> and mark a lapsed token expired.</summary>
     public void RefreshStatus()
     {
-        if (!OnUi(RefreshStatus) || _service is not { } tdx) return;
+        if (!OnUi(RefreshStatus) || _service is not { } tdx || !ReportsStatus) return;
 
         var token = tdx.CurrentSsoToken;
         var expiry = HeldExpiry;
@@ -467,8 +571,9 @@ public sealed class TdxSessionCoordinator : IDisposable
         _policy.RecordAdopted();
         _last = null;
         _auth.Update(AuthSystemId.Tdx, AuthTokenState.Valid(session.UserName, session.ExpiryUtc));
+        CloseWindow();
         RefreshStatus();
-        if (!wasSignedIn) RaiseSignInChanged();
+        if (!wasSignedIn || IdentityChanged?.Invoke() == true) RaiseSignInChanged();
     }
 
     private void OnTokenRejected()
@@ -486,6 +591,18 @@ public sealed class TdxSessionCoordinator : IDisposable
     }
 
     private void OnNetworkAddressChanged(object? sender, EventArgs e) => OnUi(() => Kick("network change"));
+
+    private void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == PowerModes.Resume) OnUi(() => Kick("resume from sleep"));
+    }
+
+    private void OnSessionSwitch(object? sender, SessionSwitchEventArgs e)
+    {
+        if (e.Reason is SessionSwitchReason.SessionUnlock or SessionSwitchReason.SessionLogon
+            or SessionSwitchReason.ConsoleConnect or SessionSwitchReason.RemoteConnect)
+            OnUi(() => Kick("session unlock"));
+    }
 
     private void SetLaunchStep(TdxSignInStep? step)
     {
@@ -529,7 +646,10 @@ public sealed class TdxSessionCoordinator : IDisposable
         {
             NetworkChange.NetworkAvailabilityChanged -= OnNetworkAvailabilityChanged;
             NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged;
+            SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+            SystemEvents.SessionSwitch -= OnSessionSwitch;
         }
+        _windowCts?.Cancel();
         if (_service is { } tdx)
         {
             tdx.SharedSessionAdopted -= OnSharedSessionAdopted;
