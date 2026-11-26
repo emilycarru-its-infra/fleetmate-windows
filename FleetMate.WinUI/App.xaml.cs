@@ -53,6 +53,7 @@ public partial class App : Application
 
         // Each ported page registers here; every other tab shows a placeholder.
         ShellPages.Register("Tickets", typeof(TicketsPage));
+        Shell.Widgets.WidgetStrip.RegisterTab("Tickets");
         ShellServices.RegisterDemoFixtures(s => s.TicketCache.Update(DemoTickets.Tickets.ToList()));
         ShellPages.Register("Development", typeof(Pages.Development.DevelopmentPage));
         Shell.Widgets.WidgetStrip.RegisterTab("Development");

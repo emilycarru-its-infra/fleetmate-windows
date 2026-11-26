@@ -2,6 +2,7 @@ using System.ComponentModel;
 using FleetMate.Core.Models.Tickets;
 using FleetMate.Core.Services.Tickets;
 using FleetMate.WinUI.Pages.Tickets;
+using FleetMate.WinUI.Shell.Widgets;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -63,6 +64,7 @@ public sealed partial class TicketsPage : Page
         MainWindow.ViewModeChanged += (_, mode) => ViewModel.IsBoard = mode == "board";
         ViewModel.IsBoard = MainWindow.ViewMode == "board";
         ApplyViewMode();
+        WidgetStrip.Changed += tab => { if (tab == "Tickets") DrawWidgets(); };
     }
 
     public TicketsViewModel ViewModel { get; }
@@ -98,7 +100,7 @@ public sealed partial class TicketsPage : Page
         switch (e.PropertyName)
         {
             case nameof(TicketsViewModel.Charts):
-                DrawCharts();
+                DrawWidgets();
                 break;
             case nameof(TicketsViewModel.EmptyState):
             case nameof(TicketsViewModel.ShowsLoading):
@@ -232,170 +234,14 @@ public sealed partial class TicketsPage : Page
 
     // MARK: - Widgets
 
-    private void Tile_Click(object sender, RoutedEventArgs e)
+    /// <summary>Draw the shared widget strip from the current figures, or nothing when Graphs hides it.</summary>
+    private void DrawWidgets()
     {
-        if (sender is FrameworkElement { Tag: TicketWidgetTile tile }) tile.Action();
+        WidgetHost.Content = WidgetStrip.IsShown("Tickets")
+            ? WidgetStrip.Build("Tickets", TicketGraphCards.For(ViewModel.Tiles, ViewModel.Charts, ViewModel.IsLoading),
+                filter => TicketGraphCards.Apply(filter, ViewModel.Tiles, ViewModel.Filters))
+            : null;
     }
-
-    private void DrawCharts()
-    {
-        foreach (var chart in ViewModel.Charts)
-        {
-            switch (chart.Category)
-            {
-                case TicketFilterCategory.Status: DrawDonut(chart); break;
-                case TicketFilterCategory.Priority: FillBars(PriorityBars, chart); break;
-                case TicketFilterCategory.Age: FillBars(AgeBars, chart); break;
-                case TicketFilterCategory.Responsible: FillBars(ResponsibleBars, chart); break;
-                case TicketFilterCategory.Group: FillBars(GroupBars, chart); break;
-            }
-        }
-    }
-
-    private bool Faded(TicketWidgetChart chart, string value) => TicketWidgetRules.Faded(ViewModel.Filters, chart.Category, value);
-
-    /// <summary>One arc per status with a small gap between them; the legend rows are filters too.</summary>
-    private void DrawDonut(TicketWidgetChart chart)
-    {
-        DonutCanvas.Children.Clear();
-        StatusLegend.Children.Clear();
-        var counts = chart.Counts;
-        var total = counts.Sum(c => c.Value);
-        DonutTotal.Text = total.ToString("N0");
-        if (total == 0)
-        {
-            StatusLegend.Children.Add(Caption(ViewModel.IsLoading ? "Loading…" : "No tickets match", "TextFillColorTertiaryBrush"));
-            return;
-        }
-
-        const double size = 96, thickness = 12;
-        var radius = (size - thickness) / 2;
-        var center = new Point(size / 2, size / 2);
-        var gap = counts.Count > 1 ? 2.0 / radius : 0;
-        var start = -Math.PI / 2;
-        foreach (var c in counts)
-        {
-            var brush = TicketBrushes.Tone(TicketTones.Status(c.Label));
-            var opacity = Faded(chart, c.Label) ? 0.3 : 1;
-            var sweep = 2 * Math.PI * c.Value / total;
-            Shape shape;
-            if (counts.Count == 1)
-            {
-                shape = new Ellipse { Width = size - thickness, Height = size - thickness, Stroke = brush, StrokeThickness = thickness };
-                Canvas.SetLeft(shape, thickness / 2);
-                Canvas.SetTop(shape, thickness / 2);
-            }
-            else
-            {
-                var a0 = start + gap / 2;
-                var a1 = start + sweep - gap / 2;
-                var figure = new PathFigure { StartPoint = PointAt(center, radius, a0), IsClosed = false };
-                figure.Segments.Add(new ArcSegment
-                {
-                    Point = PointAt(center, radius, a1),
-                    Size = new Size(radius, radius),
-                    IsLargeArc = a1 - a0 > Math.PI,
-                    SweepDirection = SweepDirection.Clockwise,
-                });
-                var geometry = new PathGeometry();
-                geometry.Figures.Add(figure);
-                shape = new Path { Data = geometry, Stroke = brush, StrokeThickness = thickness };
-            }
-            shape.Opacity = opacity;
-            ToolTipService.SetToolTip(shape, $"{c.Label}: {c.Value}");
-            var label = c.Label;
-            shape.Tapped += (_, _) => ViewModel.Filters.Toggle(TicketFilterCategory.Status, label);
-            DonutCanvas.Children.Add(shape);
-            start += sweep;
-
-            StatusLegend.Children.Add(ValueRow(chart, c, brush, swatch: true));
-        }
-        AutomationProperties.SetName(DonutCanvas, "By status: " + string.Join(", ", counts.Select(c => $"{c.Label} {c.Value}")));
-    }
-
-    private static Point PointAt(Point center, double radius, double angle) =>
-        new(center.X + radius * Math.Cos(angle), center.Y + radius * Math.Sin(angle));
-
-    /// <summary>Horizontal bars, label left and count right; each row toggles its value.</summary>
-    private void FillBars(StackPanel host, TicketWidgetChart chart)
-    {
-        host.Children.Clear();
-        if (chart.Counts.Count == 0)
-        {
-            host.Children.Add(Caption(ViewModel.IsLoading ? "Loading…" : "No tickets match", "TextFillColorTertiaryBrush"));
-            return;
-        }
-        foreach (var c in chart.Counts.Take(TicketStats.TopCount))
-            host.Children.Add(ValueRow(chart, c, TicketBrushes.Tone(TicketTones.For(chart.Category, c.Label)), swatch: false,
-                max: chart.Counts.Max(x => x.Value)));
-    }
-
-    /// <summary>A value as a button: a legend dot or a bar, its name and its count. Faded when outside the selection.</summary>
-    private Button ValueRow(TicketWidgetChart chart, TicketStats.Count c, Brush brush, bool swatch, int max = 0)
-    {
-        var row = new Grid { ColumnSpacing = 8 };
-        // The name takes what is left; a bar is a short fixed track, so names are not cut short for it.
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = swatch ? GridLength.Auto : new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = swatch ? new GridLength(1, GridUnitType.Star) : new GridLength(44) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-        var name = Caption(c.Label, c.Label == TicketStats.Unassigned ? "TextFillColorTertiaryBrush" : "TextFillColorPrimaryBrush");
-        if (swatch)
-        {
-            row.Children.Add(new Ellipse { Width = 8, Height = 8, Fill = brush, VerticalAlignment = VerticalAlignment.Center });
-            Grid.SetColumn(name, 1);
-            row.Children.Add(name);
-        }
-        else
-        {
-            row.Children.Add(name);
-            var track = new Grid
-            {
-                Height = 8,
-                VerticalAlignment = VerticalAlignment.Center,
-                Background = TicketBrushes.Text("TicketToneTrackBrush"),
-                CornerRadius = new CornerRadius(4),
-            };
-            track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(c.Value, 0.0001), GridUnitType.Star) });
-            track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(max - c.Value, 0), GridUnitType.Star) });
-            track.Children.Add(new Border { Background = brush, CornerRadius = new CornerRadius(4) });
-            Grid.SetColumn(track, 1);
-            row.Children.Add(track);
-        }
-        var count = Caption(c.Value.ToString("N0"), "TextFillColorSecondaryBrush");
-        count.HorizontalAlignment = HorizontalAlignment.Right;
-        Grid.SetColumn(count, 2);
-        row.Children.Add(count);
-
-        var selected = ViewModel.Filters.IsSelected(chart.Category, c.Label);
-        var button = new Button
-        {
-            Content = row,
-            Style = (Style)Application.Current.Resources["SubtleButtonStyle"],
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Stretch,
-            Padding = new Thickness(4, 2, 4, 2),
-            MinHeight = 0,
-            Opacity = Faded(chart, c.Label) ? 0.45 : 1,
-        };
-        var help = selected ? "Click to remove this filter." : "Click to filter by it.";
-        ToolTipService.SetToolTip(button, $"{c.Label}: {c.Value}. {help}");
-        AutomationProperties.SetName(button, $"{chart.Title}, {c.Label}: {c.Value}");
-        if (selected) AutomationProperties.SetItemStatus(button, "Selected");
-        var label = c.Label;
-        button.Click += (_, _) => ViewModel.Filters.Toggle(chart.Category, label);
-        return button;
-    }
-
-    private static TextBlock Caption(string text, string brushKey) => new()
-    {
-        Text = text,
-        Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
-        Foreground = TicketBrushes.Text(brushKey),
-        TextTrimming = TextTrimming.CharacterEllipsis,
-        MaxLines = 1,
-        VerticalAlignment = VerticalAlignment.Center,
-    };
 
     // MARK: - Filters flyout
 
@@ -817,7 +663,6 @@ public sealed partial class TicketsPage : Page
         var listWidth = !_detailOpen ? available : overlay ? 0 : available - DetailColumn.Width.Value - 12;
         Layout.Fit(listWidth);
         FitToolbar(available);
-        FitWidgets(available);
     }
 
     /// <summary>
@@ -835,38 +680,6 @@ public sealed partial class TicketsPage : Page
         RefreshLabel.Visibility = labels;
     }
 
-    private bool? _widgetsTwoRows;
-
-    /// <summary>
-    /// The figures and five charts share one row when it fits them; narrower,
-    /// they wrap into two rows of three, so no card is cut off at the edge.
-    /// </summary>
-    private void FitWidgets(double width)
-    {
-        var twoRows = width < 1320;
-        if (_widgetsTwoRows == twoRows) return;
-        _widgetsTwoRows = twoRows;
-        WidgetsGrid.ColumnDefinitions.Clear();
-        WidgetsGrid.RowDefinitions.Clear();
-        var columns = twoRows ? 3 : 6;
-        for (var i = 0; i < columns; i++)
-            WidgetsGrid.ColumnDefinitions.Add(new ColumnDefinition
-            {
-                // One row: the figures size to themselves and By Status gets extra room for its legend.
-                Width = twoRows ? new GridLength(1, GridUnitType.Star)
-                    : i == 0 ? GridLength.Auto
-                    : new GridLength(i == 1 ? 1.4 : 1, GridUnitType.Star),
-            });
-        WidgetsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        if (twoRows) WidgetsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        WidgetsGrid.RowSpacing = 8;
-        var cards = WidgetsGrid.Children.OfType<FrameworkElement>().ToList();
-        for (var i = 0; i < cards.Count; i++)
-        {
-            Grid.SetColumn(cards[i], i % columns);
-            Grid.SetRow(cards[i], i / columns);
-        }
-    }
 }
 
 /// <summary>A date-range choice for the Filters flyout's Time Period.</summary>
