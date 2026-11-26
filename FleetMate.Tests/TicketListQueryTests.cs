@@ -166,6 +166,8 @@ public class TicketListQueryTests
     [InlineData("New", TicketTone.Blue)]
     [InlineData("In Process", TicketTone.Orange)]
     [InlineData("On Hold", TicketTone.Yellow)]
+    [InlineData("Awaiting Input", TicketTone.Teal)]
+    [InlineData("Pending", TicketTone.Teal)]
     [InlineData("Resolved", TicketTone.Green)]
     [InlineData("Closed", TicketTone.Gray)]
     [InlineData("Something else", TicketTone.Secondary)]

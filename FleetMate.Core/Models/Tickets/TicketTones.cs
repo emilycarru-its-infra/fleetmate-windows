@@ -25,7 +25,9 @@ public static class TicketTones
         var n = name.ToLowerInvariant();
         if (n.Contains("new") || n.Contains("open")) return TicketTone.Blue;
         if (n.Contains("progress") || n.Contains("process")) return TicketTone.Orange;
-        if (n.Contains("hold") || n.Contains("pending") || n.Contains("waiting")) return TicketTone.Yellow;
+        // On Hold and Awaiting Input sit side by side in the donut, so they never share a colour.
+        if (n.Contains("hold")) return TicketTone.Yellow;
+        if (n.Contains("pending") || n.Contains("waiting")) return TicketTone.Teal;
         if (n.Contains("resolved") || n.Contains("completed")) return TicketTone.Green;
         if (n.Contains("closed")) return TicketTone.Gray;
         if (n.Contains("cancel")) return TicketTone.Orange;
