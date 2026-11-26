@@ -94,6 +94,14 @@
                 </AppBarButton.Icon>
             </AppBarButton>
             <AppBarButton
+                x:Name="SendToAgentButton"
+                AutomationProperties.AutomationId="RunSendToAgentButton"
+                Label="Send to Agent">
+                <AppBarButton.Icon>
+                    <FontIcon Glyph="&#xE724;" />
+                </AppBarButton.Icon>
+            </AppBarButton>
+            <AppBarButton
                 AutomationProperties.AutomationId="RunCopyForAgentButton"
                 Click="CopyForAgent_Click"
                 Label="Copy for Agent"

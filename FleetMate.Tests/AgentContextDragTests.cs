@@ -44,7 +44,7 @@ public class AgentContextDragTests
     {
         AgentContextDrag.Begin("### Device: PC\n");
         AgentContextDrag.End(Now);
-        Assert.Null(AgentContextDrag.Claim("### Device: PC\n", Now + AgentContextDrag.Grace + TimeSpan.FromSeconds(1)));
+        Assert.Null(AgentContextDrag.Claim("### Device: PC\n", Now + AgentContextDragState.Grace + TimeSpan.FromSeconds(1)));
         // Expired drags are forgotten, not kept for a later match.
         Assert.Null(AgentContextDrag.Claim("### Device: PC\n", Now));
     }

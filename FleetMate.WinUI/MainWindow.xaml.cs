@@ -80,6 +80,7 @@ public sealed partial class MainWindow : Window
 
         BuildTabs();
         AddSettingsShortcut();
+        InitializeTerminal();
         if (_edition.IsTicketsOnly) NavView.IsPaneVisible = false;
         // Switching a module in Settings rebuilds the tab bar at once.
         Pages.Settings.SettingsViewModel.ModulesChanged += () => DispatcherQueue.TryEnqueue(BuildTabs);
@@ -202,6 +203,7 @@ public sealed partial class MainWindow : Window
     private void NavFrame_Navigated(object sender, NavigationEventArgs e)
     {
         NavFrame.Tag = e.Parameter;
+        if (e.Parameter is string shownTab) App.Services.AgentContext?.SetTab(shownTab);
         BackButton.IsEnabled = NavFrame.CanGoBack;
         ForwardButton.IsEnabled = NavFrame.CanGoForward;
 

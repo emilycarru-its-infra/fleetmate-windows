@@ -1,3 +1,4 @@
+using FleetMate.WinUI.Shell;
 using FleetMate.Core.Development;
 using FleetMate.Core.Models.Projects;
 using FleetMate.Core.Services.Projects;
@@ -35,7 +36,11 @@ public sealed partial class PullRequestDetailView : UserControl
     /// </summary>
     public event EventHandler? StateChanged;
 
-    public PullRequestDetailView() => InitializeComponent();
+    public PullRequestDetailView()
+    {
+        InitializeComponent();
+        AgentHandOff.AttachButton(SendToAgentButton, () => _pullRequest is { } pr ? AgentContexts.PullRequest(pr) : null);
+    }
 
     public UnifiedPullRequest? PullRequest => _pullRequest;
 

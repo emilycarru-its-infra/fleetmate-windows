@@ -55,11 +55,11 @@
   </Target>
 
   <!-- The terminal page and xterm.js (MIT, see LICENSE.xterm.txt) ship inside
-       the exe and are served to WebView2 from a private virtual host. -->
+       the exe and are served to WebView2 from a private virtual host. They live
+       in FleetMate.Core, which the WinUI app copies them from too. -->
   <ItemGroup>
-    <EmbeddedResource Include="Assets\Terminal\*.html;Assets\Terminal\*.js;Assets\Terminal\*.css"
+    <EmbeddedResource Include="..\FleetMate.Core\Assets\Terminal\*.html;..\FleetMate.Core\Assets\Terminal\*.js;..\FleetMate.Core\Assets\Terminal\*.css"
                       LogicalName="FleetMate.GUI.Terminal.%(Filename)%(Extension)" />
-    <None Include="Assets\Terminal\LICENSE.xterm.txt" />
   </ItemGroup>
 
   <ItemGroup>

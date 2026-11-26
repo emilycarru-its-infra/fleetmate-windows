@@ -81,29 +81,10 @@ public partial class MainWindow : Window
         };
         Terminal.ReposRequested += (_, _) => { SetTerminalVisible(false); NavigateToTab("Development"); };
         if (!TicketsOnly)
-            Loaded += (_, _) =>
-            {
-                // The Repos rows first, so reopened sessions find theirs; then what was open at the last quit.
-                Terminal.SyncRepos();
-                var restored = Terminal.RestoreSessions();
-                var launchWorkspace = LaunchWorkspace();
-                if (launchWorkspace != null) Terminal.OpenWorkspace(launchWorkspace);
-                else if (!restored && Application.Current is App { Config.Terminal.AgentAutoStart: true })
-                    // Ready behind the Agent button rather than taking the window:
-                    // the terminal opens full window by default.
-                    Terminal.OpenDefaultSession(takeFocus: false);
-            };
-    }
-
-    /// <summary>The workspace terminal-workspaces.json names to open at launch, or null.</summary>
-    private static FleetMate.Core.Services.Terminal.TerminalWorkspace? LaunchWorkspace()
-    {
-        try { return FleetMate.Core.Services.Terminal.TerminalWorkspaceStore.Load().LaunchWorkspace; }
-        catch (Exception ex)
-        {
-            Serilog.Log.Warning(ex, "Terminal workspaces: could not read {Path}", FleetMate.Core.Services.Terminal.TerminalWorkspaceStore.DefaultPath);
-            return null;
-        }
+            // The Repos rows first, so reopened sessions find theirs; then what
+            // was open at the last quit; then the launch workspace, or a session
+            // ready behind the Agent button rather than taking the window.
+            Loaded += (_, _) => Terminal.StartAtLaunch();
     }
 
     // ── Elevation status ──────────────────────────────────────────
@@ -329,12 +310,12 @@ public partial class MainWindow : Window
     /// the text was pasted, false when it was copied. <paramref name="pane"/>
     /// is the pane a row was dropped on, tried first.
     /// </summary>
-    public bool SendToAgent(string text, TerminalView? pane = null, FrameworkElement? copyAnchor = null)
+    public bool SendToAgent(string text, FleetMate.Core.Services.Terminal.TerminalPaneController? pane = null, FrameworkElement? copyAnchor = null)
     {
         if (TicketsOnly) return false;
         SetTerminalVisible(true, takeFocus: false);
         if (Terminal.Insert(text, pane)) return true;
-        AgentContextClipboard.CopyWithPreview(text, copyAnchor ?? pane);
+        AgentContextClipboard.CopyWithPreview(text, copyAnchor ?? Terminal.ViewFor(pane));
         if (Terminal.HasSessions) Terminal.FocusActive();
         else Terminal.OpenDefaultSession();
         return false;

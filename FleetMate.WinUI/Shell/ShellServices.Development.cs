@@ -194,9 +194,9 @@ public sealed partial class ShellServices : IDevelopmentHost
     }
 
     /// <summary>
-    /// The FLEETMATE_CONTEXT file terminal sessions read. Null until the
-    /// Terminal tab is ported and sets it; Development reports its segment and
-    /// selection here (see <c>DevelopmentContext</c>), so nothing else changes then.
+    /// The FLEETMATE_CONTEXT file terminal sessions read, set by
+    /// <c>InitializeTerminal</c>; null in demo mode and TicketsMate. Development
+    /// reports its segment and selection here (see <c>DevelopmentContext</c>).
     /// </summary>
     public AppContextFile? AgentContext { get; set; }
 
