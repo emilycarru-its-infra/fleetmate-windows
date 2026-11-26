@@ -67,6 +67,7 @@ public sealed partial class MainWindow : Window
         SizeAndCenter(1600, 1000);
 
         var services = App.Services;
+        DemoBadge.Visibility = services.DemoMode ? Visibility.Visible : Visibility.Collapsed;
         services.TdxSession.StatusChanged += UpdateSignInBanner;
         services.TdxSession.SignInChanged += UpdateSignInBanner;
         services.AppErrorChanged += UpdateAppError;
@@ -315,7 +316,9 @@ public sealed partial class MainWindow : Window
     private void AuthFlyout_Opening(object sender, object e)
     {
         var systems = App.Services.Auth.ConfiguredSystems;
-        AuthList.ItemsSource = systems.Count == 0
+        AuthList.ItemsSource = App.Services.DemoMode
+            ? new[] { "Demo mode: fictional data, nothing signed in." }
+            : systems.Count == 0
             ? new[] { "Nothing is configured." }
             : systems.Select(s => $"{s.SystemId.DisplayName()}: {s.State.StatusLabel}"
                 + (s.State.User is { } user ? $" ({user})" : "")).ToList();

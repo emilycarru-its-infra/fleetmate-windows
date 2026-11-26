@@ -102,6 +102,21 @@
                         </SelectorBar>
                         <AppBarSeparator />
                     </StackPanel>
+                    <!-- Demo mode: fictional data, no services. Shown so a screenshot says so. -->
+                    <Border
+                        x:Name="DemoBadge"
+                        Padding="8,2"
+                        VerticalAlignment="Center"
+                        Background="{ThemeResource SystemFillColorCautionBackgroundBrush}"
+                        BorderBrush="{ThemeResource SystemFillColorCautionBrush}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource ControlCornerRadius}"
+                        Visibility="Collapsed">
+                        <TextBlock
+                            AutomationProperties.Name="Demo data"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="Demo data" />
+                    </Border>
                     <Button
                         x:Name="RecentActivityButton"
                         AutomationProperties.Name="Recent Activity"
