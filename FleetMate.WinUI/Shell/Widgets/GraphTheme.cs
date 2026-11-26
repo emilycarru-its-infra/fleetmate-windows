@@ -3,7 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 
-namespace FleetMate.WinUI.Pages.Development.Graphs;
+namespace FleetMate.WinUI.Shell.Widgets;
 
 /// <summary>
 /// The strip's brushes and text styles, all theme resources: the app's chart
@@ -13,13 +13,19 @@ namespace FleetMate.WinUI.Pages.Development.Graphs;
 /// </summary>
 internal static class GraphTheme
 {
+    /// <summary>A theme brush by key, or the secondary text brush when the key is missing.</summary>
+    public static Brush Resource(string key) =>
+        Application.Current.Resources.TryGetValue(key, out var value) && value is Brush brush
+            ? brush
+            : (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+
     /// <summary>The categorical order for bars coloured by position. Series8 is red, which the charts never use.</summary>
     private static readonly string[] Categorical =
     {
         "Series1Brush", "Series7Brush", "Series2Brush", "Series3Brush", "Series6Brush", "Series4Brush", "Series5Brush",
     };
 
-    public static Brush Tone(ChartTone tone) => DevelopmentUi.Theme(tone switch
+    public static Brush Tone(ChartTone tone) => Resource(tone switch
     {
         ChartTone.Blue => "Series1Brush",
         ChartTone.Orange => "Series2Brush",
@@ -33,13 +39,13 @@ internal static class GraphTheme
 
     /// <summary>A bar's own tone, or the categorical colour for its position.</summary>
     public static Brush Bar(ChartTone? tone, int index) =>
-        tone is { } t ? Tone(t) : DevelopmentUi.Theme(Categorical[index % Categorical.Length]);
+        tone is { } t ? Tone(t) : Resource(Categorical[index % Categorical.Length]);
 
-    public static Brush Track => DevelopmentUi.Theme("BarTrackBrush");
-    public static Brush Primary => DevelopmentUi.Theme("TextFillColorPrimaryBrush");
-    public static Brush Secondary => DevelopmentUi.Theme("TextFillColorSecondaryBrush");
-    public static Brush Placeholder => DevelopmentUi.Theme("ControlAltFillColorTertiaryBrush");
-    public static Brush Success => DevelopmentUi.Theme("SystemFillColorSuccessBrush");
+    public static Brush Track => Resource("BarTrackBrush");
+    public static Brush Primary => Resource("TextFillColorPrimaryBrush");
+    public static Brush Secondary => Resource("TextFillColorSecondaryBrush");
+    public static Brush Placeholder => Resource("ControlAltFillColorTertiaryBrush");
+    public static Brush Success => Resource("SystemFillColorSuccessBrush");
 
     public static Style Style(string key) => (Style)Application.Current.Resources[key];
 

@@ -81,6 +81,7 @@ public sealed partial class MainWindow : Window
         services.TdxSession.StatusChanged += UpdateSignInBanner;
         services.TdxSession.SignInChanged += UpdateSignInBanner;
         services.AppErrorChanged += UpdateAppError;
+        Shell.Widgets.WidgetStrip.Changed += _ => UpdateGraphsButton();
         UpdateSignInBanner();
         UpdateAppError();
         LinkBanner.IsOpen = false;
@@ -205,6 +206,22 @@ public sealed partial class MainWindow : Window
             ? $"Search {tab}  (Ctrl+F)"
             : "Search  (Ctrl+F)";
         UpdateSignInBanner();
+        UpdateGraphsButton();
+    }
+
+    // MARK: - Graphs
+
+    private void UpdateGraphsButton()
+    {
+        var tab = CurrentTab;
+        var has = Shell.Widgets.WidgetStrip.HasWidgets(tab);
+        GraphsButton.Visibility = has ? Visibility.Visible : Visibility.Collapsed;
+        if (has) GraphsButton.IsChecked = Shell.Widgets.WidgetStrip.IsShown(tab!);
+    }
+
+    private void GraphsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (CurrentTab is { } tab) Shell.Widgets.WidgetStrip.SetShown(tab, GraphsButton.IsChecked == true);
     }
 
     private void BackButton_Click(object sender, RoutedEventArgs e)

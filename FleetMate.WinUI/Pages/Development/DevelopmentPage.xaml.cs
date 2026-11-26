@@ -72,10 +72,10 @@ public sealed partial class DevelopmentPage : Page, Shell.ICaptureViews
             services.Inbox.Changed += OnInboxChanged;
             services.DevelopmentLinkRequested += OnDevelopmentLinkRequested;
             services.CacheChanged += OnCacheChanged;
+            Shell.Widgets.WidgetStrip.Changed += OnStripChanged;
             services.DevelopmentSync.StatusChanged += OnSyncStatusChanged;
         }
         _current.SetShown(true);
-        GraphsButton.IsChecked = DevelopmentGraphs.IsShown;
         RenderGraphs();
         UpdateInboxButton();
         UpdateBusy();
@@ -169,7 +169,6 @@ public sealed partial class DevelopmentPage : Page, Shell.ICaptureViews
         if (DevelopmentGraphs.IsShown != graphs)
         {
             DevelopmentGraphs.IsShown = graphs;
-            GraphsButton.IsChecked = graphs;
         }
         var segment = Enum.Parse<DevelopmentSegment>(view.Split('-')[0], ignoreCase: true);
         ShowSegment(segment);
@@ -212,10 +211,10 @@ public sealed partial class DevelopmentPage : Page, Shell.ICaptureViews
 
     // MARK: - Graphs
 
-    private void GraphsButton_Click(object sender, RoutedEventArgs e)
+    /// <summary>The toolbar's Graphs button showed or hid a strip; redraw when it was this tab's.</summary>
+    private void OnStripChanged(string tab)
     {
-        DevelopmentGraphs.IsShown = GraphsButton.IsChecked == true;
-        RenderGraphs();
+        if (tab == "Development") RenderGraphs();
     }
 
     private void OnCacheChanged(string key)

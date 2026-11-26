@@ -9,7 +9,7 @@ using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Shapes;
 using Windows.UI.ViewManagement;
 
-namespace FleetMate.WinUI.Pages.Development.Graphs;
+namespace FleetMate.WinUI.Shell.Widgets;
 
 /// <summary>
 /// Draws one <see cref="GraphCard"/> from FleetMate.Core: KPI tiles, a donut,
@@ -20,6 +20,12 @@ namespace FleetMate.WinUI.Pages.Development.Graphs;
 /// </summary>
 internal static class GraphCardView
 {
+    /// <summary>
+    /// The start of each card's AutomationId: <c>&lt;Tab&gt;Graph</c>, set by
+    /// <see cref="WidgetStrip.Build"/> for the strip it is drawing (UI thread only).
+    /// </summary>
+    internal static string IdPrefix { get; set; } = "DevelopmentGraph";
+
     public static FrameworkElement Build(GraphCard card, Action<GraphFilter> open)
     {
         if (card.Kind == GraphCardKind.Kpis) return Kpis(card, open);
@@ -63,7 +69,7 @@ internal static class GraphCardView
             Child = grid,
         };
         AutomationProperties.SetName(border, card.Description);
-        AutomationProperties.SetAutomationId(border, $"DevelopmentGraph{Slug(card.Title)}");
+        AutomationProperties.SetAutomationId(border, $"{IdPrefix}{Slug(card.Title)}");
         GraphFlowPanel.SetUnits(border, card.Units);
         return border;
     }
@@ -109,7 +115,7 @@ internal static class GraphCardView
         };
         if (kpi.Loading) Pulse(value);
 
-        var id = $"DevelopmentGraphKpi{Slug(kpi.Title)}";
+        var id = $"{IdPrefix}Kpi{Slug(kpi.Title)}";
         if (kpi.Open is { } target && !kpi.Loading)
         {
             var button = new Button
@@ -120,8 +126,8 @@ internal static class GraphCardView
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 VerticalContentAlignment = VerticalAlignment.Center,
                 Padding = new Thickness(12, 10, 12, 10),
-                Background = DevelopmentUi.Theme("CardBackgroundFillColorDefaultBrush"),
-                BorderBrush = DevelopmentUi.Theme("CardStrokeColorDefaultBrush"),
+                Background = GraphTheme.Resource("CardBackgroundFillColorDefaultBrush"),
+                BorderBrush = GraphTheme.Resource("CardStrokeColorDefaultBrush"),
                 CornerRadius = (CornerRadius)Application.Current.Resources["OverlayCornerRadius"],
             };
             button.Click += (_, _) => open(target);
@@ -339,7 +345,7 @@ internal static class GraphCardView
             };
         }
         AutomationProperties.SetName(item, name);
-        AutomationProperties.SetAutomationId(item, $"DevelopmentGraph{id}");
+        AutomationProperties.SetAutomationId(item, $"{IdPrefix}{id}");
         ToolTipService.SetToolTip(item, name);
         return item;
     }
@@ -367,7 +373,7 @@ internal sealed partial class GraphStaticItem : ContentControl
     {
         IsTabStop = true;
         UseSystemFocusVisuals = true;
-        Background = DevelopmentUi.Theme("SubtleFillColorTransparentBrush");
+        Background = GraphTheme.Resource("SubtleFillColorTransparentBrush");
     }
 
     protected override AutomationPeer OnCreateAutomationPeer() => new GraphStaticItemPeer(this);

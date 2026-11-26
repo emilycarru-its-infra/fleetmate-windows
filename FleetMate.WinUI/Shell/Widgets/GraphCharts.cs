@@ -7,7 +7,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using Windows.Foundation;
 
-namespace FleetMate.WinUI.Pages.Development.Graphs;
+namespace FleetMate.WinUI.Shell.Widgets;
 
 /// <summary>
 /// The two drawn charts: a donut of Path arcs with a legend that carries every
