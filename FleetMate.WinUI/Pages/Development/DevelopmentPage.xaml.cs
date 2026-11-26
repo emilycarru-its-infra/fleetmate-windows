@@ -161,6 +161,7 @@ public sealed partial class DevelopmentPage : Page, Shell.ICaptureViews
     {
         "pulls", "pulls-detail", "pulls-graphs", "commits", "commits-detail", "commits-graphs", "pipelines", "pipelines-detail",
         "pipelines-approval", "pipelines-graphs", "skills", "skills-detail", "skills-graphs",
+        "repos", "repos-history", "repos-files", "repos-search", "repos-edit",
     };
 
     public async Task ShowCaptureViewAsync(string view)
@@ -181,6 +182,11 @@ public sealed partial class DevelopmentPage : Page, Shell.ICaptureViews
             else if (segment == DevelopmentSegment.Skills) SkillsView.SelectFirst();
         }
         else if (view == "pipelines-approval") await PipelinesView.SelectFirstAsync(awaitingApproval: true);
+        if (segment == DevelopmentSegment.Repos)
+        {
+            await ReposView.ShowCaptureViewAsync(view);
+            RenderGraphs();
+        }
     }
 
     // MARK: - Refresh

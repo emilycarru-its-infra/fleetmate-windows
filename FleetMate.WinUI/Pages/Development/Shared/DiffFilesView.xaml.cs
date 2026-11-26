@@ -53,10 +53,65 @@ public sealed partial class DiffFilesView : UserControl
         Render();
     }
 
+    /// <summary>
+    /// Buttons on every hunk header, such as Repos' Stage, Unstage and Discard
+    /// Chunk for the working tree. Empty (the default) leaves hunks read only.
+    /// </summary>
+    public IReadOnlyList<DiffHunkAction> HunkActions
+    {
+        get => _hunkActions;
+        set
+        {
+            _hunkActions = value ?? Array.Empty<DiffHunkAction>();
+            Render();
+        }
+    }
+
+    private IReadOnlyList<DiffHunkAction> _hunkActions = Array.Empty<DiffHunkAction>();
+
+    /// <summary>A hunk header was (re)bound to a row: give it this view's hunk actions.</summary>
+    private void HunkActions_DataContextChanged(FrameworkElement sender, DataContextChangedEventArgs args)
+    {
+        if (sender is not StackPanel panel) return;
+        panel.Children.Clear();
+        if (args.NewValue is not DiffRow { Hunk: { } hunk } row) return;
+        foreach (var action in _hunkActions)
+        {
+            var button = new Button
+            {
+                Content = action.Label,
+                Padding = new Thickness(8, 1, 8, 2),
+                FontSize = 11,
+            };
+            if (action.Destructive) button.Foreground = DevelopmentUi.Theme("SystemFillColorCautionBrush");
+            ToolTipService.SetToolTip(button, action.Tooltip);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, $"{action.Label}, {hunk.Header}");
+            var file = row.File;
+            button.Click += async (_, _) =>
+            {
+                button.IsEnabled = false;
+                try { await action.Run(file, hunk); }
+                finally { button.IsEnabled = true; }
+            };
+            panel.Children.Add(button);
+        }
+    }
+
     /// <summary>Drop the rows, e.g. while another item loads.</summary>
     public void Clear() => ShowFiles(Array.Empty<DiffFile>());
 
-    private void Render() => Rows.ItemsSource = DiffRows.Flatten(_files, UserPreferences.DiffLayout);
+    /// <summary>Up to this many rows draw as one plain stack; more are virtualized.</summary>
+    public const int SmallDiffRows = 600;
+
+    private void Render()
+    {
+        var rows = DiffRows.Flatten(_files, UserPreferences.DiffLayout);
+        var small = rows.Count <= SmallDiffRows;
+        SmallRows.ItemsSource = small ? rows : null;
+        Rows.ItemsSource = small ? null : rows;
+        SmallRows.Visibility = DevelopmentUi.Show(small);
+        Rows.Visibility = DevelopmentUi.Show(!small);
+    }
 
     private void SplitButton_Click(object sender, RoutedEventArgs e) => Pick(DiffLayout.Split);
 
@@ -82,6 +137,9 @@ public sealed partial class DiffFilesView : UserControl
         InlineButton.IsChecked = layout == DiffLayout.Inline;
     }
 }
+
+/// <summary>A button on each hunk header of a <see cref="DiffFilesView"/>: its label, hint, and what it does to the hunk.</summary>
+public sealed record DiffHunkAction(string Label, string Tooltip, Func<DiffFile, DiffHunk, Task> Run, bool Destructive = false);
 
 /// <summary>Picks a <see cref="DiffFilesView"/> row's template by its <see cref="DiffRowKind"/>.</summary>
 public sealed partial class DiffRowTemplateSelector : DataTemplateSelector
