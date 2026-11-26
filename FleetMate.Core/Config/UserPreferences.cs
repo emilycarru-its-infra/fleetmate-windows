@@ -28,6 +28,10 @@ public static class UserPreferences
     /// <summary>Light, Dark, or null to follow Windows (<c>UiTheme</c>, written by Settings › Appearance).</summary>
     public static string? UiTheme => Read("UiTheme") is "Light" or "Dark" ? Read("UiTheme") : null;
 
+    /// <summary>Save the theme: "Light", "Dark", or "System" (or null) to follow Windows.</summary>
+    public static void SetUiTheme(string? theme) =>
+        Write("UiTheme", theme is "Light" or "Dark" ? theme : "System");
+
     public static IReadOnlySet<string> HiddenModules => AppModules.ParseHidden(Read("HiddenModules"));
 
     public static void SetModuleShown(string tag, bool shown)
