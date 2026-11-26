@@ -87,6 +87,7 @@ public sealed partial class MainWindow : Window
 
         SizeAndCenter(1600, 1000);
 
+        SearchFlyout.Opened += (_, _) => SearchBox.Focus(FocusState.Programmatic);
         var services = App.Services;
         DemoBadge.Visibility = services.DemoMode ? Visibility.Visible : Visibility.Collapsed;
         services.TdxSession.StatusChanged += UpdateSignInBanner;
@@ -247,8 +248,45 @@ public sealed partial class MainWindow : Window
 
     // MARK: - Search
 
+    /// <summary>Below this width the search field folds into a button with a flyout, so nothing in the title bar is clipped.</summary>
+    internal const double CompactSearchBelow = 1180;
+
+    private bool _compactSearch;
+
+    private void RootGrid_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateSearchLayout(e.NewSize.Width);
+
+    /// <summary>
+    /// One search field, moved between the title bar and the button's flyout:
+    /// the same box, text and suggestions either way.
+    /// </summary>
+    internal void UpdateSearchLayout(double width)
+    {
+        var compact = width < CompactSearchBelow;
+        if (compact == _compactSearch && (compact ? SearchFlyoutHost.Child : AppTitleBar.Content) == SearchBox) return;
+        _compactSearch = compact;
+        if (compact)
+        {
+            AppTitleBar.Content = null;
+            SearchFlyoutHost.Child = SearchBox;
+        }
+        else
+        {
+            SearchFlyout.Hide();
+            SearchFlyoutHost.Child = null;
+            AppTitleBar.Content = SearchBox;
+        }
+        SearchButton.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>The title bar's own items, for the capture's overlap check.</summary>
+    internal IEnumerable<FrameworkElement> TitleBarItems =>
+        TitleBarLeft.Children.OfType<FrameworkElement>()
+            .Append(_compactSearch ? SearchButton : SearchBox)
+            .Concat(TitleBarRight.Children.OfType<FrameworkElement>().Where(e => e != SearchButton));
+
     private void SearchAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
+        if (_compactSearch) SearchFlyout.ShowAt(SearchButton);
         SearchBox.Focus(FocusState.Keyboard);
         args.Handled = true;
     }

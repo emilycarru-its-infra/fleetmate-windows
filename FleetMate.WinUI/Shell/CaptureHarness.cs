@@ -122,6 +122,7 @@ internal static class CaptureHarness
                                 report.AppendLine($"![{file}]({file})");
                             }
                             var issues = Inspect(window.CaptureRoot).ToList();
+                            issues.AddRange(TitleBarOverlaps(window));
                             findings += issues.Count;
                             report.AppendLine();
                             if (issues.Count == 0) report.AppendLine("No clipped text or unnamed controls.");
@@ -197,6 +198,29 @@ internal static class CaptureHarness
                     yield return $"Button with no accessible name ({Describe(button)})";
             }
         }
+    }
+
+    /// <summary>
+    /// Title-bar items that overlap each other: a search field running under
+    /// the tab's own controls, a button drawn over another.
+    /// </summary>
+    internal static IEnumerable<string> TitleBarOverlaps(MainWindow window)
+    {
+        var root = window.CaptureRoot;
+        var boxes = window.TitleBarItems
+            .Where(IsShown)
+            .Select(e => (Element: e, Bounds: e.TransformToVisual(root).TransformBounds(
+                new Windows.Foundation.Rect(0, 0, e.ActualWidth, e.ActualHeight))))
+            .ToList();
+        for (var i = 0; i < boxes.Count; i++)
+            for (var j = i + 1; j < boxes.Count; j++)
+            {
+                var overlap = boxes[i].Bounds;
+                overlap.Intersect(boxes[j].Bounds);
+                // A pixel of shared edge is layout rounding, not an overlap.
+                if (!overlap.IsEmpty && overlap.Width > 1 && overlap.Height > 1)
+                    yield return $"Title-bar overlap: {Describe(boxes[i].Element)} and {Describe(boxes[j].Element)}";
+            }
     }
 
     private static bool IsShown(FrameworkElement element)
