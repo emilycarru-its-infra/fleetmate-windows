@@ -267,10 +267,15 @@ public sealed partial class DevicesPage : Page, ICaptureViews
 
     /// <summary>
     /// Serials the asset inventory holds, once it has been read; null until
-    /// then, so the "Missing from Inventory" check stays quiet. The WinUI
-    /// Inventory tab provides the asset cache when it is ported.
+    /// then, so the "Missing from Inventory" check stays quiet.
     /// </summary>
-    private static IReadOnlySet<string>? InventorySerials() => null;
+    private static IReadOnlySet<string>? InventorySerials()
+    {
+        var assets = App.Services.CachedAssets;
+        if (assets is not { Count: > 0 }) return null;
+        return assets.Select(a => a.Serial).Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => DeviceListJoin.Normalize(s!)).ToHashSet();
+    }
 
     private void ShowEmpty(string message)
     {
