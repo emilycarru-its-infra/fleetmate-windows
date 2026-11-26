@@ -224,5 +224,8 @@ public sealed partial class ReposSegmentView : UserControl, IDevelopmentSegmentV
         await model.LoadSelectedAsync();
         if (view == "repos-files") model.Open("src/Harbor.Core/Tides.cs");
         if (view == "repos-search") await model.GrepAsync("step");
+        // The diff comes from git after the panel switches; let it arrive and draw before the capture.
+        await model.Git.SyncDiffAsync();
+        await Task.Delay(1500);
     }
 }

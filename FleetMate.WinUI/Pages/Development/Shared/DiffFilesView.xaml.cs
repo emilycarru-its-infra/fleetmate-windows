@@ -100,7 +100,18 @@ public sealed partial class DiffFilesView : UserControl
     /// <summary>Drop the rows, e.g. while another item loads.</summary>
     public void Clear() => ShowFiles(Array.Empty<DiffFile>());
 
-    private void Render() => Rows.ItemsSource = DiffRows.Flatten(_files, UserPreferences.DiffLayout);
+    /// <summary>Up to this many rows draw as one plain stack; more are virtualized.</summary>
+    public const int SmallDiffRows = 600;
+
+    private void Render()
+    {
+        var rows = DiffRows.Flatten(_files, UserPreferences.DiffLayout);
+        var small = rows.Count <= SmallDiffRows;
+        SmallRows.ItemsSource = small ? rows : null;
+        Rows.ItemsSource = small ? null : rows;
+        SmallRows.Visibility = DevelopmentUi.Show(small);
+        Rows.Visibility = DevelopmentUi.Show(!small);
+    }
 
     private void SplitButton_Click(object sender, RoutedEventArgs e) => Pick(DiffLayout.Split);
 
