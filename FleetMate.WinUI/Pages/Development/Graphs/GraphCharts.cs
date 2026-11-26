@@ -154,7 +154,7 @@ internal static class GraphCharts
         var totals = Enumerable.Range(0, count).Select(i => card.Series.Sum(s => Math.Max(0, s.Values[i]))).ToList();
         var max = Math.Max(1, totals.DefaultIfEmpty(0).Max());
 
-        var plot = GraphCardView.ChartGroup(new Grid { ColumnSpacing = count > 10 ? 3 : 6, MinHeight = 110 }, card.Title);
+        var plot = GraphCardView.ChartGroup(new Grid { ColumnSpacing = count > 10 ? 4 : 8, MinHeight = 110 }, card.Title);
         for (var i = 0; i < count; i++)
         {
             plot.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -218,7 +218,7 @@ internal static class GraphCharts
         var legend = new GraphWrapPanel { Margin = new Thickness(0, 8, 0, 0) };
         foreach (var (series, s) in card.Series.Select((x, s) => (x, s)))
         {
-            var entry = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            var entry = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             entry.Children.Add(new Border { Width = 10, Height = 10, CornerRadius = new CornerRadius(2), Background = GraphTheme.Bar(series.Tone, s), VerticalAlignment = VerticalAlignment.Center });
             entry.Children.Add(GraphTheme.Caption(series.Name, secondary: false));
             legend.Children.Add(entry);

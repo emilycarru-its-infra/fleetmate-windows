@@ -27,7 +27,7 @@ internal static class GraphCardView
     {
         if (card.Kind == GraphCardKind.Kpis) return Kpis(card, open);
 
-        var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 0, 0, 8) };
+        var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 0, 8) };
         var title = new TextBlock
         {
             Text = card.Title,
@@ -302,7 +302,11 @@ internal static class GraphCardView
         Storyboard.SetTarget(fade, element);
         Storyboard.SetTargetProperty(fade, nameof(UIElement.Opacity));
         var story = new Storyboard { Children = { fade } };
-        if (element is FrameworkElement fe) fe.Loaded += (_, _) => story.Begin();
+        if (element is FrameworkElement fe)
+        {
+            fe.Loaded += (_, _) => story.Begin();
+            fe.Unloaded += (_, _) => story.Stop();
+        }
         else story.Begin();
     }
 
@@ -324,7 +328,7 @@ internal static class GraphCardView
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 VerticalContentAlignment = VerticalAlignment.Stretch,
-                Padding = new Thickness(6, 4, 6, 4),
+                Padding = new Thickness(8, 4, 8, 4),
             };
             button.Click += (_, _) => invoke();
             item = button;
@@ -336,7 +340,7 @@ internal static class GraphCardView
                 Content = content,
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 VerticalContentAlignment = VerticalAlignment.Stretch,
-                Padding = new Thickness(6, 4, 6, 4),
+                Padding = new Thickness(8, 4, 8, 4),
             };
         }
         AutomationProperties.SetName(item, name);
@@ -368,7 +372,7 @@ internal sealed partial class GraphStaticItem : ContentControl
     {
         IsTabStop = true;
         UseSystemFocusVisuals = true;
-        Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        Background = DevelopmentUi.Theme("SubtleFillColorTransparentBrush");
     }
 
     protected override AutomationPeer OnCreateAutomationPeer() => new GraphStaticItemPeer(this);
