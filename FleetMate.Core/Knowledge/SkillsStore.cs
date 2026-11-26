@@ -3,7 +3,7 @@ using FleetMate.Core.Config;
 using FleetMate.Core.Knowledge;
 using Serilog;
 
-namespace FleetMate.GUI.Knowledge;
+namespace FleetMate.Core.Knowledge;
 
 /// <summary>
 /// Development › Skills: the shared agent setup from FleetMate's own copy of

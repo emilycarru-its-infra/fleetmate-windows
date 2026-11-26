@@ -10,9 +10,6 @@ using P = FleetMate.GUI.Views.Shared.Widgets.WidgetPalette;
 
 namespace FleetMate.GUI.Views.Shared.Widgets;
 
-/// <summary>Which Development sub-tab the Graphs strip describes.</summary>
-public enum DevelopmentSegment { Repos, Pulls, Commits, Pipelines, Skills }
-
 /// <summary>
 /// Development's Graphs strip, one set per sub-tab, matching the macOS app.
 /// Every figure comes from what the tab has already loaded: no requests of

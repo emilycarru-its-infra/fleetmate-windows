@@ -29,7 +29,7 @@ using ModernWpf;
 
 namespace FleetMate.GUI;
 
-public partial class App : Application
+public partial class App : Application, IDevelopmentHost
 {
     public FleetMateConfig Config { get; private set; } = null!;
     public AuthManager AuthManager { get; private set; } = null!;
@@ -172,18 +172,51 @@ public partial class App : Application
     /// <summary>Pending Azure Pipelines approvals, pinned to the active runs they hold.</summary>
     public FleetMate.Core.Services.Projects.PipelineApprovalTracker PipelineApprovals { get; } = new();
 
-    private FleetMate.GUI.Views.Development.DevelopmentDataSync? _developmentSync;
-    public FleetMate.GUI.Views.Development.DevelopmentDataSync DevelopmentSync =>
-        _developmentSync ??= new FleetMate.GUI.Views.Development.DevelopmentDataSync(this);
+    private DevelopmentDataSync? _developmentSync;
+    public DevelopmentDataSync DevelopmentSync => _developmentSync ??= CreateDevelopmentSync();
 
     /// <summary>GitHub notifications, polled from startup so the Development tab count is live.</summary>
-    public FleetMate.GUI.Views.Development.DevelopmentInbox Inbox { get; }
+    public DevelopmentInbox Inbox { get; }
 
     public App()
     {
-        Inbox = new FleetMate.GUI.Views.Development.DevelopmentInbox(() =>
+        Inbox = new DevelopmentInbox(() =>
             Config is { } config ? new GitHubNotificationService(config.GitHubProviderOrDefault()) : null);
     }
+
+    /// <summary>The Development refresh worker, told when the window is in the foreground, minimized or asleep.</summary>
+    private DevelopmentDataSync CreateDevelopmentSync()
+    {
+        var sync = new DevelopmentDataSync(this, Windows.OfType<Window>().Any(window => window.IsActive));
+        var window = MainWindow;
+        void OnState(object? s, EventArgs e) => sync.SetMinimized(window?.WindowState == WindowState.Minimized);
+        void OnActivated(object? s, EventArgs e) => sync.SetForeground(true);
+        void OnDeactivated(object? s, EventArgs e) => sync.SetForeground(false);
+        void OnPower(object s, Microsoft.Win32.PowerModeChangedEventArgs e) => Dispatcher.BeginInvoke(() =>
+        {
+            if (e.Mode == Microsoft.Win32.PowerModes.Suspend) sync.SetSuspended(true);
+            else if (e.Mode == Microsoft.Win32.PowerModes.Resume) sync.SetSuspended(false);
+        });
+        if (window != null) window.StateChanged += OnState;
+        Activated += OnActivated;
+        Deactivated += OnDeactivated;
+        Microsoft.Win32.SystemEvents.PowerModeChanged += OnPower;
+        _unhookDevelopmentSync = () =>
+        {
+            if (window != null) window.StateChanged -= OnState;
+            Activated -= OnActivated;
+            Deactivated -= OnDeactivated;
+            Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPower;
+        };
+        OnState(null, EventArgs.Empty);
+        return sync;
+    }
+
+    private Action? _unhookDevelopmentSync;
+
+    Task<bool> IDevelopmentHost.RunOnUiAsync(Func<Task<bool>> work) => Dispatcher.InvokeAsync(work).Task.Unwrap();
+
+    void IDevelopmentHost.PostToUi(Action action) => Dispatcher.BeginInvoke(action);
 
     // MARK: - TDX SSO State
     public bool IsTdxSsoAuthenticated => TdxService?.IsSsoAuthenticated ?? false;
@@ -354,6 +387,8 @@ public partial class App : Application
     /// <summary>Invalidate all caches</summary>
     public void InvalidateAllCaches()
     {
+        _unhookDevelopmentSync?.Invoke();
+        _unhookDevelopmentSync = null;
         _developmentSync?.Dispose();
         _ticketWorkspace?.Dispose();
         _developmentSync = null;
@@ -1318,6 +1353,8 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _unhookDevelopmentSync?.Invoke();
+        _unhookDevelopmentSync = null;
         _developmentSync?.Dispose();
         _ticketWorkspace?.Dispose();
         StopTdxSessionKeeper();

@@ -434,10 +434,10 @@ public class DevelopmentSectionTests
         var viewer = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ME" };
 
         var all = DevelopmentFilter.Activity(new[] { older, newer }, viewer, hideMine: false);
-        Assert.Equal(new[] { "ada", "me" }, all.Select(r => r.AuthorName));
+        Assert.Equal(new[] { "ada", "me" }, all.Select(r => r.Comment.AuthorName));
 
         var hidden = DevelopmentFilter.Activity(new[] { older, newer }, viewer, hideMine: true);
-        Assert.Equal(new[] { "ada" }, hidden.Select(r => r.AuthorName));
+        Assert.Equal(new[] { "ada" }, hidden.Select(r => r.Comment.AuthorName));
     }
 
     [Fact]

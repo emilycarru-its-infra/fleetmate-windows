@@ -20,17 +20,8 @@ public static class RepoFilterMenu
     }
 
     /// <summary>Counts by key, busiest first, then by name. Empty when there is only one key.</summary>
-    public static List<(string Repository, int Count)> Counts<T>(IEnumerable<T> items, Func<T, string> key)
-    {
-        var counts = items
-            .GroupBy(key)
-            .Select(g => (Repository: g.Key, Count: g.Count()))
-            .OrderByDescending(e => e.Count)
-            .ThenBy(e => e.Repository, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        return counts.Count > 1 ? counts : new();
-    }
+    public static List<(string Repository, int Count)> Counts<T>(IEnumerable<T> items, Func<T, string> key) =>
+        FleetMate.Core.Development.DevelopmentFilter.KeyCounts(items, key);
 
     public static string? Fill(RepositoryFilterButton button, List<FleetMate.Core.Models.Projects.RepositoryFilterEntry> entries, string? selection) =>
         button.SetEntries(entries, selection);

@@ -3,7 +3,6 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using FleetMate.Core.Knowledge;
 using FleetMate.Core.Models.Inventory;
-using FleetMate.GUI.Knowledge;
 
 namespace FleetMate.GUI.Views.Inventory;
 
