@@ -87,13 +87,8 @@ public static partial class WidgetCatalog
     /// punctuation — "Non-Compliant" finds "Noncompliant", and "Macintosh"
     /// finds "macOS". With no match the incoming value is used as it is.
     /// </summary>
-    internal static string[] MatchFilterValues(string incoming, IEnumerable<string> available, Func<string, string>? display = null)
-    {
-        static string Norm(string s) => new(s.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
-        var want = Norm(incoming);
-        var matches = available.Where(v => Norm(display?.Invoke(v) ?? v) == want).ToArray();
-        return matches.Length > 0 ? matches : new[] { incoming };
-    }
+    internal static string[] MatchFilterValues(string incoming, IEnumerable<string> available, Func<string, string>? display = null) =>
+        WidgetFilterValues.Match(incoming, available, display);
 
     // MARK: - Projects
 
