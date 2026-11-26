@@ -3,7 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Foundation;
 
-namespace FleetMate.WinUI.Pages.Development.Graphs;
+namespace FleetMate.WinUI.Shell.Widgets;
 
 /// <summary>
 /// The strip's responsive grid, as FleetMate.GUI's WidgetFlowPanel and the

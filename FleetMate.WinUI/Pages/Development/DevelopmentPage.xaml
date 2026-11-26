@@ -58,16 +58,6 @@
                 </DropDownButton.Flyout>
             </DropDownButton>
 
-            <ToggleButton
-                x:Name="GraphsButton"
-                Grid.Column="1"
-                AutomationProperties.AutomationId="DevelopmentGraphsButton"
-                AutomationProperties.Name="Graphs"
-                Click="GraphsButton_Click"
-                Style="{StaticResource DefaultToggleButtonStyle}"
-                ToolTipService.ToolTip="Show or hide the graphs">
-                <FontIcon FontSize="16" Glyph="&#xE9D2;" />
-            </ToggleButton>
 
             <!--
                 The inbox is a glance, not a sub-tab: a popover off one button,

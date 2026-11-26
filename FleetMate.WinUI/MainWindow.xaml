@@ -117,6 +117,19 @@
                             Style="{StaticResource CaptionTextBlockStyle}"
                             Text="Demo data" />
                     </Border>
+                    <!-- The tab's graphs, shown or hidden per tab, as on FleetMate for Mac. -->
+                    <ToggleButton
+                        x:Name="GraphsButton"
+                        Padding="10,6"
+                        AutomationProperties.AutomationId="ToolbarGraphsButton"
+                        AutomationProperties.Name="Graphs"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Click="GraphsButton_Click"
+                        ToolTipService.ToolTip="Show or hide this tab's graphs"
+                        Visibility="Collapsed">
+                        <FontIcon FontSize="16" Glyph="&#xE9D2;" />
+                    </ToggleButton>
                     <Button
                         x:Name="RecentActivityButton"
                         AutomationProperties.Name="Recent Activity"

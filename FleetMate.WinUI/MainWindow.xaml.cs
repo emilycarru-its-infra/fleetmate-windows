@@ -38,6 +38,12 @@ public sealed partial class MainWindow : Window
     /// <summary>The text in the toolbar search field. The current page filters on it.</summary>
     public static event EventHandler<string>? SearchChanged;
 
+    /// <summary>
+    /// Enter in the toolbar search field with no suggestion chosen: a page that
+    /// looks things up rather than filtering (Identity's Users) searches then.
+    /// </summary>
+    public static event EventHandler<string>? SearchSubmitted;
+
     /// <summary>List or Board, from the Tickets tab's selector.</summary>
     public static event EventHandler<string>? ViewModeChanged;
 
@@ -75,6 +81,7 @@ public sealed partial class MainWindow : Window
         services.TdxSession.StatusChanged += UpdateSignInBanner;
         services.TdxSession.SignInChanged += UpdateSignInBanner;
         services.AppErrorChanged += UpdateAppError;
+        Shell.Widgets.WidgetStrip.Changed += _ => UpdateGraphsButton();
         UpdateSignInBanner();
         UpdateAppError();
         LinkBanner.IsOpen = false;
@@ -199,6 +206,22 @@ public sealed partial class MainWindow : Window
             ? $"Search {tab}  (Ctrl+F)"
             : "Search  (Ctrl+F)";
         UpdateSignInBanner();
+        UpdateGraphsButton();
+    }
+
+    // MARK: - Graphs
+
+    private void UpdateGraphsButton()
+    {
+        var tab = CurrentTab;
+        var has = Shell.Widgets.WidgetStrip.HasWidgets(tab);
+        GraphsButton.Visibility = has ? Visibility.Visible : Visibility.Collapsed;
+        if (has) GraphsButton.IsChecked = Shell.Widgets.WidgetStrip.IsShown(tab!);
+    }
+
+    private void GraphsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (CurrentTab is { } tab) Shell.Widgets.WidgetStrip.SetShown(tab, GraphsButton.IsChecked == true);
     }
 
     private void BackButton_Click(object sender, RoutedEventArgs e)
@@ -265,6 +288,7 @@ public sealed partial class MainWindow : Window
     private void SearchBox_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
     {
         if (args.ChosenSuggestion is SearchSuggestion s) OpenLink(s.Hit.Link);
+        else SearchSubmitted?.Invoke(this, args.QueryText);
     }
 
     /// <summary>One row in the search field's list.</summary>

@@ -3,6 +3,7 @@ using FleetMate.Core.Shared;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using FleetMate.WinUI.Shell.Widgets;
 using Serilog;
 
 namespace FleetMate.WinUI.Pages.Development.Graphs;
@@ -20,21 +21,14 @@ public static class DevelopmentGraphs
     private static bool _skillsHooked;
 
     /// <summary>
-    /// Whether the strip shows, kept with FleetMate.GUI's choice in the
-    /// edition's HKCU key. Development opens on the work itself, so it starts hidden.
+    /// Whether the strip shows: the shared toolbar Graphs state for this tab
+    /// (<see cref="WidgetStrip"/>). Development opens on the work itself, so it starts hidden.
     /// </summary>
     public static bool IsShown
     {
-        get => App.Services.DemoMode ? _demoShown ?? WidgetVisibility.ShownByDefault(Tab) : WidgetVisibility.IsShown(Tab);
-        set
-        {
-            // A demo or QA capture never writes the person's own choice.
-            if (App.Services.DemoMode) _demoShown = value;
-            else WidgetVisibility.SetShown(Tab, value);
-        }
+        get => WidgetStrip.IsShown(Tab);
+        set => WidgetStrip.SetShown(Tab, value);
     }
-
-    private static bool? _demoShown;
 
     /// <summary>Whether a change to the <paramref name="cacheKey"/> cache redraws <paramref name="segment"/>'s strip.</summary>
     public static bool Follows(DevelopmentSegment segment, string cacheKey) => DevelopmentGraphCards.Follows(segment, cacheKey);
@@ -55,20 +49,7 @@ public static class DevelopmentGraphs
             _ => DevelopmentGraphCards.Skills(services.Skills?.Entries, services.Skills?.IsSyncing == true),
         };
 
-        var panel = new GraphFlowPanel { Margin = new Thickness(0, 0, 0, 4) };
-        AutomationProperties.SetName(panel, $"{segment} graphs");
-        AutomationProperties.SetAutomationId(panel, "DevelopmentGraphs");
-        foreach (var card in cards)
-        {
-            try
-            {
-                panel.Children.Add(GraphCardView.Build(card, filter => Open(page, filter)));
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "[development] Could not draw the {Card} graph", card.Title);
-            }
-        }
+        var panel = WidgetStrip.Build(Tab, cards, filter => Open(page, filter));
         // Brushes are read when the cards are drawn, so a theme change draws them again.
         panel.ActualThemeChanged += (_, _) => page.RenderGraphs();
         return panel;
