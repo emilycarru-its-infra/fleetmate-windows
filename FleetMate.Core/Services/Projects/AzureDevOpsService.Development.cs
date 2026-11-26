@@ -128,7 +128,7 @@ public partial class AzureDevOpsService
         return await CommentPullRequestAsync(repository, pullRequestId, body!, project);
     }
 
-    private async Task<PullRequestActionResult> VoteAsync(
+    public async Task<PullRequestActionResult> VoteAsync(
         string repository, int pullRequestId, string? project, int vote)
     {
         if (!await SetAuthorizationAsync())

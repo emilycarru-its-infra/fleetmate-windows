@@ -24,7 +24,7 @@ public static class DevOpsCommand
 
     public static Command Create(AzureDevOpsService? adoService, ReportMateService? reportMate)
     {
-        var command = new Command("devops", "Azure DevOps work item management");
+        var command = new Command("devops", "Manage Azure DevOps work items, repositories and pipelines");
 
         command.AddCommand(CreateItemsCommand(adoService));
         command.AddCommand(CreateItemCommand(adoService));
@@ -33,6 +33,8 @@ public static class DevOpsCommand
         command.AddCommand(CreateSprintsCommand(adoService));
         command.AddCommand(CreateBoardsCommand(adoService));
         command.AddCommand(CreateFromErrorCommand(adoService, reportMate));
+        command.AddCommand(DevOpsResourceCommand.Create("repos", adoService));
+        command.AddCommand(DevOpsResourceCommand.Create("pipelines", adoService));
 
         return command;
     }

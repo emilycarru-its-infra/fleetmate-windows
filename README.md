@@ -137,6 +137,33 @@ and distribute their rows through the available space.
 
 ## Command Reference
 
+### Azure Repos and Azure Pipelines
+
+FleetMate uses its configured Azure DevOps organization and silent sign-in for these commands.
+Use `--project` to target a project explicitly. `fleetmate prs` still shows your personal PR queue.
+
+```sh
+fleetmate devops repos --help
+fleetmate devops repos pr create --project Example --repository Widget --source-branch fix/sample --target-branch main --title "Fix sample"
+fleetmate devops repos pr approve --project Example --repository Widget --id 123
+fleetmate devops repos pr complete --project Example --repository Widget --id 123 --json
+fleetmate devops repos pr abandon --project Example --repository Widget --id 123
+fleetmate devops pipelines --help
+fleetmate devops pipelines run --project Example --id 42
+fleetmate devops pipelines runs show --project Example --id 42 --resource 456
+fleetmate devops pipelines approval approve --project Example --resource 00000000-0000-0000-0000-000000000001
+```
+
+For resource-specific options, use `--query NAME=VALUE` for query parameters and
+`--body-file request.json` for request payloads. The `api` operation provides direct
+resource access with FleetMate sign-in for endpoints outside the named routes.
+It accepts a relative API resource, an HTTP method and an optional API version.
+
+```sh
+fleetmate devops pipelines api --project Example --api-path build/builds --query statusFilter=inProgress
+fleetmate devops repos api --project Example --api-path git/repositories/Widget/refs --query filter=heads/
+```
+
 ### Fleet Monitoring
 
 Monitor deployment health and troubleshoot installation failures:
