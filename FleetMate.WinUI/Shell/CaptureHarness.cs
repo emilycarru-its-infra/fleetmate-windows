@@ -187,6 +187,8 @@ internal static class CaptureHarness
         foreach (var element in Descendants(root).OfType<FrameworkElement>())
         {
             if (!IsShown(element)) continue;
+            if (element is Widgets.GraphFlowPanel strip && StripClips(strip) is { } clipped)
+                yield return $"Graph card clipped by the strip's height cap ({clipped})";
             if (element is TextBlock { IsTextTrimmed: true } text)
                 yield return $"Clipped text: \"{Shorten(text.Text)}\" ({Describe(text)})";
             if (element is ButtonBase button && button.Content is not string
@@ -221,6 +223,25 @@ internal static class CaptureHarness
                 if (!overlap.IsEmpty && overlap.Width > 1 && overlap.Height > 1)
                     yield return $"Title-bar overlap: {Describe(boxes[i].Element)} and {Describe(boxes[j].Element)}";
             }
+    }
+
+    /// <summary>
+    /// The first card a strip's scroll host cuts through, or null: a card that
+    /// starts above the visible bottom edge and ends below it.
+    /// </summary>
+    private static string? StripClips(Widgets.GraphFlowPanel strip)
+    {
+        DependencyObject? parent = strip;
+        while (parent != null && parent is not ScrollViewer) parent = VisualTreeHelper.GetParent(parent);
+        if (parent is not ScrollViewer host || host.ExtentHeight <= host.ViewportHeight + 1) return null;
+        var visibleBottom = host.VerticalOffset + host.ViewportHeight;
+        foreach (var card in strip.Children.OfType<FrameworkElement>().Where(c => c.Visibility == Visibility.Visible))
+        {
+            var bounds = card.TransformToVisual(strip).TransformBounds(new Windows.Foundation.Rect(0, 0, card.ActualWidth, card.ActualHeight));
+            if (bounds.Top < visibleBottom - 1 && bounds.Bottom > visibleBottom + 1)
+                return AutomationProperties.GetName(card) is { Length: > 0 } name ? name : Describe(card);
+        }
+        return null;
     }
 
     private static bool IsShown(FrameworkElement element)
