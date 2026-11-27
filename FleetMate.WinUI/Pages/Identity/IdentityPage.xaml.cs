@@ -1,4 +1,3 @@
-using System.Collections.Specialized;
 using FleetMate.Core.Identity;
 using FleetMate.Core.Models.Identity;
 using Microsoft.UI.Xaml;
@@ -22,7 +21,6 @@ public sealed partial class IdentityPage : Page, Shell.ICaptureViews
     {
         ViewModel = new IdentityViewModel(App.Services.Identity);
         InitializeComponent();
-        ViewModel.Groups.CollectionChanged += (_, _) => RebuildTree();
         MainWindow.SearchChanged += OnToolbarSearchChanged;
         MainWindow.SearchSubmitted += OnToolbarSearchSubmitted;
     }
@@ -38,13 +36,29 @@ public sealed partial class IdentityPage : Page, Shell.ICaptureViews
     {
         base.OnNavigatedTo(e);
         // A capture walks every view each pass; each pass starts on the groups.
-        if (App.Services.DemoMode) Views.SelectedItem = GroupsItem;
+        if (App.Services.DemoMode) ShowGroups();
         if (_loaded || !ViewModel.IsConfigured) return;
         _loaded = true;
         await ViewModel.LoadGroupsAsync();
     }
 
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        base.OnNavigatedFrom(e);
+        ViewModel.CancelMemberLoads();
+    }
+
     // MARK: - Views
+
+    /// <summary>Select Device groups so the selector and the panel agree.</summary>
+    private void ShowGroups()
+    {
+        UsersItem.IsSelected = false;
+        GroupsItem.IsSelected = true;
+        Views.SelectedItem = GroupsItem;
+        GroupsPanel.Visibility = ConfiguredVisibility;
+        UsersPanel.Visibility = Visibility.Collapsed;
+    }
 
     private void Views_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
@@ -78,40 +92,9 @@ public sealed partial class IdentityPage : Page, Shell.ICaptureViews
 
     // MARK: - Groups
 
-    private void RebuildTree()
-    {
-        GroupsTree.RootNodes.Clear();
-        foreach (var group in ViewModel.Groups)
-        {
-            GroupsTree.RootNodes.Add(new TreeViewNode
-            {
-                Content = string.IsNullOrWhiteSpace(group.Description) ? group.DisplayName : $"{group.DisplayName} ({group.Description})",
-                HasUnrealizedChildren = true,
-                IsExpanded = false,
-            });
-            GroupIds[GroupsTree.RootNodes[^1]] = group.Id;
-        }
-    }
-
-    private readonly Dictionary<TreeViewNode, string> GroupIds = new();
-
-    private async void GroupsTree_Expanding(TreeView sender, TreeViewExpandingEventArgs args)
-    {
-        var node = args.Node;
-        if (!node.HasUnrealizedChildren || !GroupIds.TryGetValue(node, out var id)) return;
-        node.HasUnrealizedChildren = false;
-        try
-        {
-            var devices = await ViewModel.GroupDevicesAsync(id);
-            if (devices.Count == 0) node.Children.Add(new TreeViewNode { Content = "(no devices)" });
-            foreach (var device in devices)
-                node.Children.Add(new TreeViewNode { Content = $"{device.DeviceName} · {device.OperatingSystem} {device.OsVersion}" });
-        }
-        catch (Exception ex)
-        {
-            node.Children.Add(new TreeViewNode { Content = $"Could not load devices: {ex.Message}" });
-        }
-    }
+    /// <summary>A member row's background: tinted when it matches the filter, as on FleetMate for Mac.</summary>
+    public static Brush MemberBackground(bool match) => (Brush)Application.Current.Resources[
+        match ? "AccentFillColorTertiaryBrush" : "SubtleFillColorSecondaryBrush"];
 
     // MARK: - Users
 
@@ -151,6 +134,8 @@ public sealed partial class IdentityPage : Page, Shell.ICaptureViews
 
     public static Visibility Hide(bool on) => on ? Visibility.Collapsed : Visibility.Visible;
 
+    public static Visibility Show(string? text) => string.IsNullOrWhiteSpace(text) ? Visibility.Collapsed : Visibility.Visible;
+
     public static bool HasText(string? text) => !string.IsNullOrWhiteSpace(text);
 
     public static Brush StateBrush(AccountState state) => (Brush)Application.Current.Resources[state switch
@@ -172,7 +157,10 @@ public sealed partial class IdentityPage : Page, Shell.ICaptureViews
         switch (view)
         {
             case "groups-expanded":
-                if (GroupsTree.RootNodes.FirstOrDefault() is { } first) first.IsExpanded = true;
+                ShowGroups();
+                await ViewModel.MembersLoaded;
+                if (ViewModel.Groups.FirstOrDefault() is { } first && !first.IsExpanded)
+                    await first.ToggleCommand.ExecuteAsync(null);
                 break;
             case "users":
                 Views.SelectedItem = UsersItem;

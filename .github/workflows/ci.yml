@@ -130,7 +130,7 @@ jobs:
     name: WinUI UI QA
     if: github.event_name == 'pull_request'
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v6

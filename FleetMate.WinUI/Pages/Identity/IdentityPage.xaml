@@ -55,16 +55,109 @@
             Visibility="{x:Bind NotConfiguredVisibility}" />
 
         <!-- Device groups -->
-        <Grid x:Name="GroupsPanel" Grid.Row="1" Visibility="{x:Bind ConfiguredVisibility}">
-            <Border Style="{StaticResource IdentityCardStyle}">
+        <Grid x:Name="GroupsPanel" Grid.Row="1" RowSpacing="8" Visibility="{x:Bind ConfiguredVisibility}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <TextBlock
+                HorizontalAlignment="Right"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="{x:Bind ViewModel.GroupsCount, Mode=OneWay}" />
+            <Border Grid.Row="1" Style="{StaticResource IdentityCardStyle}">
                 <Grid>
-                    <TreeView
-                        x:Name="GroupsTree"
-                        AutomationProperties.AutomationId="IdentityGroupsTree"
-                        AutomationProperties.Name="Device groups"
-                        Expanding="GroupsTree_Expanding"
-                        SelectionMode="Single" />
+                    <ScrollViewer Padding="8,4">
+                        <ItemsRepeater AutomationProperties.AutomationId="IdentityGroupsList" AutomationProperties.Name="Device groups" ItemsSource="{x:Bind ViewModel.Groups}">
+                            <ItemsRepeater.Layout>
+                                <StackLayout Spacing="2" />
+                            </ItemsRepeater.Layout>
+                            <ItemsRepeater.ItemTemplate>
+                                <DataTemplate x:DataType="local:GroupRow">
+                                    <StackPanel>
+                                        <Button
+                                            Padding="8,6"
+                                            HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Stretch"
+                                            AutomationProperties.Name="{x:Bind Name}"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Command="{x:Bind ToggleCommand}">
+                                            <Grid ColumnSpacing="10">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="16" />
+                                                    <ColumnDefinition Width="20" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <FontIcon FontSize="10" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="{x:Bind Chevron, Mode=OneWay}" />
+                                                <FontIcon Grid.Column="1" FontSize="16" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Glyph="{x:Bind Glyph}" />
+                                                <TextBlock Grid.Column="2" VerticalAlignment="Center" Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" />
+                                                <ItemsRepeater Grid.Column="3" VerticalAlignment="Center" ItemsSource="{x:Bind Badges}">
+                                                    <ItemsRepeater.Layout>
+                                                        <StackLayout Orientation="Horizontal" Spacing="4" />
+                                                    </ItemsRepeater.Layout>
+                                                    <ItemsRepeater.ItemTemplate>
+                                                        <DataTemplate x:DataType="x:String">
+                                                            <Border Padding="6,1" Background="{ThemeResource SubtleFillColorSecondaryBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="{StaticResource ControlCornerRadius}">
+                                                                <TextBlock Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind}" />
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsRepeater.ItemTemplate>
+                                                </ItemsRepeater>
+                                                <TextBlock Grid.Column="4" MinWidth="72" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind CountText, Mode=OneWay}" TextAlignment="Right" />
+                                            </Grid>
+                                        </Button>
+                                        <StackPanel Margin="44,4,8,10" Spacing="6" Visibility="{x:Bind IsExpanded, Mode=OneWay}">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <TextBlock VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="Group ID" />
+                                                <TextBlock VerticalAlignment="Center" FontFamily="Consolas" IsTextSelectionEnabled="True" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Id}" />
+                                                <Button Padding="4" AutomationProperties.Name="Copy group ID" Background="Transparent" BorderThickness="0" Command="{x:Bind CopyIdCommand}" ToolTipService.ToolTip="Copy group ID">
+                                                    <FontIcon FontSize="12" Glyph="&#xE8C8;" />
+                                                </Button>
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind IsLoading, Mode=OneWay}">
+                                                <ProgressRing Width="14" Height="14" IsActive="{x:Bind IsLoading, Mode=OneWay}" />
+                                                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="Loading members…" />
+                                            </StackPanel>
+                                            <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="No device members" Visibility="{x:Bind NoMembers, Mode=OneWay}" />
+                                            <TextBlock Foreground="{ThemeResource SystemFillColorCriticalBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind LoadError, Mode=OneWay}" />
+                                            <TextBlock FontWeight="SemiBold" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind MembersHeader, Mode=OneWay}" />
+                                            <ItemsRepeater ItemsSource="{x:Bind Members}">
+                                                <ItemsRepeater.Layout>
+                                                    <StackLayout Spacing="4" />
+                                                </ItemsRepeater.Layout>
+                                                <ItemsRepeater.ItemTemplate>
+                                                    <DataTemplate x:DataType="local:DeviceRow">
+                                                        <Border Padding="8,4" Background="{x:Bind local:IdentityPage.MemberBackground(IsMatch)}" CornerRadius="{StaticResource ControlCornerRadius}">
+                                                            <Grid ColumnSpacing="8">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="20" />
+                                                                    <ColumnDefinition Width="*" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <FontIcon FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Glyph="{x:Bind Glyph}" />
+                                                                <StackPanel Grid.Column="1">
+                                                                    <TextBlock IsTextSelectionEnabled="True" Style="{StaticResource BodyTextBlockStyle}" Text="{x:Bind Name}" />
+                                                                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind OsText}" />
+                                                                </StackPanel>
+                                                            </Grid>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsRepeater.ItemTemplate>
+                                            </ItemsRepeater>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsRepeater.ItemTemplate>
+                        </ItemsRepeater>
+                    </ScrollViewer>
                     <ProgressRing HorizontalAlignment="Center" VerticalAlignment="Center" IsActive="{x:Bind ViewModel.GroupsLoading, Mode=OneWay}" />
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Visibility="{x:Bind ViewModel.GroupsEmpty, Mode=OneWay}">
+                        <FontIcon FontSize="36" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="&#xE716;" />
+                        <TextBlock HorizontalAlignment="Center" Style="{StaticResource SubtitleTextBlockStyle}" Text="{x:Bind ViewModel.GroupsEmptyTitle, Mode=OneWay}" />
+                        <TextBlock HorizontalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource BodyTextBlockStyle}" Text="{x:Bind ViewModel.GroupsEmptyText, Mode=OneWay}" TextAlignment="Center" TextWrapping="Wrap" />
+                    </StackPanel>
                     <TextBlock
                         Margin="16"
                         Foreground="{ThemeResource SystemFillColorCriticalBrush}"
@@ -112,27 +205,39 @@
                         </ListView.ItemTemplate>
                     </ListView>
                     <ProgressRing HorizontalAlignment="Center" VerticalAlignment="Center" IsActive="{x:Bind ViewModel.UsersLoading, Mode=OneWay}" />
-                    <TextBlock
+                    <StackPanel
                         Margin="16"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Style="{StaticResource BodyTextBlockStyle}"
-                        Text="{x:Bind ViewModel.UsersMessage, Mode=OneWay}"
-                        TextAlignment="Center"
-                        TextWrapping="Wrap" />
+                        Spacing="8"
+                        Visibility="{x:Bind local:IdentityPage.Show(ViewModel.UsersMessage), Mode=OneWay}">
+                        <FontIcon FontSize="32" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="&#xE721;" />
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource BodyTextBlockStyle}"
+                            Text="{x:Bind ViewModel.UsersMessage, Mode=OneWay}"
+                            TextAlignment="Center"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
                 </Grid>
             </Border>
 
             <Border Grid.Column="1" Style="{StaticResource IdentityCardStyle}">
                 <Grid>
-                    <TextBlock
+                    <StackPanel
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Style="{StaticResource BodyTextBlockStyle}"
-                        Text="Select a user to see their Entra profile."
-                        Visibility="{x:Bind local:IdentityPage.Hide(ViewModel.HasSelectedUser), Mode=OneWay}" />
+                        Spacing="8"
+                        Visibility="{x:Bind local:IdentityPage.Hide(ViewModel.HasSelectedUser), Mode=OneWay}">
+                        <FontIcon FontSize="36" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Glyph="&#xE77B;" />
+                        <TextBlock HorizontalAlignment="Center" Style="{StaticResource SubtitleTextBlockStyle}" Text="No user selected" />
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource BodyTextBlockStyle}"
+                            Text="Select a user to see their full Entra profile." />
+                    </StackPanel>
                     <Grid Padding="20" RowSpacing="12" Visibility="{x:Bind ViewModel.HasSelectedUser, Mode=OneWay}">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />

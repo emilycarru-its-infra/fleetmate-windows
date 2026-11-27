@@ -18,7 +18,6 @@ namespace FleetMate.WinUI.Pages.Identity;
 public sealed partial class IdentityViewModel : ObservableObject
 {
     private readonly IIdentityDirectory? _directory;
-    private IReadOnlyList<EntraGroup> _allGroups = Array.Empty<EntraGroup>();
 
     public IdentityViewModel(IIdentityDirectory? directory) => _directory = directory;
 
@@ -28,11 +27,18 @@ public sealed partial class IdentityViewModel : ObservableObject
 
     // MARK: - Groups
 
-    public ObservableCollection<EntraGroup> Groups { get; } = new();
+    private readonly List<GroupRow> _allGroups = new();
+
+    /// <summary>The groups the filter leaves, in name order.</summary>
+    public ObservableCollection<GroupRow> Groups { get; } = new();
 
     [ObservableProperty] private bool _groupsLoading;
     [ObservableProperty] private string? _groupsError;
     [ObservableProperty] private string _groupFilter = "";
+    [ObservableProperty] private string _groupsCount = "";
+    [ObservableProperty] private bool _groupsEmpty;
+    [ObservableProperty] private string _groupsEmptyTitle = "";
+    [ObservableProperty] private string _groupsEmptyText = "";
 
     partial void OnGroupFilterChanged(string value) => ApplyGroupFilter();
 
@@ -44,8 +50,13 @@ public sealed partial class IdentityViewModel : ObservableObject
         GroupsError = null;
         try
         {
-            _allGroups = await _directory.DeviceGroupsAsync();
+            var groups = await _directory.DeviceGroupsAsync();
+            _allGroups.Clear();
+            _allGroups.AddRange(groups.Select(g => new GroupRow(this, g)));
             ApplyGroupFilter();
+            // Every row shows its device count, and a device name finds its
+            // groups, so members load in the background (as the Mac app warms them).
+            _ = LoadAllMembersAsync();
         }
         catch (Exception ex)
         {
@@ -55,17 +66,93 @@ public sealed partial class IdentityViewModel : ObservableObject
         finally
         {
             GroupsLoading = false;
+            UpdateGroupsEmpty();
         }
     }
 
-    private void ApplyGroupFilter()
+    /// <summary>
+    /// Show the groups that match by name, description or a loaded member's
+    /// name. While filtering, a group with loaded members opens to show the
+    /// matching devices, as on FleetMate for Mac.
+    /// </summary>
+    internal void ApplyGroupFilter()
     {
+        var filtering = !string.IsNullOrWhiteSpace(GroupFilter);
         Groups.Clear();
-        foreach (var group in _allGroups.Where(g => IdentitySearch.GroupMatches(g, GroupFilter))) Groups.Add(group);
+        foreach (var row in _allGroups.Where(r => IdentitySearch.GroupMatches(r.Group, GroupFilter, r.AllMembers)))
+        {
+            row.ShowMembers(GroupFilter, openForFilter: filtering && row.AllMembers is { Count: > 0 });
+            Groups.Add(row);
+        }
+        GroupsCount = _allGroups.Count == 0 ? "" : IdentitySearch.CountText(Groups.Count, _allGroups.Count);
+        UpdateGroupsEmpty();
     }
 
-    public Task<IReadOnlyList<IntuneDevice>> GroupDevicesAsync(string groupId) =>
-        _directory?.GroupDevicesAsync(groupId) ?? Task.FromResult<IReadOnlyList<IntuneDevice>>(Array.Empty<IntuneDevice>());
+    private void UpdateGroupsEmpty()
+    {
+        GroupsEmpty = !GroupsLoading && GroupsError == null && Groups.Count == 0 && IsConfigured;
+        (GroupsEmptyTitle, GroupsEmptyText) = _allGroups.Count == 0
+            ? ("No device groups", "No groups were found with the Devices- prefix.")
+            : ("No matches", $"No group or member device matches “{GroupFilter.Trim()}”.");
+    }
+
+    private CancellationTokenSource? _membersLoad;
+
+    /// <summary>The background member load in flight, for a capture that waits for it.</summary>
+    public Task MembersLoaded { get; private set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// Load every group's members, a few at a time, refiltering as they
+    /// arrive. A new load or <see cref="CancelMemberLoads"/> stops the last one.
+    /// </summary>
+    private Task LoadAllMembersAsync()
+    {
+        _membersLoad?.Cancel();
+        var cts = _membersLoad = new CancellationTokenSource();
+        return MembersLoaded = LoadAllMembersCoreAsync(_allGroups.ToList(), cts.Token);
+    }
+
+    private async Task LoadAllMembersCoreAsync(IReadOnlyList<GroupRow> rows, CancellationToken ct)
+    {
+        using var gate = new SemaphoreSlim(4);
+        try
+        {
+            await Task.WhenAll(rows.Select(async row =>
+            {
+                await gate.WaitAsync(ct);
+                try
+                {
+                    if (!ct.IsCancellationRequested) await LoadMembersAsync(row);
+                }
+                finally { gate.Release(); }
+            }));
+        }
+        catch (OperationCanceledException) { return; }
+        if (!ct.IsCancellationRequested && !string.IsNullOrWhiteSpace(GroupFilter)) ApplyGroupFilter();
+    }
+
+    /// <summary>Stop loading members, when the tab is left; groups already loaded keep their counts.</summary>
+    public void CancelMemberLoads() => _membersLoad?.Cancel();
+
+    internal async Task LoadMembersAsync(GroupRow row)
+    {
+        if (_directory == null || row.AllMembers != null || row.IsLoading) return;
+        row.IsLoading = true;
+        try
+        {
+            row.SetMembers(await _directory.GroupDevicesAsync(row.Group.Id), GroupFilter);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[identity] Could not load members of {Group}", row.Group.DisplayName);
+            row.LoadError = $"Could not load members: {ex.Message}";
+            row.SetMembers(Array.Empty<IntuneDevice>(), GroupFilter);
+        }
+        finally
+        {
+            row.IsLoading = false;
+        }
+    }
 
     // MARK: - Users
 
@@ -86,7 +173,7 @@ public sealed partial class IdentityViewModel : ObservableObject
         {
             var found = await IdentitySearch.FindUsersAsync(_directory, UserQuery);
             foreach (var user in found) Users.Add(new UserRow(user));
-            UsersMessage = found.Count == 0 ? $"No users found matching '{UserQuery.Trim()}'." : "";
+            UsersMessage = found.Count == 0 ? $"No users match “{UserQuery.Trim()}”." : "";
             // A single hit is the common case; open the first result.
             SelectedUser = Users.FirstOrDefault();
         }
@@ -191,6 +278,81 @@ public sealed partial class IdentityViewModel : ObservableObject
         row.User.MemberOf = new List<EntraGroup>();
         await LoadRelationsAsync(row);
     }
+}
+
+/// <summary>A device group: its header, and its members once opened.</summary>
+public sealed partial class GroupRow(IdentityViewModel owner, EntraGroup group) : ObservableObject
+{
+    public EntraGroup Group { get; } = group;
+    public string Name => Group.DisplayName;
+    public string Id => Group.Id;
+    public IReadOnlyList<string> Badges { get; } = IdentitySearch.Badges(group);
+    public string Glyph => Group.SecurityEnabled == true ? "\uE83D" : "\uE716";
+
+    /// <summary>Every member, once loaded; null until the group is first opened.</summary>
+    public IReadOnlyList<IntuneDevice>? AllMembers { get; private set; }
+
+    /// <summary>The members showing: all of them, or those matching the filter.</summary>
+    public ObservableCollection<DeviceRow> Members { get; } = new();
+
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(Chevron))] private bool _isExpanded;
+    [ObservableProperty] private bool _isLoading;
+    [ObservableProperty] private string? _loadError;
+    [ObservableProperty] private string _countText = "";
+    [ObservableProperty] private string _membersHeader = "";
+    [ObservableProperty] private bool _noMembers;
+
+    public string Chevron => IsExpanded ? "\uE70D" : "\uE76C";
+
+    [RelayCommand]
+    private async Task ToggleAsync()
+    {
+        IsExpanded = !IsExpanded;
+        if (IsExpanded) await owner.LoadMembersAsync(this);
+    }
+
+    [RelayCommand]
+    private void CopyId()
+    {
+        var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+        package.SetText(Id);
+        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+    }
+
+    internal void SetMembers(IReadOnlyList<IntuneDevice> members, string? filter)
+    {
+        AllMembers = members;
+        CountText = $"{members.Count} device{(members.Count == 1 ? "" : "s")}";
+        ShowMembers(filter, openForFilter: false);
+    }
+
+    internal void ShowMembers(string? filter, bool openForFilter)
+    {
+        if (openForFilter) IsExpanded = true;
+        Members.Clear();
+        if (AllMembers == null) return;
+        foreach (var device in IdentitySearch.VisibleMembers(AllMembers, filter)) Members.Add(new DeviceRow(device, filter));
+        MembersHeader = Members.Count == AllMembers.Count
+            ? $"Members ({AllMembers.Count})"
+            : $"Members ({Members.Count} of {AllMembers.Count})";
+        NoMembers = AllMembers.Count == 0;
+    }
+}
+
+/// <summary>A member device: its name, OS and platform icon; highlighted when it matches the filter.</summary>
+public sealed class DeviceRow(IntuneDevice device, string? filter)
+{
+    public string Name => device.DeviceName;
+    public string OsText => string.Join(" ", new[] { device.OperatingSystem, device.OsVersion }.Where(p => !string.IsNullOrWhiteSpace(p)));
+    public string Glyph => IdentitySearch.Platform(device.OperatingSystem) switch
+    {
+        "Windows" => "\uE977",
+        "macOS" => "\uE7F4",
+        "Mobile" => "\uE8EA",
+        _ => "\uE7F8",
+    };
+    public bool IsMatch { get; } = !string.IsNullOrWhiteSpace(filter)
+        && device.DeviceName.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>A user in the results list and the inspector.</summary>
