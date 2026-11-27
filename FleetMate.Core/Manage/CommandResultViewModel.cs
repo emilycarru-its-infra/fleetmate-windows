@@ -2,7 +2,7 @@ using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 using FleetMate.Core.Models.Manage;
 
-namespace FleetMate.GUI.ViewModels.Manage;
+namespace FleetMate.Core.Manage;
 
 /// <summary>One machine's result in the results pane; output accumulates as it streams.</summary>
 public partial class CommandResultViewModel : ObservableObject

@@ -1,7 +1,7 @@
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using FleetMate.Core.Services.Manage;
-using FleetMate.GUI.ViewModels.Manage;
+using FleetMate.Core.Manage;
 
 namespace FleetMate.GUI.Views.Manage;
 
@@ -47,12 +47,7 @@ public partial class SshTabPickerDialog : Window
 
     private void OnOpen(object sender, RoutedEventArgs e)
     {
-        Chosen = _items.Where(i => i.Checked).Select(i => new SshSession(i.Ip, SessionTitle(i.Row))).ToList();
+        Chosen = _items.Where(i => i.Checked).Select(i => new SshSession(i.Ip, ManageViewModel.SessionTitle(i.Row))).ToList();
         DialogResult = Chosen.Count > 0;
     }
-
-    public static string SessionTitle(MachineRowViewModel row) =>
-        row.Computer.HasHostname && row.Computer.Hostname != row.FriendlyName
-            ? $"{row.FriendlyName} ({row.Computer.Hostname})"
-            : row.FriendlyName;
 }

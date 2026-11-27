@@ -66,6 +66,8 @@ public partial class App : Application
         ShellServices.RegisterDemoFixtures(s => s.SeedDevicesDemo());
         ShellPages.Register("Identity", typeof(Pages.Identity.IdentityPage));
         ShellServices.RegisterDemoFixtures(s => s.Identity = new Pages.Identity.IdentityDemo());
+        ShellPages.Register("Manage", typeof(Pages.Manage.ManagePage));
+        ShellServices.RegisterDemoFixtures(Pages.Manage.ManageDemo.Seed);
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)

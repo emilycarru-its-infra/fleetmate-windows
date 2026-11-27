@@ -7,7 +7,7 @@ using FleetMate.Core.Models.Manage;
 using FleetMate.Core.Services.Manage;
 using Serilog;
 
-namespace FleetMate.GUI.ViewModels.Manage;
+namespace FleetMate.Core.Manage;
 
 internal static class ObjectExtensions
 {
@@ -83,7 +83,10 @@ public partial class ManageViewModel : ObservableObject
         _commandRunner = runner == null ? null : new CommandRunner(runner) { Concurrency = Math.Max(1, config.ProbeConcurrency) };
         _copier = runner as IRemoteFileCopier;
         _ui = SynchronizationContext.Current;
+        _uiThreadId = Environment.CurrentManagedThreadId;
     }
+
+    private readonly int _uiThreadId;
 
     public bool CanRun => _commandRunner != null;
 
@@ -824,11 +827,17 @@ public partial class ManageViewModel : ObservableObject
     /// reference comparison cannot tell "already on the UI thread", and a
     /// posted update would land after the code that expects to read it.
     /// Send on the dispatcher's own thread executes inline, so it never deadlocks.
+    /// WinUI's dispatcher context has no Send: there the UI thread runs the
+    /// update inline (recognised by its thread id) and a worker posts it.
     /// </summary>
     private void Post(Action action)
     {
-        if (_ui == null) action();
-        else _ui.Send(_ => action(), null);
+        if (_ui == null || Environment.CurrentManagedThreadId == _uiThreadId) action();
+        else
+        {
+            try { _ui.Send(_ => action(), null); }
+            catch (NotSupportedException) { _ui.Post(_ => action(), null); }
+        }
     }
 
     partial void OnScanModeChanged(ScanMode value) => OnPropertyChanged(nameof(ScanModeLabel));
