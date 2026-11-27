@@ -10,10 +10,13 @@ namespace FleetMate.GUI.Views.Knowledge;
 /// The "Handbook" card: the pages about the thing on screen, found from the
 /// words that describe it (macOS parity). Each opens in FleetMate's reader.
 /// Null when the Handbook isn't configured or nothing relevant turns up, so
-/// the card simply isn't there.
+/// the card simply isn't there. Collapses from its header like an accordion:
+/// open by default, and the choice holds for the rest of the session.
 /// </summary>
 public static class HandbookRelatedCard
 {
+    private static bool _expanded = true;
+
     public static FrameworkElement? Build(IEnumerable<string> terms, int limit = 5)
     {
         var app = Application.Current as App;
@@ -21,10 +24,8 @@ public static class HandbookRelatedCard
         var pages = store.Index.Related(terms, limit);
         if (pages.Count == 0) return null;
 
-        var panel = new StackPanel();
-        var heading = new TextBlock { Text = "Handbook", FontWeight = FontWeights.SemiBold, FontSize = 12, Margin = new Thickness(0, 0, 0, 4) };
+        var heading = new TextBlock { Text = "Handbook", FontWeight = FontWeights.SemiBold, FontSize = 12 };
         heading.SetResourceReference(TextBlock.ForegroundProperty, "SystemControlForegroundBaseMediumBrush");
-        panel.Children.Add(heading);
 
         var list = new StackPanel();
         foreach (var page in pages)
@@ -43,7 +44,17 @@ public static class HandbookRelatedCard
         }
         var card = new Border { Child = list };
         card.SetResourceReference(FrameworkElement.StyleProperty, "CardStyle");
-        panel.Children.Add(card);
-        return panel;
+        card.Margin = new Thickness(0, 4, 0, 0);
+
+        var expander = new Expander
+        {
+            Header = heading,
+            Content = card,
+            IsExpanded = _expanded,
+            ToolTip = "Show or hide the Handbook pages",
+        };
+        expander.Expanded += (_, _) => _expanded = true;
+        expander.Collapsed += (_, _) => _expanded = false;
+        return expander;
     }
 }
